@@ -1,0 +1,247 @@
+name: Build and Publish Image
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GHCR_REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+  RUN_OPTIONAL_E2E: ${{ vars.RUN_OPTIONAL_E2E || 'false' }}
+  ENABLE_DISK_CLEANUP_BUILD_TEST: ${{ vars.ENABLE_DISK_CLEANUP_BUILD_TEST || 'false' }}
+  DISK_CLEANUP_THRESHOLD_GB_BUILD_TEST: ${{ vars.DISK_CLEANUP_THRESHOLD_GB_BUILD_TEST || '10' }}
+  DISK_CLEANUP_THRESHOLD_GB_BUILD_PUSH: ${{ vars.DISK_CLEANUP_THRESHOLD_GB_BUILD_PUSH || '20' }}
+  DISK_SAFETY_MIN_GB_BEFORE_DOCKER: ${{ vars.DISK_SAFETY_MIN_GB_BEFORE_DOCKER || '20' }}
+  ENABLE_DOCKER_CACHE_EXPORT: ${{ vars.ENABLE_DOCKER_CACHE_EXPORT || 'false' }}
+  NEXT_PUBLIC_APP_URL: http://127.0.0.1:3000
+  INTERNAL_APP_URL: http://127.0.0.1:3000
+  NODE_ENV: production
+  JWT_SECRET: ${{ secrets.JWT_SECRET }}
+  DEFAULT_ADMIN_PASSWORD: ${{ secrets.DEFAULT_ADMIN_PASSWORD }}
+  ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
+  DATABASE_PATH: ./data/ci-huoziwriter.db
+  LOG_LEVEL: info
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout 代码
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          clean: true
+
+      - name: 输出磁盘使用情况（构建前）
+        run: df -h
+
+      - name: 按需释放磁盘空间（构建前）
+        run: |
+          if [[ "${ENABLE_DISK_CLEANUP_BUILD_TEST}" != "true" ]]; then
+            echo "build-and-test 默认跳过重清理（ENABLE_DISK_CLEANUP_BUILD_TEST=${ENABLE_DISK_CLEANUP_BUILD_TEST}）"
+            df -h
+            exit 0
+          fi
+
+          FREE_GB=$(df -BG / | awk 'NR==2 {gsub("G","",$4); print $4}')
+          THRESHOLD_GB="${DISK_CLEANUP_THRESHOLD_GB_BUILD_TEST:-10}"
+          echo "当前剩余磁盘: ${FREE_GB}GB，清理阈值: ${THRESHOLD_GB}GB"
+
+          if [ "${FREE_GB}" -lt "${THRESHOLD_GB}" ]; then
+            echo "磁盘低于阈值，执行清理"
+            sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL /usr/local/.ghcup || true
+            sudo apt-get clean || true
+            docker system prune -af --volumes || true
+          else
+            echo "磁盘充足，跳过重清理"
+          fi
+
+          df -h
+
+      - name: 设置 pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.23.0
+
+      - name: 设置 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "pnpm"
+
+      - name: 安装依赖
+        run: pnpm install --frozen-lockfile
+
+      - name: 初始化数据库
+        run: pnpm db:init
+
+      - name: 运行校验
+        run: pnpm verify
+
+      - name: 安装 Playwright Chromium（可选）
+        if: ${{ env.RUN_OPTIONAL_E2E == 'true' }}
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: 运行 E2E（可选）
+        if: ${{ env.RUN_OPTIONAL_E2E == 'true' }}
+        run: pnpm test:e2e
+
+      - name: 清理构建临时文件（总是执行）
+        if: always()
+        run: |
+          rm -rf apps/web/.next/cache test-results playwright-report
+          rm -f data/ci-huoziwriter.db apps/web/data/e2e-huoziwriter.db
+          df -h
+
+  build-and-push:
+    needs: build-and-test
+    if: ${{ github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      short_sha: ${{ steps.vars.outputs.short_sha }}
+
+    steps:
+      - name: Checkout 代码
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          clean: true
+
+      - name: 输出磁盘使用情况（构建前）
+        run: df -h
+
+      - name: 按需释放磁盘空间（构建前）
+        run: |
+          FREE_GB=$(df -BG / | awk 'NR==2 {gsub("G","",$4); print $4}')
+          THRESHOLD_GB="${DISK_CLEANUP_THRESHOLD_GB_BUILD_PUSH:-20}"
+          echo "当前剩余磁盘: ${FREE_GB}GB，清理阈值: ${THRESHOLD_GB}GB"
+
+          if [ "${FREE_GB}" -lt "${THRESHOLD_GB}" ]; then
+            echo "磁盘低于阈值，执行清理"
+            sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL /usr/local/.ghcup || true
+            sudo apt-get clean || true
+            docker system prune -af --volumes || true
+          else
+            echo "磁盘充足，跳过重清理"
+          fi
+
+          df -h
+
+      - name: 设置变量
+        id: vars
+        run: echo "short_sha=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: 设置 Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          install: true
+        env:
+          DOCKER_BUILD_RECORD_UPLOAD: false
+
+      - name: 登录 GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.GHCR_REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 生成镜像标签
+        id: tags
+        run: |
+          SHORT_SHA=$(git rev-parse --short HEAD)
+
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            VERSION=${GITHUB_REF#refs/tags/v}
+            TAGS="${{ env.GHCR_REGISTRY }}/${{ env.IMAGE_NAME }}:prod-${VERSION}"
+            TAGS="${TAGS},${{ env.GHCR_REGISTRY }}/${{ env.IMAGE_NAME }}:prod-${SHORT_SHA}"
+          else
+            TAGS="${{ env.GHCR_REGISTRY }}/${{ env.IMAGE_NAME }}:prod-latest"
+            TAGS="${TAGS},${{ env.GHCR_REGISTRY }}/${{ env.IMAGE_NAME }}:prod-${SHORT_SHA}"
+          fi
+
+          echo "tags=${TAGS}" >> "$GITHUB_OUTPUT"
+          echo "ghcr_tags=${TAGS}" >> "$GITHUB_OUTPUT"
+
+          echo "将推送以下标签:"
+          echo "${TAGS}" | tr ',' '\n'
+
+      - name: 构建前磁盘安全检查
+        run: |
+          FREE_GB=$(df -BG / | awk 'NR==2 {gsub("G","",$4); print $4}')
+          MIN_GB="${DISK_SAFETY_MIN_GB_BEFORE_DOCKER:-20}"
+          echo "Docker 构建前可用磁盘: ${FREE_GB}GB，安全下限: ${MIN_GB}GB"
+
+          if [ "${FREE_GB}" -lt "${MIN_GB}" ]; then
+            echo "可用磁盘不足，执行紧急清理"
+            docker builder prune -af || true
+            docker system prune -af --volumes || true
+            sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL /usr/local/.ghcup || true
+            sudo apt-get clean || true
+
+            FREE_GB_AFTER=$(df -BG / | awk 'NR==2 {gsub("G","",$4); print $4}')
+            echo "紧急清理后可用磁盘: ${FREE_GB_AFTER}GB"
+
+            if [ "${FREE_GB_AFTER}" -lt "${MIN_GB}" ]; then
+              echo "::error::磁盘不足（${FREE_GB_AFTER}GB < ${MIN_GB}GB），中止构建"
+              exit 1
+            fi
+          fi
+
+          df -h
+
+      - name: 构建并推送 Docker 镜像（禁用 cache export）
+        if: ${{ env.ENABLE_DOCKER_CACHE_EXPORT != 'true' }}
+        uses: docker/build-push-action@v6
+        env:
+          DOCKER_BUILD_SUMMARY: false
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ steps.tags.outputs.tags }}
+          cache-from: type=gha,scope=huoziwriter-deploy
+          provenance: false
+          sbom: false
+
+      - name: 构建并推送 Docker 镜像（启用 cache export）
+        if: ${{ env.ENABLE_DOCKER_CACHE_EXPORT == 'true' }}
+        uses: docker/build-push-action@v6
+        env:
+          DOCKER_BUILD_SUMMARY: false
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ steps.tags.outputs.tags }}
+          cache-from: type=gha,scope=huoziwriter-deploy
+          cache-to: type=gha,mode=min,scope=huoziwriter-deploy
+          provenance: false
+          sbom: false
+
+      - name: 输出镜像信息
+        run: |
+          echo "镜像推送完成"
+          echo "${{ steps.tags.outputs.ghcr_tags }}" | tr ',' '\n' | sed 's/^/ - /'
+
+      - name: 清理 Docker 与临时文件（总是执行）
+        if: always()
+        run: |
+          docker builder prune -af || true
+          docker system prune -af --volumes || true
+          df -h
