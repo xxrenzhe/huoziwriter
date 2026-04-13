@@ -114,19 +114,19 @@ export function TopicRadarStarter({
   topics,
   knowledgeMatches = {},
 }: {
-  topics: Array<{ id: number; title: string; sourceName: string; emotionLabels: string[]; angleOptions: string[] }>;
-  knowledgeMatches?: Record<number, Array<{ id: number; title: string; cardType: string; status: string; confidenceScore: number }>>;
+  topics: Array<{ id: number; title: string; sourceName: string; emotionLabels: string[]; angleOptions: string[]; judgementShift?: string | null }>;
+  knowledgeMatches?: Record<number, Array<{ id: number; title: string; cardType: string; status: string; confidenceScore: number; summary?: string | null }>>;
 }) {
   const router = useRouter();
   const [loadingKey, setLoadingKey] = useState<string | null>(null);
 
-  async function handleStart(topicId: number, angleIndex: number) {
+  async function handleStart(topicId: number, angleIndex: number, chosenAngle: string) {
     const key = `${topicId}-${angleIndex}`;
     setLoadingKey(key);
     const response = await fetch("/api/topic-radar/start", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ topicId, angleIndex }),
+      body: JSON.stringify({ topicId, angleIndex, chosenAngle }),
     });
     const json = await response.json();
     setLoadingKey(null);
@@ -164,13 +164,18 @@ export function TopicRadarStarter({
               </span>
             ))}
           </div>
+          {topic.judgementShift ? (
+            <div className="mt-4 border border-[#d9ceb3] bg-[#f7f0de] px-4 py-4 text-sm leading-7 text-stone-700">
+              {topic.judgementShift}
+            </div>
+          ) : null}
           <div className="mt-4 space-y-2">
             {topic.angleOptions.slice(0, 3).map((angle, index) => {
               const key = `${topic.id}-${index}`;
               return (
                 <button
                   key={angle}
-                  onClick={() => handleStart(topic.id, index)}
+                  onClick={() => handleStart(topic.id, index, angle)}
                   disabled={loadingKey !== null}
                   className="flex w-full items-start justify-between gap-4 border border-stone-300 bg-[#faf7f0] px-4 py-4 text-left text-sm leading-7 text-stone-700 disabled:opacity-60"
                 >

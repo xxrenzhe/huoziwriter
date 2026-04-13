@@ -66,7 +66,11 @@ export async function POST(request: Request) {
     const angleOptions = parseJsonArray(topic.angle_options_json);
     const emotionLabels = parseJsonArray(topic.emotion_labels_json);
     const requestedAngleIndex = Number.isFinite(Number(body.angleIndex)) ? Number(body.angleIndex) : 0;
-    const chosenAngle = angleOptions[requestedAngleIndex] || angleOptions[0] || `围绕“${topic.title}”写这条热点真正值得下笔的切口。`;
+    const chosenAngle =
+      String(body.chosenAngle || "").trim() ||
+      angleOptions[requestedAngleIndex] ||
+      angleOptions[0] ||
+      `围绕“${topic.title}”写这条热点真正值得下笔的切口。`;
     const knowledgeCards = await getKnowledgeCards(session.userId);
     const matchedCards = matchTopicToKnowledgeCards(
       topic.title,
