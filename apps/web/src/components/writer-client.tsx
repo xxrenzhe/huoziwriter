@@ -63,6 +63,24 @@ function buildVisualSuggestion(title: string, markdown: string) {
   return `视觉联想：围绕“${subject}”，提炼一个单主体隐喻场景，画面保持 ${mood}，16:9 横版，不出现水印与密集文字，只保留一个高辨识度主体和明确情绪。参考内容：${seed || "请根据当前文稿核心冲突生成画面。"}。`;
 }
 
+function buildNodeVisualSuggestion(input: {
+  documentTitle: string;
+  nodeTitle: string;
+  nodeDescription?: string | null;
+  fragments: Array<{ distilledContent: string }>;
+}) {
+  const seed = stripMarkdown(
+    [input.nodeTitle, input.nodeDescription || "", ...input.fragments.slice(0, 2).map((fragment) => fragment.distilledContent)].join(" "),
+  ).slice(0, 140);
+  const subject = input.nodeTitle.trim() || input.documentTitle.trim() || "当前段落";
+  const mood = /裁员|亏损|争议|风险|危机|焦虑|失效|冲突/.test(seed)
+    ? "冷峻、压迫感、纪实摄影"
+    : /增长|机会|突破|创新|回暖|发布/.test(seed)
+      ? "克制、明亮、商业摄影"
+      : "纸张肌理、新中式静物、低饱和";
+  return `围绕“${subject}”做一张段落配图：单主体隐喻场景，${mood}，竖版留白，避免海报感与大段文字。参考信息：${seed || "根据当前节点的冲突与结论生成配图。"}。`;
+}
+
 function refreshRouter(router: ReturnType<typeof useRouter>) {
   startTransition(() => {
     router.refresh();
@@ -244,52 +262,173 @@ export function BannedWordsManager({
 
 export function WechatConnectionsManager({
   connections,
+  canManage,
+  planName,
 }: {
-  connections: Array<{ id: number; accountName: string | null; status: string; isDefault: boolean; accessTokenExpiresAt: string | null }>;
+  connections: Array<{
+    id: number;
+    accountName: string | null;
+    originalId: string | null;
+    status: string;
+    isDefault: boolean;
+    accessTokenExpiresAt: string | null;
+    updatedAt: string;
+  }>;
+  canManage: boolean;
+  planName: string;
 }) {
   const router = useRouter();
   const [accountName, setAccountName] = useState("");
   const [originalId, setOriginalId] = useState("");
   const [appId, setAppId] = useState("");
   const [appSecret, setAppSecret] = useState("");
+  const [isDefault, setIsDefault] = useState(true);
   const [loading, setLoading] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [switchingDefaultId, setSwitchingDefaultId] = useState<number | null>(null);
   const [message, setMessage] = useState("");
+
+  const defaultConnection = connections.find((connection) => connection.isDefault) ?? null;
+
+  function resetForm() {
+    setAccountName("");
+    setOriginalId("");
+    setAppId("");
+    setAppSecret("");
+    setIsDefault(true);
+    setEditingId(null);
+  }
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
+    if (!canManage) {
+      setMessage(`${planName}套餐暂不支持绑定微信公众号。升级到 Pro 或更高套餐后，才可新增连接并推送到微信草稿箱。`);
+      return;
+    }
     setLoading(true);
     setMessage("");
-    const response = await fetch("/api/wechat/connections", {
-      method: "POST",
+    const response = await fetch(editingId ? `/api/wechat/connections/${editingId}` : "/api/wechat/connections", {
+      method: editingId ? "PATCH" : "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ accountName, originalId, appId, appSecret, isDefault: true }),
+      body: JSON.stringify({
+        accountName,
+        originalId,
+        appId: appId || undefined,
+        appSecret: appSecret || undefined,
+        isDefault,
+      }),
     });
     setLoading(false);
     if (!response.ok) {
       setMessage(await parseResponseMessage(response));
       return;
     }
-    setAccountName("");
-    setOriginalId("");
-    setAppId("");
-    setAppSecret("");
+    resetForm();
+    setMessage(editingId ? "公众号连接已更新" : "公众号连接已创建");
     refreshRouter(router);
   }
 
   async function handleDelete(id: number) {
+    if (!canManage) {
+      setMessage(`${planName}套餐暂不支持管理微信公众号连接。`);
+      return;
+    }
     await fetch(`/api/wechat/connections/${id}`, { method: "DELETE" });
+    refreshRouter(router);
+  }
+
+  function handleEdit(connection: (typeof connections)[number]) {
+    if (!canManage) {
+      setMessage(`${planName}套餐暂不支持编辑微信公众号连接。`);
+      return;
+    }
+    setEditingId(connection.id);
+    setAccountName(connection.accountName || "");
+    setOriginalId(connection.originalId || "");
+    setAppId("");
+    setAppSecret("");
+    setIsDefault(connection.isDefault);
+    setMessage("如只修改名称、原始 ID 或默认状态，可直接保存；只有轮换密钥时才需要重新填写 AppID / AppSecret。");
+  }
+
+  async function handleSetDefault(connection: (typeof connections)[number]) {
+    if (!canManage) {
+      setMessage(`${planName}套餐暂不支持切换默认公众号。`);
+      return;
+    }
+    setSwitchingDefaultId(connection.id);
+    setMessage("");
+    const response = await fetch(`/api/wechat/connections/${connection.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        accountName: connection.accountName,
+        originalId: connection.originalId,
+        isDefault: true,
+      }),
+    });
+    setSwitchingDefaultId(null);
+    if (!response.ok) {
+      setMessage(await parseResponseMessage(response));
+      return;
+    }
+    setMessage(`已将 ${connection.accountName || `连接 ${connection.id}`} 设为默认公众号`);
     refreshRouter(router);
   }
 
   return (
     <div className="space-y-6">
+      {!canManage ? (
+        <div className="border border-dashed border-[#d8b0b2] bg-[#fff3f3] px-4 py-4 text-sm leading-7 text-[#8f3136]">
+          {planName}套餐当前不开放微信公众号授权。你仍可继续写作、导出 Markdown，并在升级到 Pro 或更高套餐后解锁公众号连接和草稿箱推送。
+        </div>
+      ) : null}
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="border border-stone-300/40 bg-[#faf7f0] p-5">
+          <div className="text-xs uppercase tracking-[0.24em] text-stone-500">授权说明</div>
+          <div className="mt-3 space-y-2 text-sm leading-7 text-stone-700">
+            <div>这里直接录入公众号 `AppID / AppSecret`，系统会立即向微信校验并换取 access token。</div>
+            <div>编辑器发布区默认优先使用“默认连接”，也可以临时切换到其他已授权公众号。</div>
+            <div>如果你只是改名称、原始 ID 或默认状态，不必重复填写密钥。</div>
+          </div>
+        </div>
+        <div className="border border-stone-300/40 bg-white p-5 shadow-ink">
+          <div className="text-xs uppercase tracking-[0.24em] text-cinnabar">当前默认连接</div>
+          {defaultConnection ? (
+            <div className="mt-3 space-y-2 text-sm leading-7 text-stone-700">
+              <div className="font-serifCn text-2xl text-ink">{defaultConnection.accountName || "未命名公众号"}</div>
+              <div>原始 ID：{defaultConnection.originalId || "未填写"}</div>
+              <div>状态：{defaultConnection.status}</div>
+              <div>{defaultConnection.accessTokenExpiresAt ? `Token 到期：${new Date(defaultConnection.accessTokenExpiresAt).toLocaleString("zh-CN")}` : "尚未记录 Token 到期时间"}</div>
+            </div>
+          ) : (
+            <div className="mt-3 text-sm leading-7 text-stone-600">当前还没有默认公众号。新增连接后可直接设为默认。</div>
+          )}
+        </div>
+      </div>
       <form onSubmit={handleSubmit} className="grid gap-3 border border-stone-300/40 bg-white p-5 shadow-ink">
-        <input value={accountName} onChange={(event) => setAccountName(event.target.value)} placeholder="公众号名称" className="border border-stone-300 px-4 py-3 text-sm" />
-        <input value={originalId} onChange={(event) => setOriginalId(event.target.value)} placeholder="原始 ID" className="border border-stone-300 px-4 py-3 text-sm" />
-        <input value={appId} onChange={(event) => setAppId(event.target.value)} placeholder="AppID" className="border border-stone-300 px-4 py-3 text-sm" />
-        <input value={appSecret} onChange={(event) => setAppSecret(event.target.value)} placeholder="AppSecret" className="border border-stone-300 px-4 py-3 text-sm" />
-        <button disabled={loading} className="bg-cinnabar px-5 py-3 text-sm text-white disabled:opacity-60">
-          {loading ? "校验中..." : "添加公众号连接"}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="text-xs uppercase tracking-[0.24em] text-stone-500">{editingId ? "编辑公众号连接" : "新增公众号连接"}</div>
+          {editingId ? (
+            <button
+              type="button"
+              onClick={resetForm}
+              className="border border-stone-300 px-3 py-2 text-sm text-stone-700"
+            >
+              取消编辑
+            </button>
+          ) : null}
+        </div>
+        <input value={accountName} disabled={!canManage} onChange={(event) => setAccountName(event.target.value)} placeholder="公众号名称" className="border border-stone-300 px-4 py-3 text-sm disabled:bg-stone-100 disabled:text-stone-400" />
+        <input value={originalId} disabled={!canManage} onChange={(event) => setOriginalId(event.target.value)} placeholder="原始 ID" className="border border-stone-300 px-4 py-3 text-sm disabled:bg-stone-100 disabled:text-stone-400" />
+        <input value={appId} disabled={!canManage} onChange={(event) => setAppId(event.target.value)} placeholder="AppID" className="border border-stone-300 px-4 py-3 text-sm disabled:bg-stone-100 disabled:text-stone-400" />
+        <input value={appSecret} disabled={!canManage} onChange={(event) => setAppSecret(event.target.value)} placeholder={editingId ? "AppSecret（仅轮换密钥时填写）" : "AppSecret"} type="password" className="border border-stone-300 px-4 py-3 text-sm disabled:bg-stone-100 disabled:text-stone-400" />
+        <label className="flex items-center gap-3 border border-stone-300 px-4 py-3 text-sm text-stone-700">
+          <input type="checkbox" checked={isDefault} disabled={!canManage} onChange={(event) => setIsDefault(event.target.checked)} />
+          保存后设为默认公众号
+        </label>
+        <button disabled={loading || !canManage} className="bg-cinnabar px-5 py-3 text-sm text-white disabled:opacity-60">
+          {!canManage ? "当前套餐不可绑定公众号" : loading ? (editingId ? "更新中..." : "校验中...") : editingId ? "保存公众号连接" : "添加公众号连接"}
         </button>
       </form>
       {message ? <div className="text-sm text-cinnabar">{message}</div> : null}
@@ -303,10 +442,27 @@ export function WechatConnectionsManager({
                 {connection.isDefault ? " · 默认连接" : ""}
                 {connection.accessTokenExpiresAt ? ` · 到期 ${new Date(connection.accessTokenExpiresAt).toLocaleString("zh-CN")}` : ""}
               </div>
+              <div className="mt-1 text-xs text-stone-500">
+                原始 ID：{connection.originalId || "未填写"} · 更新于 {new Date(connection.updatedAt).toLocaleString("zh-CN")}
+              </div>
             </div>
-            <button onClick={() => handleDelete(connection.id)} className="border border-stone-300 px-4 py-2 text-sm text-stone-700">
-              删除
-            </button>
+            <div className="flex flex-wrap gap-2">
+              {!connection.isDefault ? (
+                <button
+                  onClick={() => handleSetDefault(connection)}
+                  disabled={switchingDefaultId === connection.id || !canManage}
+                  className="border border-cinnabar px-4 py-2 text-sm text-cinnabar disabled:opacity-60"
+                >
+                  {switchingDefaultId === connection.id ? "切换中..." : "设为默认"}
+                </button>
+              ) : null}
+              <button onClick={() => handleEdit(connection)} disabled={!canManage} className="border border-stone-300 px-4 py-2 text-sm text-stone-700 disabled:text-stone-400">
+                编辑
+              </button>
+              <button onClick={() => handleDelete(connection.id)} disabled={!canManage} className="border border-stone-300 px-4 py-2 text-sm text-stone-700 disabled:text-stone-400">
+                删除
+              </button>
+            </div>
           </div>
         ))}
       </div>
@@ -334,18 +490,37 @@ type DiffState = {
 
 type KnowledgeCardPanelItem = {
   id: number;
+  userId: number;
+  ownerUsername: string | null;
+  shared: boolean;
+  workspaceScope: string;
   cardType: string;
   title: string;
   summary: string | null;
   keyFacts: string[];
   openQuestions: string[];
+  conflictFlags: string[];
   sourceFragmentIds: number[];
+  relatedCardIds: number[];
+  relatedCards: Array<{ id: number; title: string; cardType: string; status: string; confidenceScore: number; summary: string | null; shared: boolean; ownerUsername: string | null; linkType: string }>;
   sourceFragments: Array<{ id: number; distilledContent: string }>;
   confidenceScore: number;
   status: string;
   lastCompiledAt: string | null;
   relevanceScore: number;
   matchedFragmentCount: number;
+};
+
+type RecentSyncLogItem = {
+  id: number;
+  connectionName: string | null;
+  mediaId: string | null;
+  status: string;
+  failureReason: string | null;
+  retryCount: number;
+  createdAt: string;
+  requestSummary: string | Record<string, unknown> | null;
+  responseSummary: string | Record<string, unknown> | null;
 };
 
 function formatKnowledgeStatus(status: string) {
@@ -357,6 +532,29 @@ function formatKnowledgeStatus(status: string) {
   return status;
 }
 
+function formatTemplateConfigSummary(template?: { config?: Record<string, unknown> } | null) {
+  if (!template?.config) {
+    return [] as string[];
+  }
+  const config = template.config;
+  return [
+    config.tone ? `语气：${String(config.tone)}` : null,
+    config.paragraphLength ? `段落：${String(config.paragraphLength)}` : null,
+    config.titleStyle ? `标题：${String(config.titleStyle)}` : null,
+    Array.isArray(config.bannedWords) && config.bannedWords.length ? `禁词：${config.bannedWords.slice(0, 3).join(" / ")}` : null,
+  ].filter(Boolean) as string[];
+}
+
+function stringifySummary(value: string | Record<string, unknown> | null) {
+  if (!value) return null;
+  if (typeof value === "string") return value;
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+}
+
 export function DocumentEditorClient({
   document,
   nodes: initialNodes,
@@ -366,9 +564,15 @@ export function DocumentEditorClient({
   snapshots: initialSnapshots,
   styleGenomes,
   templates,
+  recentSyncLogs,
   knowledgeCards,
+  canUseStyleGenomes,
   canExportPdf,
   canGenerateCoverImage,
+  canUseCoverImageReference,
+  canPublishToWechat,
+  planName,
+  coverImageQuota: initialCoverImageQuota,
   initialCoverImage,
   isTeamShared,
   sharedMemberCount,
@@ -377,13 +581,19 @@ export function DocumentEditorClient({
   nodes: Array<{ id: number; title: string; description: string | null; sortOrder: number; fragments: Array<{ id: number; distilledContent: string; shared?: boolean }> }>;
   fragments: Array<{ id: number; title?: string | null; distilledContent: string; shared?: boolean }>;
   bannedWords: Array<{ id: number; word: string }>;
-  connections: Array<{ id: number; accountName: string | null }>;
+  connections: Array<{ id: number; accountName: string | null; status: string; isDefault: boolean; accessTokenExpiresAt: string | null }>;
   snapshots: SnapshotMeta[];
   styleGenomes: Array<{ id: number; name: string; isPublic: boolean; isOfficial: boolean }>;
-  templates: Array<{ id: string; version: string; name: string }>;
+  templates: Array<{ id: string; version: string; name: string; description: string | null; meta: string | null; config?: Record<string, unknown> }>;
+  recentSyncLogs: RecentSyncLogItem[];
   knowledgeCards: KnowledgeCardPanelItem[];
+  canUseStyleGenomes: boolean;
   canExportPdf: boolean;
   canGenerateCoverImage: boolean;
+  canUseCoverImageReference: boolean;
+  canPublishToWechat: boolean;
+  planName: string;
+  coverImageQuota: { used: number; limit: number | null; remaining: number | null };
   initialCoverImage: { imageUrl: string; prompt: string; createdAt: string } | null;
   isTeamShared: boolean;
   sharedMemberCount: number;
@@ -398,7 +608,10 @@ export function DocumentEditorClient({
   const [nodes, setNodes] = useState(initialNodes);
   const [knowledgeCardItems, setKnowledgeCardItems] = useState(knowledgeCards);
   const [view, setView] = useState<"edit" | "preview" | "audit">("edit");
-  const [selectedConnectionId, setSelectedConnectionId] = useState(connections[0]?.id ? String(connections[0].id) : "");
+  const [selectedConnectionId, setSelectedConnectionId] = useState(() => {
+    const preferred = connections.find((connection) => connection.isDefault) ?? connections[0];
+    return preferred?.id ? String(preferred.id) : "";
+  });
   const [snapshots, setSnapshots] = useState(initialSnapshots);
   const [snapshotNote, setSnapshotNote] = useState("");
   const [diffState, setDiffState] = useState<DiffState>(null);
@@ -406,6 +619,8 @@ export function DocumentEditorClient({
   const [message, setMessage] = useState("");
   const [generating, setGenerating] = useState(false);
   const [coverImage, setCoverImage] = useState(initialCoverImage);
+  const [coverImageQuota, setCoverImageQuota] = useState(initialCoverImageQuota);
+  const [coverImageReferenceDataUrl, setCoverImageReferenceDataUrl] = useState<string | null>(null);
   const [generatingCover, setGeneratingCover] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [loadingDiffId, setLoadingDiffId] = useState<number | null>(null);
@@ -435,12 +650,52 @@ export function DocumentEditorClient({
     () => buildBannedWordMarkup(markdown, bannedWords.map((item) => item.word)),
     [bannedWords, markdown],
   );
+  const selectedTemplate = useMemo(() => templates.find((template) => template.id === wechatTemplateId) ?? null, [templates, wechatTemplateId]);
+  const selectedConnection = useMemo(() => connections.find((connection) => String(connection.id) === selectedConnectionId) ?? null, [connections, selectedConnectionId]);
+  const latestSyncLog = recentSyncLogs[0] ?? null;
   const visualSuggestion = useMemo(() => buildVisualSuggestion(title, markdown), [title, markdown]);
+  const coverImageLimitReached = coverImageQuota.limit != null && coverImageQuota.used >= coverImageQuota.limit;
+  const canShowWechatControls = canPublishToWechat;
+  const coverImageButtonDisabled = !canGenerateCoverImage || generatingCover || coverImageLimitReached;
+  const coverImageButtonLabel = !canGenerateCoverImage
+    ? "当前套餐仅提供文本配图建议"
+    : coverImageLimitReached
+      ? "今日封面图额度已用尽"
+      : generatingCover
+        ? "封面图生成中..."
+        : "生成 16:9 封面图";
+  const nodeVisualSuggestions = useMemo(
+    () =>
+      nodes
+        .filter((node) => node.title.trim())
+        .slice(0, 4)
+        .map((node) => ({
+          id: node.id,
+          title: node.title,
+          prompt: buildNodeVisualSuggestion({
+            documentTitle: title,
+            nodeTitle: node.title,
+            nodeDescription: node.description,
+            fragments: node.fragments,
+          }),
+        })),
+    [nodes, title],
+  );
 
   useEffect(() => {
     setKnowledgeCardItems(knowledgeCards);
     setExpandedKnowledgeCardId((current) => current ?? knowledgeCards[0]?.id ?? null);
   }, [knowledgeCards]);
+
+  useEffect(() => {
+    setSelectedConnectionId((current) => {
+      if (current && connections.some((connection) => String(connection.id) === current)) {
+        return current;
+      }
+      const preferred = connections.find((connection) => connection.isDefault) ?? connections[0];
+      return preferred?.id ? String(preferred.id) : "";
+    });
+  }, [connections]);
 
   async function reloadDocumentMeta() {
     const [documentResponse, nodesResponse] = await Promise.all([
@@ -650,6 +905,10 @@ export function DocumentEditorClient({
   }
 
   async function publish() {
+    if (!canShowWechatControls) {
+      setMessage(`${planName}套餐暂不支持微信草稿箱推送。升级到 Pro 或更高套餐后再发布。`);
+      return;
+    }
     if (!selectedConnectionId) return;
     setPublishing(true);
     setMessage("");
@@ -684,7 +943,11 @@ export function DocumentEditorClient({
       const response = await fetch("/api/images/cover", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ documentId: document.id, title: title.trim() || document.title }),
+        body: JSON.stringify({
+          documentId: document.id,
+          title: title.trim() || document.title,
+          referenceImageDataUrl: canUseCoverImageReference ? coverImageReferenceDataUrl : null,
+        }),
       });
       const json = await response.json();
       if (!response.ok || !json.success) {
@@ -694,13 +957,31 @@ export function DocumentEditorClient({
       setCoverImage({
         imageUrl: json.data.imageUrl,
         prompt: json.data.prompt,
-        createdAt: new Date().toISOString(),
+        createdAt: json.data.createdAt || new Date().toISOString(),
       });
+      if (json.data.quota) {
+        setCoverImageQuota(json.data.quota);
+      }
     } catch {
       setMessage("封面图生成失败");
     } finally {
       setGeneratingCover(false);
     }
+  }
+
+  function handleCoverReferenceFileChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) {
+      setCoverImageReferenceDataUrl(null);
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        setCoverImageReferenceDataUrl(reader.result);
+      }
+    };
+    reader.readAsDataURL(file);
   }
 
   async function copyMarkdown() {
@@ -733,6 +1014,8 @@ export function DocumentEditorClient({
                 keyFacts: json.data.keyFacts,
                 openQuestions: json.data.openQuestions,
                 sourceFragmentIds: json.data.sourceFragmentIds,
+                relatedCardIds: json.data.relatedCardIds,
+                relatedCards: json.data.relatedCards,
                 sourceFragments: json.data.sourceFragments,
                 confidenceScore: json.data.confidenceScore,
                 status: json.data.status,
@@ -801,9 +1084,10 @@ export function DocumentEditorClient({
           <select
             value={styleGenomeId ?? ""}
             onChange={(event) => setStyleGenomeId(event.target.value ? Number(event.target.value) : null)}
-            className="min-w-[220px] border border-stone-300 bg-white px-4 py-3 text-sm"
+            disabled={!canUseStyleGenomes}
+            className="min-w-[220px] border border-stone-300 bg-white px-4 py-3 text-sm disabled:bg-stone-100 disabled:text-stone-400"
           >
-            <option value="">默认写作规则</option>
+            <option value="">{canUseStyleGenomes ? "默认写作规则" : "当前套餐不可套用排版基因"}</option>
             {styleGenomes.map((genome) => (
               <option key={genome.id} value={genome.id}>
                 {genome.name}{genome.isOfficial ? " · 官方" : genome.isPublic ? " · 公开" : " · 私有"}
@@ -840,6 +1124,11 @@ export function DocumentEditorClient({
           </div>
           <div className="text-sm text-stone-500">{saveState}</div>
         </div>
+        {!canUseStyleGenomes ? (
+          <div className="mt-4 border border-stone-300/40 bg-[#faf7f0] px-4 py-3 text-sm leading-7 text-stone-700">
+            当前套餐只能浏览排版基因，不能把它挂到文稿里。升级到 Pro 或更高套餐后，才可在这里套用自己 Fork 或创建的排版基因。
+          </div>
+        ) : null}
         {view === "edit" ? (
           <textarea value={markdown} onChange={(event) => setMarkdown(event.target.value)} className="mt-4 min-h-[560px] w-full border border-stone-300 px-4 py-4 text-sm leading-8" />
         ) : view === "preview" ? (
@@ -882,9 +1171,15 @@ export function DocumentEditorClient({
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <div className="font-serifCn text-xl text-ink">{card.title}</div>
+                        {card.shared ? (
+                          <div className="mt-2 inline-flex border border-stone-300 bg-[#faf7f0] px-2 py-1 text-[10px] uppercase tracking-[0.18em] text-stone-500">
+                            团队共享{card.ownerUsername ? ` · ${card.ownerUsername}` : ""}
+                          </div>
+                        ) : null}
                         <div className="mt-2 flex flex-wrap gap-2 text-xs text-stone-500">
                           <span className="border border-stone-300 px-2 py-1">{card.cardType}</span>
                           <span className="border border-stone-300 px-2 py-1">{formatKnowledgeStatus(card.status)}</span>
+                          <span className="border border-stone-300 px-2 py-1">{card.workspaceScope === "team" ? "团队作用域" : "个人作用域"}</span>
                           <span className="border border-stone-300 px-2 py-1">置信度 {Math.round(card.confidenceScore * 100)}%</span>
                         </div>
                       </div>
@@ -923,6 +1218,15 @@ export function DocumentEditorClient({
                         这张档案超过时间阈值未更新，适合在下笔前先刷新，避免沿用过期判断。
                       </div>
                     ) : null}
+                    {card.conflictFlags.length > 0 ? (
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {card.conflictFlags.map((flag) => (
+                          <span key={`${card.id}-flag-${flag}`} className="border border-[#d8b0b2] bg-[#fff3f3] px-2 py-1 text-[11px] text-[#8f3136]">
+                            {flag}
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
                     {card.keyFacts.length > 0 ? (
                       <div className="mt-3 flex flex-wrap gap-2">
                         {card.keyFacts.slice(0, 3).map((fact, index) => (
@@ -942,6 +1246,22 @@ export function DocumentEditorClient({
                                 <div key={`${card.id}-question-${index}`} className="text-sm leading-7 text-stone-600">
                                   {question}
                                 </div>
+                              ))}
+                            </div>
+                          </div>
+                        ) : null}
+                        {card.relatedCards.length > 0 ? (
+                          <div>
+                            <div className="text-xs uppercase tracking-[0.2em] text-stone-500">关联档案</div>
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              {card.relatedCards.slice(0, 3).map((relatedCard) => (
+                                <span
+                                  key={`${card.id}-related-${relatedCard.id}`}
+                                  className="border border-stone-200 bg-[#f7f3eb] px-3 py-2 text-xs leading-6 text-stone-700"
+                                >
+                                  <span className="mr-2 text-stone-500">{relatedCard.linkType}</span>
+                                  {relatedCard.title}
+                                </span>
                               ))}
                             </div>
                           </div>
@@ -984,14 +1304,55 @@ export function DocumentEditorClient({
         <div className="border border-dashed border-[#d0cfcb] bg-[#faf7f0] p-5">
           <div className="text-xs uppercase tracking-[0.24em] text-stone-500">视觉联想引擎</div>
           <div className="mt-3 text-sm leading-7 text-stone-700">{visualSuggestion}</div>
+          {nodeVisualSuggestions.length > 0 ? (
+            <div className="mt-4 space-y-3 border-t border-stone-200 pt-4">
+              <div className="text-xs uppercase tracking-[0.2em] text-stone-500">段落配图建议</div>
+              {nodeVisualSuggestions.map((item) => (
+                <div key={item.id} className="border border-stone-300 bg-white px-4 py-3">
+                  <div className="text-xs uppercase tracking-[0.18em] text-stone-500">{item.title}</div>
+                  <div className="mt-2 text-sm leading-7 text-stone-700">{item.prompt}</div>
+                </div>
+              ))}
+            </div>
+          ) : null}
           <div className="mt-4 flex gap-2">
             <button
               onClick={generateCoverImage}
-              disabled={!canGenerateCoverImage || generatingCover}
-              className={`px-4 py-3 text-sm ${canGenerateCoverImage ? "bg-cinnabar text-white" : "border border-stone-300 bg-white text-stone-400"}`}
+              disabled={coverImageButtonDisabled}
+              className={`px-4 py-3 text-sm ${canGenerateCoverImage && !coverImageLimitReached ? "bg-cinnabar text-white" : "border border-stone-300 bg-white text-stone-400"}`}
             >
-              {canGenerateCoverImage ? (generatingCover ? "封面图生成中..." : "生成 16:9 封面图") : "当前套餐仅提供文本配图建议"}
+              {coverImageButtonLabel}
             </button>
+          </div>
+          {canUseCoverImageReference ? (
+            <div className="mt-3 border border-dashed border-stone-300 bg-white px-4 py-4">
+              <div className="text-xs uppercase tracking-[0.18em] text-stone-500">参考图垫图</div>
+              <input
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                onChange={handleCoverReferenceFileChange}
+                className="mt-3 w-full text-sm"
+              />
+              <div className="mt-2 text-xs leading-6 text-stone-500">藏锋 / 团队版可上传参考图，封面生成会尽量继承主体、构图或风格线索。</div>
+              {coverImageReferenceDataUrl ? (
+                <img src={coverImageReferenceDataUrl} alt="封面图参考图" className="mt-3 aspect-[16/9] w-full border border-stone-300 object-cover" />
+              ) : null}
+            </div>
+          ) : canGenerateCoverImage ? (
+            <div className="mt-3 text-xs leading-6 text-stone-500">参考图垫图仅藏锋 / 团队版可用，当前套餐仍可直接按标题生成封面图。</div>
+          ) : null}
+          <div className="mt-3 text-xs leading-6 text-stone-500">
+            今日封面图
+            {coverImageQuota.limit == null
+              ? ` ${coverImageQuota.used} / 不限`
+              : ` ${coverImageQuota.used} / ${coverImageQuota.limit}`}
+            {!canGenerateCoverImage
+              ? "，当前套餐只输出配图 Prompt。"
+              : coverImageLimitReached
+                ? "，今日额度已耗尽。"
+                : coverImageQuota.remaining != null
+                  ? `，还可生成 ${coverImageQuota.remaining} 次。`
+                  : "。"}
           </div>
           {coverImage ? (
             <div className="mt-4 space-y-3">
@@ -1028,23 +1389,126 @@ export function DocumentEditorClient({
 
         <div className="border border-stone-300/40 bg-[#faf7f0] p-5">
           <div className="text-xs uppercase tracking-[0.24em] text-stone-500">发布到公众号</div>
-          <select value={wechatTemplateId ?? ""} onChange={(event) => setWechatTemplateId(event.target.value || null)} className="mt-3 w-full border border-stone-300 bg-white px-4 py-3 text-sm">
-            <option value="">选择微信模板（默认）</option>
-            {templates.map((template) => (
-              <option key={`${template.id}-${template.version}`} value={template.id}>
-                {template.name} · {template.version}
-              </option>
-            ))}
-          </select>
-          <select value={selectedConnectionId} onChange={(event) => setSelectedConnectionId(event.target.value)} className="mt-3 w-full border border-stone-300 bg-white px-4 py-3 text-sm">
-            <option value="">选择公众号连接</option>
-            {connections.map((connection) => (
-              <option key={connection.id} value={connection.id}>{connection.accountName || `连接 ${connection.id}`}</option>
-            ))}
-          </select>
-          <button onClick={publish} disabled={publishing} className="mt-4 w-full bg-cinnabar px-4 py-3 text-sm text-white disabled:opacity-60">
-            {publishing ? "推送中..." : "推送到微信草稿箱"}
-          </button>
+          {canShowWechatControls ? (
+            <>
+              <div className="mt-3 border border-stone-300 bg-white px-4 py-4 text-sm leading-7 text-stone-700">
+                当前发布动作会把 Markdown 先渲染为微信兼容 HTML，再按所选模板推入公众号草稿箱。
+              </div>
+              <select value={wechatTemplateId ?? ""} onChange={(event) => setWechatTemplateId(event.target.value || null)} className="mt-3 w-full border border-stone-300 bg-white px-4 py-3 text-sm">
+                <option value="">选择微信模板（默认）</option>
+                {templates.map((template) => (
+                  <option key={`${template.id}-${template.version}`} value={template.id}>
+                    {template.name} · {template.version}
+                  </option>
+                ))}
+              </select>
+              <select value={selectedConnectionId} onChange={(event) => setSelectedConnectionId(event.target.value)} className="mt-3 w-full border border-stone-300 bg-white px-4 py-3 text-sm">
+                <option value="">选择公众号连接</option>
+                {connections.map((connection) => (
+                  <option key={connection.id} value={connection.id}>{connection.accountName || `连接 ${connection.id}`}{connection.isDefault ? " · 默认" : ""}</option>
+                ))}
+              </select>
+              {selectedTemplate ? (
+                <div className="mt-3 border border-stone-300 bg-white px-4 py-4">
+                  <div className="text-xs uppercase tracking-[0.18em] text-stone-500">{selectedTemplate.meta || "模板"} · {selectedTemplate.version}</div>
+                  <div className="mt-2 font-serifCn text-2xl text-ink">{selectedTemplate.name}</div>
+                  <div className="mt-2 text-sm leading-7 text-stone-700">{selectedTemplate.description || "当前模板未填写说明，但会参与微信 HTML 渲染。"}</div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {formatTemplateConfigSummary(selectedTemplate).map((item) => (
+                      <span key={`${selectedTemplate.id}-${item}`} className="border border-stone-300 bg-[#faf7f0] px-3 py-1 text-xs text-stone-700">
+                        {item}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-3 border border-dashed border-stone-300 bg-white px-4 py-4 text-sm leading-7 text-stone-600">
+                  当前未显式指定模板，将使用默认微信渲染样式。
+                </div>
+              )}
+              {selectedConnection ? (
+                <div className="mt-3 border border-stone-300 bg-white px-4 py-4 text-sm leading-7 text-stone-700">
+                  <div className="text-xs uppercase tracking-[0.18em] text-stone-500">目标公众号</div>
+                  <div className="mt-2 font-serifCn text-2xl text-ink">{selectedConnection.accountName || `连接 ${selectedConnection.id}`}</div>
+                  <div className="mt-2">
+                    状态：{selectedConnection.status}
+                    {selectedConnection.isDefault ? " · 默认连接" : ""}
+                  </div>
+                  <div className="text-stone-500">
+                    {selectedConnection.accessTokenExpiresAt ? `Token 到期：${new Date(selectedConnection.accessTokenExpiresAt).toLocaleString("zh-CN")}` : "尚未记录 Token 到期时间"}
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-3 border border-dashed border-[#d8b0b2] bg-[#fff3f3] px-4 py-4 text-sm leading-7 text-[#8f3136]">
+                  当前还没有可用公众号连接。先去设置页授权公众号，再回来推送。
+                </div>
+              )}
+              <button onClick={publish} disabled={publishing || !selectedConnectionId} className="mt-4 w-full bg-cinnabar px-4 py-3 text-sm text-white disabled:opacity-60">
+                {publishing ? "推送中..." : "推送到微信草稿箱"}
+              </button>
+              <Link href="/settings" className="mt-3 block border border-stone-300 bg-white px-4 py-3 text-center text-sm text-stone-700">
+                去设置页管理公众号连接
+              </Link>
+            </>
+          ) : (
+            <>
+              <div className="mt-3 border border-dashed border-[#d8b0b2] bg-[#fff3f3] px-4 py-4 text-sm leading-7 text-[#8f3136]">
+                {planName}套餐当前不支持微信草稿箱推送。你仍可继续编辑、导出 Markdown 或 HTML；升级到 Pro 或更高套餐后，才可绑定公众号并一键推送到草稿箱。
+              </div>
+              <Link href="/pricing" className="mt-3 block border border-cinnabar bg-white px-4 py-3 text-center text-sm text-cinnabar">
+                查看套餐权限
+              </Link>
+            </>
+          )}
+          <div className="mt-4 border-t border-stone-200 pt-4">
+            <div className="text-xs uppercase tracking-[0.18em] text-stone-500">当前文稿最近同步</div>
+            {latestSyncLog ? (
+              <div className="mt-3 space-y-3">
+                <div className="border border-stone-300 bg-white px-4 py-4 text-sm leading-7 text-stone-700">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <div className="font-medium text-ink">{latestSyncLog.connectionName || "未命名公众号"}</div>
+                      <div className="text-stone-500">{new Date(latestSyncLog.createdAt).toLocaleString("zh-CN")}</div>
+                    </div>
+                    <div className={latestSyncLog.status === "success" ? "text-emerald-600" : "text-cinnabar"}>
+                      {latestSyncLog.status === "success" ? "推送成功" : "推送失败"}
+                    </div>
+                  </div>
+                  <div className="mt-3">
+                    {latestSyncLog.status === "success"
+                      ? latestSyncLog.mediaId
+                        ? `草稿媒体 ID：${latestSyncLog.mediaId}`
+                        : "微信已返回成功，但未回填媒体 ID。"
+                      : latestSyncLog.failureReason || "未记录失败原因"}
+                  </div>
+                  {latestSyncLog.retryCount > 0 ? <div className="mt-2 text-xs text-stone-500">重试次数：{latestSyncLog.retryCount}</div> : null}
+                </div>
+                {(latestSyncLog.requestSummary || latestSyncLog.responseSummary) ? (
+                  <div className="space-y-2">
+                    {latestSyncLog.requestSummary ? (
+                      <div className="border border-stone-300 bg-white px-3 py-3 text-xs leading-6 text-stone-600">
+                        <div className="uppercase tracking-[0.18em] text-stone-500">请求摘要</div>
+                        <pre className="mt-2 whitespace-pre-wrap break-words font-sans">{stringifySummary(latestSyncLog.requestSummary)}</pre>
+                      </div>
+                    ) : null}
+                    {latestSyncLog.responseSummary ? (
+                      <div className="border border-stone-300 bg-white px-3 py-3 text-xs leading-6 text-stone-600">
+                        <div className="uppercase tracking-[0.18em] text-stone-500">响应摘要</div>
+                        <pre className="mt-2 whitespace-pre-wrap break-words font-sans">{stringifySummary(latestSyncLog.responseSummary)}</pre>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+                <Link href="/sync/logs" className="block border border-stone-300 bg-white px-4 py-3 text-center text-sm text-stone-700">
+                  查看完整同步日志
+                </Link>
+              </div>
+            ) : (
+              <div className="mt-3 border border-dashed border-stone-300 bg-white px-4 py-4 text-sm leading-7 text-stone-600">
+                这篇文稿还没有同步记录。首次推送成功后，这里会显示最近一次请求与响应摘要。
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="border border-stone-300/40 bg-[#1a1a1a] p-5 text-stone-100">

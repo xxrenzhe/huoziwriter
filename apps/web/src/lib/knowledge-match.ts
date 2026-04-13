@@ -7,6 +7,9 @@ export type MatchableKnowledgeCard = {
   status: string;
   confidenceScore?: number;
   confidence_score?: number;
+  shared?: boolean;
+  ownerUsername?: string | null;
+  owner_username?: string | null;
 };
 
 export type TopicKnowledgeMatch = {
@@ -16,6 +19,8 @@ export type TopicKnowledgeMatch = {
   status: string;
   confidenceScore: number;
   summary: string | null;
+  shared: boolean;
+  ownerUsername: string | null;
 };
 
 function tokenize(value: string) {
@@ -55,6 +60,8 @@ export function matchTopicToKnowledgeCards(topicTitle: string, cards: MatchableK
       status: card.status,
       confidenceScore: card.confidenceScore ?? card.confidence_score ?? 0.5,
       summary: card.summary ?? null,
+      shared: Boolean(card.shared),
+      ownerUsername: card.ownerUsername ?? card.owner_username ?? null,
     }));
 }
 

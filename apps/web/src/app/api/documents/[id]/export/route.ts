@@ -1,4 +1,4 @@
-import { ensureUserSession } from "@/lib/auth";
+import { ensureUserSession, findUserById } from "@/lib/auth";
 import { fail } from "@/lib/http";
 import { assertPdfExportAllowed } from "@/lib/plan-access";
 import { buildExportFilename, renderDocumentPdf } from "@/lib/pdf";
@@ -37,10 +37,13 @@ export async function GET(request: Request, { params }: { params: { id: string }
   if (format === "pdf") {
     try {
       await assertPdfExportAllowed(session.userId);
+      const user = await findUserById(session.userId);
       const bytes = await renderDocumentPdf({
         title: document.title,
         markdownContent: document.markdown_content,
         updatedAt: document.updated_at,
+        authorName: user?.display_name || user?.username || session.username,
+        watermarkText: "Huozi Writer",
       });
       return new Response(Buffer.from(bytes), {
         headers: {

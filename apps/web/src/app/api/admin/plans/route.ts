@@ -1,3 +1,4 @@
+import { parsePlanDraft } from "@/lib/admin-validation";
 import { requireAdmin } from "@/lib/auth";
 import { getDatabase } from "@/lib/db";
 import { fail, ok } from "@/lib/http";
@@ -32,6 +33,7 @@ export async function POST(request: Request) {
   try {
     await requireAdmin();
     const body = await request.json();
+    const draft = parsePlanDraft(body);
     const db = getDatabase();
     const now = new Date().toISOString();
     await db.exec(
@@ -40,18 +42,18 @@ export async function POST(request: Request) {
         max_wechat_connections, can_fork_genomes, can_publish_genomes, can_generate_cover_image, can_export_pdf, is_public, created_at, updated_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
-        body.code,
-        body.name,
-        body.priceCny ?? 0,
-        body.dailyGenerationLimit ?? null,
-        body.fragmentLimit ?? null,
-        body.customBannedWordLimit ?? null,
-        body.maxWechatConnections ?? 0,
-        body.canForkGenomes ?? false,
-        body.canPublishGenomes ?? false,
-        body.canGenerateCoverImage ?? false,
-        body.canExportPdf ?? false,
-        body.isPublic ?? false,
+        draft.code,
+        draft.name,
+        draft.priceCny,
+        draft.dailyGenerationLimit,
+        draft.fragmentLimit,
+        draft.customBannedWordLimit,
+        draft.maxWechatConnections,
+        draft.canForkGenomes,
+        draft.canPublishGenomes,
+        draft.canGenerateCoverImage,
+        draft.canExportPdf,
+        draft.isPublic,
         now,
         now,
       ],

@@ -1,6 +1,7 @@
 import { getDatabase } from "./db";
 
 const DAILY_GENERATION_KEY = "daily_generation";
+const DAILY_COVER_IMAGE_KEY = "daily_cover_image";
 
 export async function ensureUsageCounterSchema() {
   const db = getDatabase();
@@ -22,24 +23,24 @@ function todayKey() {
   return new Date().toISOString().slice(0, 10);
 }
 
-export async function getDailyGenerationUsage(userId: number) {
+async function getDailyUsage(userId: number, counterKey: string) {
   await ensureUsageCounterSchema();
   const db = getDatabase();
   const row = await db.queryOne<{ value: number }>(
     "SELECT value FROM usage_counters WHERE user_id = ? AND counter_key = ? AND counter_date = ?",
-    [userId, DAILY_GENERATION_KEY, todayKey()],
+    [userId, counterKey, todayKey()],
   );
   return row?.value ?? 0;
 }
 
-export async function incrementDailyGenerationUsage(userId: number) {
+async function incrementDailyUsage(userId: number, counterKey: string) {
   await ensureUsageCounterSchema();
   const db = getDatabase();
   const now = new Date().toISOString();
   const dateKey = todayKey();
   const existing = await db.queryOne<{ id: number; value: number }>(
     "SELECT id, value FROM usage_counters WHERE user_id = ? AND counter_key = ? AND counter_date = ?",
-    [userId, DAILY_GENERATION_KEY, dateKey],
+    [userId, counterKey, dateKey],
   );
 
   if (existing) {
@@ -50,7 +51,23 @@ export async function incrementDailyGenerationUsage(userId: number) {
   await db.exec(
     `INSERT INTO usage_counters (user_id, counter_key, counter_date, value, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?)`,
-    [userId, DAILY_GENERATION_KEY, dateKey, 1, now, now],
+    [userId, counterKey, dateKey, 1, now, now],
   );
   return 1;
+}
+
+export async function getDailyGenerationUsage(userId: number) {
+  return getDailyUsage(userId, DAILY_GENERATION_KEY);
+}
+
+export async function incrementDailyGenerationUsage(userId: number) {
+  return incrementDailyUsage(userId, DAILY_GENERATION_KEY);
+}
+
+export async function getDailyCoverImageUsage(userId: number) {
+  return getDailyUsage(userId, DAILY_COVER_IMAGE_KEY);
+}
+
+export async function incrementDailyCoverImageUsage(userId: number) {
+  return incrementDailyUsage(userId, DAILY_COVER_IMAGE_KEY);
 }

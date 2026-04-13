@@ -1,23 +1,61 @@
-import { EditorialArticle } from "@/components/marketing-views";
+import { Shield, ShieldCheck, Waypoints } from "lucide-react";
 
 export default function PrivacyPage() {
   return (
-    <EditorialArticle
-      title="隐私与数据边界"
-      sections={[
-        {
-          title: "内容归属",
-          body: "用户输入的碎片、草稿、排版模板与生成结果均归用户所有。平台只在提供写作、渲染、同步和审计能力所必需的范围内处理这些数据，不将其擅自公开、售卖或挪作训练素材。",
-        },
-        {
-          title: "微信授权边界",
-          body: "v1 使用用户手动填写的公众号 appId 与 appSecret 建立连接，仅用于 access token 获取、素材上传和草稿箱推送。系统不会自动群发，不会接管你的公众号运营行为。",
-        },
-        {
-          title: "日志与审计",
-          body: "后台保留必要的登录、账号管理、Prompt 版本切换与同步日志，用于安全审计和故障排查。日志展示给管理员时统一使用 camelCase API 字段，并区分业务数据与系统审计数据。",
-        },
-      ]}
-    />
+    <div className="mx-auto max-w-5xl space-y-8">
+      <section className="border border-stone-300/40 bg-white px-6 py-10 shadow-ink md:px-10">
+        <div className="text-xs uppercase tracking-[0.3em] text-cinnabar">Privacy Policy</div>
+        <h1 className="mt-4 font-serifCn text-4xl font-semibold text-ink md:text-5xl">隐私协议</h1>
+        <p className="mt-4 text-base leading-8 text-stone-700">
+          活字处理的是碎片、草稿、排版基因和公众号连接，这些都属于高敏感写作资产。v1 的原则很简单：只处理完成写作链路所必需的数据，不把你的内容偷渡成训练燃料。
+        </p>
+      </section>
+      <section className="grid gap-4 md:grid-cols-2">
+        <article className="border border-emerald-200 bg-emerald-50 p-6 shadow-ink">
+          <div className="flex h-11 w-11 items-center justify-center border border-emerald-200 bg-white text-emerald-700">
+            <ShieldCheck size={18} />
+          </div>
+          <h2 className="mt-5 font-serifCn text-3xl text-ink">你的记忆，绝对私有。</h2>
+          <p className="mt-4 text-sm leading-7 text-stone-700">
+            你输入的碎片、草稿、排版模板与生成结果均归你所有。平台只在提供写作、渲染、同步和审计能力所必需的范围内处理这些数据，不将其擅自公开、售卖或转作基础模型训练素材。
+          </p>
+        </article>
+        <article className="border border-sky-200 bg-sky-50 p-6 shadow-ink">
+          <div className="flex h-11 w-11 items-center justify-center border border-sky-200 bg-white text-sky-700">
+            <Waypoints size={18} />
+          </div>
+          <h2 className="mt-5 font-serifCn text-3xl text-ink">微信授权说明。</h2>
+          <p className="mt-4 text-sm leading-7 text-stone-700">
+            v1 使用用户手动填写的公众号 appId 与 appSecret 建立连接，仅用于 access token 获取、素材上传和草稿箱推送。系统不会自动群发，不会接管你的公众号运营行为。
+          </p>
+        </article>
+      </section>
+      <article className="border border-stone-300/40 bg-white px-6 py-10 shadow-ink md:px-10">
+        <div className="flex items-center gap-3 text-cinnabar">
+          <Shield size={18} />
+          <div className="text-xs uppercase tracking-[0.28em]">Data Boundary</div>
+        </div>
+        <div className="mt-8 space-y-10">
+          <section>
+            <h2 className="font-serifCn text-2xl font-semibold text-ink">内容归属</h2>
+            <p className="mt-4 text-base leading-9 text-stone-700">
+              用户输入的碎片、草稿、排版模板与生成结果均归用户所有。平台只在提供写作、渲染、同步和审计能力所必需的范围内处理这些数据，不将其擅自公开、售卖或挪作训练素材。
+            </p>
+          </section>
+          <section>
+            <h2 className="font-serifCn text-2xl font-semibold text-ink">日志与审计</h2>
+            <p className="mt-4 text-base leading-9 text-stone-700">
+              后台保留必要的登录、账号管理、Prompt 版本切换与同步日志，用于安全审计和故障排查。日志展示给管理员时统一使用 camelCase API 字段，并区分业务数据与系统审计数据。
+            </p>
+          </section>
+          <section>
+            <h2 className="font-serifCn text-2xl font-semibold text-ink">凭证与密钥</h2>
+            <p className="mt-4 text-base leading-9 text-stone-700">
+              公众号凭证与全局 AI 引擎密钥均以加密形式持久化，接口不会回传明文。即使管理员查看后台，也只能看到状态、更新时间和是否已配置，不能直接读取密钥原值。
+            </p>
+          </section>
+        </div>
+      </article>
+    </div>
   );
 }

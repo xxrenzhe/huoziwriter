@@ -32,8 +32,8 @@ export function MarketingHero() {
             Huozi Writer 把碎片采集、死刑词库、四栏工作台、排版基因和微信草稿箱真实推送接到同一条生产线，服务公众号作者、研究写作者和内容团队。
           </p>
           <div className="mt-8 flex flex-wrap gap-4">
-            <Link href="/dashboard" className="bg-cinnabar px-6 py-3 text-sm font-medium text-white">
-              进入工作台
+            <Link href="/support?type=business" className="bg-cinnabar px-6 py-3 text-sm font-medium text-white">
+              获取内测资格
             </Link>
             <Link href="/manifesto" className="border border-stone-300 bg-white px-6 py-3 text-sm font-medium text-ink">
               阅读独立开发者宣言
@@ -223,8 +223,8 @@ export function CreatorProfile({
                 去集市查看全部公开基因
                 <ChevronRight size={16} />
               </Link>
-              <Link href="/dashboard" className="flex items-center justify-between border border-stone-300 px-4 py-3">
-                去工作台试写
+              <Link href={`/r/${creator.referralCode}`} className="flex items-center justify-between border border-stone-300 px-4 py-3">
+                通过邀请申请试写
                 <ChevronRight size={16} />
               </Link>
             </div>
@@ -254,8 +254,8 @@ export function DiagnosticWorkbench() {
           <li>句式问题：3 处“总而言之”式收尾</li>
           <li>建议动作：改用具体场景，删掉抽象概括</li>
         </ul>
-        <Link href="/dashboard" className="mt-6 inline-flex items-center gap-2 bg-cinnabar px-5 py-3 text-sm text-white">
-          用活字引擎重写
+        <Link href="/support?type=business" className="mt-6 inline-flex items-center gap-2 bg-cinnabar px-5 py-3 text-sm text-white">
+          申请活字引擎试用
           <ArrowRight size={16} />
         </Link>
       </div>

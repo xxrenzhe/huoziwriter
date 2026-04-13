@@ -87,6 +87,12 @@ jobs:
       - name: 运行校验
         run: pnpm verify
 
+      - name: 运行 PostgreSQL 冒烟校验（可选）
+        if: ${{ secrets.POSTGRES_VERIFY_DATABASE_URL != '' }}
+        env:
+          DATABASE_URL: ${{ secrets.POSTGRES_VERIFY_DATABASE_URL }}
+        run: pnpm --filter @huoziwriter/web exec node ../../scripts/check-postgres-runtime-init.mjs
+
       - name: 安装 Playwright Chromium（可选）
         if: ${{ env.RUN_OPTIONAL_E2E == 'true' }}
         run: pnpm exec playwright install --with-deps chromium

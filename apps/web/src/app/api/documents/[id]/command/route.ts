@@ -2,8 +2,8 @@ import { ensureUserSession } from "@/lib/auth";
 import { getDocumentWritingContext } from "@/lib/document-writing-context";
 import { buildCommandRewrite } from "@/lib/generation";
 import { fail, ok } from "@/lib/http";
-import { getStyleGenomeById } from "@/lib/marketplace";
-import { consumeDailyGenerationQuota } from "@/lib/plan-access";
+import { getOwnedStyleGenomeById } from "@/lib/marketplace";
+import { assertStyleGenomeApplyAllowed, consumeDailyGenerationQuota } from "@/lib/plan-access";
 import { createDocumentSnapshot, getBannedWords, getDocumentById, saveDocument } from "@/lib/repositories";
 
 export async function POST(request: Request, { params }: { params: { id: string } }) {
@@ -24,6 +24,9 @@ export async function POST(request: Request, { params }: { params: { id: string 
     if (!document) {
       return fail("文稿不存在", 404);
     }
+    if (document.style_genome_id) {
+      await assertStyleGenomeApplyAllowed(session.userId);
+    }
 
     const [writingContext, bannedWords, styleGenome] = await Promise.all([
       getDocumentWritingContext({
@@ -33,7 +36,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
         markdownContent: document.markdown_content,
       }),
       getBannedWords(session.userId),
-      document.style_genome_id ? getStyleGenomeById(document.style_genome_id, { userId: session.userId }) : Promise.resolve(null),
+      document.style_genome_id ? getOwnedStyleGenomeById(document.style_genome_id, session.userId) : Promise.resolve(null),
     ]);
 
     const rewritten = await buildCommandRewrite({

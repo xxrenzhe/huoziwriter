@@ -1,5 +1,6 @@
 import { createUser, requireAdmin } from "@/lib/auth";
 import { fail, ok } from "@/lib/http";
+import { assertPlanCodeExists, parseAdminRole } from "@/lib/admin-validation";
 import { getReferralCodeForUser } from "@/lib/referrals";
 import { getUsers } from "@/lib/repositories";
 
@@ -33,13 +34,15 @@ export async function POST(request: Request) {
   try {
     await requireAdmin();
     const body = await request.json();
+    const planCode = await assertPlanCodeExists(String(body.planCode || "free"));
+    const role = parseAdminRole(body.role, "user");
     const user = await createUser({
       username: body.username,
       email: body.email || null,
-      password: body.password || "REDACTED_ADMIN_PASSWORD",
+      password: body.password || process.env.DEFAULT_ADMIN_PASSWORD || "REDACTED_ADMIN_PASSWORD",
       displayName: body.displayName || null,
-      role: body.role || "user",
-      planCode: body.planCode || "free",
+      role: role as "admin" | "user",
+      planCode,
       mustChangePassword: body.mustChangePassword ?? true,
       referralCode: body.referralCode || null,
     });

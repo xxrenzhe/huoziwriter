@@ -1,6 +1,7 @@
 import { ensureUserSession } from "@/lib/auth";
 import { fail, ok } from "@/lib/http";
-import { getSnapshotRetentionDays } from "@/lib/plan-access";
+import { getOwnedStyleGenomeById } from "@/lib/marketplace";
+import { assertStyleGenomeApplyAllowed, getSnapshotRetentionDays } from "@/lib/plan-access";
 import { getDocumentById, getDocumentSnapshots, saveDocument } from "@/lib/repositories";
 
 export async function GET(_: Request, { params }: { params: { id: string } }) {
@@ -39,13 +40,21 @@ export async function PATCH(request: Request, { params }: { params: { id: string
     return fail("未登录", 401);
   }
   const body = await request.json();
+  const styleGenomeId = body.styleGenomeId === undefined ? undefined : body.styleGenomeId === null ? null : Number(body.styleGenomeId);
+  if (styleGenomeId !== undefined && styleGenomeId !== null) {
+    await assertStyleGenomeApplyAllowed(session.userId);
+    const ownedGenome = await getOwnedStyleGenomeById(styleGenomeId, session.userId);
+    if (!ownedGenome) {
+      return fail("文稿只能使用你自己的排版基因。若要使用公开基因，请先 Fork 到私有区。", 400);
+    }
+  }
   const document = await saveDocument({
     documentId: Number(params.id),
     userId: session.userId,
     title: body.title,
     markdownContent: body.markdownContent,
     status: body.status,
-    styleGenomeId: body.styleGenomeId === undefined ? undefined : body.styleGenomeId === null ? null : Number(body.styleGenomeId),
+    styleGenomeId,
     wechatTemplateId: body.wechatTemplateId === undefined ? undefined : body.wechatTemplateId === null ? null : String(body.wechatTemplateId),
   });
   return ok({

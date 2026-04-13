@@ -14,10 +14,14 @@ type CompileFragment = {
 
 type KnowledgeCardListItem = {
   id: number;
+  user_id: number;
+  owner_username: string | null;
+  workspace_scope: string;
   card_type: string;
   title: string;
   slug: string;
   summary: string | null;
+  conflict_flags_json: string | string[] | null;
   confidence_score: number;
   status: string;
   last_compiled_at: string | null;
@@ -28,13 +32,23 @@ type KnowledgeCardListItem = {
 };
 
 type AdminKnowledgeCardListItem = KnowledgeCardListItem & {
-  user_id: number;
   username: string | null;
   updated_at: string;
   revision_count: number;
 };
 
 type KnowledgeCardDetail = Awaited<ReturnType<typeof getKnowledgeCardDetail>>;
+type RelatedKnowledgeCardItem = {
+  id: number;
+  title: string;
+  cardType: string;
+  status: string;
+  confidenceScore: number;
+  summary: string | null;
+  shared: boolean;
+  ownerUsername: string | null;
+  linkType: string;
+};
 
 function tokenizeSearchText(value: string) {
   return Array.from(
@@ -89,6 +103,92 @@ function parseList(value: string | string[] | null) {
   }
 }
 
+function buildKnowledgeTokens(...values: Array<string | null | undefined>) {
+  return tokenizeSearchText(values.filter(Boolean).join(" "));
+}
+
+function scoreRelatedCardCandidate(input: {
+  title: string;
+  summary: string | null;
+  status: string;
+  sourceFragmentIds: number[];
+  candidate: KnowledgeCardListItem & { owner_username?: string | null; shared?: boolean };
+}) {
+  const currentTokens = buildKnowledgeTokens(input.title, input.summary || "");
+  const candidateTokens = buildKnowledgeTokens(input.candidate.title, input.candidate.summary || "");
+  const tokenOverlap = currentTokens.filter((token) => candidateTokens.includes(token));
+  const sourceFragmentSet = new Set(input.sourceFragmentIds);
+  const sharedEvidenceCount = input.candidate.source_fragment_ids.filter((fragmentId) => sourceFragmentSet.has(fragmentId)).length;
+  const exactTitleHit =
+    input.title.trim() === input.candidate.title.trim() ||
+    input.title.includes(input.candidate.title) ||
+    input.candidate.title.includes(input.title);
+
+  let score = tokenOverlap.length * 3 + sharedEvidenceCount * 6;
+  if (exactTitleHit) score += 6;
+  if (input.candidate.status === "active") score += 1;
+  if (input.candidate.status === "archived") score -= 2;
+  if (input.status === "conflicted" && input.candidate.status === "conflicted" && tokenOverlap.length > 0) {
+    score += 2;
+  }
+
+  return {
+    score,
+    tokenOverlapCount: tokenOverlap.length,
+    sharedEvidenceCount,
+    linkType: input.status === "conflicted" && input.candidate.status === "conflicted" && tokenOverlap.length > 0 ? "contradicts" : "mentions",
+  };
+}
+
+async function syncKnowledgeCardLinks(input: {
+  userId: number;
+  cardId: number;
+  title: string;
+  summary: string | null;
+  status: string;
+  sourceFragmentIds: number[];
+}) {
+  const db = getDatabase();
+  await db.exec("DELETE FROM knowledge_card_links WHERE source_card_id = ? OR target_card_id = ?", [input.cardId, input.cardId]);
+
+  const candidates = (await getKnowledgeCards(input.userId)).filter((card) => card.id !== input.cardId);
+  const selected = candidates
+    .map((candidate) => ({
+      candidate,
+      ...scoreRelatedCardCandidate({
+        title: input.title,
+        summary: input.summary,
+        status: input.status,
+        sourceFragmentIds: input.sourceFragmentIds,
+        candidate,
+      }),
+    }))
+    .filter((item) => item.sharedEvidenceCount > 0 || item.tokenOverlapCount >= 2 || item.score >= 6)
+    .sort((left, right) => right.score - left.score || right.candidate.confidence_score - left.candidate.confidence_score || right.candidate.id - left.candidate.id)
+    .slice(0, 4);
+
+  const now = new Date().toISOString();
+  for (const item of selected) {
+    await db.exec(
+      `INSERT INTO knowledge_card_links (source_card_id, target_card_id, link_type, created_at)
+       VALUES (?, ?, ?, ?)`,
+      [input.cardId, item.candidate.id, item.linkType, now],
+    );
+  }
+
+  return selected.map((item) => ({
+    id: item.candidate.id,
+    title: item.candidate.title,
+    cardType: item.candidate.card_type,
+    status: item.candidate.status,
+    confidenceScore: item.candidate.confidence_score,
+    summary: item.candidate.summary,
+    shared: Boolean(item.candidate.shared),
+    ownerUsername: item.candidate.owner_username ?? null,
+    linkType: item.linkType,
+  })) satisfies RelatedKnowledgeCardItem[];
+}
+
 function pickCardType(fragment: { source_type: string; title: string | null }) {
   const title = fragment.title || "";
   if (title.includes("公司") || title.includes("集团")) return "company";
@@ -141,6 +241,7 @@ function analyzeKnowledgeConsensus(fragments: CompileFragment[]) {
 
   return {
     status,
+    conflictFlags: conflictSignals,
     confidenceScore: Number(confidenceScore.toFixed(2)),
     openQuestions,
     changeSummary,
@@ -207,18 +308,27 @@ async function getKnowledgeCardRecord(userId: number, cardId: number) {
   return db.queryOne<{
     id: number;
     user_id: number;
+    owner_username: string | null;
+    workspace_scope: string;
     card_type: string;
     title: string;
     slug: string;
     summary: string | null;
     key_facts_json: string | string[] | null;
     open_questions_json: string | string[] | null;
+    conflict_flags_json: string | string[] | null;
     confidence_score: number;
     status: string;
     last_compiled_at: string | null;
     last_verified_at: string | null;
     created_at: string;
-  }>(`SELECT * FROM knowledge_cards WHERE user_id IN (${placeholders}) AND id = ?`, [...scope.userIds, cardId]);
+  }>(
+    `SELECT kc.*, u.username AS owner_username
+     FROM knowledge_cards kc
+     LEFT JOIN users u ON u.id = kc.user_id
+     WHERE kc.user_id IN (${placeholders}) AND kc.id = ?`,
+    [...scope.userIds, cardId],
+  );
 }
 
 export async function compileKnowledgeCardFromFragments(
@@ -247,6 +357,7 @@ export async function compileKnowledgeCardFromFragments(
   const consensus = analyzeKnowledgeConsensus(fragments);
 
   const scope = await getUserAccessScope(userId);
+  const workspaceScope = scope.isTeamShared ? "team" : "personal";
   const scopePlaceholders = scope.userIds.map(() => "?").join(", ");
   const existing =
     existingCard ||
@@ -259,16 +370,18 @@ export async function compileKnowledgeCardFromFragments(
   if (!cardId) {
     await db.exec(
       `INSERT INTO knowledge_cards (
-        user_id, card_type, title, slug, summary, key_facts_json, open_questions_json, confidence_score, status, last_compiled_at, last_verified_at, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        user_id, workspace_scope, card_type, title, slug, summary, key_facts_json, open_questions_json, conflict_flags_json, confidence_score, status, last_compiled_at, last_verified_at, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         userId,
+        workspaceScope,
         pickCardType(primary),
         title,
         slug,
         summary,
         keyFacts,
         consensus.openQuestions,
+        consensus.conflictFlags,
         consensus.confidenceScore,
         consensus.status,
         now,
@@ -282,9 +395,9 @@ export async function compileKnowledgeCardFromFragments(
   } else {
     await db.exec(
       `UPDATE knowledge_cards
-       SET card_type = ?, title = ?, summary = ?, key_facts_json = ?, open_questions_json = ?, confidence_score = ?, status = ?, last_compiled_at = ?, updated_at = ?
+       SET workspace_scope = ?, card_type = ?, title = ?, summary = ?, key_facts_json = ?, open_questions_json = ?, conflict_flags_json = ?, confidence_score = ?, status = ?, last_compiled_at = ?, updated_at = ?
        WHERE id = ?`,
-      [pickCardType(primary), title, summary, keyFacts, consensus.openQuestions, consensus.confidenceScore, consensus.status, now, now, cardId],
+      [workspaceScope, pickCardType(primary), title, summary, keyFacts, consensus.openQuestions, consensus.conflictFlags, consensus.confidenceScore, consensus.status, now, now, cardId],
     );
     await db.exec("DELETE FROM knowledge_card_fragments WHERE knowledge_card_id = ?", [cardId]);
   }
@@ -301,6 +414,15 @@ export async function compileKnowledgeCardFromFragments(
     );
   }
 
+  const relatedCards = await syncKnowledgeCardLinks({
+    userId,
+    cardId,
+    title,
+    summary,
+    status: consensus.status,
+    sourceFragmentIds: fragments.map((fragment) => fragment.id),
+  });
+
   const revisionCount = await db.queryOne<{ count: number }>(
     "SELECT COUNT(*) as count FROM knowledge_card_revisions WHERE knowledge_card_id = ?",
     [cardId],
@@ -315,10 +437,12 @@ export async function compileKnowledgeCardFromFragments(
         summary,
         keyFacts,
         openQuestions: consensus.openQuestions,
+        conflictFlags: consensus.conflictFlags,
         sourceFragmentIds: fragments.map((fragment) => fragment.id),
-        relatedCardIds: [],
+        relatedCardIds: relatedCards.map((card) => card.id),
         status: consensus.status,
         confidenceScore: consensus.confidenceScore,
+        workspaceScope,
       },
       consensus.changeSummary,
       null,
@@ -337,8 +461,10 @@ export async function getKnowledgeCards(userId: number) {
   const cards = await db.query<Omit<KnowledgeCardListItem, "source_fragment_ids">>(
     `SELECT
        kc.*,
+       u.username as owner_username,
        (SELECT COUNT(*) FROM knowledge_card_fragments f WHERE f.knowledge_card_id = kc.id) as source_fragment_count
      FROM knowledge_cards kc
+     LEFT JOIN users u ON u.id = kc.user_id
      WHERE kc.user_id IN (${placeholders})
      ORDER BY kc.updated_at DESC, kc.id DESC`,
     scope.userIds,
@@ -347,6 +473,7 @@ export async function getKnowledgeCards(userId: number) {
   return cards.map((card) => ({
     ...card,
     source_fragment_ids: fragmentMap.get(card.id) ?? [],
+    shared: card.user_id !== userId,
   }));
 }
 
@@ -370,17 +497,38 @@ export async function getKnowledgeCardDetail(userId: number, cardId: number) {
     [cardId],
   );
 
-  const relatedCards = await db.query<{ related_card_id: number }>(
+  const relatedCards = await db.query<{ related_card_id: number; link_type: string }>(
     `SELECT
        CASE
          WHEN source_card_id = ? THEN target_card_id
          ELSE source_card_id
-       END as related_card_id
+       END as related_card_id,
+       link_type
      FROM knowledge_card_links
      WHERE source_card_id = ? OR target_card_id = ?
      ORDER BY id ASC`,
     [cardId, cardId, cardId],
   );
+
+  const relatedCardRecords = relatedCards.length
+    ? await db.query<{
+        id: number;
+        user_id: number;
+        owner_username: string | null;
+        card_type: string;
+        title: string;
+        summary: string | null;
+        confidence_score: number;
+        status: string;
+      }>(
+        `SELECT kc.id, kc.user_id, u.username AS owner_username, kc.card_type, kc.title, kc.summary, kc.confidence_score, kc.status
+         FROM knowledge_cards kc
+         LEFT JOIN users u ON u.id = kc.user_id
+         WHERE kc.id IN (${relatedCards.map(() => "?").join(", ")})`,
+        relatedCards.map((item) => item.related_card_id),
+      )
+    : [];
+  const relatedCardLookup = new Map(relatedCardRecords.map((item) => [item.id, item]));
 
   const revisions = await db.query<{
     id: number;
@@ -397,14 +545,38 @@ export async function getKnowledgeCardDetail(userId: number, cardId: number) {
 
   return {
     id: card.id,
+    userId: card.user_id,
+    ownerUsername: card.owner_username,
+    shared: card.user_id !== userId,
+    workspaceScope: card.workspace_scope,
     cardType: card.card_type,
     title: card.title,
     slug: card.slug,
     summary: card.summary,
     keyFacts: parseList(card.key_facts_json),
     openQuestions: parseList(card.open_questions_json),
+    conflictFlags: parseList(card.conflict_flags_json),
     sourceFragmentIds: fragments.map((fragment) => fragment.fragment_id),
     relatedCardIds: relatedCards.map((item) => item.related_card_id),
+    relatedCards: relatedCards
+      .map((item) => {
+        const relatedCard = relatedCardLookup.get(item.related_card_id);
+        if (!relatedCard) {
+          return null;
+        }
+        return {
+          id: relatedCard.id,
+          title: relatedCard.title,
+          cardType: relatedCard.card_type,
+          status: relatedCard.status,
+          confidenceScore: relatedCard.confidence_score,
+          summary: relatedCard.summary,
+          shared: relatedCard.user_id !== userId,
+          ownerUsername: relatedCard.owner_username,
+          linkType: item.link_type,
+        };
+      })
+      .filter((item): item is RelatedKnowledgeCardItem => Boolean(item)),
     sourceFragments: fragments.map((fragment) => ({
       id: fragment.fragment_id,
       distilledContent: fragment.distilled_content,
@@ -414,7 +586,12 @@ export async function getKnowledgeCardDetail(userId: number, cardId: number) {
     lastCompiledAt: card.last_compiled_at,
     lastVerifiedAt: card.last_verified_at,
     createdAt: card.created_at,
-    revisions,
+    revisions: revisions.map((revision) => ({
+      id: revision.id,
+      revisionNo: revision.revision_no,
+      changeSummary: revision.change_summary,
+      createdAt: revision.created_at,
+    })),
   };
 }
 
@@ -465,6 +642,7 @@ export async function getAdminKnowledgeCards() {
     `SELECT
        kc.*,
        u.username,
+       u.username as owner_username,
        (SELECT COUNT(*) FROM knowledge_card_fragments f WHERE f.knowledge_card_id = kc.id) as source_fragment_count,
        (SELECT COUNT(*) FROM knowledge_card_revisions r WHERE r.knowledge_card_id = kc.id) as revision_count
      FROM knowledge_cards kc

@@ -6,6 +6,8 @@ type DistilledCapture = {
   rawContent: string;
   distilledContent: string;
   sourceUrl?: string | null;
+  degradedReason?: string | null;
+  retryRecommended?: boolean;
 };
 
 function decodeHtmlEntities(value: string) {
@@ -54,6 +56,19 @@ async function fetchUrlArticle(url: string) {
   };
 }
 
+function inferTitleFromUrl(url: string) {
+  try {
+    const parsed = new URL(url);
+    const tail = parsed.pathname.split("/").filter(Boolean).pop();
+    if (tail) {
+      return decodeURIComponent(tail).replace(/[-_]+/g, " ").slice(0, 60);
+    }
+    return parsed.hostname.replace(/^www\./, "");
+  } catch {
+    return "URL 碎片";
+  }
+}
+
 function fallbackDistill(input: { title?: string | null; rawContent: string }) {
   const text = input.rawContent.replace(/\s+/g, " ").trim();
   const title = (input.title || text.slice(0, 24) || "未命名碎片").trim();
@@ -77,9 +92,27 @@ export async function distillCaptureInput(input: {
     if (!sourceUrl) {
       throw new Error("URL 不能为空");
     }
-    const article = await fetchUrlArticle(sourceUrl);
-    sourceTitle = sourceTitle || article.title;
-    rawContent = article.rawText;
+    try {
+      const article = await fetchUrlArticle(sourceUrl);
+      sourceTitle = sourceTitle || article.title;
+      rawContent = article.rawText;
+    } catch (error) {
+      const degradedReason = error instanceof Error ? error.message : "抓取源链接失败";
+      const fallback = fallbackDistill({
+        title: sourceTitle || inferTitleFromUrl(sourceUrl),
+        rawContent: `源链接抓取失败：${sourceUrl}\n错误信息：${degradedReason}`,
+      });
+      return {
+        title: fallback.title,
+        rawContent: `源链接抓取失败：${sourceUrl}\n错误信息：${degradedReason}`,
+        distilledContent: fallback.distilledContent,
+        sourceUrl,
+        model: "fallback-url-fetch-failed",
+        provider: "local",
+        degradedReason,
+        retryRecommended: true,
+      } satisfies DistilledCapture & { model: string; provider: string };
+    }
   }
 
   if (!rawContent) {
@@ -117,6 +150,8 @@ export async function distillCaptureInput(input: {
       sourceUrl,
       model: result.model,
       provider: result.provider,
+      degradedReason: null,
+      retryRecommended: false,
     } satisfies DistilledCapture & { model: string; provider: string };
   } catch {
     const fallback = fallbackDistill({ title: sourceTitle, rawContent });
@@ -127,6 +162,8 @@ export async function distillCaptureInput(input: {
       sourceUrl,
       model: "fallback-local-distill",
       provider: "local",
+      degradedReason: "fragmentDistill failed",
+      retryRecommended: input.sourceType === "url",
     } satisfies DistilledCapture & { model: string; provider: string };
   }
 }

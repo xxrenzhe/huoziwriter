@@ -3,18 +3,22 @@ import { TopicSourceManagerClient } from "@/components/topic-source-client";
 import { WriterOverview } from "@/components/writer-views";
 import { getKnowledgeCards } from "@/lib/knowledge";
 import { buildTopicAngleOptions, buildTopicJudgementShift, matchTopicToKnowledgeCards } from "@/lib/knowledge-match";
+import { getUserPlanContext } from "@/lib/plan-access";
 import { requireWriterSession } from "@/lib/page-auth";
 import { getTopicItems } from "@/lib/repositories";
 import { getVisibleTopicSources } from "@/lib/topic-radar";
 
 export default async function RadarPage() {
-  const { session, user } = await requireWriterSession();
-  const [topics, knowledgeCards, sources] = await Promise.all([
+  const { session } = await requireWriterSession();
+  const [topics, knowledgeCards, sources, planContext] = await Promise.all([
     getTopicItems(session.userId),
     getKnowledgeCards(session.userId),
     getVisibleTopicSources(session.userId),
+    getUserPlanContext(session.userId),
   ]);
-  const canManageSources = ["ultra", "team"].includes(user.plan_code);
+  const canStart = planContext.effectivePlanCode !== "free";
+  const canManageSources = ["ultra", "team"].includes(planContext.effectivePlanCode);
+  const sourceScope = planContext.effectivePlanCode === "team" ? "team" : "custom";
   const knowledgeMatches = Object.fromEntries(
     topics.map((topic) => [
       topic.id,
@@ -27,6 +31,8 @@ export default async function RadarPage() {
           card_type: card.card_type,
           status: card.status,
           confidence_score: card.confidence_score,
+          shared: Boolean((card as { shared?: boolean }).shared),
+          owner_username: (card as { owner_username?: string | null }).owner_username ?? null,
         })),
       ),
     ]),
@@ -40,8 +46,8 @@ export default async function RadarPage() {
         description="系统定时抓取资讯后，不产出流水线摘要，而是生成带情绪方向的大纲入口，让你直接开始组装。"
         metrics={[
           { label: "今日热点", value: String(topics.length), note: "当前从系统内置源与你的可见作用域自定义源实时汇总。" },
-          { label: "已生成切角", value: String(topics.length * 3), note: "每条热点默认给出三种进入角度。" },
-          { label: "一键落笔", value: "实时生成", note: "点击任意热点即可创建文稿并进入编辑器。" },
+          { label: "已生成切角", value: canStart ? String(topics.length * 3) : "仅 Pro+ 可见", note: canStart ? "每条热点默认给出三种进入角度。" : "免费版只浏览榜单和标题，不展开情绪切角。" },
+          { label: "一键落笔", value: canStart ? "实时生成" : "未开放", note: canStart ? "点击任意热点即可创建文稿并进入编辑器。" : "升级到 Pro 或更高套餐后解锁。" },
         ]}
         cards={[
           { title: "愤怒切角", description: "抓住利益受损、虚假叙事和失真话术。", meta: "Angle 01" },
@@ -50,6 +56,7 @@ export default async function RadarPage() {
         ]}
       />
       <TopicRadarStarter
+        canStart={canStart}
         knowledgeMatches={knowledgeMatches}
         topics={topics.map((topic) => ({
           id: topic.id,
@@ -75,7 +82,7 @@ export default async function RadarPage() {
                 id: source.id,
                 name: source.name,
                 homepageUrl: source.homepage_url,
-                scope: source.owner_user_id == null ? "system" : user.plan_code === "team" ? "team" : "custom",
+                scope: source.owner_user_id == null ? "system" : sourceScope,
               }))}
             />
           </div>

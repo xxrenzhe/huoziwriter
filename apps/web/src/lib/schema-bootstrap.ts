@@ -31,6 +31,53 @@ async function ensureColumn(table: string, column: string, definition: string) {
   await getDatabase().exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
 }
 
+async function ensureTopicSourceScopedUniqueness() {
+  const db = getDatabase();
+
+  if (db.type === "sqlite") {
+    const tableSql = await db.queryOne<{ sql: string | null }>(
+      "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'topic_sources'",
+    );
+    if (/name\s+TEXT\s+NOT\s+NULL\s+UNIQUE/i.test(tableSql?.sql || "")) {
+      await db.exec("ALTER TABLE topic_sources RENAME TO topic_sources_legacy");
+      await db.exec(
+        `CREATE TABLE topic_sources (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          owner_user_id INTEGER,
+          name TEXT NOT NULL,
+          homepage_url TEXT,
+          is_active INTEGER NOT NULL DEFAULT 1,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )`,
+      );
+      await db.exec(
+        `INSERT INTO topic_sources (id, owner_user_id, name, homepage_url, is_active, created_at, updated_at)
+         SELECT id, owner_user_id, name, homepage_url, is_active, created_at, updated_at
+         FROM topic_sources_legacy`,
+      );
+      await db.exec("DROP TABLE topic_sources_legacy");
+    }
+
+    await db.exec(
+      "CREATE UNIQUE INDEX IF NOT EXISTS idx_topic_sources_system_name_unique ON topic_sources(name) WHERE owner_user_id IS NULL",
+    );
+    await db.exec(
+      "CREATE UNIQUE INDEX IF NOT EXISTS idx_topic_sources_owner_name_unique ON topic_sources(owner_user_id, name) WHERE owner_user_id IS NOT NULL",
+    );
+    return;
+  }
+
+  await db.exec("ALTER TABLE topic_sources DROP CONSTRAINT IF EXISTS topic_sources_name_key");
+  await db.exec("DROP INDEX IF EXISTS topic_sources_name_key");
+  await db.exec(
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_topic_sources_system_name_unique ON topic_sources(name) WHERE owner_user_id IS NULL",
+  );
+  await db.exec(
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_topic_sources_owner_name_unique ON topic_sources(owner_user_id, name) WHERE owner_user_id IS NOT NULL",
+  );
+}
+
 export async function ensureExtendedProductSchema() {
   await execAll([
     `CREATE TABLE IF NOT EXISTS document_nodes (
@@ -92,12 +139,14 @@ export async function ensureExtendedProductSchema() {
     `CREATE TABLE IF NOT EXISTS knowledge_cards (
       id ${getDatabase().type === "postgres" ? "BIGSERIAL" : "INTEGER"} PRIMARY KEY ${getDatabase().type === "postgres" ? "" : "AUTOINCREMENT"},
       user_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"} NOT NULL,
+      workspace_scope TEXT NOT NULL DEFAULT 'personal',
       card_type TEXT NOT NULL,
       title TEXT NOT NULL,
       slug TEXT NOT NULL,
       summary TEXT,
       key_facts_json TEXT,
       open_questions_json TEXT,
+      conflict_flags_json ${getDatabase().type === "postgres" ? "JSONB" : "TEXT"},
       confidence_score REAL NOT NULL DEFAULT 0.5,
       status TEXT NOT NULL DEFAULT 'draft',
       last_compiled_at ${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"},
@@ -165,7 +214,7 @@ export async function ensureExtendedProductSchema() {
     )`,
     `CREATE TABLE IF NOT EXISTS topic_sources (
       id ${getDatabase().type === "postgres" ? "BIGSERIAL" : "INTEGER"} PRIMARY KEY ${getDatabase().type === "postgres" ? "" : "AUTOINCREMENT"},
-      name TEXT NOT NULL UNIQUE,
+      name TEXT NOT NULL,
       homepage_url TEXT,
       is_active ${getDatabase().type === "postgres" ? "BOOLEAN" : "INTEGER"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "TRUE" : "1"},
       created_at ${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "NOW()" : "(datetime('now'))"},
@@ -180,6 +229,17 @@ export async function ensureExtendedProductSchema() {
       payload_json TEXT,
       created_at ${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "NOW()" : "(datetime('now'))"}
     )`,
+    `CREATE TABLE IF NOT EXISTS support_messages (
+      id ${getDatabase().type === "postgres" ? "BIGSERIAL" : "INTEGER"} PRIMARY KEY ${getDatabase().type === "postgres" ? "" : "AUTOINCREMENT"},
+      name TEXT NOT NULL,
+      email TEXT NOT NULL,
+      issue_type TEXT NOT NULL,
+      description TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'open',
+      source_page TEXT,
+      created_at ${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "NOW()" : "(datetime('now'))"},
+      updated_at ${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "NOW()" : "(datetime('now'))"}
+    )`,
   ]);
 
   await ensureColumn("users", "referral_code", "TEXT");
@@ -187,8 +247,11 @@ export async function ensureExtendedProductSchema() {
   await ensureColumn("users", "referral_bound_at", getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT");
   await ensureColumn("documents", "style_genome_id", getDatabase().type === "postgres" ? "BIGINT" : "INTEGER");
   await ensureColumn("documents", "wechat_template_id", "TEXT");
+  await ensureColumn("knowledge_cards", "workspace_scope", "TEXT NOT NULL DEFAULT 'personal'");
+  await ensureColumn("knowledge_cards", "conflict_flags_json", getDatabase().type === "postgres" ? "JSONB" : "TEXT");
   await ensureColumn("topic_sources", "owner_user_id", getDatabase().type === "postgres" ? "BIGINT" : "INTEGER");
   await ensureColumn("topic_items", "owner_user_id", getDatabase().type === "postgres" ? "BIGINT" : "INTEGER");
+  await ensureTopicSourceScopedUniqueness();
 }
 
 export async function ensureMarketplaceSeeds() {
@@ -233,8 +296,12 @@ export async function ensureMarketplaceSeeds() {
   for (const source of [
     { name: "晚点 LatePost", homepageUrl: "https://www.latepost.com" },
     { name: "36Kr", homepageUrl: "https://36kr.com" },
+    { name: "华尔街日报 Wall Street Journal", homepageUrl: "https://www.wsj.com" },
   ]) {
-    const exists = await db.queryOne<{ id: number }>("SELECT id FROM topic_sources WHERE name = ?", [source.name]);
+    const exists = await db.queryOne<{ id: number }>(
+      "SELECT id FROM topic_sources WHERE owner_user_id IS NULL AND name = ?",
+      [source.name],
+    );
     if (!exists) {
       await db.exec(
         `INSERT INTO topic_sources (name, homepage_url, is_active, created_at, updated_at)

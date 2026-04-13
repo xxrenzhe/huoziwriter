@@ -1,7 +1,9 @@
 import { getGlobalCoverImageEngineSecret, updateGlobalCoverImageEngineHealth } from "./image-engine";
 
-function buildImagePrompt(title: string) {
-  return `为一篇中文内容产品封面生成 16:9 图片。标题：${title}。要求：克制、新中式、留白、适合商业与写作类文章封面，不出现水印，不要密集文字，只保留高辨识度主体。`;
+function buildImagePrompt(title: string, hasReferenceImage: boolean) {
+  return `为一篇中文内容产品封面生成 16:9 图片。标题：${title}。要求：克制、新中式、留白、适合商业与写作类文章封面，不出现水印，不要密集文字，只保留高辨识度主体。${
+    hasReferenceImage ? "已提供参考图，请尽量继承它的主体、构图、色调或笔触线索，但不要机械照抄。" : ""
+  }`;
 }
 
 function resolveImageGenerationEndpoint(baseUrl: string) {
@@ -45,27 +47,36 @@ function resolveErrorMessage(payload: any, fallbackText: string) {
 
 export async function generateCoverImage(input: {
   title: string;
+  referenceImageDataUrl?: string | null;
 }) {
   const engine = await getGlobalCoverImageEngineSecret();
   if (!engine || !engine.isEnabled || !engine.baseUrl || !engine.apiKey) {
     throw new Error("请先由管理员在后台配置全局生图 AI 引擎的 Base_URL 和 API Key");
   }
 
-  const prompt = buildImagePrompt(input.title || "Huozi Writer");
+  const prompt = buildImagePrompt(input.title || "Huozi Writer", Boolean(input.referenceImageDataUrl));
   const endpoint = resolveImageGenerationEndpoint(engine.baseUrl);
+  const requestPayload: Record<string, unknown> = {
+    model: engine.model,
+    prompt,
+    size: "1536x1024",
+    n: 1,
+    response_format: "b64_json",
+  };
+  if (input.referenceImageDataUrl) {
+    requestPayload.image = input.referenceImageDataUrl;
+    requestPayload.reference_image = input.referenceImageDataUrl;
+    requestPayload.input_image = input.referenceImageDataUrl;
+    requestPayload.image_url = input.referenceImageDataUrl;
+    requestPayload.reference_strength = 0.65;
+  }
   const response = await fetch(endpoint, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${engine.apiKey}`,
     },
-    body: JSON.stringify({
-      model: engine.model,
-      prompt,
-      size: "1536x1024",
-      n: 1,
-      response_format: "b64_json",
-    }),
+    body: JSON.stringify(requestPayload),
     signal: AbortSignal.timeout(60_000),
   });
 

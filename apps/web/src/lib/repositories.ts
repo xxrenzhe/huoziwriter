@@ -6,7 +6,7 @@ import { clearPromptCache } from "./prompt-loader";
 import { ensureUsageCounterSchema } from "./usage";
 import { ensureDefaultDocumentNodes } from "./document-outline";
 import { ensureMarketplaceSeeds, ensureExtendedProductSchema } from "./schema-bootstrap";
-import { getReferralCodeForUser } from "./referrals";
+import { getReferralCodeForUser, matchesReferralCode, normalizeReferralCode, parseReferralCodeUserId } from "./referrals";
 import { appendAuditLog } from "./audit";
 import { getUserAccessScope } from "./access-scope";
 import { buildSemanticEmbedding, parseSemanticEmbedding, scoreSemanticMatch } from "./semantic-search";
@@ -286,6 +286,50 @@ export async function getAffiliateOverview(userId: number) {
     ),
     referrals,
   };
+}
+
+export async function getReferrerByReferralCode(referralCode: string) {
+  const db = getDatabase();
+  const normalizedCode = normalizeReferralCode(referralCode);
+  const exact = await db.queryOne<{
+    id: number;
+    username: string;
+    display_name: string | null;
+    referral_code: string | null;
+    role: string;
+    plan_code: string;
+  }>(
+    `SELECT id, username, display_name, referral_code, role, plan_code
+     FROM users
+     WHERE referral_code = ?`,
+    [normalizedCode],
+  );
+  if (exact) {
+    return exact;
+  }
+
+  const referrerId = parseReferralCodeUserId(normalizedCode);
+  if (!referrerId) {
+    return null;
+  }
+
+  const byId = await db.queryOne<{
+    id: number;
+    username: string;
+    display_name: string | null;
+    referral_code: string | null;
+    role: string;
+    plan_code: string;
+  }>(
+    `SELECT id, username, display_name, referral_code, role, plan_code
+     FROM users
+     WHERE id = ?`,
+    [referrerId],
+  );
+  if (!byId || !matchesReferralCode(byId, normalizedCode)) {
+    return null;
+  }
+  return byId;
 }
 
 export async function getAdminBusinessOverview() {
@@ -1150,7 +1194,10 @@ export async function getWechatSyncLogs(userId: number) {
     connection_name: string | null;
     media_id: string | null;
     status: string;
+    request_summary: string | Record<string, unknown> | null;
+    response_summary: string | Record<string, unknown> | null;
     failure_reason: string | null;
+    retry_count: number;
     created_at: string;
   }>(
     `SELECT
@@ -1160,13 +1207,103 @@ export async function getWechatSyncLogs(userId: number) {
        c.account_name as connection_name,
        l.media_id,
        l.status,
+       l.request_summary,
+       l.response_summary,
        l.failure_reason,
+       l.retry_count,
        l.created_at
      FROM wechat_sync_logs l
      INNER JOIN documents d ON d.id = l.document_id
      LEFT JOIN wechat_connections c ON c.id = l.wechat_connection_id
      WHERE l.user_id = ?
      ORDER BY l.id DESC`,
+    [userId],
+  );
+}
+
+export async function createSupportMessage(input: {
+  name: string;
+  email: string;
+  issueType: string;
+  description: string;
+  sourcePage?: string | null;
+}) {
+  await ensureExtendedProductSchema();
+  const db = getDatabase();
+  const now = new Date().toISOString();
+  const result = await db.exec(
+    `INSERT INTO support_messages (name, email, issue_type, description, status, source_page, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      input.name.trim(),
+      input.email.trim(),
+      input.issueType.trim(),
+      input.description.trim(),
+      "open",
+      input.sourcePage ?? null,
+      now,
+      now,
+    ],
+  );
+  return result.lastInsertRowid ?? null;
+}
+
+export async function getRecentSupportMessages(limit = 6) {
+  await ensureExtendedProductSchema();
+  const db = getDatabase();
+  const safeLimit = Math.min(Math.max(Number(limit), 1), 20);
+  return db.query<{
+    id: number;
+    name: string;
+    email: string;
+    issue_type: string;
+    description: string;
+    status: string;
+    source_page: string | null;
+    created_at: string;
+  }>(
+    `SELECT id, name, email, issue_type, description, status, source_page, created_at
+     FROM support_messages
+     ORDER BY id DESC
+     LIMIT ${safeLimit}`,
+  );
+}
+
+export async function getSupportMessageCount() {
+  await ensureExtendedProductSchema();
+  const db = getDatabase();
+  return db.queryOne<{ count: number }>("SELECT COUNT(*) as count FROM support_messages");
+}
+
+export async function getCurrentSubscriptionForUser(userId: number) {
+  const db = getDatabase();
+  return db.queryOne<{
+    id: number | null;
+    plan_code: string;
+    plan_name: string | null;
+    price_cny: number | null;
+    status: string;
+    start_at: string | null;
+    end_at: string | null;
+    source: string | null;
+    updated_at: string | null;
+  }>(
+    `SELECT
+       s.id,
+       COALESCE(s.plan_code, u.plan_code) as plan_code,
+       p.name as plan_name,
+       p.price_cny,
+       COALESCE(s.status, CASE WHEN u.is_active THEN 'active' ELSE 'inactive' END) as status,
+       s.start_at,
+       s.end_at,
+       s.source,
+       s.updated_at
+     FROM users u
+     LEFT JOIN subscriptions s ON s.id = (
+       SELECT MAX(id) FROM subscriptions latest WHERE latest.user_id = u.id
+     )
+     LEFT JOIN plans p ON p.code = COALESCE(s.plan_code, u.plan_code)
+     WHERE u.id = ?`,
     [userId],
   );
 }

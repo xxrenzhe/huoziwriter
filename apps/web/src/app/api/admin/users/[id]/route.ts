@@ -1,4 +1,5 @@
 import { requireAdmin, syncUserSubscription } from "@/lib/auth";
+import { assertPlanCodeExists, parseAdminRole } from "@/lib/admin-validation";
 import { getDatabase } from "@/lib/db";
 import { fail, ok } from "@/lib/http";
 
@@ -17,13 +18,15 @@ export async function PATCH(request: Request, { params }: { params: { id: string
       return fail("用户不存在", 404);
     }
     const now = new Date().toISOString();
+    const nextRole = parseAdminRole(body.role, current.role);
+    const nextPlanCode = await assertPlanCodeExists(String(body.planCode ?? current.plan_code));
     await db.exec(
       `UPDATE users
        SET role = ?, plan_code = ?, is_active = ?, must_change_password = ?, updated_at = ?
        WHERE id = ?`,
       [
-        body.role ?? current.role,
-        body.planCode ?? current.plan_code,
+        nextRole,
+        nextPlanCode,
         body.isActive ?? current.is_active,
         body.mustChangePassword ?? current.must_change_password,
         now,
@@ -32,7 +35,7 @@ export async function PATCH(request: Request, { params }: { params: { id: string
     );
     await syncUserSubscription(
       Number(params.id),
-      body.planCode ?? current.plan_code,
+      nextPlanCode,
       body.isActive ?? Boolean(current.is_active),
     );
     return ok({ updated: true });

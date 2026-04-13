@@ -1,6 +1,7 @@
 import { ensureUserSession } from "@/lib/auth";
 import { fail, ok } from "@/lib/http";
 import { createStyleGenome, getStyleGenomes } from "@/lib/marketplace";
+import { assertStyleGenomeApplyAllowed } from "@/lib/plan-access";
 
 export async function GET() {
   const session = await ensureUserSession();
@@ -34,6 +35,7 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json();
+    await assertStyleGenomeApplyAllowed(session.userId);
     const genome = await createStyleGenome({
       userId: session.userId,
       name: String(body.name || ""),

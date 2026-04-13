@@ -6,6 +6,7 @@ import { uiPrimitives } from "@huoziwriter/ui";
 
 export function AdminUsersClient({
   users,
+  initialPasswordHint,
 }: {
   users: Array<{
     id: number;
@@ -17,6 +18,7 @@ export function AdminUsersClient({
     isActive: boolean;
     lastLoginAt: string | null;
   }>;
+  initialPasswordHint: string;
 }) {
   const router = useRouter();
   const [username, setUsername] = useState("");
@@ -30,7 +32,7 @@ export function AdminUsersClient({
     await fetch("/api/admin/users", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username, email, displayName, planCode, referralCode, password: "REDACTED_ADMIN_PASSWORD" }),
+      body: JSON.stringify({ username, email, displayName, planCode, referralCode }),
     });
     setUsername("");
     setEmail("");
@@ -52,6 +54,9 @@ export function AdminUsersClient({
           <option value="ultra">藏锋</option>
           <option value="team">团队</option>
         </select>
+        <div className="md:col-span-5 text-xs leading-6 text-stone-500">
+          {initialPasswordHint}
+        </div>
         <button className={`md:col-span-5 ${uiPrimitives.primaryButton}`}>创建用户</button>
       </form>
       <div className={`overflow-x-auto ${uiPrimitives.adminPanel}`}>

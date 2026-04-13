@@ -190,12 +190,20 @@ CREATE TABLE IF NOT EXISTS ai_model_routes (
 CREATE TABLE IF NOT EXISTS topic_sources (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   owner_user_id INTEGER,
-  name TEXT NOT NULL UNIQUE,
+  name TEXT NOT NULL,
   homepage_url TEXT,
   is_active INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_topic_sources_system_name_unique
+ON topic_sources(name)
+WHERE owner_user_id IS NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_topic_sources_owner_name_unique
+ON topic_sources(owner_user_id, name)
+WHERE owner_user_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS topic_items (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -287,12 +295,14 @@ CREATE TABLE IF NOT EXISTS style_genome_forks (
 CREATE TABLE IF NOT EXISTS knowledge_cards (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id INTEGER NOT NULL,
+  workspace_scope TEXT NOT NULL DEFAULT 'personal',
   card_type TEXT NOT NULL,
   title TEXT NOT NULL,
   slug TEXT NOT NULL,
   summary TEXT,
   key_facts_json TEXT,
   open_questions_json TEXT,
+  conflict_flags_json TEXT,
   confidence_score REAL NOT NULL DEFAULT 0.5,
   status TEXT NOT NULL DEFAULT 'draft',
   last_compiled_at TEXT,
@@ -428,6 +438,7 @@ INSERT OR IGNORE INTO template_versions (
 
 INSERT OR IGNORE INTO topic_sources (name, homepage_url, is_active) VALUES
   ('晚点 LatePost', 'https://www.latepost.com', 1),
-  ('36Kr', 'https://36kr.com', 1);
+  ('36Kr', 'https://36kr.com', 1),
+  ('华尔街日报 Wall Street Journal', 'https://www.wsj.com', 1);
 
 COMMIT;

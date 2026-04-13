@@ -247,25 +247,80 @@ export function SettingsOverviewCards({
 
 type SyncLogRow = {
   id: number;
+  documentId: number;
   title: string;
   connectionName: string | null;
   mediaId: string | null;
   status: string;
+  requestSummary: string | Record<string, unknown> | null;
+  responseSummary: string | Record<string, unknown> | null;
   failureReason: string | null;
+  retryCount: number;
   createdAt: string;
 };
 
-function renderSyncAction(log: SyncLogRow) {
+function renderSyncAction(log: SyncLogRow, canPublishToWechat: boolean) {
   if (log.status === "success") {
-    return log.mediaId ? `草稿 ID：${log.mediaId}` : "在微信中预览";
+    return (
+      <div className="flex flex-wrap gap-2">
+        <Link href={`/editor/${log.documentId}`} className="border border-stone-300 px-3 py-2 text-xs text-ink">
+          回到文稿
+        </Link>
+        <a
+          href="https://mp.weixin.qq.com/"
+          target="_blank"
+          rel="noreferrer"
+          className="border border-cinnabar bg-cinnabar px-3 py-2 text-xs text-white"
+        >
+          在微信中预览
+        </a>
+      </div>
+    );
   }
-  return "重新授权并重试";
+  if (!canPublishToWechat) {
+    return (
+      <div className="flex flex-wrap gap-2">
+        <Link href="/pricing" className="border border-cinnabar px-3 py-2 text-xs text-cinnabar">
+          查看套餐权限
+        </Link>
+        <Link href={`/editor/${log.documentId}`} className="border border-stone-300 px-3 py-2 text-xs text-ink">
+          回到文稿
+        </Link>
+      </div>
+    );
+  }
+  return (
+    <div className="flex flex-wrap gap-2">
+      <Link href="/settings#wechat-connections" className="border border-cinnabar px-3 py-2 text-xs text-cinnabar">
+        重新授权
+      </Link>
+      <Link href={`/editor/${log.documentId}`} className="border border-stone-300 px-3 py-2 text-xs text-ink">
+        回到文稿重试
+      </Link>
+    </div>
+  );
+}
+
+function stringifySummary(value: string | Record<string, unknown> | null) {
+  if (!value) {
+    return null;
+  }
+  if (typeof value === "string") {
+    return value;
+  }
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
 }
 
 export function SyncLogTable({
   logs,
+  canPublishToWechat,
 }: {
   logs: SyncLogRow[];
+  canPublishToWechat: boolean;
 }) {
   return (
     <section className="border border-stone-300/40 bg-white shadow-ink">
@@ -286,21 +341,48 @@ export function SyncLogTable({
             {logs.length === 0 ? (
               <tr className="border-t border-stone-200/80">
                 <td colSpan={5} className="px-6 py-8 text-center text-sm text-stone-500">
-                  还没有推送记录。先从编辑器把文稿推送到微信公众号草稿箱。
+                  {canPublishToWechat ? "还没有推送记录。先从编辑器把文稿推送到微信公众号草稿箱。" : "当前套餐未开放微信草稿箱推送，因此这里暂时不会产生同步日志。"}
                 </td>
               </tr>
             ) : null}
             {logs.map((log) => (
               <tr key={log.id} className="border-t border-stone-200/80">
-                <td className="px-6 py-4">{log.title}</td>
-                <td className="px-6 py-4 text-stone-600">{log.connectionName || "未命名公众号"}</td>
-                <td className="px-6 py-4 text-stone-600">{new Date(log.createdAt).toLocaleString("zh-CN")}</td>
+                <td className="px-6 py-4">
+                  <div className="font-medium text-ink">{log.title}</div>
+                  {log.mediaId ? <div className="mt-2 text-xs text-stone-500">草稿媒体 ID：{log.mediaId}</div> : null}
+                </td>
+                <td className="px-6 py-4 text-stone-600">
+                  <div>{log.connectionName || "未命名公众号"}</div>
+                  {log.retryCount > 0 ? <div className="mt-2 text-xs text-stone-500">重试次数：{log.retryCount}</div> : null}
+                </td>
+                <td className="px-6 py-4 text-stone-600">
+                  <div>{new Date(log.createdAt).toLocaleString("zh-CN")}</div>
+                </td>
                 <td className="px-6 py-4">
                   <span className={log.status === "success" ? "text-emerald-600" : "text-cinnabar"}>
                     {log.status === "success" ? "✅ 推送成功" : `❌ ${log.failureReason || "推送失败"}`}
                   </span>
+                  {log.failureReason ? <div className="mt-2 text-xs leading-6 text-cinnabar">{log.failureReason}</div> : null}
                 </td>
-                <td className="px-6 py-4 text-cinnabar">{renderSyncAction(log)}</td>
+                <td className="px-6 py-4 text-cinnabar">
+                  {renderSyncAction(log, canPublishToWechat)}
+                  {log.requestSummary || log.responseSummary ? (
+                    <div className="mt-3 space-y-2 text-left">
+                      {log.requestSummary ? (
+                        <div className="border border-stone-200 bg-[#faf7f0] px-3 py-2 text-xs leading-6 text-stone-600">
+                          <div className="uppercase tracking-[0.18em] text-stone-500">请求摘要</div>
+                          <pre className="mt-2 whitespace-pre-wrap break-words font-sans">{stringifySummary(log.requestSummary)}</pre>
+                        </div>
+                      ) : null}
+                      {log.responseSummary ? (
+                        <div className="border border-stone-200 bg-[#faf7f0] px-3 py-2 text-xs leading-6 text-stone-600">
+                          <div className="uppercase tracking-[0.18em] text-stone-500">响应摘要</div>
+                          <pre className="mt-2 whitespace-pre-wrap break-words font-sans">{stringifySummary(log.responseSummary)}</pre>
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </td>
               </tr>
             ))}
           </tbody>

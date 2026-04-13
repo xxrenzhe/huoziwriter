@@ -1,3 +1,4 @@
+import { getDatabase } from "./db";
 import { decryptSecret, encryptSecret, pngThumbBuffer } from "./security";
 import { renderMarkdownToWechatHtml } from "./rendering";
 
@@ -23,6 +24,15 @@ async function fetchWechatToken(appId: string, appSecret: string) {
     throw new Error(json.errmsg || "获取微信 access_token 失败");
   }
   return json as { access_token: string; expires_in: number };
+}
+
+async function refreshWechatAccessToken(connection: WechatConnectionRow) {
+  const appId = decryptSecret(connection.app_id_encrypted);
+  const appSecret = decryptSecret(connection.app_secret_encrypted);
+  if (!appId || !appSecret) {
+    throw new Error("公众号凭证解密失败");
+  }
+  return fetchWechatToken(appId, appSecret);
 }
 
 async function uploadThumb(accessToken: string) {
@@ -77,6 +87,65 @@ export async function resolveWechatAccessToken(connection: WechatConnectionRow) 
     throw new Error("公众号凭证解密失败");
   }
   return fetchWechatToken(appId, appSecret);
+}
+
+export async function refreshWechatConnectionsDueForScheduler(input?: {
+  limit?: number;
+  refreshWindowMinutes?: number;
+}) {
+  const db = getDatabase();
+  const limit = Math.max(1, Math.min(input?.limit ?? 12, 50));
+  const refreshWindowMinutes = Math.max(5, Math.min(input?.refreshWindowMinutes ?? 30, 24 * 60));
+  const now = new Date();
+  const nowIso = now.toISOString();
+  const refreshBeforeIso = new Date(now.getTime() + refreshWindowMinutes * 60 * 1000).toISOString();
+
+  const dueConnections = await db.query<WechatConnectionRow>(
+    `SELECT id, user_id, account_name, original_id, app_id_encrypted, app_secret_encrypted, access_token_encrypted, access_token_expires_at, status
+     FROM wechat_connections
+     WHERE status IN (?, ?)
+       AND (access_token_expires_at IS NULL OR access_token_expires_at <= ?)
+     ORDER BY access_token_expires_at ASC, id ASC
+     LIMIT ?`,
+    ["valid", "expired", refreshBeforeIso, limit],
+  );
+
+  let refreshed = 0;
+  let failed = 0;
+  for (const connection of dueConnections) {
+    try {
+      const token = await refreshWechatAccessToken(connection);
+      await db.exec(
+        `UPDATE wechat_connections
+         SET access_token_encrypted = ?, access_token_expires_at = ?, status = ?, last_verified_at = ?, updated_at = ?
+         WHERE id = ?`,
+        [
+          encryptSecret(token.access_token),
+          new Date(Date.now() + token.expires_in * 1000).toISOString(),
+          "valid",
+          nowIso,
+          nowIso,
+          connection.id,
+        ],
+      );
+      refreshed += 1;
+    } catch {
+      await db.exec(
+        `UPDATE wechat_connections
+         SET status = ?, last_verified_at = ?, updated_at = ?
+         WHERE id = ?`,
+        ["expired", nowIso, nowIso, connection.id],
+      );
+      failed += 1;
+    }
+  }
+
+  return {
+    scanned: dueConnections.length,
+    refreshed,
+    failed,
+    refreshWindowMinutes,
+  };
 }
 
 export async function publishWechatDraft(input: {

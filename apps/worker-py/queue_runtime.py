@@ -21,6 +21,7 @@ DEFAULT_VISION_PROMPT = (
     "你是截图理解编辑。必须先看图，再提取正文、数字、图表结论、界面状态和异常信号，"
     "输出可复用的写作碎片。"
 )
+DEFAULT_FRAGMENT_DISTILL_PROMPT = "你是碎片提纯器。保留时间、地点、数据、冲突，不要写空泛总结。"
 
 
 def now_iso() -> str:
@@ -234,6 +235,25 @@ def parse_payload(value: Any) -> dict[str, Any]:
             return json.loads(value)
         except json.JSONDecodeError:
             return {}
+    return {}
+
+
+def resolve_scope_user_ids(connection: RuntimeConnection, user_id: int) -> list[int]:
+    user = connection.fetchone(
+        "SELECT id, plan_code, is_active FROM users WHERE id = ?",
+        (user_id,),
+    )
+    if user is None:
+        raise RuntimeError("user not found")
+    if user.get("plan_code") != "team":
+        return [user_id]
+
+    members = connection.fetchall(
+        "SELECT id FROM users WHERE plan_code = ? AND is_active = ? ORDER BY id ASC",
+        ("team", True if connection.kind == "postgres" else 1),
+    )
+    member_ids = [int(member["id"]) for member in members]
+    return member_ids or [user_id]
     return {}
 
 
@@ -473,6 +493,59 @@ def fetch_source_topics(source: dict[str, Any]) -> list[dict[str, str | None]]:
     return extract_topics_from_html(str(homepage_url), html_text)[:8]
 
 
+def fetch_url_article(url: str) -> dict[str, str]:
+    request = Request(
+        url,
+        headers={
+            "User-Agent": (
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36"
+            )
+        },
+        method="GET",
+    )
+
+    try:
+        with urlopen(request, timeout=20) as response:
+            status = int(getattr(response, "status", 200))
+            if status >= 400:
+                raise RuntimeError(f"抓取源链接失败，HTTP {status}")
+            html_text = response.read().decode("utf-8", errors="ignore")
+    except HTTPError as error:
+        raise RuntimeError(f"抓取源链接失败，HTTP {error.code}") from error
+    except URLError as error:
+        raise RuntimeError(f"抓取源链接失败: {error.reason}") from error
+
+    title_match = re.search(r"<title[^>]*>([\s\S]*?)</title>", html_text, re.IGNORECASE)
+    title = decode_html(title_match.group(1).strip()) if title_match else ""
+    raw_text = re.sub(r"\s+", " ", strip_html(html_text)).strip()[:12000]
+    if not raw_text:
+        raise RuntimeError("抓取结果为空")
+    return {"title": title, "rawText": raw_text}
+
+
+def infer_title_from_url(url: str) -> str:
+    try:
+        from urllib.parse import urlparse, unquote
+
+        parsed = urlparse(url)
+        segments = [segment for segment in parsed.path.split("/") if segment]
+        if segments:
+            return unquote(segments[-1]).replace("-", " ").replace("_", " ")[:60]
+        return parsed.netloc.replace("www.", "", 1)[:60]
+    except Exception:
+        return "URL 碎片"
+
+
+def fallback_distill(title: str | None, raw_content: str) -> dict[str, str]:
+    text = re.sub(r"\s+", " ", raw_content).strip()
+    normalized_title = (title or text[:24] or "未命名碎片").strip()
+    return {
+        "title": normalized_title,
+        "distilledContent": text[:400],
+    }
+
+
 def resolve_screenshot_input(screenshot_path: str) -> tuple[str, bytes]:
     trimmed = screenshot_path.strip()
     if not trimmed:
@@ -613,6 +686,141 @@ def call_gemini_vision(model: str, system_prompt: str, user_prompt: str, mime_ty
         },
     )
     return extract_gemini_text(payload)
+
+
+def call_openai_text(model: str, system_prompt: str, user_prompt: str, temperature: float) -> str:
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        raise RuntimeError("missing OPENAI_API_KEY")
+    payload = request_json(
+        "https://api.openai.com/v1/responses",
+        {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}",
+        },
+        {
+            "model": model,
+            "input": [
+                {
+                    "role": "system",
+                    "content": [{"type": "input_text", "text": system_prompt}],
+                },
+                {
+                    "role": "user",
+                    "content": [{"type": "input_text", "text": user_prompt}],
+                },
+            ],
+            "temperature": temperature,
+        },
+    )
+    return extract_openai_text(payload)
+
+
+def call_anthropic_text(model: str, system_prompt: str, user_prompt: str, temperature: float) -> str:
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        raise RuntimeError("missing ANTHROPIC_API_KEY")
+    payload = request_json(
+        "https://api.anthropic.com/v1/messages",
+        {
+            "Content-Type": "application/json",
+            "x-api-key": api_key,
+            "anthropic-version": "2023-06-01",
+        },
+        {
+            "model": model,
+            "system": system_prompt,
+            "messages": [{"role": "user", "content": user_prompt}],
+            "max_tokens": 4096,
+            "temperature": temperature,
+        },
+    )
+    return extract_anthropic_text(payload)
+
+
+def call_gemini_text(model: str, system_prompt: str, user_prompt: str, temperature: float) -> str:
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if not api_key:
+        raise RuntimeError("missing GEMINI_API_KEY")
+    payload = request_json(
+        (
+            "https://generativelanguage.googleapis.com/v1beta/models/"
+            f"{model}:generateContent?key={api_key}"
+        ),
+        {"Content-Type": "application/json"},
+        {
+            "contents": [
+                {
+                    "role": "user",
+                    "parts": [{"text": f"{system_prompt}\n\n{user_prompt}"}],
+                }
+            ],
+            "generationConfig": {"temperature": temperature},
+        },
+    )
+    return extract_gemini_text(payload)
+
+
+def generate_fragment_distill(
+    connection: RuntimeConnection,
+    source_type: str,
+    title_hint: str,
+    raw_content: str,
+    source_url: str | None,
+) -> dict[str, str]:
+    system_prompt = load_prompt_content(connection, "fragment_distill", DEFAULT_FRAGMENT_DISTILL_PROMPT)
+    primary_model, fallback_model = get_scene_route(connection, "fragmentDistill")
+    user_prompt = "\n".join(
+        [
+            "请把下面的输入提纯成适合写作系统长期复用的原子事实碎片。",
+            "返回 JSON，不要解释，不要 markdown。",
+            '字段要求：{"title":"字符串","distilledContent":"字符串"}',
+            "distilledContent 只保留时间、地点、数据、动作、冲突，不写空泛判断。",
+            f"sourceType: {source_type}",
+            f"sourceUrl: {source_url}" if source_url else "",
+            f"sourceTitle: {title_hint}" if title_hint else "",
+            "",
+            raw_content,
+        ]
+    ).strip()
+
+    models = [primary_model, fallback_model]
+    seen: set[str] = set()
+    errors: list[str] = []
+    fallback = fallback_distill(title_hint, raw_content)
+
+    for model in models:
+        if not model or model in seen:
+            continue
+        seen.add(model)
+        provider = infer_provider(model)
+        try:
+            if provider == "openai":
+                text = call_openai_text(model, system_prompt, user_prompt, 0.2)
+            elif provider == "anthropic":
+                text = call_anthropic_text(model, system_prompt, user_prompt, 0.2)
+            else:
+                text = call_gemini_text(model, system_prompt, user_prompt, 0.2)
+            payload = parse_json_object(text)
+            return {
+                "title": str(payload.get("title") or fallback["title"]).strip() or fallback["title"],
+                "rawContent": raw_content,
+                "distilledContent": str(payload.get("distilledContent") or fallback["distilledContent"]).strip()
+                or fallback["distilledContent"],
+                "model": model,
+                "provider": provider,
+            }
+        except Exception as error:
+            errors.append(f"{model}: {error}")
+
+    return {
+        "title": fallback["title"],
+        "rawContent": raw_content,
+        "distilledContent": fallback["distilledContent"],
+        "model": "fallback-local-distill",
+        "provider": "local",
+        "errors": " | ".join(errors),
+    }
 
 
 def generate_vision_note(
@@ -913,17 +1121,140 @@ def slugify(value: str) -> str:
     return "".join(cleaned).strip("-")[:48] or "knowledge-card"
 
 
-def compile_knowledge_card(connection: RuntimeConnection, user_id: int, title_hint: str | None = None) -> int:
-    fragments = connection.fetchall(
-        """
+def tokenize_knowledge_text(value: str) -> list[str]:
+    tokens = re.sub(r"[^\w\u4e00-\u9fff]+", " ", value.lower()).split()
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for token in tokens:
+        if len(token) < 2 or token in seen:
+            continue
+        deduped.append(token)
+        seen.add(token)
+        if len(deduped) >= 36:
+            break
+    return deduped
+
+
+def sync_related_knowledge_links(
+    connection: RuntimeConnection,
+    user_ids: list[int],
+    card_id: int,
+    title: str,
+    summary: str,
+    status: str,
+    source_fragment_ids: list[int],
+) -> list[int]:
+    connection.execute(
+        "DELETE FROM knowledge_card_links WHERE source_card_id = ? OR target_card_id = ?",
+        (card_id, card_id),
+    )
+
+    candidates = connection.fetchall(
+        f"""
+        SELECT kc.id, kc.user_id, kc.title, kc.summary, kc.status, kc.confidence_score
+        FROM knowledge_cards kc
+        WHERE kc.user_id IN ({", ".join("?" for _ in user_ids)}) AND kc.id != ?
+        ORDER BY kc.updated_at DESC, kc.id DESC
+        """,
+        (*user_ids, card_id),
+    )
+    current_tokens = tokenize_knowledge_text(f"{title} {summary}")
+    source_fragment_set = set(source_fragment_ids)
+    selected: list[tuple[int, str, int, float]] = []
+
+    for candidate in candidates:
+        candidate_fragment_rows = connection.fetchall(
+            "SELECT fragment_id FROM knowledge_card_fragments WHERE knowledge_card_id = ? ORDER BY id ASC",
+            (candidate["id"],),
+        )
+        candidate_fragment_ids = [int(row["fragment_id"]) for row in candidate_fragment_rows]
+        candidate_tokens = tokenize_knowledge_text(f"{candidate['title']} {candidate.get('summary') or ''}")
+        token_overlap = len([token for token in current_tokens if token in candidate_tokens])
+        shared_evidence = len([fragment_id for fragment_id in candidate_fragment_ids if fragment_id in source_fragment_set])
+        exact_title_hit = (
+            title.strip() == str(candidate["title"]).strip()
+            or title in str(candidate["title"])
+            or str(candidate["title"]) in title
+        )
+        score = token_overlap * 3 + shared_evidence * 6
+        if exact_title_hit:
+            score += 6
+        if candidate["status"] == "active":
+            score += 1
+        if candidate["status"] == "archived":
+            score -= 2
+        if status == "conflicted" and candidate["status"] == "conflicted" and token_overlap > 0:
+            score += 2
+        if shared_evidence <= 0 and token_overlap < 2 and score < 6:
+            continue
+        link_type = "contradicts" if status == "conflicted" and candidate["status"] == "conflicted" and token_overlap > 0 else "mentions"
+        selected.append((int(candidate["id"]), link_type, score, float(candidate["confidence_score"] or 0)))
+
+    selected.sort(key=lambda item: (-item[2], -item[3], -item[0]))
+    selected = selected[:4]
+    now_param = timestamp_value(connection, now_iso())
+    for target_card_id, link_type, _, _ in selected:
+        connection.execute(
+            """
+            INSERT INTO knowledge_card_links (source_card_id, target_card_id, link_type, created_at)
+            VALUES (?, ?, ?, ?)
+            """,
+            (card_id, target_card_id, link_type, now_param),
+    )
+    return [target_card_id for target_card_id, _, _, _ in selected]
+
+
+def load_fragments_for_compile(
+    connection: RuntimeConnection,
+    scope_user_ids: list[int],
+    anchor_fragment_id: int | None = None,
+    limit: int = 5,
+) -> list[dict[str, Any]]:
+    scope_placeholders = ", ".join("?" for _ in scope_user_ids)
+    if anchor_fragment_id and anchor_fragment_id > 0:
+        anchor = connection.fetchone(
+            f"""
+            SELECT id, title, source_type, distilled_content
+            FROM fragments
+            WHERE id = ? AND user_id IN ({scope_placeholders})
+            LIMIT 1
+            """,
+            (anchor_fragment_id, *scope_user_ids),
+        )
+        if anchor is None:
+            raise RuntimeError("anchor fragment not found in visible scope")
+        additional = connection.fetchall(
+            f"""
+            SELECT id, title, source_type, distilled_content
+            FROM fragments
+            WHERE user_id IN ({scope_placeholders}) AND id != ?
+            ORDER BY id DESC
+            LIMIT ?
+            """,
+            (*scope_user_ids, anchor_fragment_id, max(0, limit - 1)),
+        )
+        return [anchor, *additional]
+
+    return connection.fetchall(
+        f"""
         SELECT id, title, source_type, distilled_content
         FROM fragments
-        WHERE user_id = ?
+        WHERE user_id IN ({scope_placeholders})
         ORDER BY id DESC
-        LIMIT 5
+        LIMIT ?
         """,
-        (user_id,),
+        (*scope_user_ids, limit),
     )
+
+
+def compile_knowledge_card(
+    connection: RuntimeConnection,
+    user_id: int,
+    title_hint: str | None = None,
+    anchor_fragment_id: int | None = None,
+) -> int:
+    scope_user_ids = resolve_scope_user_ids(connection, user_id)
+    fragments = load_fragments_for_compile(connection, scope_user_ids, anchor_fragment_id)
     if not fragments:
         raise RuntimeError("no fragments available for knowledge compile")
 
@@ -943,8 +1274,8 @@ def compile_knowledge_card(connection: RuntimeConnection, user_id: int, title_hi
     now_param = timestamp_value(connection, now)
 
     existing = connection.fetchone(
-        "SELECT id FROM knowledge_cards WHERE user_id = ? AND slug = ?",
-        (user_id, slug),
+        f"SELECT id FROM knowledge_cards WHERE user_id IN ({', '.join('?' for _ in scope_user_ids)}) AND slug = ?",
+        (*scope_user_ids, slug),
     )
     if existing is None:
         card_id = connection.insert(
@@ -1003,6 +1334,16 @@ def compile_knowledge_card(connection: RuntimeConnection, user_id: int, title_hi
             (card_id, fragment["id"], now_param),
         )
 
+    related_card_ids = sync_related_knowledge_links(
+        connection,
+        scope_user_ids,
+        card_id,
+        title,
+        summary,
+        status,
+        [int(fragment["id"]) for fragment in fragments],
+    )
+
     revision_count = connection.fetchone(
         "SELECT COUNT(*) AS count FROM knowledge_card_revisions WHERE knowledge_card_id = ?",
         (card_id,),
@@ -1023,6 +1364,7 @@ def compile_knowledge_card(connection: RuntimeConnection, user_id: int, title_hi
                     "keyFacts": key_facts,
                     "openQuestions": open_questions,
                     "sourceFragmentIds": [int(fragment["id"]) for fragment in fragments],
+                    "relatedCardIds": related_card_ids,
                 },
             ),
             "Worker 自动编译主题档案",
@@ -1039,7 +1381,11 @@ def handle_capture_job(connection: RuntimeConnection, payload: dict[str, Any]) -
         raise RuntimeError("capture job missing fragmentId")
 
     fragment = connection.fetchone(
-        "SELECT id, user_id, source_type, source_url, screenshot_path FROM fragments WHERE id = ?",
+        """
+        SELECT id, user_id, title, raw_content, distilled_content, source_type, source_url, screenshot_path
+        FROM fragments
+        WHERE id = ?
+        """,
         (fragment_id,),
     )
     if fragment is None:
@@ -1048,8 +1394,58 @@ def handle_capture_job(connection: RuntimeConnection, payload: dict[str, Any]) -
     source_url = payload.get("url") or fragment["source_url"]
     screenshot_path = payload.get("screenshotPath") or fragment["screenshot_path"]
     source_type = payload.get("sourceType") or fragment["source_type"]
+    title_hint = str(payload.get("title") or fragment.get("title") or "").strip()
+    raw_content = str(fragment.get("raw_content") or payload.get("rawContent") or "").strip()
+    distilled_content = str(fragment.get("distilled_content") or payload.get("distilledContent") or "").strip()
     now = now_iso()
     now_param = timestamp_value(connection, now)
+
+    if source_type == "url" and source_url and (payload.get("retryUrlFetch") or payload.get("retryDistill")):
+        retry_payload = dict(payload)
+        try:
+            article = fetch_url_article(str(source_url))
+            title_hint = title_hint or str(article.get("title") or infer_title_from_url(str(source_url)))
+            regenerated = generate_fragment_distill(connection, "url", title_hint, str(article["rawText"]), str(source_url))
+            connection.execute(
+                """
+                UPDATE fragments
+                SET title = ?, raw_content = ?, distilled_content = ?, source_url = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    regenerated["title"],
+                    regenerated["rawContent"],
+                    regenerated["distilledContent"],
+                    source_url,
+                    now_param,
+                    fragment_id,
+                ),
+            )
+            title_hint = regenerated["title"]
+            raw_content = regenerated["rawContent"]
+            distilled_content = regenerated["distilledContent"]
+            retry_payload.update(
+                {
+                    "title": regenerated["title"],
+                    "rawContent": regenerated["rawContent"],
+                    "distilledContent": regenerated["distilledContent"],
+                    "retryUrlFetch": False,
+                    "retryDistill": False,
+                    "retryRecoveredAt": now,
+                    "retryModel": regenerated.get("model"),
+                    "retryProvider": regenerated.get("provider"),
+                    "retryError": None,
+                }
+            )
+            payload = retry_payload
+        except Exception as error:
+            payload = {
+                **retry_payload,
+                "retryUrlFetch": False,
+                "retryDistill": False,
+                "retryAttemptedAt": now,
+                "retryError": str(error),
+            }
 
     existing_source = connection.fetchone(
         "SELECT id FROM fragment_sources WHERE fragment_id = ?",
@@ -1139,7 +1535,9 @@ def handle_knowledge_compile_job(connection: RuntimeConnection, payload: dict[st
     user_id = int(payload.get("userId") or 0)
     if user_id <= 0:
         raise RuntimeError("knowledgeCompile job missing userId")
-    compile_knowledge_card(connection, user_id)
+    fragment_id = int(payload.get("fragmentId") or 0)
+    title_hint = str(payload.get("titleHint") or "").strip() or None
+    compile_knowledge_card(connection, user_id, title_hint=title_hint, anchor_fragment_id=fragment_id or None)
 
 
 def handle_knowledge_refresh_job(connection: RuntimeConnection, payload: dict[str, Any]) -> None:

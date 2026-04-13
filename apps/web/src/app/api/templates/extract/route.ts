@@ -1,5 +1,6 @@
 import { ensureUserSession } from "@/lib/auth";
 import { fail, ok } from "@/lib/http";
+import { assertStyleGenomeApplyAllowed } from "@/lib/plan-access";
 import { extractTemplateFromUrl } from "@/lib/template-extractor";
 
 export async function POST(request: Request) {
@@ -9,6 +10,7 @@ export async function POST(request: Request) {
   }
   try {
     const body = await request.json();
+    await assertStyleGenomeApplyAllowed(session.userId);
     const extracted = await extractTemplateFromUrl(body.url);
     return ok(extracted);
   } catch (error) {

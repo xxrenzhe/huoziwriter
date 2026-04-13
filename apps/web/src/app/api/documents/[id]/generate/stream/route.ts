@@ -2,9 +2,9 @@ import { ensureUserSession } from "@/lib/auth";
 import { getDocumentWritingContext } from "@/lib/document-writing-context";
 import { buildGeneratedDocument, splitIntoChunks } from "@/lib/generation";
 import { fail } from "@/lib/http";
-import { getStyleGenomeById } from "@/lib/marketplace";
-import { consumeDailyGenerationQuota } from "@/lib/plan-access";
-import { getBannedWords, getDocumentById } from "@/lib/repositories";
+import { getOwnedStyleGenomeById } from "@/lib/marketplace";
+import { assertStyleGenomeApplyAllowed, consumeDailyGenerationQuota } from "@/lib/plan-access";
+import { createDocumentSnapshot, getBannedWords, getDocumentById } from "@/lib/repositories";
 
 export async function GET(_: Request, { params }: { params: { id: string } }) {
   const session = await ensureUserSession();
@@ -17,6 +17,9 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
     if (!document) {
       return fail("文稿不存在", 404);
     }
+    if (document.style_genome_id) {
+      await assertStyleGenomeApplyAllowed(session.userId);
+    }
     const [writingContext, bannedWords, styleGenome] = await Promise.all([
       getDocumentWritingContext({
         userId: session.userId,
@@ -25,8 +28,9 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
         markdownContent: document.markdown_content,
       }),
       getBannedWords(session.userId),
-      document.style_genome_id ? getStyleGenomeById(document.style_genome_id, { userId: session.userId }) : Promise.resolve(null),
+      document.style_genome_id ? getOwnedStyleGenomeById(document.style_genome_id, session.userId) : Promise.resolve(null),
     ]);
+    await createDocumentSnapshot(document.id, "流式生成前快照");
     const generated = await buildGeneratedDocument({
       title: document.title,
       fragments: writingContext.fragments,

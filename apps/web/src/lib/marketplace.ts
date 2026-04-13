@@ -110,6 +110,62 @@ export async function getStyleGenomeById(genomeId: number, options?: { userId?: 
   );
 }
 
+export async function getOwnedStyleGenomes(userId: number) {
+  const db = getDatabase();
+  return db.query<{
+    id: number;
+    owner_user_id: number | null;
+    source_genome_id: number | null;
+    code: string;
+    name: string;
+    description: string | null;
+    meta: string | null;
+    config_json: string;
+    is_public: number | boolean;
+    is_official: number | boolean;
+    owner_username: string | null;
+    published_at: string | null;
+    created_at: string;
+  }>(
+    `SELECT
+       sg.*,
+       u.username as owner_username
+     FROM style_genomes sg
+     LEFT JOIN users u ON u.id = sg.owner_user_id
+     WHERE sg.owner_user_id = ?
+     ORDER BY published_at DESC, id DESC`,
+    [userId],
+  );
+}
+
+export async function getOwnedStyleGenomeById(genomeId: number, userId: number) {
+  const db = getDatabase();
+  return db.queryOne<{
+    id: number;
+    owner_user_id: number | null;
+    source_genome_id: number | null;
+    code: string;
+    name: string;
+    description: string | null;
+    meta: string | null;
+    config_json: string;
+    is_public: number | boolean;
+    is_official: number | boolean;
+    owner_username: string | null;
+    published_at: string | null;
+    created_at: string;
+  }>(
+    `SELECT
+       sg.*,
+       u.username as owner_username
+     FROM style_genomes sg
+     LEFT JOIN users u ON u.id = sg.owner_user_id
+     WHERE sg.id = ? AND sg.owner_user_id = ?
+     LIMIT 1`,
+    [genomeId, userId],
+  );
+}
+
 export async function createGenomeFork(input: { sourceGenomeId: number; userId: number }) {
   const db = getDatabase();
   const source = await db.queryOne<{

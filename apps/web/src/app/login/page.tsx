@@ -8,7 +8,7 @@ export default function LoginPage() {
           <div className="text-xs uppercase tracking-[0.28em] text-cinnabar">HuoZi Writer</div>
           <h1 className="mt-6 font-serifCn text-5xl font-semibold leading-tight text-ink md:text-6xl">进入排版盘。</h1>
           <p className="mt-6 max-w-2xl text-base leading-8 text-stone-700">
-            v1 不提供用户自助注册。账号由管理员手动创建，默认管理员用户名为 `huozi`。
+            v1 不提供用户自助注册。账号由管理员手动创建，默认管理员用户名为 `huozi`。默认管理员初始密码由 `DEFAULT_ADMIN_PASSWORD` 决定，未配置时回退为 `REDACTED_ADMIN_PASSWORD`。
           </p>
         </section>
         <section className="px-8 py-12 md:px-10">

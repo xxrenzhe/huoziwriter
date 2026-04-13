@@ -253,12 +253,14 @@ CREATE TABLE IF NOT EXISTS style_genome_forks (
 CREATE TABLE IF NOT EXISTS knowledge_cards (
   id BIGSERIAL PRIMARY KEY,
   user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  workspace_scope TEXT NOT NULL DEFAULT 'personal',
   card_type TEXT NOT NULL,
   title TEXT NOT NULL,
   slug TEXT NOT NULL,
   summary TEXT,
   key_facts_json JSONB,
   open_questions_json JSONB,
+  conflict_flags_json JSONB,
   confidence_score DOUBLE PRECISION NOT NULL DEFAULT 0.5,
   status TEXT NOT NULL DEFAULT 'draft',
   last_compiled_at TIMESTAMPTZ,
@@ -335,12 +337,20 @@ CREATE TABLE IF NOT EXISTS global_ai_engines (
 CREATE TABLE IF NOT EXISTS topic_sources (
   id BIGSERIAL PRIMARY KEY,
   owner_user_id BIGINT,
-  name TEXT NOT NULL UNIQUE,
+  name TEXT NOT NULL,
   homepage_url TEXT,
   is_active BOOLEAN NOT NULL DEFAULT TRUE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_topic_sources_system_name_unique
+ON topic_sources(name)
+WHERE owner_user_id IS NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_topic_sources_owner_name_unique
+ON topic_sources(owner_user_id, name)
+WHERE owner_user_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS audit_logs (
   id BIGSERIAL PRIMARY KEY,
@@ -398,7 +408,8 @@ ON CONFLICT (template_id, version) DO NOTHING;
 
 INSERT INTO topic_sources (name, homepage_url, is_active) VALUES
   ('晚点 LatePost', 'https://www.latepost.com', TRUE),
-  ('36Kr', 'https://36kr.com', TRUE)
+  ('36Kr', 'https://36kr.com', TRUE),
+  ('华尔街日报 Wall Street Journal', 'https://www.wsj.com', TRUE)
 ON CONFLICT (name) DO NOTHING;
 
 COMMIT;

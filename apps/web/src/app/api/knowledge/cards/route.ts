@@ -2,6 +2,16 @@ import { ensureUserSession } from "@/lib/auth";
 import { fail, ok } from "@/lib/http";
 import { getKnowledgeCards } from "@/lib/knowledge";
 
+function parseConflictFlags(value: string | string[] | null) {
+  if (!value) return [] as string[];
+  if (Array.isArray(value)) return value;
+  try {
+    return JSON.parse(value) as string[];
+  } catch {
+    return [];
+  }
+}
+
 export async function GET() {
   const session = await ensureUserSession();
   if (!session) {
@@ -11,10 +21,12 @@ export async function GET() {
   return ok(
     cards.map((card) => ({
       id: card.id,
+      workspaceScope: card.workspace_scope,
       cardType: card.card_type,
       title: card.title,
       slug: card.slug,
       summary: card.summary,
+      conflictFlags: parseConflictFlags(card.conflict_flags_json),
       sourceFragmentIds: card.source_fragment_ids,
       confidenceScore: card.confidence_score,
       status: card.status,

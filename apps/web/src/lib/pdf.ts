@@ -1,7 +1,6 @@
 import fs from "node:fs";
-import path from "node:path";
 import fontkit from "@pdf-lib/fontkit";
-import { PDFDocument, rgb } from "pdf-lib";
+import { PDFDocument, PDFPage, degrees, rgb } from "pdf-lib";
 
 const FONT_CANDIDATES = [
   "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
@@ -48,6 +47,8 @@ export async function renderDocumentPdf(input: {
   title: string;
   markdownContent: string;
   updatedAt: string;
+  authorName?: string | null;
+  watermarkText?: string | null;
 }) {
   const pdfDoc = await PDFDocument.create();
   pdfDoc.registerFontkit(fontkit);
@@ -60,9 +61,11 @@ export async function renderDocumentPdf(input: {
   const fontBytes = fs.readFileSync(fontPath);
   const font = await pdfDoc.embedFont(fontBytes, { subset: true });
 
+  const pages: PDFPage[] = [];
   let page = pdfDoc.addPage([595.28, 841.89]);
+  pages.push(page);
   const marginX = 52;
-  const topY = 790;
+  const topY = 738;
   const bottomY = 56;
   const lineHeight = 22;
   const contentWidth = page.getWidth() - marginX * 2;
@@ -70,11 +73,37 @@ export async function renderDocumentPdf(input: {
   const bodySize = 12.5;
   let cursorY = topY;
 
+  const addPage = () => {
+    page = pdfDoc.addPage([595.28, 841.89]);
+    pages.push(page);
+    cursorY = topY;
+  };
+
   const drawBodyLine = (line: string) => {
     if (cursorY <= bottomY) {
-      page = pdfDoc.addPage([595.28, 841.89]);
-      cursorY = topY;
+      addPage();
     }
+    const trimmed = line.trim();
+    if (!trimmed) {
+      cursorY -= lineHeight * 0.72;
+      return;
+    }
+
+    if (/^#{1,3}\s+/.test(trimmed)) {
+      const headingText = trimmed.replace(/^#{1,3}\s+/, "");
+      const headingLevel = trimmed.match(/^#+/)?.[0].length ?? 1;
+      const headingSize = headingLevel === 1 ? 18 : headingLevel === 2 ? 15 : 13;
+      page.drawText(headingText, {
+        x: marginX,
+        y: cursorY,
+        size: headingSize,
+        font,
+        color: rgb(0.11, 0.11, 0.1),
+      });
+      cursorY -= headingLevel === 1 ? 28 : 24;
+      return;
+    }
+
     page.drawText(line, {
       x: marginX,
       y: cursorY,
@@ -106,6 +135,59 @@ export async function renderDocumentPdf(input: {
   const wrappedLines = wrapText(input.markdownContent, contentWidth, (value) => font.widthOfTextAtSize(value, bodySize));
   for (const line of wrappedLines) {
     drawBodyLine(line);
+  }
+
+  for (const [index, currentPage] of pages.entries()) {
+    const pageWidth = currentPage.getWidth();
+    currentPage.drawText("HUOZI WRITER", {
+      x: marginX,
+      y: 804,
+      size: 9,
+      font,
+      color: rgb(0.58, 0.2, 0.2),
+    });
+    currentPage.drawText(input.authorName ? `作者：${input.authorName}` : "作者：未署名", {
+      x: pageWidth - marginX - 150,
+      y: 804,
+      size: 9,
+      font,
+      color: rgb(0.42, 0.4, 0.38),
+    });
+    currentPage.drawLine({
+      start: { x: marginX, y: 796 },
+      end: { x: pageWidth - marginX, y: 796 },
+      color: rgb(0.82, 0.73, 0.69),
+      thickness: 0.8,
+    });
+    currentPage.drawText(input.watermarkText || "Huozi Writer", {
+      x: 112,
+      y: 420,
+      size: 38,
+      font,
+      color: rgb(0.74, 0.68, 0.65),
+      opacity: 0.12,
+      rotate: degrees(28),
+    });
+    currentPage.drawLine({
+      start: { x: marginX, y: 42 },
+      end: { x: pageWidth - marginX, y: 42 },
+      color: rgb(0.86, 0.82, 0.78),
+      thickness: 0.8,
+    });
+    currentPage.drawText("由 Huozi Writer 导出", {
+      x: marginX,
+      y: 28,
+      size: 9,
+      font,
+      color: rgb(0.45, 0.45, 0.42),
+    });
+    currentPage.drawText(`${index + 1} / ${pages.length}`, {
+      x: pageWidth - marginX - 36,
+      y: 28,
+      size: 9,
+      font,
+      color: rgb(0.45, 0.45, 0.42),
+    });
   }
 
   return pdfDoc.save();

@@ -59,15 +59,26 @@ export function MarketingShell({
               <NavLinks items={items} />
             </nav>
             <Link
-              href="/dashboard"
+              href="/support?type=business"
               className="border border-cinnabar bg-cinnabar px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-cinnabar/90"
             >
-              进入工作台
+              获取内测资格
             </Link>
           </div>
         </div>
       </header>
       <main className="mx-auto max-w-7xl px-6 py-10 md:py-14">{children}</main>
+      <footer className="border-t border-[rgba(88,65,64,0.14)] bg-[rgba(250,247,240,0.92)]">
+        <div className="mx-auto flex max-w-7xl flex-col gap-4 px-6 py-6 text-sm text-stone-600 md:flex-row md:items-center md:justify-between">
+          <div>HuoZi Writer · 管理员发号制写作 SaaS</div>
+          <div className="flex flex-wrap gap-4">
+            <Link href="/manifesto" className="hover:text-ink">宣言</Link>
+            <Link href="/support" className="hover:text-ink">支持</Link>
+            <Link href="/terms" className="hover:text-ink">服务条款</Link>
+            <Link href="/privacy" className="hover:text-ink">隐私协议</Link>
+          </div>
+        </div>
+      </footer>
     </div>
   );
 }
@@ -75,11 +86,23 @@ export function MarketingShell({
 export function WriterShell({
   items,
   children,
+  currentPlanName,
+  currentUsage,
+  usageLimit,
+  statusHeadline,
+  statusDetail,
 }: {
   items: NavItem[];
   children: ReactNode;
+  currentPlanName: string;
+  currentUsage: number;
+  usageLimit: number | null;
+  statusHeadline: string;
+  statusDetail: string;
 }) {
   const pathname = usePathname();
+  const usageText = usageLimit == null ? `${currentUsage} / 不限` : `${currentUsage} / ${usageLimit}`;
+  const usageWidth = usageLimit == null ? 40 : Math.max(8, Math.min(100, Math.round((currentUsage / Math.max(usageLimit, 1)) * 100)));
 
   return (
     <div className="min-h-screen bg-stonebase text-ink">
@@ -131,10 +154,13 @@ export function WriterShell({
           <div className="mt-8 space-y-3 border-t border-stone-300/40 pt-6">
             <div className="text-xs uppercase tracking-[0.28em] text-stone-500">当前配额</div>
             <div className="border border-stone-300/70 bg-white p-4">
-              <div className="text-sm text-stone-600">执毫套餐</div>
+              <div className="text-sm text-stone-600">{currentPlanName}</div>
               <div className="mt-3 flex items-end justify-between">
-                <div className="font-serifCn text-3xl text-ink">7 / 10</div>
+                <div className="font-serifCn text-3xl text-ink">{usageText}</div>
                 <div className="text-xs text-stone-500">今日生成</div>
+              </div>
+              <div className="mt-4 h-2 overflow-hidden border border-stone-200 bg-[#f4efe6]">
+                <div className="h-full bg-cinnabar" style={{ width: `${usageWidth}%` }} />
               </div>
             </div>
           </div>
@@ -143,7 +169,8 @@ export function WriterShell({
           <div className="mb-6 flex flex-wrap items-center justify-between gap-4 border-b border-stone-300/25 pb-4">
             <div>
               <div className="text-xs uppercase tracking-[0.28em] text-stone-500">今日状态</div>
-              <div className="mt-2 font-serifCn text-2xl">碎片已经备好，可以落笔。</div>
+              <div className="mt-2 font-serifCn text-2xl">{statusHeadline}</div>
+              <div className="mt-2 text-sm leading-7 text-stone-600">{statusDetail}</div>
             </div>
             <div className="flex items-center gap-3 text-stone-500">
               <div className="hidden items-center gap-2 border border-stone-300/60 bg-white px-3 py-2 text-sm md:flex">

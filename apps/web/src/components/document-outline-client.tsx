@@ -30,6 +30,10 @@ export function DocumentOutlineClient({
 }) {
   const [draggedId, setDraggedId] = useState<number | null>(null);
   const [newTitle, setNewTitle] = useState("");
+  const [editingNodeId, setEditingNodeId] = useState<number | null>(null);
+  const [editingTitle, setEditingTitle] = useState("");
+  const [editingDescription, setEditingDescription] = useState("");
+  const [savingNodeId, setSavingNodeId] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [searching, setSearching] = useState(false);
   const [searchResults, setSearchResults] = useState<Array<FragmentOption & { score?: number }>>([]);
@@ -109,6 +113,33 @@ export function DocumentOutlineClient({
     await onChange();
   }
 
+  function beginEdit(node: NodeItem) {
+    setEditingNodeId(node.id);
+    setEditingTitle(node.title);
+    setEditingDescription(node.description || "");
+  }
+
+  function cancelEdit() {
+    setEditingNodeId(null);
+    setEditingTitle("");
+    setEditingDescription("");
+  }
+
+  async function saveNode(nodeId: number) {
+    setSavingNodeId(nodeId);
+    await fetch(`/api/documents/${documentId}/nodes/${nodeId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: editingTitle.trim() || "未命名节点",
+        description: editingDescription.trim() || null,
+      }),
+    });
+    cancelEdit();
+    setSavingNodeId(null);
+    await onChange();
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex gap-2">
@@ -153,10 +184,50 @@ export function DocumentOutlineClient({
                 <div className="font-serifCn text-xl text-ink">{node.title}</div>
                 <div className="mt-1 text-xs uppercase tracking-[0.18em] text-stone-500">节点 {node.sortOrder}</div>
               </div>
-              <button onClick={() => deleteNode(node.id)} className="text-xs text-stone-500">
-                删除
-              </button>
+              <div className="flex items-center gap-3">
+                <button onClick={() => beginEdit(node)} className="text-xs text-stone-500">
+                  编辑
+                </button>
+                <button onClick={() => deleteNode(node.id)} className="text-xs text-stone-500">
+                  删除
+                </button>
+              </div>
             </div>
+            {editingNodeId === node.id ? (
+              <div className="mt-3 space-y-2 border border-stone-300 bg-[#faf7f0] p-3">
+                <input
+                  value={editingTitle}
+                  onChange={(event) => setEditingTitle(event.target.value)}
+                  className="w-full border border-stone-300 bg-white px-3 py-2 text-sm"
+                />
+                <textarea
+                  value={editingDescription}
+                  onChange={(event) => setEditingDescription(event.target.value)}
+                  placeholder="补充这个节点要写的事实、判断或写作提醒"
+                  className="min-h-[88px] w-full border border-stone-300 bg-white px-3 py-2 text-sm leading-7"
+                />
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => void saveNode(node.id)}
+                    disabled={savingNodeId === node.id}
+                    className="bg-cinnabar px-3 py-2 text-xs text-white disabled:opacity-60"
+                  >
+                    {savingNodeId === node.id ? "保存中..." : "保存节点"}
+                  </button>
+                  <button onClick={cancelEdit} className="border border-stone-300 px-3 py-2 text-xs text-stone-700">
+                    取消
+                  </button>
+                </div>
+              </div>
+            ) : node.description ? (
+              <div className="mt-3 border border-stone-200 bg-[#faf7f0] px-3 py-3 text-sm leading-7 text-stone-700">
+                {node.description}
+              </div>
+            ) : (
+              <div className="mt-3 border border-dashed border-stone-200 px-3 py-3 text-sm leading-7 text-stone-500">
+                这个节点还没有写作说明。点击“编辑”补充这一段应该承接的事实和判断。
+              </div>
+            )}
             <div className="mt-3 space-y-2">
               {node.fragments.map((fragment) => (
                 <button

@@ -208,11 +208,34 @@ export async function getVisibleTopicSources(userId: number) {
 
 export async function createTopicSource(input: { userId: number; name: string; homepageUrl: string }) {
   const db = getDatabase();
+  const scope = await getUserAccessScope(input.userId);
   const now = new Date().toISOString();
+  const normalizedName = input.name.trim();
+  const normalizedUrl = input.homepageUrl.trim();
+  const placeholders = scope.userIds.map(() => "?").join(", ");
+  const existingVisible = await db.queryOne<{ id: number; owner_user_id: number | null }>(
+    `SELECT id, owner_user_id
+     FROM topic_sources
+     WHERE name = ?
+       AND (
+         owner_user_id IS NULL
+         OR owner_user_id IN (${placeholders})
+       )
+     ORDER BY owner_user_id ASC, id ASC
+     LIMIT 1`,
+    [normalizedName, ...scope.userIds],
+  );
+  if (existingVisible) {
+    if (existingVisible.owner_user_id == null) {
+      throw new Error("系统信息源里已经存在同名来源，请直接复用，不要重复创建");
+    }
+    throw new Error(scope.isTeamShared ? "当前团队共享作用域里已经存在同名信息源" : "你已经创建过同名信息源");
+  }
+
   await db.exec(
     `INSERT INTO topic_sources (owner_user_id, name, homepage_url, is_active, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?)`,
-    [input.userId, input.name.trim(), input.homepageUrl.trim(), true, now, now],
+    [input.userId, normalizedName, normalizedUrl, true, now, now],
   );
   await syncTopicRadar({ userId: input.userId, limitPerSource: 4 });
 }

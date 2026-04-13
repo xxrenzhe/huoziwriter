@@ -132,6 +132,7 @@ class PostgresRuntime {
     this.client = client ?? postgres(process.env.DATABASE_URL, {
       max: 1,
       idle_timeout: 20,
+      ...(process.env.DATABASE_SCHEMA ? { options: `-c search_path=${process.env.DATABASE_SCHEMA}` } : {}),
     });
   }
 

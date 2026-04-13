@@ -1,3 +1,4 @@
+import { assertPlanCodeExists, parseSubscriptionStatus } from "@/lib/admin-validation";
 import { requireAdmin } from "@/lib/auth";
 import { getDatabase } from "@/lib/db";
 import { fail, ok } from "@/lib/http";
@@ -12,11 +13,13 @@ export async function PATCH(request: Request, { params }: { params: { id: string
     if (!subscription) {
       return fail("订阅不存在", 404);
     }
+    const planCode = await assertPlanCodeExists(String(body.planCode || ""));
+    const status = parseSubscriptionStatus(body.status, "active");
     await db.exec(
       `UPDATE subscriptions SET plan_code = ?, status = ?, end_at = ?, updated_at = ? WHERE id = ?`,
       [
-        body.planCode,
-        body.status ?? "active",
+        planCode,
+        status,
         body.endAt ?? null,
         now,
         Number(params.id),
@@ -24,7 +27,7 @@ export async function PATCH(request: Request, { params }: { params: { id: string
     );
     await db.exec(
       `UPDATE users SET plan_code = ?, updated_at = ? WHERE id = ?`,
-      [body.planCode, now, subscription.user_id],
+      [planCode, now, subscription.user_id],
     );
     return ok({ updated: true });
   } catch {

@@ -10,7 +10,7 @@
     "type-check": "pnpm --filter @huoziwriter/web type-check",
     "db:init": "tsx scripts/db-init.ts",
     "db:migrate": "tsx scripts/db-migrate.ts",
-    "verify": "pnpm type-check && pnpm build && python3 -m py_compile apps/worker-py/main.py apps/worker-py/scheduler.py apps/worker-py/queue_runtime.py && node scripts/check-standalone-runtime-init.mjs",
+    "verify": "pnpm type-check && pnpm build && python3 -m py_compile apps/worker-py/main.py apps/worker-py/scheduler.py apps/worker-py/queue_runtime.py && node scripts/check-standalone-runtime-init.mjs && pnpm --filter @huoziwriter/web exec node ../../scripts/check-postgres-runtime-init.mjs",
     "test:e2e": "pnpm build && playwright test"
   },
   "pnpm": {

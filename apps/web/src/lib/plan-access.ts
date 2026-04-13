@@ -1,11 +1,18 @@
 import { findUserById } from "./auth";
 import { getDatabase } from "./db";
 import { PLAN_LABELS, UserPlanCode } from "./domain";
-import { getDailyGenerationUsage, incrementDailyGenerationUsage } from "./usage";
+import { getCurrentSubscriptionForUser } from "./repositories";
+import {
+  getDailyCoverImageUsage,
+  getDailyGenerationUsage,
+  incrementDailyCoverImageUsage,
+  incrementDailyGenerationUsage,
+} from "./usage";
 
 type PlanRecord = {
   code: UserPlanCode;
   name: string;
+  price_cny: number | null;
   daily_generation_limit: number | null;
   fragment_limit: number | null;
   custom_banned_word_limit: number | null;
@@ -16,25 +23,43 @@ type PlanRecord = {
   can_export_pdf: number | boolean;
 };
 
+export function getCoverImageDailyLimit(planCode: UserPlanCode) {
+  if (planCode === "pro") return 10;
+  if (planCode === "ultra" || planCode === "team") return 100;
+  return 0;
+}
+
+export function canUseCoverImageReference(planCode: UserPlanCode) {
+  return planCode === "ultra" || planCode === "team";
+}
+
 export async function getUserPlanContext(userId: number) {
   const user = await findUserById(userId);
   if (!user) {
     throw new Error("用户不存在");
   }
 
+  const subscription = await getCurrentSubscriptionForUser(userId);
+  const effectivePlanCode =
+    !subscription
+      ? (user.plan_code as UserPlanCode)
+      : subscription.status === "active"
+        ? (subscription.plan_code as UserPlanCode)
+        : "free";
+
   const db = getDatabase();
   const plan = await db.queryOne<PlanRecord>(
-    `SELECT code, name, daily_generation_limit, fragment_limit, custom_banned_word_limit, max_wechat_connections,
+    `SELECT code, name, price_cny, daily_generation_limit, fragment_limit, custom_banned_word_limit, max_wechat_connections,
             can_fork_genomes, can_publish_genomes, can_generate_cover_image, can_export_pdf
      FROM plans WHERE code = ?`,
-    [user.plan_code],
+    [effectivePlanCode],
   );
 
   if (!plan) {
     throw new Error("套餐不存在");
   }
 
-  return { user, plan };
+  return { user, plan, effectivePlanCode, subscriptionStatus: subscription?.status ?? null };
 }
 
 export async function assertBannedWordQuota(userId: number) {
@@ -122,6 +147,13 @@ export async function assertGenomeForkAllowed(userId: number) {
   }
 }
 
+export async function assertStyleGenomeApplyAllowed(userId: number) {
+  const { plan } = await getUserPlanContext(userId);
+  if (!plan.can_fork_genomes) {
+    throw new Error(`${PLAN_LABELS[plan.code]}套餐当前只能浏览排版基因，不能把它套用到文稿。请先升级到 Pro 或更高套餐。`);
+  }
+}
+
 export async function assertGenomePublishAllowed(userId: number) {
   const { plan } = await getUserPlanContext(userId);
   if (!plan.can_publish_genomes) {
@@ -134,6 +166,61 @@ export async function assertCoverImageAllowed(userId: number) {
   if (!plan.can_generate_cover_image) {
     throw new Error(`${PLAN_LABELS[plan.code]}套餐仅提供文本配图建议，不支持真实封面图生成`);
   }
+}
+
+export async function assertCoverImageReferenceAllowed(userId: number) {
+  const { plan } = await getUserPlanContext(userId);
+  if (!canUseCoverImageReference(plan.code)) {
+    throw new Error(`${PLAN_LABELS[plan.code]}套餐暂不支持参考图垫图。升级到藏锋或团队版后，才可上传参考图做 Image-to-Image 封面生成。`);
+  }
+}
+
+export async function getCoverImageQuotaStatus(userId: number) {
+  const { plan } = await getUserPlanContext(userId);
+  const limit = getCoverImageDailyLimit(plan.code);
+  const used = await getDailyCoverImageUsage(userId);
+  return {
+    used,
+    limit,
+    remaining: limit > 0 ? Math.max(limit - used, 0) : 0,
+  };
+}
+
+export async function assertCoverImageQuota(userId: number) {
+  const { plan } = await getUserPlanContext(userId);
+  const limit = getCoverImageDailyLimit(plan.code);
+  if (limit <= 0) {
+    return;
+  }
+
+  const current = await getDailyCoverImageUsage(userId);
+  if (current >= limit) {
+    throw new Error(`${PLAN_LABELS[plan.code]}套餐今日封面图额度已达上限 ${limit} 次`);
+  }
+}
+
+export async function consumeCoverImageQuota(userId: number) {
+  const { plan } = await getUserPlanContext(userId);
+  const limit = getCoverImageDailyLimit(plan.code);
+  if (limit <= 0) {
+    return {
+      used: await getDailyCoverImageUsage(userId),
+      limit: null,
+      remaining: null,
+    };
+  }
+
+  const current = await getDailyCoverImageUsage(userId);
+  if (current >= limit) {
+    throw new Error(`${PLAN_LABELS[plan.code]}套餐今日封面图额度已达上限 ${limit} 次`);
+  }
+
+  const used = await incrementDailyCoverImageUsage(userId);
+  return {
+    used,
+    limit,
+    remaining: Math.max(limit - used, 0),
+  };
 }
 
 export async function consumeDailyGenerationQuota(userId: number) {

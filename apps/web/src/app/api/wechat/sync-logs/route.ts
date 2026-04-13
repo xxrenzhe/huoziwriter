@@ -16,7 +16,10 @@ export async function GET() {
       connectionName: log.connection_name,
       mediaId: log.media_id,
       status: log.status,
+      requestSummary: log.request_summary,
+      responseSummary: log.response_summary,
       failureReason: log.failure_reason,
+      retryCount: log.retry_count,
       createdAt: log.created_at,
     })),
   );

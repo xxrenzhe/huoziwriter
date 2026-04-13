@@ -38,6 +38,18 @@ export async function findUserById(userId: number) {
   return db.queryOne<DbUser>("SELECT * FROM users WHERE id = ?", [userId]);
 }
 
+export async function getEffectivePlanCodeForUser(userId: number, fallbackPlanCode: string) {
+  const db = getDatabase();
+  const latest = await db.queryOne<{ plan_code: string; status: string }>(
+    "SELECT plan_code, status FROM subscriptions WHERE user_id = ? ORDER BY id DESC LIMIT 1",
+    [userId],
+  );
+  if (!latest) {
+    return fallbackPlanCode;
+  }
+  return latest.status === "active" ? latest.plan_code : "free";
+}
+
 async function resolveReferrer(referralCode?: string | null) {
   if (!referralCode?.trim()) {
     return null;
@@ -116,7 +128,7 @@ export async function loginWithPassword(username: string, password: string) {
       email: user.email,
       displayName: user.display_name,
       role: user.role,
-      planCode: user.plan_code,
+      planCode: await getEffectivePlanCodeForUser(user.id, user.plan_code),
       mustChangePassword: Boolean(user.must_change_password),
     },
   };

@@ -94,6 +94,7 @@ class PostgresAdapter implements DatabaseAdapter {
     this.client = postgres(connectionString, {
       max: 5,
       idle_timeout: 20,
+      ...(process.env.DATABASE_SCHEMA ? { options: `-c search_path=${process.env.DATABASE_SCHEMA}` } : {}),
     }) as PostgresClient;
   }
 

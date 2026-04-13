@@ -1,5 +1,6 @@
 import { findUserById } from "./auth";
 import { getDatabase } from "./db";
+import { getCurrentSubscriptionForUser } from "./repositories";
 
 export type UserAccessScope = {
   userIds: number[];
@@ -12,7 +13,15 @@ export async function getUserAccessScope(userId: number): Promise<UserAccessScop
     throw new Error("用户不存在");
   }
 
-  if (user.plan_code !== "team") {
+  const subscription = await getCurrentSubscriptionForUser(userId);
+  const effectivePlanCode =
+    !subscription
+      ? user.plan_code
+      : subscription.status === "active"
+        ? subscription.plan_code
+        : "free";
+
+  if (effectivePlanCode !== "team") {
     return {
       userIds: [userId],
       isTeamShared: false,
@@ -21,8 +30,18 @@ export async function getUserAccessScope(userId: number): Promise<UserAccessScop
 
   const db = getDatabase();
   const members = await db.query<{ id: number }>(
-    "SELECT id FROM users WHERE plan_code = ? AND is_active = ? ORDER BY id ASC",
-    ["team", true],
+    `SELECT u.id
+     FROM users u
+     LEFT JOIN subscriptions s ON s.id = (
+       SELECT MAX(latest.id) FROM subscriptions latest WHERE latest.user_id = u.id
+     )
+     WHERE u.is_active = ?
+       AND (
+         (s.id IS NOT NULL AND s.status = ? AND s.plan_code = ?)
+         OR (s.id IS NULL AND u.plan_code = ?)
+       )
+     ORDER BY u.id ASC`,
+    [true, "active", "team", "team"],
   );
   const userIds = members.map((member) => member.id);
   return {
