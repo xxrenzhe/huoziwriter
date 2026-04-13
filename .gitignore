@@ -24,6 +24,8 @@ coverage
 
 # nyc test coverage
 .nyc_output
+playwright-report/
+playwright/.cache/
 
 # Grunt intermediate storage (https://gruntjs.com/creating-plugins#storing-task-files)
 .grunt
@@ -49,6 +51,8 @@ web_modules/
 
 # Optional npm cache directory
 .npm
+.pnpm-store/
+.turbo/
 
 # Optional eslint cache
 .eslintcache
@@ -76,6 +80,7 @@ web_modules/
 
 # Next.js build output
 .next
+**/.next
 out
 
 # Nuxt.js build / generate output
@@ -147,3 +152,8 @@ data/
 test-results/
 __pycache__/
 *.py[cod]
+
+# Project policy: these directories must not be uploaded to GitHub
+docs/
+oldcode/
+secrets/
