@@ -2,7 +2,7 @@ import { TopicRadarStarter } from "@/components/dashboard-client";
 import { TopicSourceManagerClient } from "@/components/topic-source-client";
 import { WriterOverview } from "@/components/writer-views";
 import { getKnowledgeCards } from "@/lib/knowledge";
-import { matchTopicToKnowledgeCards } from "@/lib/knowledge-match";
+import { buildTopicAngleOptions, buildTopicJudgementShift, matchTopicToKnowledgeCards } from "@/lib/knowledge-match";
 import { requireWriterSession } from "@/lib/page-auth";
 import { getTopicItems } from "@/lib/repositories";
 import { getVisibleTopicSources } from "@/lib/topic-radar";
@@ -56,7 +56,12 @@ export default async function RadarPage() {
           title: topic.title,
           sourceName: topic.source_name,
           emotionLabels: Array.isArray(topic.emotion_labels_json) ? topic.emotion_labels_json : JSON.parse(String(topic.emotion_labels_json ?? "[]")),
-          angleOptions: Array.isArray(topic.angle_options_json) ? topic.angle_options_json : JSON.parse(String(topic.angle_options_json ?? "[]")),
+          angleOptions: buildTopicAngleOptions(
+            topic.title,
+            Array.isArray(topic.angle_options_json) ? topic.angle_options_json : JSON.parse(String(topic.angle_options_json ?? "[]")),
+            knowledgeMatches[topic.id] ?? [],
+          ),
+          judgementShift: buildTopicJudgementShift(topic.title, knowledgeMatches[topic.id] ?? []),
         }))}
       />
       <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
