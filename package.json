@@ -8,11 +8,19 @@
     "build": "pnpm --filter @huoziwriter/web build",
     "start": "pnpm --filter @huoziwriter/web start",
     "type-check": "pnpm --filter @huoziwriter/web type-check",
-    "db:init": "pnpm --filter @huoziwriter/web db:init",
+    "db:init": "tsx scripts/db-init.ts",
+    "db:migrate": "tsx scripts/db-migrate.ts",
     "verify": "pnpm type-check && pnpm build && python3 -m py_compile apps/worker-py/main.py apps/worker-py/scheduler.py apps/worker-py/queue_runtime.py && node scripts/check-standalone-runtime-init.mjs",
     "test:e2e": "pnpm build && playwright test"
   },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "better-sqlite3",
+      "esbuild"
+    ]
+  },
   "devDependencies": {
-    "@playwright/test": "^1.59.1"
+    "@playwright/test": "^1.59.1",
+    "tsx": "^4.20.3"
   }
 }

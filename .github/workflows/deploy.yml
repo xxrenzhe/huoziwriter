@@ -84,9 +84,6 @@ jobs:
       - name: 安装依赖
         run: pnpm install --frozen-lockfile
 
-      - name: 初始化数据库
-        run: pnpm db:init
-
       - name: 运行校验
         run: pnpm verify
 

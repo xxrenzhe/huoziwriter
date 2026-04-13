@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { AsyncLocalStorage } from "node:async_hooks";
 import Database from "better-sqlite3";
 import postgres from "postgres";
 import {
@@ -14,10 +15,12 @@ export interface DatabaseAdapter {
   query<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<T[]>;
   queryOne<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<T | undefined>;
   exec(sql: string, params?: unknown[]): Promise<{ changes: number; lastInsertRowid?: number }>;
+  transaction<T>(fn: () => Promise<T>): Promise<T>;
   close(): Promise<void>;
 }
 
 type PostgresClient = postgres.Sql<Record<string, never>>;
+type PostgresQueryable = Pick<PostgresClient, "unsafe">;
 
 let sqliteInstance: SQLiteAdapter | null = null;
 let postgresInstance: PostgresAdapter | null = null;
@@ -61,6 +64,22 @@ class SQLiteAdapter implements DatabaseAdapter {
     };
   }
 
+  async transaction<T>(fn: () => Promise<T>) {
+    this.db.exec("BEGIN");
+    try {
+      const result = await fn();
+      this.db.exec("COMMIT");
+      return result;
+    } catch (error) {
+      try {
+        this.db.exec("ROLLBACK");
+      } catch {
+        // Ignore rollback failures when SQLite has already aborted the transaction.
+      }
+      throw error;
+    }
+  }
+
   async close() {
     this.db.close();
   }
@@ -69,6 +88,7 @@ class SQLiteAdapter implements DatabaseAdapter {
 class PostgresAdapter implements DatabaseAdapter {
   type: DatabaseType = "postgres";
   private client: PostgresClient;
+  private txStorage = new AsyncLocalStorage<PostgresQueryable>();
 
   constructor(connectionString: string) {
     this.client = postgres(connectionString, {
@@ -77,9 +97,13 @@ class PostgresAdapter implements DatabaseAdapter {
     }) as PostgresClient;
   }
 
+  private getClient() {
+    return this.txStorage.getStore() ?? this.client;
+  }
+
   async query<T>(sql: string, params: unknown[] = []) {
     const converted = toPostgresPlaceholders(sql);
-    const result = await this.client.unsafe(converted, params as never[]);
+    const result = await this.getClient().unsafe(converted, params as never[]);
     return result as unknown as T[];
   }
 
@@ -92,12 +116,16 @@ class PostgresAdapter implements DatabaseAdapter {
     const isInsert = /^\s*insert\s+/i.test(sql);
     const hasReturning = /\breturning\b/i.test(sql);
     const converted = toPostgresPlaceholders(isInsert && !hasReturning ? `${sql} RETURNING id` : sql);
-    const result = await this.client.unsafe(converted, params as never[]);
+    const result = await this.getClient().unsafe(converted, params as never[]);
     const first = (result as Array<{ count?: number; id?: number }>)[0];
     return {
       changes: Number(result.count ?? first?.count ?? (first ? 1 : 0)),
       lastInsertRowid: typeof first?.id === "number" ? first.id : undefined,
     };
+  }
+
+  async transaction<T>(fn: () => Promise<T>) {
+    return (await this.client.begin(async (tx) => this.txStorage.run(tx as unknown as PostgresQueryable, async () => await fn()))) as T;
   }
 
   async close() {

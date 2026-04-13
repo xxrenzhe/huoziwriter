@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "type-check": "tsc --noEmit",
-    "db:init": "tsx ../../scripts/db-init.ts"
+    "db:init": "tsx ../../scripts/db-init.ts",
+    "db:migrate": "tsx ../../scripts/db-migrate.ts"
   },
   "dependencies": {
     "@huoziwriter/core": "workspace:*",

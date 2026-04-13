@@ -1,33 +1,8 @@
 #!/usr/bin/env tsx
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { closeDatabase, getDatabase } from "../apps/web/src/lib/db";
+import { closeDatabase } from "../apps/web/src/lib/db";
 import { createUser, findUserByUsername } from "../apps/web/src/lib/auth";
 import { ensureBootstrapData } from "../apps/web/src/lib/repositories";
-
-const scriptDir = path.dirname(fileURLToPath(import.meta.url));
-const repoRoot = path.resolve(scriptDir, "..");
-
-function splitSqlStatements(sql: string) {
-  return sql
-    .split("\n")
-    .filter((line) => !line.trim().startsWith("--"))
-    .join("\n")
-    .split(/;\s*(?:\n|$)/)
-    .map((statement) => statement.trim())
-    .filter((statement) => statement.length > 0 && statement !== "BEGIN" && statement !== "BEGIN TRANSACTION" && statement !== "COMMIT");
-}
-
-async function runSqlFile(filePath: string) {
-  const sql = fs.readFileSync(filePath, "utf8");
-  const db = getDatabase();
-  const statements = splitSqlStatements(sql);
-
-  for (const statement of statements) {
-    await db.exec(statement);
-  }
-}
+import { runPendingMigrations } from "./db-flow";
 
 async function ensureAdmin() {
   const existing = await findUserByUsername("huozi");
@@ -48,10 +23,16 @@ async function ensureAdmin() {
 }
 
 async function main() {
-  const migrationPath = process.env.DATABASE_URL
-    ? path.resolve(repoRoot, "pg_migrations/000_init_schema.postgresql.sql")
-    : path.resolve(repoRoot, "migrations/000_init_schema.sqlite.sql");
-  await runSqlFile(migrationPath);
+  const migrationResult = await runPendingMigrations();
+  if (migrationResult.adoptedExisting.length > 0) {
+    console.log(`db:init: adopted existing baseline schema for ${migrationResult.adoptedExisting.join(", ")}`);
+  }
+  if (migrationResult.executed.length > 0) {
+    console.log(`db:init: applied migrations ${migrationResult.executed.join(", ")}`);
+  } else {
+    console.log(`db:init: ${migrationResult.type} schema already up to date`);
+  }
+
   await ensureBootstrapData();
   await ensureAdmin();
   await closeDatabase();
