@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="zh-CN"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;700&amp;family=Noto+Sans+SC:wght@400;500;700&amp;family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "primary-container": "#a73032",
+                        "on-tertiary": "#ffffff",
+                        "on-surface-variant": "#584140",
+                        "surface-tint": "#ab3335",
+                        "on-tertiary-container": "#d5d4d1",
+                        "on-surface": "#1b1c1a",
+                        "primary-fixed-dim": "#ffb3af",
+                        "primary-fixed": "#ffdad7",
+                        "on-background": "#1b1c1a",
+                        "surface-dim": "#dbdad7",
+                        "surface-bright": "#fbf9f6",
+                        "error": "#ba1a1a",
+                        "secondary-fixed-dim": "#cbc6bf",
+                        "on-primary-fixed-variant": "#8a1a20",
+                        "outline-variant": "#dfbfbd",
+                        "on-primary-fixed": "#410005",
+                        "surface-container": "#efeeeb",
+                        "on-error-container": "#93000a",
+                        "error-container": "#ffdad6",
+                        "on-error": "#ffffff",
+                        "outline": "#8b716f",
+                        "on-tertiary-fixed": "#1b1c1a",
+                        "on-secondary-fixed": "#1d1b17",
+                        "surface-container-lowest": "#ffffff",
+                        "tertiary-fixed-dim": "#c7c6c3",
+                        "secondary": "#615e58",
+                        "background": "#0F0F0F",
+                        "inverse-primary": "#ffb3af",
+                        "inverse-surface": "#30312f",
+                        "surface": "#0F0F0F",
+                        "surface-container-low": "#1A1A1A",
+                        "inverse-on-surface": "#f2f0ed",
+                        "secondary-container": "#e7e2da",
+                        "on-secondary": "#ffffff",
+                        "on-secondary-fixed-variant": "#494641",
+                        "tertiary-container": "#5b5c59",
+                        "on-primary": "#ffffff",
+                        "on-secondary-container": "#67645e",
+                        "secondary-fixed": "#e7e2da",
+                        "primary": "#86171d",
+                        "tertiary": "#444442",
+                        "surface-container-highest": "#e4e2df",
+                        "on-primary-container": "#ffc6c3",
+                        "surface-container-high": "#eae8e5",
+                        "surface-variant": "#e4e2df",
+                        "on-tertiary-fixed-variant": "#464744",
+                        "tertiary-fixed": "#e4e2df"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0px",
+                        "lg": "0px",
+                        "xl": "0px",
+                        "2xl": "0px",
+                        "3xl": "0px",
+                        "full": "9999px"
+                    },
+                    "fontFamily": {
+                        "headline": ["Noto Serif SC"],
+                        "body": ["Noto Serif SC"],
+                        "label": ["Noto Sans SC"]
+                    }
+                },
+            },
+        }
+    </script>
+<style>
+        body {
+            background-color: #0F0F0F;
+            color: #E4E2DF;
+        }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        * {
+            border-radius: 0px !important;
+        }
+    </style>
+</head>
+<body class="font-label antialiased overflow-hidden">
+<!-- Global Layout Wrapper -->
+<div class="flex h-screen w-full overflow-hidden">
+<!-- SideNavBar Component -->
+<aside class="fixed left-0 top-0 h-full z-50 flex flex-col border-r border-stone-800 bg-stone-900 w-[240px] shrink-0 font-['Noto_Serif_SC'] text-base leading-[1.7] antialiased">
+<!-- Header Section -->
+<div class="p-6 flex flex-col gap-4">
+<div class="flex items-center gap-3">
+<img alt="用户头像" class="w-10 h-10 bg-stone-800 object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCyHb--kX6fNMH9pYKdKb3TRehJ3_YQhmIoMVl0-nDphiOJOPDxgEXwzo_zEAX1xXn0_aW9BVKdFo_Hyy6Y5TnhoNjG05niziGriupO_00bC4S8XG8r-txcVR_7lh8Lhqb02ct-_PPAwoVqawtREUzZ3eeSbcblZUel8KkbcOcvEHqR4T3kiIG3A2yg6-P9hb12vs_k7idoY_d1ZRAs4jqI6Iv7pAx4swF4j27utnu5D__UyCndvzJHdSjMNAxqhcE3xAy8GhNpzAMF"/>
+<div class="flex flex-col">
+<span class="text-xl font-bold font-sans text-stone-100 tracking-wider">Huozi Writer</span>
+<span class="text-xs text-stone-500 uppercase tracking-widest">高级编辑器</span>
+</div>
+</div>
+<button class="w-full bg-[#A73032] text-white py-3 font-sans font-bold text-sm tracking-widest hover:bg-[#86171d] transition-all">
+                新建文稿
+            </button>
+</div>
+<!-- Navigation Links -->
+<nav class="flex-1 px-2 space-y-1 overflow-y-auto no-scrollbar">
+<a class="bg-[#A73032] text-white px-4 py-3 flex items-center gap-3 transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="edit_note">edit_note</span>
+<span class="font-medium">写作</span>
+</a>
+<a class="text-stone-400 px-4 py-3 flex items-center gap-3 hover:bg-stone-800 transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="auto_stories">auto_stories</span>
+<span>书架</span>
+</a>
+<a class="text-stone-400 px-4 py-3 flex items-center gap-3 hover:bg-stone-800 transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="account_tree">account_tree</span>
+<span>大纲</span>
+</a>
+<a class="text-stone-400 px-4 py-3 flex items-center gap-3 hover:bg-stone-800 transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="inventory_2">inventory_2</span>
+<span>素材</span>
+</a>
+<a class="text-stone-400 px-4 py-3 flex items-center gap-3 hover:bg-stone-800 transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+<span>设置</span>
+</a>
+</nav>
+<!-- Footer Tabs -->
+<div class="p-4 mt-auto border-t border-stone-800">
+<a class="text-stone-500 px-4 py-2 flex items-center gap-3 hover:text-stone-300 transition-all text-sm" href="#">
+<span class="material-symbols-outlined text-sm" data-icon="help_outline">help_outline</span>
+<span>帮助</span>
+</a>
+<a class="text-stone-500 px-4 py-2 flex items-center gap-3 hover:text-red-400 transition-all text-sm" href="#">
+<span class="material-symbols-outlined text-sm" data-icon="logout">logout</span>
+<span>退出</span>
+</a>
+</div>
+</aside>
+<!-- Main Content Canvas -->
+<main class="flex-1 ml-[240px] flex flex-col bg-[#0F0F0F] relative">
+<!-- TopAppBar Component -->
+<header class="sticky top-0 right-0 w-full flex items-center justify-between px-8 z-40 bg-stone-950/85 backdrop-blur-md h-16 border-t-4 border-[#A73032] shadow-lg">
+<div class="flex items-center gap-8">
+<span class="font-sans font-bold text-lg text-red-500">Huozi Writer</span>
+<nav class="hidden md:flex items-center gap-6 font-['Noto_Serif_SC'] font-medium">
+<a class="text-red-500 font-bold border-b-2 border-[#A73032] h-16 flex items-center" href="#">仪表盘</a>
+<a class="text-stone-400 hover:text-red-400 transition-colors h-16 flex items-center" href="#">统计</a>
+<a class="text-stone-400 hover:text-red-400 transition-colors h-16 flex items-center" href="#">导出</a>
+</nav>
+</div>
+<div class="flex items-center gap-6">
+<div class="relative hidden lg:block">
+<input class="bg-stone-900 border-none text-stone-300 text-sm py-2 pl-4 pr-10 w-64 focus:ring-1 focus:ring-[#A73032] transition-all" placeholder="搜索文稿..." type="text"/>
+<span class="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-stone-500 text-sm">search</span>
+</div>
+<div class="flex items-center gap-4">
+<button class="text-stone-400 hover:text-red-400 transition-colors relative">
+<span class="material-symbols-outlined" data-icon="notifications">notifications</span>
+<span class="absolute top-0 right-0 w-2 h-2 bg-[#A73032]"></span>
+</button>
+<button class="text-stone-400 hover:text-red-400 transition-colors">
+<span class="material-symbols-outlined" data-icon="account_circle">account_circle</span>
+</button>
+<button class="bg-[#A73032] text-white px-6 py-1.5 font-bold tracking-widest text-sm opacity-80 active:opacity-100 transition-opacity">
+                        发布
+                    </button>
+</div>
+</div>
+</header>
+<!-- Dashboard Content -->
+<section class="p-8 overflow-y-auto h-[calc(100vh-64px)] no-scrollbar">
+<!-- Bento Grid Layout -->
+<div class="grid grid-cols-12 gap-6">
+<!-- Hero Stats Panel -->
+<div class="col-span-12 lg:col-span-8 bg-[#1A1A1A] p-8 flex flex-col justify-between h-[320px] shadow-sm">
+<div>
+<div class="flex justify-between items-start">
+<h2 class="font-headline text-3xl font-bold text-stone-100 mb-2 tracking-tight">欢迎回来, 笔耕者</h2>
+<span class="bg-[#A73032]/10 text-[#A73032] px-3 py-1 text-xs font-bold tracking-widest uppercase">Premium Plan</span>
+</div>
+<p class="font-body text-stone-400 max-w-md">本周您已经完成了 12,400 字的创作。您的叙事节奏正处于巅峰状态。</p>
+</div>
+<div class="flex gap-12 items-end">
+<div>
+<span class="text-xs text-stone-500 uppercase tracking-widest block mb-1">连更天数</span>
+<span class="text-5xl font-headline font-bold text-stone-100">14</span>
+</div>
+<div>
+<span class="text-xs text-stone-500 uppercase tracking-widest block mb-1">预计完结</span>
+<span class="text-5xl font-headline font-bold text-stone-100">08.24</span>
+</div>
+<div class="flex-1 flex justify-end">
+<img alt="趋势图" class="opacity-40 grayscale hover:grayscale-0 transition-all duration-500 h-24" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAHH80gcp-4T_rxM_OpdE3rBYSMtIJgj0t2NHGzQIinE4jNMVuj4PmquNDJAezE0TH3h-MA6eTEJJV_oI2yBg7_xA1BwLvpmFD1REirillo4dJNMqaGMkXO9agnvvLK0d-IFuYYMoPBxTRUnl7LYkS23S2ektvpupKkXiC5qXe0Kf-Cd1iQe6LpJ8bECkoRO-j4yLcY2EVgQRJEqi30eUz2MWLaxI6NC4GgUxVujsensLrrx42mpzXZ82jPqF5KEXQdPrHPeyGOZzqm"/>
+</div>
+</div>
+</div>
+<!-- Quick Actions Panel -->
+<div class="col-span-12 lg:col-span-4 bg-[#1A1A1A] p-8 flex flex-col gap-6 shadow-sm">
+<h3 class="text-xs font-bold text-stone-500 uppercase tracking-[0.2em]">快速操作</h3>
+<div class="flex flex-col gap-3">
+<button class="w-full bg-stone-800 hover:bg-stone-700 text-stone-100 py-4 flex items-center justify-between px-4 group transition-colors">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-red-500" data-icon="auto_awesome">auto_awesome</span>
+<span class="font-sans font-medium">AI 辅助修辞</span>
+</div>
+<span class="material-symbols-outlined opacity-0 group-hover:opacity-100 transition-opacity">chevron_right</span>
+</button>
+<button class="w-full bg-stone-800 hover:bg-stone-700 text-stone-100 py-4 flex items-center justify-between px-4 group transition-colors">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-red-500" data-icon="history_edu">history_edu</span>
+<span class="font-sans font-medium">版本溯源</span>
+</div>
+<span class="material-symbols-outlined opacity-0 group-hover:opacity-100 transition-opacity">chevron_right</span>
+</button>
+<button class="w-full bg-stone-800 hover:bg-stone-700 text-stone-100 py-4 flex items-center justify-between px-4 group transition-colors">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-red-500" data-icon="cloud_upload">cloud_upload</span>
+<span class="font-sans font-medium">全平台同步</span>
+</div>
+<span class="material-symbols-outlined opacity-0 group-hover:opacity-100 transition-opacity">chevron_right</span>
+</button>
+</div>
+</div>
+<!-- Project List Asymmetric Grid -->
+<div class="col-span-12 grid grid-cols-1 md:grid-cols-3 gap-6">
+<!-- Card 1 -->
+<div class="bg-[#1A1A1A] group hover:bg-[#222222] transition-colors relative overflow-hidden shadow-sm">
+<div class="h-48 w-full bg-stone-800 overflow-hidden">
+<img alt="封面1" class="w-full h-full object-cover opacity-60 group-hover:scale-105 transition-transform duration-700" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBbsB4k3v0BHqjxvWk7yi3Rqq-EVXYtscPCOhdrBfvd-PrLQiFgJtl0DP9RWq8Bl5kMVMff4ywcNxGT6nvnyVo-1zqaMKR5newCjjbkUTkBLumTu8sZ2D-8qJ0nKJgllw6ZV6Q9BX_DWUz2szsEC_9jD39HtMGIylVpIqG2l9UjXlAqn2qujZSEGYu9VrNU3JACMj_P1ygkK_FEamDBP_dk5zCeZeBqTfAqjflC7FzaVzme1zF1Iyva2h0nEbvBNBoBVPwR0ggWw-s7"/>
+</div>
+<div class="p-6">
+<div class="flex justify-between items-center mb-4">
+<span class="text-[10px] text-stone-500 tracking-[0.3em] uppercase">正在连载</span>
+<span class="text-[10px] text-stone-400 font-sans">85k 字</span>
+</div>
+<h4 class="font-headline text-xl text-stone-100 mb-2">《朱红色的回响》</h4>
+<p class="text-stone-500 text-sm font-body line-clamp-2">关于一座沉睡在深山中的古老书院，以及那些被封印在墨迹里的秘密...</p>
+</div>
+<div class="absolute bottom-0 left-0 w-full h-1 bg-[#A73032] scale-x-0 group-hover:scale-x-100 transition-transform origin-left"></div>
+</div>
+<!-- Card 2 -->
+<div class="bg-[#1A1A1A] group hover:bg-[#222222] transition-colors relative overflow-hidden shadow-sm">
+<div class="h-48 w-full bg-stone-800 overflow-hidden">
+<img alt="封面2" class="w-full h-full object-cover opacity-60 group-hover:scale-105 transition-transform duration-700" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDDA3O6OEbrUijjhZKTeV17PUDc-mE9Cv_CIniDWfgXmJrsHenEow-DuyUTv1FNoXzTfHXRylv9ctrTxkXRlVRJ1SBE3yMT_cGLa8gDsLpT87-o-_riV0tjn4Qx57-FoHD43yMfvXm0HfFWAqMKe-9FP4z_DROh81gySmkWdW9RM2EYbxPs5rdQwYJvYh0Xh4iKqkyAkiqYd4t4TtI_CcQZUf-tIMZqe09Ku36AWXvp_UrpGQSgKKYhLUlOFhO8dBBfoZDAemUg1URd"/>
+</div>
+<div class="p-6">
+<div class="flex justify-between items-center mb-4">
+<span class="text-[10px] text-stone-500 tracking-[0.3em] uppercase">草稿箱</span>
+<span class="text-[10px] text-stone-400 font-sans">12k 字</span>
+</div>
+<h4 class="font-headline text-xl text-stone-100 mb-2">《冷泉游记》</h4>
+<p class="text-stone-500 text-sm font-body line-clamp-2">散文集。记录今年春天在南方的短途旅行，关于雨滴、苔藓和寂静。</p>
+</div>
+<div class="absolute bottom-0 left-0 w-full h-1 bg-[#A73032] scale-x-0 group-hover:scale-x-100 transition-transform origin-left"></div>
+</div>
+<!-- Card 3 (New Project) -->
+<div class="bg-[#1A1A1A] group hover:bg-[#222222] transition-colors relative overflow-hidden flex flex-col justify-center items-center border-2 border-dashed border-stone-800 p-6 min-h-[300px] shadow-sm">
+<span class="material-symbols-outlined text-4xl text-stone-700 mb-4" data-icon="add_circle">add_circle</span>
+<span class="text-stone-500 font-sans font-bold tracking-widest text-xs uppercase">开启新篇章</span>
+</div>
+</div>
+<!-- Status Bar Footer -->
+<div class="col-span-12 bg-stone-900 border-t border-[#A73032]/20 p-4 flex justify-between items-center font-mono text-[10px] text-stone-600">
+<div class="flex gap-8">
+<span>服务器: ASIA-EAST-1 (已优化)</span>
+<span>延迟: 24MS</span>
+<span>加密: AES-256-GCM</span>
+</div>
+<div class="flex gap-4 items-center">
+<span class="flex items-center gap-2">
+<span class="w-1.5 h-1.5 bg-green-500 animate-pulse"></span>
+                            云端同步已开启
+                        </span>
+<span class="text-stone-400 tracking-tighter">HUOZI_OS v4.2.0-STABLE</span>
+</div>
+</div>
+</div>
+</section>
+</main>
+</div>
+<!-- Floating Action Button (FAB) -->
+<div class="fixed bottom-10 right-10 z-[60]">
+<button class="w-16 h-16 bg-[#A73032] text-white flex items-center justify-center shadow-2xl hover:bg-[#86171d] transition-all duration-300 transform hover:rotate-90">
+<span class="material-symbols-outlined text-3xl" data-icon="add">add</span>
+</button>
+</div>
+</body></html>

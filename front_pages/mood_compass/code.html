@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+
+<html class="light" lang="zh-CN"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>情绪罗盘 - Huozi Writer</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;700&amp;family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "primary-container": "#a73032",
+                        "on-tertiary": "#ffffff",
+                        "on-surface-variant": "#584140",
+                        "surface-tint": "#ab3335",
+                        "on-tertiary-container": "#d5d4d1",
+                        "on-surface": "#1b1c1a",
+                        "primary-fixed-dim": "#ffb3af",
+                        "primary-fixed": "#ffdad7",
+                        "on-background": "#1b1c1a",
+                        "surface-dim": "#dbdad7",
+                        "surface-bright": "#fbf9f6",
+                        "error": "#ba1a1a",
+                        "secondary-fixed-dim": "#cbc6bf",
+                        "on-primary-fixed-variant": "#8a1a20",
+                        "outline-variant": "#dfbfbd",
+                        "on-primary-fixed": "#410005",
+                        "surface-container": "#efeeeb",
+                        "on-error-container": "#93000a",
+                        "error-container": "#ffdad6",
+                        "on-error": "#ffffff",
+                        "outline": "#8b716f",
+                        "on-tertiary-fixed": "#1b1c1a",
+                        "on-secondary-fixed": "#1d1b17",
+                        "surface-container-lowest": "#ffffff",
+                        "tertiary-fixed-dim": "#c7c6c3",
+                        "secondary": "#615e58",
+                        "background": "#fbf9f6",
+                        "inverse-primary": "#ffb3af",
+                        "inverse-surface": "#30312f",
+                        "surface": "#fbf9f6",
+                        "surface-container-low": "#f5f3f0",
+                        "inverse-on-surface": "#f2f0ed",
+                        "secondary-container": "#e7e2da",
+                        "on-secondary": "#ffffff",
+                        "on-secondary-fixed-variant": "#494641",
+                        "tertiary-container": "#5b5c59",
+                        "on-primary": "#ffffff",
+                        "on-secondary-container": "#67645e",
+                        "secondary-fixed": "#e7e2da",
+                        "primary": "#86171d",
+                        "tertiary": "#444442",
+                        "surface-container-highest": "#e4e2df",
+                        "on-primary-container": "#ffc6c3",
+                        "surface-container-high": "#eae8e5",
+                        "surface-variant": "#e4e2df",
+                        "on-tertiary-fixed-variant": "#464744",
+                        "tertiary-fixed": "#e4e2df"
+                    },
+                    "borderRadius": {
+                        "none": "0px",
+                        "DEFAULT": "0px",
+                        "lg": "0px",
+                        "xl": "0px",
+                        "full": "0px"
+                    },
+                    "fontFamily": {
+                        "headline": ["Noto Serif SC", "serif"],
+                        "body": ["Noto Serif SC", "serif"],
+                        "label": ["Inter", "sans-serif"]
+                    }
+                },
+            },
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .serif-text { font-family: 'Noto Serif SC', serif; }
+        .sans-text { font-family: 'Inter', sans-serif; }
+        * { border-radius: 0 !important; }
+    </style>
+</head>
+<body class="bg-background text-on-surface antialiased flex overflow-hidden h-screen">
+<!-- SideNavBar -->
+<aside class="fixed left-0 top-0 h-full z-50 flex flex-col border-r border-outline-variant bg-surface-container-low w-[240px] shrink-0 font-['Noto_Serif_SC'] text-base leading-[1.7] antialiased">
+<div class="p-8 flex flex-col gap-2">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 bg-primary-container flex items-center justify-center">
+<span class="text-white material-symbols-outlined" data-icon="auto_stories">auto_stories</span>
+</div>
+<div class="flex flex-col">
+<span class="text-xl font-bold font-sans text-on-surface tracking-wider">Huozi Writer</span>
+<span class="text-xs text-stone-500 sans-text uppercase tracking-widest">高级编辑器</span>
+</div>
+</div>
+</div>
+<nav class="flex-1 mt-4 px-4 space-y-1">
+<a class="text-on-surface-variant px-4 py-3 flex items-center gap-3 hover:bg-surface-container transition-all duration-150 ease-in-out" href="#">
+<span class="material-symbols-outlined" data-icon="edit_note">edit_note</span>
+<span class="sans-text font-medium">写作</span>
+</a>
+<a class="text-on-surface-variant px-4 py-3 flex items-center gap-3 hover:bg-surface-container transition-all duration-150 ease-in-out" href="#">
+<span class="material-symbols-outlined" data-icon="auto_stories">auto_stories</span>
+<span class="sans-text font-medium">书架</span>
+</a>
+<a class="text-on-surface-variant px-4 py-3 flex items-center gap-3 hover:bg-surface-container transition-all duration-150 ease-in-out" href="#">
+<span class="material-symbols-outlined" data-icon="account_tree">account_tree</span>
+<span class="sans-text font-medium">大纲</span>
+</a>
+<a class="bg-primary text-white px-4 py-3 flex items-center gap-3 transition-colors duration-150 ease-in-out" href="#">
+<span class="material-symbols-outlined" data-icon="inventory_2" style="font-variation-settings: 'FILL' 1;">inventory_2</span>
+<span class="sans-text font-medium">素材</span>
+</a>
+<a class="text-on-surface-variant px-4 py-3 flex items-center gap-3 hover:bg-surface-container transition-all duration-150 ease-in-out" href="#">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+<span class="sans-text font-medium">设置</span>
+</a>
+</nav>
+<div class="p-4 border-t border-outline-variant bg-surface-container">
+<a class="text-on-surface-variant px-4 py-2 flex items-center gap-3 hover:text-primary transition-colors text-sm sans-text" href="#">
+<span class="material-symbols-outlined text-sm" data-icon="help_outline">help_outline</span>
+                帮助
+            </a>
+<a class="text-on-surface-variant px-4 py-2 flex items-center gap-3 hover:text-primary transition-colors text-sm sans-text" href="#">
+<span class="material-symbols-outlined text-sm" data-icon="logout">logout</span>
+                退出
+            </a>
+</div>
+</aside>
+<main class="flex-1 ml-[240px] flex flex-col h-screen overflow-y-auto">
+<!-- TopAppBar -->
+<header class="sticky top-0 right-0 w-full flex items-center justify-between px-8 z-40 bg-white/85 backdrop-blur-md h-16 border-t-4 border-primary shadow-sm font-['Noto_Serif_SC'] font-medium">
+<div class="flex items-center gap-8">
+<h1 class="font-sans font-bold text-lg text-primary">情绪罗盘</h1>
+<nav class="hidden md:flex gap-6">
+<a class="text-on-surface-variant hover:text-primary transition-colors sans-text text-sm" href="#">仪表盘</a>
+<a class="text-primary font-bold border-b-2 border-primary sans-text text-sm" href="#">统计</a>
+<a class="text-on-surface-variant hover:text-primary transition-colors sans-text text-sm" href="#">导出</a>
+</nav>
+</div>
+<div class="flex items-center gap-6">
+<div class="relative group">
+<input class="bg-surface-container-high border-none text-sm px-4 py-2 w-64 focus:ring-0 focus:bg-surface-container-lowest transition-all" placeholder="搜索话题趋势..." type="text"/>
+<div class="absolute bottom-0 left-0 h-[2px] w-0 bg-primary group-focus-within:w-full transition-all duration-300"></div>
+</div>
+<div class="flex items-center gap-3">
+<button class="material-symbols-outlined text-on-surface-variant hover:text-primary transition-opacity opacity-80" data-icon="notifications">notifications</button>
+<button class="material-symbols-outlined text-on-surface-variant hover:text-primary transition-opacity opacity-80" data-icon="account_circle">account_circle</button>
+<button class="bg-primary text-white px-6 py-2 text-sm sans-text font-bold hover:bg-primary-container transition-colors">
+                        发布
+                    </button>
+</div>
+</div>
+</header>
+<!-- Content Canvas -->
+<div class="p-12 space-y-12 bg-surface">
+<!-- Bento Header -->
+<section class="grid grid-cols-12 gap-8">
+<!-- Radar Chart Card -->
+<div class="col-span-12 lg:col-span-8 bg-surface-container-low p-10 flex flex-col justify-between relative border border-outline-variant">
+<div class="relative z-10">
+<span class="sans-text text-xs font-bold tracking-[0.2em] text-on-surface-variant uppercase">当前市场氛围</span>
+<h2 class="serif-text text-4xl font-bold mt-2 text-on-surface">全网情绪共振分析</h2>
+<p class="serif-text text-on-surface-variant mt-4 max-w-md leading-relaxed">
+                            基于近24小时社交媒体文本挖掘，当前文学创作环境呈现高度的“怀旧”与“反思”情绪交织。
+                        </p>
+</div>
+<div class="flex justify-center py-12 relative">
+<div class="w-80 h-80 relative flex items-center justify-center">
+<div class="absolute inset-0 border border-outline-variant/30 rounded-none scale-100"></div>
+<div class="absolute inset-0 border border-outline-variant/30 rounded-none scale-75"></div>
+<div class="absolute inset-0 border border-outline-variant/30 rounded-none scale-50"></div>
+<svg class="w-full h-full transform -rotate-90" viewbox="0 0 100 100">
+<polygon fill="rgba(167, 48, 50, 0.15)" points="50,10 85,30 80,70 30,85 15,40" stroke="#A73032" stroke-width="1"></polygon>
+<circle cx="50" cy="10" fill="#A73032" r="1.5"></circle>
+<circle cx="85" cy="30" fill="#A73032" r="1.5"></circle>
+<circle cx="80" cy="70" fill="#A73032" r="1.5"></circle>
+<circle cx="30" cy="85" fill="#A73032" r="1.5"></circle>
+<circle cx="15" cy="40" fill="#A73032" r="1.5"></circle>
+</svg>
+<span class="absolute top-0 -translate-y-6 sans-text text-[10px] font-bold text-on-surface-variant">怀旧 (0.8)</span>
+<span class="absolute right-0 translate-x-6 sans-text text-[10px] font-bold text-on-surface-variant">激进 (0.4)</span>
+<span class="absolute bottom-0 translate-y-6 sans-text text-[10px] font-bold text-on-surface-variant">忧郁 (0.9)</span>
+<span class="absolute left-0 -translate-x-6 sans-text text-[10px] font-bold text-on-surface-variant">治愈 (0.6)</span>
+</div>
+</div>
+<div class="flex gap-4 mt-8 relative z-10">
+<div class="bg-surface-container-lowest p-6 flex flex-col gap-1 min-w-[140px] border border-outline-variant">
+<span class="sans-text text-[10px] text-on-surface-variant font-bold">波动指数</span>
+<span class="serif-text text-2xl font-bold text-primary">+14.2%</span>
+</div>
+<div class="bg-surface-container-lowest p-6 flex flex-col gap-1 min-w-[140px] border border-outline-variant">
+<span class="sans-text text-[10px] text-on-surface-variant font-bold">情感偏向</span>
+<span class="serif-text text-2xl font-bold text-on-surface">中性偏暖</span>
+</div>
+</div>
+</div>
+<!-- Featured Topic Card -->
+<div class="col-span-12 lg:col-span-4 bg-primary p-10 flex flex-col text-white">
+<span class="sans-text text-[10px] font-bold tracking-[0.2em] opacity-70 uppercase">每周聚焦</span>
+<h3 class="serif-text text-3xl font-bold mt-4 leading-tight">消失的<br/>附近性</h3>
+<p class="serif-text mt-6 opacity-80 leading-relaxed text-sm">
+                        关于当代城市孤独感的深度讨论。在数字化极度发达的今天，我们失去了与物理社区的连接。
+                    </p>
+<div class="mt-auto pt-10">
+<img class="w-full h-48 object-cover grayscale brightness-75 contrast-125 mb-6" data-alt="dramatic cinematic shot of a lone person walking down a misty city alleyway at night with glowing street lamps" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCXBtj59QrzSaLvRO634RIkHdlrJO5TEZeAlxsn3Io0wH_DOAiN1VJcVu85-mtswcfrEUmtK48gWX7Cr3hN2h-W52EqrC1dsMXakRQICwnujMt_E9S6cDhZbvf2LZ95wLkcAQvyChs0FIcwrn_zFUgXvZ_3JkVbH1a3CjFefZwz-YtaZqrLiN6ow4GZHthormRsWJx34bCg-ApGYyFd6WQyum9g2SdaLc8rMaP6Ye7cto9rFky2vPrgisuCTJMvnMKVnzESAvt44G0m"/>
+<button class="w-full bg-white text-primary py-4 sans-text font-bold text-sm tracking-widest hover:bg-surface-container-low transition-colors">
+                            生成创作大纲
+                        </button>
+</div>
+</div>
+</section>
+<!-- Trending Topics Waterfall -->
+<section class="space-y-8">
+<div class="flex justify-between items-end border-b border-outline-variant pb-4">
+<div>
+<h3 class="serif-text text-2xl font-bold">热度话题瀑布流</h3>
+<p class="sans-text text-xs text-on-surface-variant mt-1 uppercase tracking-widest">实时趋势手稿</p>
+</div>
+<div class="flex gap-2">
+<button class="p-2 bg-surface-container hover:bg-surface-container-high transition-colors border border-outline-variant">
+<span class="material-symbols-outlined text-sm" data-icon="filter_list">filter_list</span>
+</button>
+<button class="p-2 bg-surface-container hover:bg-surface-container-high transition-colors border border-outline-variant">
+<span class="material-symbols-outlined text-sm" data-icon="grid_view">grid_view</span>
+</button>
+</div>
+</div>
+<div class="columns-1 md:columns-2 lg:columns-3 gap-8 space-y-8">
+<!-- Trending Card 1 -->
+<div class="break-inside-avoid bg-surface-container-low p-8 flex flex-col group cursor-pointer hover:bg-surface-container-high transition-all duration-300 border border-outline-variant">
+<div class="flex justify-between items-start mb-6">
+<span class="bg-tertiary-container text-white px-3 py-1 text-[10px] sans-text font-bold uppercase">社会学</span>
+<span class="sans-text text-xs font-bold text-primary">#1 热门趋势</span>
+</div>
+<h4 class="serif-text text-xl font-bold leading-snug group-hover:text-primary transition-colors">赛博时代的集体记忆缺失</h4>
+<p class="serif-text text-on-surface-variant mt-4 text-sm leading-relaxed">
+                            当所有信息都被云端化，我们正在经历一场前所未有的“数字失忆”。如何记录不可磨灭的个体叙事？
+                        </p>
+<div class="mt-6 flex items-center gap-4 border-t border-outline-variant pt-6">
+<div class="flex -space-x-2">
+<div class="w-6 h-6 bg-stone-300 border-2 border-surface-container-low"></div>
+<div class="w-6 h-6 bg-stone-400 border-2 border-surface-container-low"></div>
+</div>
+<span class="sans-text text-[10px] text-on-surface-variant font-bold uppercase tracking-wider">12.4k 位作家参与</span>
+</div>
+</div>
+<!-- Trending Card 2 -->
+<div class="break-inside-avoid bg-surface-container-low p-0 flex flex-col group cursor-pointer border border-outline-variant overflow-hidden">
+<img class="w-full h-40 object-cover grayscale brightness-90 group-hover:grayscale-0 transition-all duration-700" data-alt="abstract painting" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAgF5ME7lxW6ApIfixahnqm7X6x1pAIBVrRYt3gyxXamF-Rra0BNEamaCZ6Nyb9LQMEZjaEmdce7yGghDYnUZpBv1CA65Yi86HGTt05HNWMNjx0S6zFOm-LqXkaaSEFKOOK7ay0krNR9Xt_DwrV-rvSJMb2nRHeLjtpNWIDjCLGPL8mnIUwf_k7VFUeSKKV5Hw732URoKmi8gUewgMcCTpgZ5i7JYKhZ7eJmKYydIXuc6hoJtH_D91LU484j9H8QINpTV_LF84OvhGt"/>
+<div class="p-8 group-hover:bg-surface-container-high transition-all">
+<span class="bg-secondary-container text-on-secondary-container px-3 py-1 text-[10px] sans-text font-bold uppercase">哲学</span>
+<h4 class="serif-text text-xl font-bold mt-4 leading-snug">慢生活的虚假叙事</h4>
+<p class="serif-text text-on-surface-variant mt-2 text-sm leading-relaxed">
+                                精致露营背后的消费主义陷阱，以及我们对“自然”的误读。
+                            </p>
+</div>
+</div>
+<!-- Trending Card 3 -->
+<div class="break-inside-avoid bg-surface-container-low p-8 flex flex-col group cursor-pointer hover:bg-surface-container-high transition-all duration-300 border border-outline-variant">
+<div class="flex justify-between items-start mb-6">
+<span class="bg-tertiary-container text-white px-3 py-1 text-[10px] sans-text font-bold uppercase">科幻</span>
+</div>
+<h4 class="serif-text text-xl font-bold leading-snug">如果AI拥有了创伤回忆</h4>
+<p class="serif-text text-on-surface-variant mt-4 text-sm leading-relaxed">
+                            探讨人工意识的非线性特征。硅基生命的痛苦是否具有伦理价值？
+                        </p>
+<div class="mt-8 flex gap-2">
+<span class="text-[10px] sans-text font-bold border border-outline px-2 py-1 text-on-surface-variant">#赛博朋克</span>
+<span class="text-[10px] sans-text font-bold border border-outline px-2 py-1 text-on-surface-variant">#后人类</span>
+</div>
+</div>
+<!-- Trending Card 4 -->
+<div class="break-inside-avoid bg-surface-container-low p-8 flex flex-col border-l-4 border-primary group hover:bg-surface-container transition-all border border-y-outline-variant border-r-outline-variant">
+<div class="flex items-center gap-2 mb-4">
+<span class="material-symbols-outlined text-primary text-sm" data-icon="bolt">bolt</span>
+<span class="sans-text text-[10px] font-bold text-primary uppercase tracking-widest">紧急提示</span>
+</div>
+<h4 class="serif-text text-lg font-bold leading-tight">2024夏季：重构家乡记忆</h4>
+<p class="serif-text text-on-surface-variant mt-3 text-sm italic">
+                            “回不去的故乡，是每个写作者唯一的避难所。”
+                        </p>
+<button class="mt-6 text-xs sans-text font-bold text-on-surface underline underline-offset-4 hover:text-primary transition-colors uppercase">立即开始起草</button>
+</div>
+</div>
+</section>
+</div>
+<!-- Footer -->
+<footer class="mt-auto bg-surface-container p-12 border-t border-outline-variant flex flex-col md:flex-row justify-between items-start gap-12">
+<div class="max-w-xs">
+<h5 class="sans-text font-bold text-xs uppercase tracking-[0.2em] text-on-surface-variant mb-4">Huozi Writer 分析</h5>
+<p class="serif-text text-sm text-on-surface-variant leading-relaxed">
+                    情绪罗盘通过聚合全网公开数据，为创作者提供即时的灵感锚点。每一份情绪波动的背后，都是一个值得书写的故事。
+                </p>
+</div>
+<div class="grid grid-cols-2 gap-16">
+<div>
+<h6 class="sans-text font-bold text-[10px] uppercase tracking-widest text-on-surface mb-4">数据来源</h6>
+<ul class="space-y-2 sans-text text-xs text-on-surface-variant">
+<li class="hover:text-primary cursor-pointer">微博趋势</li>
+<li class="hover:text-primary cursor-pointer">豆瓣话题</li>
+<li class="hover:text-primary cursor-pointer">知乎热榜</li>
+</ul>
+</div>
+<div>
+<h6 class="sans-text font-bold text-[10px] uppercase tracking-widest text-on-surface mb-4">创作工具</h6>
+<ul class="space-y-2 sans-text text-xs text-on-surface-variant">
+<li class="hover:text-primary cursor-pointer">自动大纲</li>
+<li class="hover:text-primary cursor-pointer">语义联想</li>
+<li class="hover:text-primary cursor-pointer">风格转换</li>
+</ul>
+</div>
+</div>
+</footer>
+<!-- FAB -->
+<button class="fixed bottom-8 right-8 bg-primary text-white w-14 h-14 flex items-center justify-center shadow-lg hover:scale-105 active:scale-95 transition-all z-50">
+<span class="material-symbols-outlined" data-icon="add">add</span>
+</button>
+</main>
+</body></html>

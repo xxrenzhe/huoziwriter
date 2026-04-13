@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+
+<html class="light" lang="zh-CN"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;700&amp;family=Inter:wght@500&amp;family=Noto+Sans+SC:wght@500&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "primary-container": "#a73032",
+                    "on-tertiary": "#ffffff",
+                    "on-surface-variant": "#584140",
+                    "surface-tint": "#ab3335",
+                    "on-tertiary-container": "#d5d4d1",
+                    "on-surface": "#1b1c1a",
+                    "primary-fixed-dim": "#ffb3af",
+                    "primary-fixed": "#ffdad7",
+                    "on-background": "#1b1c1a",
+                    "surface-dim": "#dbdad7",
+                    "surface-bright": "#fbf9f6",
+                    "error": "#ba1a1a",
+                    "secondary-fixed-dim": "#cbc6bf",
+                    "on-primary-fixed-variant": "#8a1a20",
+                    "outline-variant": "#dfbfbd",
+                    "on-primary-fixed": "#410005",
+                    "surface-container": "#efeeeb",
+                    "on-error-container": "#93000a",
+                    "error-container": "#ffdad6",
+                    "on-error": "#ffffff",
+                    "outline": "#8b716f",
+                    "on-tertiary-fixed": "#1b1c1a",
+                    "on-secondary-fixed": "#1d1b17",
+                    "surface-container-lowest": "#ffffff",
+                    "tertiary-fixed-dim": "#c7c6c3",
+                    "secondary": "#615e58",
+                    "background": "#fbf9f6",
+                    "inverse-primary": "#ffb3af",
+                    "inverse-surface": "#30312f",
+                    "surface": "#fbf9f6",
+                    "surface-container-low": "#f5f3f0",
+                    "inverse-on-surface": "#f2f0ed",
+                    "secondary-container": "#e7e2da",
+                    "on-secondary": "#ffffff",
+                    "on-secondary-fixed-variant": "#494641",
+                    "tertiary-container": "#5b5c59",
+                    "on-primary": "#ffffff",
+                    "on-secondary-container": "#67645e",
+                    "secondary-fixed": "#e7e2da",
+                    "primary": "#86171d",
+                    "tertiary": "#444442",
+                    "surface-container-highest": "#e4e2df",
+                    "on-primary-container": "#ffc6c3",
+                    "surface-container-high": "#eae8e5",
+                    "surface-variant": "#e4e2df",
+                    "on-tertiary-fixed-variant": "#464744",
+                    "tertiary-fixed": "#e4e2df"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0px",
+                    "none": "0px",
+                    "sm": "0px",
+                    "md": "0px",
+                    "lg": "0px",
+                    "xl": "0px",
+                    "2xl": "0px",
+                    "3xl": "0px",
+                    "full": "9999px"
+            },
+            "fontFamily": {
+                    "headline": ["Noto Serif SC"],
+                    "body": ["Noto Serif SC"],
+                    "label": ["Inter", "Noto Sans SC"]
+            }
+          },
+        },
+      }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        body {
+            font-family: 'Noto Serif SC', serif;
+        }
+        * {
+            border-radius: 0 !important;
+        }
+    </style>
+</head>
+<body class="bg-surface text-on-surface antialiased overflow-hidden">
+<!-- Shell Container -->
+<div class="flex h-screen w-full">
+<!-- SideNavBar Component -->
+<aside class="fixed left-0 top-0 h-full z-50 flex flex-col border-r border-outline-variant bg-surface-container-low w-[240px] shrink-0 font-['Noto_Serif_SC'] text-base leading-[1.7] antialiased">
+<div class="p-6">
+<div class="flex items-center gap-3 mb-8">
+<img alt="用户头像" class="w-10 h-10 object-cover" data-alt="close-up of an ornate vintage fountain pen nib resting on textured handmade rice paper with soft shadows" src="https://lh3.googleusercontent.com/aida-public/AB6AXuC_aok53TCvXkVmzRXQsw2l5RHPEUsEsCCtFyrUEJw7l6YFNkgEdGfune7I3yXnU4kEJOHSbHg7x6bqAS_TyaA47Bap6mQmVUFGK_QfXyN8nSIGReS9rqSXh-ETEXcsl_Sn7TzMe9jtFwUH72cGpSHqrVfPTUNlk5gMFFzXbZ2fJPKmD8Y10bDZ9XHCjwIRwqH7sNhQZnacbJTYCB89ZW8P_4Y-WNFVKWnfu1qhGrOtUpYPj6BWNXiIFd1AA3Ky0mCzGQGt4Nqrw99P"/>
+<div>
+<h1 class="text-xl font-bold font-sans text-on-surface tracking-wider">Huozi Writer</h1>
+<p class="text-xs text-secondary font-label">高级编辑器</p>
+</div>
+</div>
+<nav class="space-y-1">
+<a class="text-on-surface-variant px-4 py-3 flex items-center gap-3 hover:bg-surface-container transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="edit_note">edit_note</span>
+<span class="font-label font-medium tracking-wider">写作</span>
+</a>
+<a class="text-on-surface-variant px-4 py-3 flex items-center gap-3 hover:bg-surface-container transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="auto_stories">auto_stories</span>
+<span class="font-label font-medium tracking-wider">书架</span>
+</a>
+<a class="text-on-surface-variant px-4 py-3 flex items-center gap-3 hover:bg-surface-container transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="account_tree">account_tree</span>
+<span class="font-label font-medium tracking-wider">大纲</span>
+</a>
+<!-- Active State for Death Words Library / Material -->
+<a class="bg-primary-container text-white px-4 py-3 flex items-center gap-3 transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="inventory_2">inventory_2</span>
+<span class="font-label font-medium tracking-wider">素材</span>
+</a>
+<a class="text-on-surface-variant px-4 py-3 flex items-center gap-3 hover:bg-surface-container transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+<span class="font-label font-medium tracking-wider">设置</span>
+</a>
+</nav>
+<button class="w-full mt-8 bg-primary-container text-white py-3 font-label font-medium tracking-widest hover:bg-primary transition-colors border-none">
+                新建文稿
+            </button>
+</div>
+<div class="mt-auto p-6 space-y-1">
+<a class="text-on-surface-variant px-4 py-3 flex items-center gap-3 hover:bg-surface-container transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="help_outline">help_outline</span>
+<span class="font-label font-medium tracking-wider">帮助</span>
+</a>
+<a class="text-on-surface-variant px-4 py-3 flex items-center gap-3 hover:bg-surface-container transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="logout">logout</span>
+<span class="font-label font-medium tracking-wider">退出</span>
+</a>
+</div>
+</aside>
+<!-- Main Content Area -->
+<main class="flex-1 ml-[240px] flex flex-col h-screen bg-surface-container">
+<!-- TopAppBar Component -->
+<header class="sticky top-0 right-0 w-full flex items-center justify-between px-8 z-40 bg-white/90 backdrop-blur-md h-16 border-b border-outline-variant font-['Noto_Serif_SC'] font-medium">
+<div class="flex items-center gap-8">
+<span class="font-sans font-bold text-lg text-primary">Huozi Writer</span>
+<nav class="hidden md:flex items-center gap-6">
+<a class="text-secondary hover:text-primary transition-colors" href="#">仪表盘</a>
+<a class="text-secondary hover:text-primary transition-colors" href="#">统计</a>
+<a class="text-secondary hover:text-primary transition-colors" href="#">导出</a>
+</nav>
+</div>
+<div class="flex items-center gap-4">
+<div class="relative group">
+<input class="bg-surface-container-high border-none h-10 px-4 py-2 font-label text-sm w-64 focus:bg-white focus:ring-0 focus:border-b-2 focus:border-primary transition-all" placeholder="搜索死刑词..." type="text"/>
+<span class="material-symbols-outlined absolute right-3 top-2 text-outline pointer-events-none" data-icon="search">search</span>
+</div>
+<button class="opacity-80 active:opacity-100 transition-opacity p-2 text-on-surface-variant">
+<span class="material-symbols-outlined" data-icon="notifications">notifications</span>
+</button>
+<button class="opacity-80 active:opacity-100 transition-opacity p-2 text-on-surface-variant">
+<span class="material-symbols-outlined" data-icon="account_circle">account_circle</span>
+</button>
+<button class="bg-primary-container text-white px-6 py-1.5 font-label font-medium tracking-wider hover:bg-primary transition-colors border-none">发布</button>
+</div>
+</header>
+<!-- Main Canvas -->
+<section class="flex-1 overflow-y-auto bg-surface-container-lowest p-12">
+<div class="max-w-6xl mx-auto">
+<!-- Editorial Header -->
+<div class="mb-12 border-l-8 border-primary-container pl-8 py-2">
+<h2 class="text-4xl font-bold text-on-surface tracking-tight mb-2">死刑词库</h2>
+<p class="text-tertiary text-lg max-w-2xl leading-relaxed">
+                        这里收录了所有被禁止使用的陈词滥调与虚浮词汇。在写作过程中，编辑器将自动高亮这些“死刑犯”，并建议更具生命力的表达方式。
+                    </p>
+</div>
+<!-- Filter / Stats Section (Bento Style) -->
+<div class="grid grid-cols-12 gap-6 mb-12">
+<div class="col-span-8 bg-surface-container-low p-8 border border-outline-variant">
+<h3 class="font-label font-bold text-xs uppercase tracking-widest text-primary-container mb-4">库统计</h3>
+<div class="flex gap-12">
+<div>
+<span class="block text-4xl font-bold text-on-surface">428</span>
+<span class="text-sm font-label text-secondary">已收录词汇</span>
+</div>
+<div>
+<span class="block text-4xl font-bold text-on-surface">12</span>
+<span class="text-sm font-label text-secondary">本周新增</span>
+</div>
+<div>
+<span class="block text-4xl font-bold text-on-surface">86%</span>
+<span class="text-sm font-label text-secondary">文字净化率</span>
+</div>
+</div>
+</div>
+<div class="col-span-4 bg-primary-container p-8 text-white flex flex-col justify-between">
+<h3 class="font-label font-bold text-xs uppercase tracking-widest opacity-80 mb-4">快速操作</h3>
+<button class="flex items-center justify-between group border-none bg-transparent w-full">
+<span class="text-xl font-bold">批量导入死刑词</span>
+<span class="material-symbols-outlined group-hover:translate-x-1 transition-transform" data-icon="arrow_forward">arrow_forward</span>
+</button>
+</div>
+</div>
+<!-- Words Grid -->
+<div class="space-y-8">
+<div class="flex items-center justify-between border-b border-outline-variant/30 pb-4">
+<h4 class="font-label font-bold text-sm tracking-widest text-tertiary">全部词条</h4>
+<div class="flex gap-4">
+<span class="font-label text-xs font-bold text-primary-container underline underline-offset-8 cursor-pointer">全部</span>
+<span class="font-label text-xs font-bold text-secondary cursor-pointer hover:text-on-surface">文学类</span>
+<span class="font-label text-xs font-bold text-secondary cursor-pointer hover:text-on-surface">公文类</span>
+<span class="font-label text-xs font-bold text-secondary cursor-pointer hover:text-on-surface">网络语</span>
+</div>
+</div>
+<!-- InkTags Grid -->
+<div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
+<!-- Tag Items -->
+<div class="group relative flex items-center justify-between bg-surface-container px-4 py-3 hover:bg-surface-container-highest transition-colors cursor-default border border-transparent hover:border-outline-variant">
+<span class="line-through text-tertiary decoration-primary-container/60 decoration-2 font-medium">蓦然回首</span>
+<button class="opacity-0 group-hover:opacity-100 transition-opacity border-none bg-transparent p-0">
+<span class="material-symbols-outlined text-sm text-primary" data-icon="close">close</span>
+</button>
+</div>
+<div class="group relative flex items-center justify-between bg-surface-container px-4 py-3 hover:bg-surface-container-highest transition-colors cursor-default border border-transparent hover:border-outline-variant">
+<span class="line-through text-tertiary decoration-primary-container/60 decoration-2 font-medium">总而言之</span>
+<button class="opacity-0 group-hover:opacity-100 transition-opacity border-none bg-transparent p-0">
+<span class="material-symbols-outlined text-sm text-primary" data-icon="close">close</span>
+</button>
+</div>
+<div class="group relative flex items-center justify-between bg-surface-container px-4 py-3 hover:bg-surface-container-highest transition-colors cursor-default border border-transparent hover:border-outline-variant">
+<span class="line-through text-tertiary decoration-primary-container/60 decoration-2 font-medium">众所周知</span>
+<button class="opacity-0 group-hover:opacity-100 transition-opacity border-none bg-transparent p-0">
+<span class="material-symbols-outlined text-sm text-primary" data-icon="close">close</span>
+</button>
+</div>
+<div class="group relative flex items-center justify-between bg-surface-container px-4 py-3 hover:bg-surface-container-highest transition-colors cursor-default border border-transparent hover:border-outline-variant">
+<span class="line-through text-tertiary decoration-primary-container/60 decoration-2 font-medium">由于某种原因</span>
+<button class="opacity-0 group-hover:opacity-100 transition-opacity border-none bg-transparent p-0">
+<span class="material-symbols-outlined text-sm text-primary" data-icon="close">close</span>
+</button>
+</div>
+<div class="group relative flex items-center justify-between bg-surface-container px-4 py-3 hover:bg-surface-container-highest transition-colors cursor-default border border-transparent hover:border-outline-variant">
+<span class="line-through text-tertiary decoration-primary-container/60 decoration-2 font-medium">刻骨铭心</span>
+<button class="opacity-0 group-hover:opacity-100 transition-opacity border-none bg-transparent p-0">
+<span class="material-symbols-outlined text-sm text-primary" data-icon="close">close</span>
+</button>
+</div>
+<div class="group relative flex items-center justify-between bg-surface-container px-4 py-3 hover:bg-surface-container-highest transition-colors cursor-default border border-transparent hover:border-outline-variant">
+<span class="line-through text-tertiary decoration-primary-container/60 decoration-2 font-medium">华丽转身</span>
+<button class="opacity-0 group-hover:opacity-100 transition-opacity border-none bg-transparent p-0">
+<span class="material-symbols-outlined text-sm text-primary" data-icon="close">close</span>
+</button>
+</div>
+<div class="group relative flex items-center justify-between bg-surface-container px-4 py-3 hover:bg-surface-container-highest transition-colors cursor-default border border-transparent hover:border-outline-variant">
+<span class="line-through text-tertiary decoration-primary-container/60 decoration-2 font-medium">不言而喻</span>
+<button class="opacity-0 group-hover:opacity-100 transition-opacity border-none bg-transparent p-0">
+<span class="material-symbols-outlined text-sm text-primary" data-icon="close">close</span>
+</button>
+</div>
+<div class="group relative flex items-center justify-between bg-surface-container px-4 py-3 hover:bg-surface-container-highest transition-colors cursor-default border border-transparent hover:border-outline-variant">
+<span class="line-through text-tertiary decoration-primary-container/60 decoration-2 font-medium">不得不说</span>
+<button class="opacity-0 group-hover:opacity-100 transition-opacity border-none bg-transparent p-0">
+<span class="material-symbols-outlined text-sm text-primary" data-icon="close">close</span>
+</button>
+</div>
+<div class="group relative flex items-center justify-between bg-surface-container px-4 py-3 hover:bg-surface-container-highest transition-colors cursor-default border border-transparent hover:border-outline-variant">
+<span class="line-through text-tertiary decoration-primary-container/60 decoration-2 font-medium">可以说</span>
+<button class="opacity-0 group-hover:opacity-100 transition-opacity border-none bg-transparent p-0">
+<span class="material-symbols-outlined text-sm text-primary" data-icon="close">close</span>
+</button>
+</div>
+<div class="group relative flex items-center justify-between bg-surface-container px-4 py-3 hover:bg-surface-container-highest transition-colors cursor-default border border-transparent hover:border-outline-variant">
+<span class="line-through text-tertiary decoration-primary-container/60 decoration-2 font-medium">本质上</span>
+<button class="opacity-0 group-hover:opacity-100 transition-opacity border-none bg-transparent p-0">
+<span class="material-symbols-outlined text-sm text-primary" data-icon="close">close</span>
+</button>
+</div>
+<div class="group relative flex items-center justify-between bg-surface-container px-4 py-3 hover:bg-surface-container-highest transition-colors cursor-default border border-transparent hover:border-outline-variant">
+<span class="line-through text-tertiary decoration-primary-container/60 decoration-2 font-medium">令人发指</span>
+<button class="opacity-0 group-hover:opacity-100 transition-opacity border-none bg-transparent p-0">
+<span class="material-symbols-outlined text-sm text-primary" data-icon="close">close</span>
+</button>
+</div>
+<div class="group relative flex items-center justify-between bg-surface-container px-4 py-3 hover:bg-surface-container-highest transition-colors cursor-default border border-transparent hover:border-outline-variant">
+<span class="line-through text-tertiary decoration-primary-container/60 decoration-2 font-medium">绝非偶然</span>
+<button class="opacity-0 group-hover:opacity-100 transition-opacity border-none bg-transparent p-0">
+<span class="material-symbols-outlined text-sm text-primary" data-icon="close">close</span>
+</button>
+</div>
+<!-- Add Button Tag -->
+<div class="flex items-center justify-center border-2 border-dashed border-outline-variant px-4 py-3 cursor-pointer hover:border-primary-container hover:bg-surface-container-low transition-all">
+<span class="material-symbols-outlined text-primary-container mr-2" data-icon="add">add</span>
+<span class="font-label text-sm font-bold text-primary-container">新增词条</span>
+</div>
+</div>
+</div>
+<!-- Tip/Instruction Section (Asymmetric) -->
+<div class="mt-24 grid grid-cols-12 gap-8">
+<div class="col-span-5 relative">
+<img alt="文学创作" class="w-full h-80 object-cover" data-alt="minimalist aesthetic photography of a stack of old books with aged yellowing pages and a single red ribbon bookmark" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDo5IGB5h6CNSjERJZ3qFKazQnfyruTDXppgSScrlRpSanbhbYlWC6-RBag_Kyb65HwbFgp51dvFR9nS87CzA_lp4maTQFIu1XhLKw5PKStBId8MYsgb4kqdRi8cq1JSkxA6_l1OcHOSphwfO_FRwXQvOg81IayQHabv0a3O0aF04OPI1QsyzOJtUOnkE-RQE7xOgOu4Z-ddMFBHh6kerEv6t7U4WQjf422UgwTYilZUP_dabMNxDPhFgQsjxNOdEclU-U6eiR-_GBp"/>
+<div class="absolute -bottom-6 -right-6 bg-primary-container p-6 text-white w-48">
+<p class="text-xs font-label leading-relaxed">“言之无文，行而不远。”—— 保持文字的锋利与新鲜感。</p>
+</div>
+</div>
+<div class="col-span-7 flex flex-col justify-center pl-12">
+<h3 class="text-2xl font-bold mb-6 text-on-surface">为何设立“死刑词”？</h3>
+<p class="text-on-surface-variant leading-[1.8] mb-6">
+                            陈词滥调是思想的懒惰。当一个词被过度使用，它就失去了唤起感官与情感的能力。通过死刑词库，我们强制性地要求自己重新思考，去寻找那些更精确、更生动、更具有独创性的表达方式。
+                        </p>
+<div class="flex gap-4">
+<button class="bg-surface-container-high px-8 py-3 font-label font-bold text-xs uppercase tracking-widest hover:bg-surface-container-highest transition-colors border-none text-on-surface">查看详细指南</button>
+</div>
+</div>
+</div>
+</div>
+</section>
+</main>
+</div>
+<!-- Floating Action Button -->
+<button class="fixed bottom-10 right-10 bg-primary-container text-white w-14 h-14 flex items-center justify-center shadow-xl hover:scale-110 active:scale-95 transition-all border-none z-50">
+<span class="material-symbols-outlined" data-icon="add_moderator" style="font-variation-settings: 'FILL' 1;">add_moderator</span>
+</button>
+</body></html>

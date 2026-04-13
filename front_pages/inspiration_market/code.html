@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+
+<html class="light" lang="zh-CN"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;700&amp;family=Inter:wght@400;500;600&amp;family=Noto+Sans+SC:wght@400;500;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "primary-container": "#a73032",
+                        "on-tertiary": "#ffffff",
+                        "on-surface-variant": "#584140",
+                        "surface-tint": "#ab3335",
+                        "on-tertiary-container": "#d5d4d1",
+                        "on-surface": "#1b1c1a",
+                        "primary-fixed-dim": "#ffb3af",
+                        "primary-fixed": "#ffdad7",
+                        "on-background": "#1b1c1a",
+                        "surface-dim": "#dbdad7",
+                        "surface-bright": "#fbf9f6",
+                        "error": "#ba1a1a",
+                        "secondary-fixed-dim": "#cbc6bf",
+                        "on-primary-fixed-variant": "#8a1a20",
+                        "outline-variant": "#dfbfbd",
+                        "on-primary-fixed": "#410005",
+                        "surface-container": "#efeeeb",
+                        "on-error-container": "#93000a",
+                        "error-container": "#ffdad6",
+                        "on-error": "#ffffff",
+                        "outline": "#8b716f",
+                        "on-tertiary-fixed": "#1b1c1a",
+                        "on-secondary-fixed": "#1d1b17",
+                        "surface-container-lowest": "#ffffff",
+                        "tertiary-fixed-dim": "#c7c6c3",
+                        "secondary": "#615e58",
+                        "background": "#fbf9f6",
+                        "inverse-primary": "#ffb3af",
+                        "inverse-surface": "#30312f",
+                        "surface": "#fbf9f6",
+                        "surface-container-low": "#f5f3f0",
+                        "inverse-on-surface": "#f2f0ed",
+                        "secondary-container": "#e7e2da",
+                        "on-secondary": "#ffffff",
+                        "on-secondary-fixed-variant": "#494641",
+                        "tertiary-container": "#5b5c59",
+                        "on-primary": "#ffffff",
+                        "on-secondary-container": "#67645e",
+                        "secondary-fixed": "#e7e2da",
+                        "primary": "#86171d",
+                        "tertiary": "#444442",
+                        "surface-container-highest": "#e4e2df",
+                        "on-primary-container": "#ffc6c3",
+                        "surface-container-high": "#eae8e5",
+                        "surface-variant": "#e4e2df",
+                        "on-tertiary-fixed-variant": "#464744",
+                        "tertiary-fixed": "#e4e2df"
+                    },
+                    "borderRadius": {
+                        "none": "0px",
+                        "DEFAULT": "0px",
+                        "lg": "0px",
+                        "xl": "0px",
+                        "full": "0px"
+                    },
+                    "fontFamily": {
+                        "headline": ["Noto Serif SC", "serif"],
+                        "body": ["Noto Serif SC", "serif"],
+                        "label": ["Inter", "Noto Sans SC", "sans-serif"]
+                    }
+                },
+            },
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        body {
+            font-family: 'Noto Serif SC', serif;
+            -webkit-font-smoothing: antialiased;
+        }
+        * {
+            border-radius: 0 !important;
+        }
+    </style>
+</head>
+<body class="bg-background text-on-surface">
+<!-- AppShell SideNavBar -->
+<aside class="fixed left-0 top-0 h-full z-50 flex flex-col bg-[#F5F3F0] dark:bg-stone-900 w-[240px] shrink-0 transition-all">
+<div class="p-8">
+<h1 class="text-xl font-bold font-sans text-stone-900 dark:text-stone-100 tracking-wider">Huozi Writer</h1>
+<p class="text-xs text-stone-500 font-sans mt-1">高级编辑器</p>
+</div>
+<nav class="flex-1 space-y-1">
+<a class="text-stone-600 dark:text-stone-400 px-8 py-3 flex items-center gap-3 hover:bg-stone-200 dark:hover:bg-stone-800 transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="edit_note">edit_note</span>
+<span class="font-sans font-medium text-base tracking-wide">写作</span>
+</a>
+<a class="text-stone-600 dark:text-stone-400 px-8 py-3 flex items-center gap-3 hover:bg-stone-200 dark:hover:bg-stone-800 transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="auto_stories">auto_stories</span>
+<span class="font-sans font-medium text-base tracking-wide">书架</span>
+</a>
+<a class="text-stone-600 dark:text-stone-400 px-8 py-3 flex items-center gap-3 hover:bg-stone-200 dark:hover:bg-stone-800 transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="account_tree">account_tree</span>
+<span class="font-sans font-medium text-base tracking-wide">大纲</span>
+</a>
+<a class="bg-[#A73032] text-white dark:bg-red-800 dark:text-stone-100 px-8 py-3 flex items-center gap-3 transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="inventory_2">inventory_2</span>
+<span class="font-sans font-medium text-base tracking-wide">素材</span>
+</a>
+<a class="text-stone-600 dark:text-stone-400 px-8 py-3 flex items-center gap-3 hover:bg-stone-200 dark:hover:bg-stone-800 transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+<span class="font-sans font-medium text-base tracking-wide">设置</span>
+</a>
+</nav>
+<div class="mt-auto border-t border-transparent p-4 flex flex-col gap-1">
+<button class="bg-[#A73032] text-white w-full py-3 mb-6 font-sans font-bold tracking-widest text-sm hover:bg-[#86171D] transition-colors">
+            新建文稿
+        </button>
+<a class="text-stone-600 dark:text-stone-400 px-4 py-2 flex items-center gap-3 text-sm font-sans hover:bg-stone-200" href="#">
+<span class="material-symbols-outlined text-sm" data-icon="help_outline">help_outline</span>
+<span>帮助</span>
+</a>
+<a class="text-stone-600 dark:text-stone-400 px-4 py-2 flex items-center gap-3 text-sm font-sans hover:bg-stone-200" href="#">
+<span class="material-symbols-outlined text-sm" data-icon="logout">logout</span>
+<span>退出</span>
+</a>
+</div>
+</aside>
+<!-- TopAppBar -->
+<header class="sticky top-0 right-0 w-full flex items-center justify-between px-8 py-0 h-16 z-40 bg-white/85 dark:bg-stone-950/85 backdrop-blur-md border-t-4 border-[#A73032] ml-[240px] shadow-[0px_4px_20px_rgba(27,28,26,0.06)]" style="width: calc(100% - 240px);">
+<div class="flex items-center gap-8 h-full">
+<span class="font-sans font-bold text-lg text-[#A73032] dark:text-red-500">Huozi Writer</span>
+<nav class="flex gap-6 h-full items-center">
+<a class="text-stone-500 dark:text-stone-400 font-sans font-medium text-sm hover:text-[#A73032] transition-colors" href="#">仪表盘</a>
+<a class="text-stone-500 dark:text-stone-400 font-sans font-medium text-sm hover:text-[#A73032] transition-colors" href="#">统计</a>
+<a class="text-stone-500 dark:text-stone-400 font-sans font-medium text-sm hover:text-[#A73032] transition-colors" href="#">导出</a>
+</nav>
+</div>
+<div class="flex items-center gap-6">
+<div class="relative flex items-center bg-surface-container px-4 py-2 w-64 border-b-2 border-transparent focus-within:border-[#A73032] transition-all">
+<span class="material-symbols-outlined text-stone-400 text-sm" data-icon="search">search</span>
+<input class="bg-transparent border-none focus:ring-0 text-sm font-sans w-full ml-2" placeholder="搜索灵感..." type="text"/>
+</div>
+<div class="flex gap-4 items-center">
+<span class="material-symbols-outlined text-stone-600 cursor-pointer hover:text-[#A73032]" data-icon="notifications">notifications</span>
+<span class="material-symbols-outlined text-stone-600 cursor-pointer hover:text-[#A73032]" data-icon="account_circle">account_circle</span>
+<button class="bg-[#A73032] text-white px-6 py-1.5 text-sm font-sans font-bold hover:bg-[#86171D] transition-colors">发布</button>
+</div>
+</div>
+</header>
+<!-- Main Canvas Content -->
+<main class="ml-[240px] p-12 bg-white min-h-screen">
+<!-- Hero Section / Header -->
+<div class="mb-16">
+<div class="flex items-center gap-3 mb-2">
+<span class="bg-tertiary-container text-on-tertiary px-3 py-0.5 text-[10px] font-sans font-bold tracking-widest uppercase">市场</span>
+<div class="h-[1px] w-12 bg-[#A73032]"></div>
+</div>
+<h2 class="text-5xl font-bold tracking-tight mb-4 text-stone-900 leading-tight">灵感集市</h2>
+<p class="text-stone-500 max-w-2xl leading-[1.8] text-lg italic font-serif">
+            从古籍善本中汲取现代创作的养分，在社区分享的笔墨中碰撞灵魂。
+        </p>
+</div>
+<!-- Filter Bar -->
+<div class="flex justify-between items-end mb-12 border-b border-stone-100">
+<div class="flex gap-10">
+<button class="text-[#A73032] font-bold border-b-2 border-[#A73032] pb-4 font-sans text-sm tracking-widest transition-all">全部资源</button>
+<button class="text-stone-400 hover:text-[#A73032] pb-4 font-sans text-sm tracking-widest transition-all">叙事大纲</button>
+<button class="text-stone-400 hover:text-[#A73032] pb-4 font-sans text-sm tracking-widest transition-all">人物设定</button>
+<button class="text-stone-400 hover:text-[#A73032] pb-4 font-sans text-sm tracking-widest transition-all">遣词词库</button>
+<button class="text-stone-400 hover:text-[#A73032] pb-4 font-sans text-sm tracking-widest transition-all">古典美学</button>
+</div>
+<div class="pb-4">
+<span class="text-xs text-stone-400 font-sans">排序方式: </span>
+<select class="bg-transparent border-none text-xs font-bold font-sans text-stone-700 focus:ring-0 cursor-pointer">
+<option>最受欢迎</option>
+<option>最新发布</option>
+<option>使用次数</option>
+</select>
+</div>
+</div>
+<!-- Bento Grid / Inspiration Cards -->
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+<!-- Card 1: Narrative Template -->
+<div class="group bg-surface-container-low flex flex-col transition-all hover:bg-surface-container relative">
+<div class="h-48 overflow-hidden">
+<img alt="古籍善本" class="w-full h-full object-cover grayscale opacity-70 group-hover:grayscale-0 group-hover:scale-105 transition-all duration-700" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDf_DjLXGGV1dLmCzOkCsw9OLkdnCufxGP70i0sv_-Og8wpC2QH_SZ6mhZ24NXrCLVrCHHlg4d9J_dwKeUJf4RuVkmZHOUkQ-zR_JQaw8AUPQb4vHwo53LK_c-DQBe0IqgSuccSYxbOBqdIsW20LdltAL80XDGlP6Zv1L92QmSR4tkF1Tz1CIo4g7yqFzzqGEg9x94zDdc2TNsnQF5wsTfdGLS95vdGaQn72SsX7Y2HONArsUPnVbftxtefVr1L0noScktFfBl9YMzc"/>
+</div>
+<div class="p-8 flex-1 flex flex-col">
+<div class="flex justify-between items-start mb-4">
+<span class="text-[10px] font-sans font-bold text-stone-400 tracking-widest uppercase">叙事模板</span>
+<div class="flex gap-2">
+<span class="material-symbols-outlined text-xs text-stone-400" data-icon="favorite">favorite</span>
+<span class="text-[10px] font-sans text-stone-400">1.2k</span>
+</div>
+</div>
+<h3 class="text-2xl font-bold text-stone-900 mb-4 leading-snug">章回体小说叙事逻辑</h3>
+<p class="text-stone-500 text-sm leading-[1.7] mb-8 line-clamp-3">
+                    基于《水浒传》与《红楼梦》构建的章回转场模板，包含草蛇灰线、伏笔呼应的结构化引导。
+                </p>
+<div class="mt-auto pt-6 flex items-center justify-between border-t border-stone-200/50">
+<div class="flex items-center gap-2">
+<div class="w-6 h-6 bg-stone-300 overflow-hidden">
+<img alt="用户头像" class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBwUkQOGSMhwQ2XKum0W66NLvdZwY6n8iqls05uQR6hec50DdV1DGSCyyr8-xKXLOayVdxt_XJdceS1_O2svuWbjxahkpKaj_gINKbxIhP0OLF5RwdJKWNydDhjhySPyymcHqz6xwps74UsGetnMjh65eSOZbcWSlQihOiEh8Ce65aoIXWuLep-7L1FoZpLr8A7pnXCWicDo2E-s7tRRZCUOnRy5FwufLqsTFftdn2ng8706fja43--Ve7jSEbnxAimMo_Z16pc5WAx"/>
+</div>
+<span class="text-xs font-sans text-stone-600">墨客笔耕者</span>
+</div>
+<button class="bg-[#A73032] text-white px-6 py-2 text-xs font-sans font-bold tracking-widest hover:bg-[#86171D] transition-colors uppercase">克隆</button>
+</div>
+</div>
+</div>
+<!-- Card 2: Word Library -->
+<div class="group bg-surface-container flex flex-col transition-all hover:bg-surface-container-high relative">
+<div class="p-8 h-full flex flex-col">
+<div class="flex justify-between items-start mb-4">
+<span class="text-[10px] font-sans font-bold text-stone-400 tracking-widest uppercase">遣词词库</span>
+<div class="flex gap-2">
+<span class="material-symbols-outlined text-xs text-[#A73032]" data-icon="star" style="font-variation-settings: 'FILL' 1;">star</span>
+<span class="text-[10px] font-sans text-stone-400 uppercase">精选</span>
+</div>
+</div>
+<h3 class="text-2xl font-bold text-stone-900 mb-4 leading-snug">山水意象辞令库</h3>
+<p class="text-stone-500 text-sm leading-[1.7] mb-8">
+                    收录宋词中关于“烟雨”、“空翠”、“残霞”等自然景观的描写，提供500+高频文学替代词。
+                </p>
+<div class="flex flex-wrap gap-2 mb-8">
+<span class="bg-surface-container-lowest text-stone-600 text-[10px] px-2 py-1 font-sans">#古典文学</span>
+<span class="bg-surface-container-lowest text-stone-600 text-[10px] px-2 py-1 font-sans">#自然描写</span>
+<span class="bg-surface-container-lowest text-stone-600 text-[10px] px-2 py-1 font-sans">#宋词</span>
+</div>
+<div class="mt-auto pt-6 flex items-center justify-between border-t border-stone-200/50">
+<div class="flex items-center gap-2">
+<div class="w-6 h-6 bg-stone-300 overflow-hidden">
+<img alt="用户头像" class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDpXuuuLObZ9i3XzgYqTHm_tlHw3OnsAYlppY5j-NR9s4U_syp7CLhr7GQyTkeQrQdsrFN_HMKoJKzodbY777c5are-dIfcJjxU-LgBGq3_o4VVZsTX0Bk9z2Sg_Xvg74dEvDrA_GenO7ki-mNDDfR_IKWttu4Xpw0iJ9Hw2gCHHaqItgUMlA8dx_kY-cxunL-iurU1WmzrV7ZDOaf0_YFZ1TBwZ38ZZDFkesIqsxlkVPBKLXt4_E9zR2CtK3aI1xNKx6y_bifeWCbz"/>
+</div>
+<span class="text-xs font-sans text-stone-600">云林子</span>
+</div>
+<button class="bg-[#A73032] text-white px-6 py-2 text-xs font-sans font-bold tracking-widest hover:bg-[#86171D] transition-colors uppercase">克隆</button>
+</div>
+</div>
+</div>
+<!-- Card 3: Character Setting -->
+<div class="group bg-surface-container-low flex flex-col transition-all hover:bg-surface-container relative">
+<div class="h-48 overflow-hidden">
+<img alt="水墨画" class="w-full h-full object-cover grayscale opacity-70 group-hover:grayscale-0 group-hover:scale-105 transition-all duration-700" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBGe9JYU_qnd1qbH83FoiW0aQtx3Ovck-VKKgKdS9Rw9LatWXcBMZd8E4avs5J7qFJCTpmc9lwfIp7mb7Rvi3Emf3zXzuNuJ9rQ8JGjYyY4w4DPwXtymEJcHlE2O-Vvk6j2nk20Ihb36iggyBuDKaLqBO14bQtTYU83HwmCOAowvytsjoSWjpZBd0pI-nhEIW9WQhtu-AzHzMXt32Xp0QgpZ-RrQOZyyHPXcnSUfmk_dP4JvvhWf4VAQiaF8ct-2rO1f3ze8wN1ZUb0"/>
+</div>
+<div class="p-8 flex-1 flex flex-col">
+<div class="flex justify-between items-start mb-4">
+<span class="text-[10px] font-sans font-bold text-stone-400 tracking-widest uppercase">人物模组</span>
+</div>
+<h3 class="text-2xl font-bold text-stone-900 mb-4 leading-snug">魏晋风度：隐逸人物模组</h3>
+<p class="text-stone-500 text-sm leading-[1.7] mb-8 line-clamp-3">
+                    涵盖名士、僧道、隐者的言谈举止特征，包含《世说新语》风格的对话预设。
+                </p>
+<div class="mt-auto pt-6 flex items-center justify-between border-t border-stone-200/50">
+<div class="flex items-center gap-2">
+<div class="w-6 h-6 bg-stone-300 overflow-hidden">
+<img alt="用户头像" class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDZ4MzmHFrpaAJ5UkAKhp9x56TI6TkHBpwVranMkW-anslRpiAUvZNy1EVcdlFIxWBvJRGqYPwsC3LA_fmnS7ducVxM5HS0ZNeJ1ecLjVckKwelB4gu7-i_GZNjpJReoBxE-gRO6wdDORldzTkSpWMkzw-ug61LYVXmHDQ_r1UMShjDVasHEE9_asW9u1VBRCi9yaHeEZIblJPXOGUXNQY83RE9uxB8_xcNRHIXeD7lolbVa49TyPhCjtiyYwHKoZZNfDx0CnFP3TDx"/>
+</div>
+<span class="text-xs font-sans text-stone-600">竹林七贤后援</span>
+</div>
+<button class="bg-[#A73032] text-white px-6 py-2 text-xs font-sans font-bold tracking-widest hover:bg-[#86171D] transition-colors uppercase">克隆</button>
+</div>
+</div>
+</div>
+<!-- Card 4: Plot Arc -->
+<div class="group bg-surface-container-highest flex flex-col transition-all hover:bg-white relative border-l-4 border-[#A73032]">
+<div class="p-8 h-full flex flex-col">
+<div class="flex justify-between items-start mb-4">
+<span class="text-[10px] font-sans font-bold text-stone-400 tracking-widest uppercase">高级包</span>
+</div>
+<h3 class="text-2xl font-bold text-stone-900 mb-4 leading-snug">悬疑推理：剥笋式架构</h3>
+<p class="text-stone-500 text-sm leading-[1.7] mb-8">
+                    通过环环相扣的物证逻辑，构建层层剥开真相的沉浸感。内含12个经典误导性支线模板。
+                </p>
+<div class="bg-surface-container-low p-4 mb-8">
+<div class="flex justify-between mb-2">
+<span class="text-[10px] font-sans text-stone-400">完成度</span>
+<span class="text-[10px] font-sans text-stone-900 font-bold">100%</span>
+</div>
+<div class="w-full bg-stone-200 h-1">
+<div class="bg-[#A73032] h-full w-full"></div>
+</div>
+</div>
+<div class="mt-auto pt-6 flex items-center justify-between border-t border-stone-200/50">
+<div class="flex items-center gap-2">
+<div class="w-6 h-6 bg-stone-300 overflow-hidden">
+<img alt="用户头像" class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBHMZdqKAgnNIWKPjYigxM4zgiKCSfHoLyhg4D8qqFqOa2mh9RTp-Vx3OFiVCUYOKOa1mkIqeJRsyrzJYW5OGGUbf70Bx4baB7Ug1j5CSiafAbqnohr2D4k0U5tZ4ALrB7TIMmVTkarZ4uUjpXXjTm8EmeheFdu0RAKg1a5-egJx4IcKAnEk5uv1NU8F3TxE4TtqpRO0WYIRTXijqVRQjyH6viQgm-WpMMlHMqS98kIqxDcoeA2vhWz8Gufl5zlMAqaSmdQRUW-tx5n"/>
+</div>
+<span class="text-xs font-sans text-stone-600">推理之门</span>
+</div>
+<button class="bg-[#A73032] text-white px-6 py-2 text-xs font-sans font-bold tracking-widest hover:bg-[#86171D] transition-colors uppercase">克隆</button>
+</div>
+</div>
+</div>
+<!-- Card 5: World Building -->
+<div class="group bg-surface-container-low flex flex-col transition-all hover:bg-surface-container relative">
+<div class="h-48 overflow-hidden">
+<img alt="仙山云海" class="w-full h-full object-cover grayscale opacity-70 group-hover:grayscale-0 group-hover:scale-105 transition-all duration-700" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCbQ9AHnH91eOE8uxXTZIagGYn8cnQ3ws31WwtMIGGvvKX3c9_TtI_QMyZmTBcp1i_PlFNInlligGHLAvyu4XuywOhzNeYuacDmElA1WZUIg0PEOVrKfyHt-kbkw-LgrrpdSOxznnjjOUas2y28u9YOrkcw5TU3uyrtWcbhIFF14ps4HSKlYlNBOBoiRDMVOxlS4d-GlE9yui2tMaZezCp46IjwhFxMzCOSm_x5EAWTsYpNjpa9XLiBG4ZdlxVmpoOLBp_9ICvwD8rF"/>
+</div>
+<div class="p-8 flex-1 flex flex-col">
+<div class="flex justify-between items-start mb-4">
+<span class="text-[10px] font-sans font-bold text-stone-400 tracking-widest uppercase">世界观设定</span>
+</div>
+<h3 class="text-2xl font-bold text-stone-900 mb-4 leading-snug">仙侠位面阶级设定</h3>
+<p class="text-stone-500 text-sm leading-[1.7] mb-8 line-clamp-3">
+                    从炼气到渡劫的体系化进阶，包含法宝品阶、宗门贡献体系及资源分配逻辑图。
+                </p>
+<div class="mt-auto pt-6 flex items-center justify-between border-t border-stone-200/50">
+<div class="flex items-center gap-2">
+<div class="w-6 h-6 bg-stone-300 overflow-hidden">
+<img alt="用户头像" class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBm8DUBseZlz8FcMwMyiKTq0OgpxT2oD5JE6Y_Ha9apobRZtE0tVe4zpNEx31IEkwn0MYDovnWZt5Cw8kTo77OKIRQ1ZQzCZzpHiKQyMY2OCludNBUYgucF7YlSuYoS94p4CBwZfuQWTEfp3JmjHw4m32MChwGB3Wmv1eG07_Y-IeHDqEIrJ8D7mioHs4AJfWOJWEwfwuDVejw8uamfTOas2-moQYOJjBfCew2uQgbigA_lUFeL2XktrXNIATKGQKwR0d3f8LcAwwEZ"/>
+</div>
+<span class="text-xs font-sans text-stone-600">修真模拟器</span>
+</div>
+<button class="bg-[#A73032] text-white px-6 py-2 text-xs font-sans font-bold tracking-widest hover:bg-[#86171D] transition-colors uppercase">克隆</button>
+</div>
+</div>
+</div>
+<!-- Card 6: Aesthetic Style -->
+<div class="group bg-surface-container flex flex-col transition-all hover:bg-surface-container-high relative">
+<div class="p-8 h-full flex flex-col">
+<div class="flex justify-between items-start mb-4">
+<span class="text-[10px] font-sans font-bold text-stone-400 tracking-widest uppercase">风格指南</span>
+</div>
+<h3 class="text-2xl font-bold text-stone-900 mb-4 leading-snug">物哀与空寂：日式美学</h3>
+<p class="text-stone-500 text-sm leading-[1.7] mb-8">
+                    追求极简与破碎感文字风格的写作建议。包含50组关于季节更替与无常感的隐喻。
+                </p>
+<div class="flex flex-wrap gap-2 mb-8">
+<span class="bg-surface-container-lowest text-stone-600 text-[10px] px-2 py-1 font-sans">#物哀</span>
+<span class="bg-surface-container-lowest text-stone-600 text-[10px] px-2 py-1 font-sans">#侘寂</span>
+</div>
+<div class="mt-auto pt-6 flex items-center justify-between border-t border-stone-200/50">
+<div class="flex items-center gap-2">
+<div class="w-6 h-6 bg-stone-300 overflow-hidden">
+<img alt="用户头像" class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBveNiLYDl3HpnKg5_wm-uD7_DwbQDS4IcrYa2Sld6noyQ_Q1j6RGfHbBrC2v46sKnHnBe_p_Sed_m_Ht1iOvPrbxMgKSJM8vo6Bo8QARpxEJBjxWg4_hTB5SAafw9b8Fa7hsr2-OQ-QqWa9Areto-Lw4dqpUKgczuUovuPm58IJW5v6iUEox9zy9JPckJF2MaPUg7qfKfjAnpVsy_584xNo1VaRRoDT2ssDNp53OoH6hktQDZXxWzMRt2gS7HOcA9CFOlWZ2q6unwW"/>
+</div>
+<span class="text-xs font-sans text-stone-600">空蝉之音</span>
+</div>
+<button class="bg-[#A73032] text-white px-6 py-2 text-xs font-sans font-bold tracking-widest hover:bg-[#86171D] transition-colors uppercase">克隆</button>
+</div>
+</div>
+</div>
+</div>
+<!-- Pagination -->
+<div class="mt-20 flex justify-center items-center gap-12">
+<button class="group flex items-center gap-2 text-stone-400 hover:text-stone-900 transition-colors">
+<span class="material-symbols-outlined" data-icon="chevron_left">chevron_left</span>
+<span class="text-xs font-sans font-bold tracking-widest">上一页</span>
+</button>
+<div class="flex gap-4">
+<span class="text-[#A73032] font-bold text-sm font-sans border-b-2 border-[#A73032] pb-1">01</span>
+<span class="text-stone-300 text-sm font-sans hover:text-stone-600 cursor-pointer">02</span>
+<span class="text-stone-300 text-sm font-sans hover:text-stone-600 cursor-pointer">03</span>
+<span class="text-stone-300 text-sm font-sans">...</span>
+<span class="text-stone-300 text-sm font-sans hover:text-stone-600 cursor-pointer">12</span>
+</div>
+<button class="group flex items-center gap-2 text-stone-900 transition-colors">
+<span class="text-xs font-sans font-bold tracking-widest">下一页</span>
+<span class="material-symbols-outlined" data-icon="chevron_right">chevron_right</span>
+</button>
+</div>
+</main>
+<!-- Contextual FAB -->
+<button class="fixed bottom-12 right-12 bg-[#A73032] text-white w-16 h-16 flex items-center justify-center shadow-[0px_4px_20px_rgba(167,48,50,0.3)] hover:scale-105 active:scale-95 transition-all">
+<span class="material-symbols-outlined text-3xl" data-icon="add">add</span>
+</button>
+</body></html>

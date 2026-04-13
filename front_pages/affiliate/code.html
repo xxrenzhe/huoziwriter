@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+
+<html lang="zh-CN"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>分销中心 - Huozi Writer</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;500;700;900&amp;family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "primary-container": "#a73032",
+                    "on-tertiary": "#ffffff",
+                    "on-surface-variant": "#584140",
+                    "surface-tint": "#ab3335",
+                    "on-tertiary-container": "#d5d4d1",
+                    "on-surface": "#1b1c1a",
+                    "primary-fixed-dim": "#ffb3af",
+                    "primary-fixed": "#ffdad7",
+                    "on-background": "#1b1c1a",
+                    "surface-dim": "#dbdad7",
+                    "surface-bright": "#fbf9f6",
+                    "error": "#ba1a1a",
+                    "secondary-fixed-dim": "#cbc6bf",
+                    "on-primary-fixed-variant": "#8a1a20",
+                    "outline-variant": "#dfbfbd",
+                    "on-primary-fixed": "#410005",
+                    "surface-container": "#efeeeb",
+                    "on-error-container": "#93000a",
+                    "error-container": "#ffdad6",
+                    "on-error": "#ffffff",
+                    "outline": "#8b716f",
+                    "on-tertiary-fixed": "#1b1c1a",
+                    "on-secondary-fixed": "#1d1b17",
+                    "surface-container-lowest": "#ffffff",
+                    "tertiary-fixed-dim": "#c7c6c3",
+                    "secondary": "#615e58",
+                    "background": "#fbf9f6",
+                    "inverse-primary": "#ffb3af",
+                    "inverse-surface": "#30312f",
+                    "surface": "#fbf9f6",
+                    "surface-container-low": "#f5f3f0",
+                    "inverse-on-surface": "#f2f0ed",
+                    "secondary-container": "#e7e2da",
+                    "on-secondary": "#ffffff",
+                    "on-secondary-fixed-variant": "#494641",
+                    "tertiary-container": "#5b5c59",
+                    "on-primary": "#ffffff",
+                    "on-secondary-container": "#67645e",
+                    "secondary-fixed": "#e7e2da",
+                    "primary": "#86171d",
+                    "tertiary": "#444442",
+                    "surface-container-highest": "#e4e2df",
+                    "on-primary-container": "#ffc6c3",
+                    "surface-container-high": "#eae8e5",
+                    "surface-variant": "#e4e2df",
+                    "on-tertiary-fixed-variant": "#464744",
+                    "tertiary-fixed": "#e4e2df"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0px",
+                    "lg": "0px",
+                    "xl": "0px",
+                    "full": "9999px"
+            },
+            "fontFamily": {
+                    "headline": ["Noto Serif SC"],
+                    "body": ["Noto Serif SC"],
+                    "label": ["Inter"]
+            }
+          },
+        },
+      }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        body {
+            font-family: 'Noto Serif SC', serif;
+            -webkit-font-smoothing: antialiased;
+        }
+        .label-font {
+            font-family: 'Inter', sans-serif;
+        }
+        * {
+            border-radius: 0 !important;
+        }
+    </style>
+</head>
+<body class="bg-surface-container-low text-on-surface min-h-screen flex">
+<!-- SideNavBar Component -->
+<aside class="fixed left-0 top-0 h-full z-50 flex flex-col border-r border-surface-container bg-surface-container-low w-[240px] shrink-0 font-['Noto_Serif_SC'] text-base leading-[1.7] antialiased">
+<div class="p-8 flex flex-col gap-2">
+<h1 class="text-xl font-bold font-sans text-on-surface tracking-wider">Huozi Writer</h1>
+<p class="text-xs text-secondary font-sans tracking-widest uppercase">高级编辑器</p>
+</div>
+<nav class="flex-1 px-4 space-y-1">
+<a class="text-on-surface-variant px-4 py-3 flex items-center gap-3 hover:bg-surface-container transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="edit_note">edit_note</span>
+<span class="label-font font-medium">写作</span>
+</a>
+<a class="text-on-surface-variant px-4 py-3 flex items-center gap-3 hover:bg-surface-container transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="auto_stories">auto_stories</span>
+<span class="label-font font-medium">书架</span>
+</a>
+<a class="text-on-surface-variant px-4 py-3 flex items-center gap-3 hover:bg-surface-container transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="account_tree">account_tree</span>
+<span class="label-font font-medium">大纲</span>
+</a>
+<a class="text-on-surface-variant px-4 py-3 flex items-center gap-3 hover:bg-surface-container transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="inventory_2">inventory_2</span>
+<span class="label-font font-medium">素材</span>
+</a>
+<a class="bg-primary text-on-primary px-4 py-3 flex items-center gap-3 transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="settings" style="font-variation-settings: 'FILL' 1;">settings</span>
+<span class="label-font font-medium">设置</span>
+</a>
+</nav>
+<div class="mt-auto px-4 py-8 space-y-1">
+<a class="text-on-surface-variant px-4 py-3 flex items-center gap-3 hover:bg-surface-container transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="help_outline">help_outline</span>
+<span class="label-font font-medium text-sm">帮助</span>
+</a>
+<a class="text-on-surface-variant px-4 py-3 flex items-center gap-3 hover:bg-surface-container transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="logout">logout</span>
+<span class="label-font font-medium text-sm">退出</span>
+</a>
+</div>
+</aside>
+<!-- Main Canvas Area -->
+<main class="flex-1 ml-[240px] flex flex-col min-h-screen">
+<!-- TopAppBar Component -->
+<header class="sticky top-0 right-0 w-full flex items-center justify-between px-8 z-40 bg-surface-container-lowest/85 backdrop-blur-md h-16 border-t-4 border-primary shadow-sm">
+<div class="flex items-center gap-8">
+<span class="font-sans font-bold text-lg text-primary">分销中心</span>
+<nav class="hidden md:flex gap-6">
+<a class="text-on-surface-variant label-font text-sm font-medium hover:text-primary transition-colors" href="#">仪表盘</a>
+<a class="text-primary font-bold border-b-2 border-primary label-font text-sm" href="#">分销统计</a>
+<a class="text-on-surface-variant label-font text-sm font-medium hover:text-primary transition-colors" href="#">导出</a>
+</nav>
+</div>
+<div class="flex items-center gap-4">
+<div class="relative hidden sm:block">
+<input class="bg-surface-container-high border-none text-sm px-4 py-2 w-48 focus:bg-white focus:ring-1 focus:ring-primary label-font placeholder-on-surface-variant/50" placeholder="搜索订单..." type="text"/>
+</div>
+<div class="flex items-center gap-2">
+<button class="p-2 text-on-surface-variant hover:text-primary transition-colors">
+<span class="material-symbols-outlined" data-icon="notifications">notifications</span>
+</button>
+<button class="px-6 py-2 bg-primary text-on-primary label-font text-sm font-bold tracking-wider hover:bg-primary-container transition-colors">
+                    发布
+                </button>
+</div>
+</div>
+</header>
+<!-- Page Content -->
+<div class="p-12 max-w-7xl mx-auto w-full space-y-12">
+<!-- Tonal Stats Grid -->
+<section class="grid grid-cols-1 md:grid-cols-4 gap-0">
+<!-- Primary Stat -->
+<div class="bg-primary-container p-8 flex flex-col justify-between min-h-[200px]">
+<div>
+<span class="text-on-primary-container/70 label-font text-xs font-bold uppercase tracking-widest">累计收益</span>
+<div class="text-white text-4xl font-bold mt-2">¥ 12,480.00</div>
+</div>
+<div class="flex items-center gap-2 text-on-primary-container text-sm label-font">
+<span class="material-symbols-outlined text-sm" data-icon="trending_up">trending_up</span>
+<span>本月增长 12%</span>
+</div>
+</div>
+<!-- Secondary Stat 1 -->
+<div class="bg-surface-container p-8 flex flex-col justify-between border-l border-surface-container-low">
+<div>
+<span class="text-secondary label-font text-xs font-bold uppercase tracking-widest">待结算金额</span>
+<div class="text-on-surface text-3xl font-bold mt-2">¥ 2,150.00</div>
+</div>
+<button class="text-primary text-sm font-bold label-font text-left hover:underline">申请提现 →</button>
+</div>
+<!-- Secondary Stat 2 -->
+<div class="bg-surface-container-high p-8 flex flex-col justify-between border-l border-surface-container-low">
+<div>
+<span class="text-secondary label-font text-xs font-bold uppercase tracking-widest">推荐总数</span>
+<div class="text-on-surface text-3xl font-bold mt-2">142</div>
+</div>
+<div class="text-on-surface-variant text-sm label-font">有效转化率 18.4%</div>
+</div>
+<!-- Tertiary Stat -->
+<div class="bg-surface-container-highest p-8 flex flex-col justify-between border-l border-surface-container-low">
+<div>
+<span class="text-secondary label-font text-xs font-bold uppercase tracking-widest">分销等级</span>
+<div class="text-on-surface text-3xl font-bold mt-2 italic">白银学者</div>
+</div>
+<div class="text-on-surface-variant text-sm label-font">距离黄金级还需 ¥3,520</div>
+</div>
+</section>
+<!-- Referral Link Card -->
+<section class="bg-surface-container-lowest p-12 shadow-sm relative overflow-hidden border border-surface-container">
+<div class="max-w-2xl relative z-10">
+<h2 class="text-2xl font-bold text-on-surface mb-4">传播文字的力量</h2>
+<p class="text-on-surface-variant text-lg leading-relaxed mb-8 font-light italic">分享您的专属分销链接。每当一位新作者通过您的链接加入“火子”，您将获得首年订阅金额的 <span class="text-primary font-bold">20%</span> 作为润笔费。</p>
+<div class="flex gap-0 border border-surface-container">
+<div class="flex-1 bg-surface-container-low p-4 font-mono text-sm text-on-surface-variant truncate border-l-4 border-primary">
+                        https://huozi.app/ref/scholar_writer_2024_auth
+                    </div>
+<button class="bg-primary-container px-8 text-on-primary font-bold label-font hover:bg-primary transition-colors flex items-center gap-2">
+<span class="material-symbols-outlined text-sm" data-icon="content_copy">content_copy</span>
+                        复制链接
+                    </button>
+</div>
+</div>
+<!-- Background visual -->
+<div class="absolute top-0 right-0 h-full w-1/3 opacity-5 pointer-events-none">
+<img alt="笔尖与羊皮纸" class="object-cover h-full w-full grayscale" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDBdWkRxYv5I188Gky61M1e7IHKz5Ib7mo27ywaaXTduFexevz2U3LKEVQRrE5AoX8agPuVg3Vfh_CyVA9k4yOO_z6-MNCa1KW12M5wJBg7-G0N1nGqUUVDlYb2XzqQ7vOwDw09_ZlYTMItQf3l4r4dqjT8YcZjlnF4cwrWSLNy2Tmc2ixHE3zbeHs5io8NiYB4mYO0ctirNCB_J1GrYUwfRa6FwJfSBEyJxmqPO_pT-a6OW1_9cd9ZIKMG23DzNlFrNKnbpMgV8sJZ"/>
+</div>
+</section>
+<!-- Referral Table -->
+<section class="space-y-6">
+<div class="flex items-center justify-between">
+<h3 class="text-xl font-bold tracking-tight">推荐记录</h3>
+<div class="flex gap-4">
+<button class="px-4 py-2 bg-surface-container label-font text-xs font-bold hover:bg-surface-container-high transition-colors">筛选</button>
+<button class="px-4 py-2 bg-surface-container label-font text-xs font-bold hover:bg-surface-container-high transition-colors">导出CSV</button>
+</div>
+</div>
+<div class="overflow-x-auto border border-surface-container">
+<table class="w-full text-left border-collapse">
+<thead class="bg-surface-container text-secondary label-font text-xs font-bold uppercase tracking-widest">
+<tr>
+<th class="px-8 py-6">推荐日期</th>
+<th class="px-8 py-6">受邀作者</th>
+<th class="px-8 py-6">订阅方案</th>
+<th class="px-8 py-6">订单状态</th>
+<th class="px-8 py-6 text-right">预估收益</th>
+</tr>
+</thead>
+<tbody class="text-on-surface">
+<!-- Row 1 -->
+<tr class="bg-surface-container-lowest hover:bg-surface-container-low border-b border-surface-container transition-colors">
+<td class="px-8 py-6 label-font text-sm">2024.05.12</td>
+<td class="px-8 py-6">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 bg-surface-container-highest flex items-center justify-center font-bold text-xs">李</div>
+<div>
+<div class="font-bold">李华</div>
+<div class="text-xs text-on-surface-variant label-font">li.hua@example.com</div>
+</div>
+</div>
+</td>
+<td class="px-8 py-6">
+<span class="bg-surface-container px-3 py-1 text-[10px] label-font font-bold uppercase">年度尊享版</span>
+</td>
+<td class="px-8 py-6">
+<div class="flex items-center gap-2 text-green-700 label-font text-xs font-bold">
+<span class="w-2 h-2 bg-green-700"></span>
+                                    已生效
+                                </div>
+</td>
+<td class="px-8 py-6 text-right font-bold text-primary">¥ 198.00</td>
+</tr>
+<!-- Row 2 -->
+<tr class="bg-surface-container-low hover:bg-surface-container border-b border-surface-container transition-colors">
+<td class="px-8 py-6 label-font text-sm">2024.05.10</td>
+<td class="px-8 py-6">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 bg-surface-container-highest flex items-center justify-center font-bold text-xs">王</div>
+<div>
+<div class="font-bold">王明明</div>
+<div class="text-xs text-on-surface-variant label-font">m.wang@mail.net</div>
+</div>
+</div>
+</td>
+<td class="px-8 py-6">
+<span class="bg-surface-container-high px-3 py-1 text-[10px] label-font font-bold uppercase">月度标准版</span>
+</td>
+<td class="px-8 py-6">
+<div class="flex items-center gap-2 text-on-surface-variant label-font text-xs font-bold">
+<span class="w-2 h-2 bg-on-surface-variant"></span>
+                                    待付款
+                                </div>
+</td>
+<td class="px-8 py-6 text-right font-bold text-on-surface-variant">¥ 12.00</td>
+</tr>
+<!-- Row 3 -->
+<tr class="bg-surface-container-lowest hover:bg-surface-container-low border-b border-surface-container transition-colors">
+<td class="px-8 py-6 label-font text-sm">2024.05.08</td>
+<td class="px-8 py-6">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 bg-surface-container-highest flex items-center justify-center font-bold text-xs">张</div>
+<div>
+<div class="font-bold">张晓雅</div>
+<div class="text-xs text-on-surface-variant label-font">xiaoya.z@writer.cn</div>
+</div>
+</div>
+</td>
+<td class="px-8 py-6">
+<span class="bg-surface-container px-3 py-1 text-[10px] label-font font-bold uppercase">年度尊享版</span>
+</td>
+<td class="px-8 py-6">
+<div class="flex items-center gap-2 text-green-700 label-font text-xs font-bold">
+<span class="w-2 h-2 bg-green-700"></span>
+                                    已生效
+                                </div>
+</td>
+<td class="px-8 py-6 text-right font-bold text-primary">¥ 198.00</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="flex justify-center pt-8">
+<nav class="flex gap-0 border border-surface-container">
+<button class="w-10 h-10 flex items-center justify-center bg-primary text-on-primary font-bold">1</button>
+<button class="w-10 h-10 flex items-center justify-center hover:bg-surface-container transition-colors label-font text-sm border-l border-surface-container">2</button>
+<button class="w-10 h-10 flex items-center justify-center hover:bg-surface-container transition-colors label-font text-sm border-l border-surface-container">3</button>
+<span class="flex items-center justify-center px-4 border-l border-surface-container">...</span>
+<button class="w-10 h-10 flex items-center justify-center hover:bg-surface-container transition-colors label-font text-sm border-l border-surface-container">12</button>
+</nav>
+</div>
+</section>
+</div>
+<!-- Footer / Editorial Note -->
+<footer class="mt-auto p-12 bg-surface-container border-t border-surface-container-high">
+<div class="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-start md:items-center gap-8">
+<div class="space-y-2">
+<div class="text-primary font-bold text-lg">火子 Huozi Writer</div>
+<p class="text-on-surface-variant text-sm italic max-w-md">“文章千古事，得失寸心知。” 感谢您成为文化传承的使者。</p>
+</div>
+<div class="flex gap-12">
+<div class="space-y-4">
+<h4 class="label-font text-[10px] font-bold uppercase tracking-widest text-secondary">资源</h4>
+<ul class="space-y-2 text-sm text-on-surface-variant">
+<li><a class="hover:text-primary transition-colors" href="#">分销指南</a></li>
+<li><a class="hover:text-primary transition-colors" href="#">品牌素材包</a></li>
+<li><a class="hover:text-primary transition-colors" href="#">开发者接口</a></li>
+</ul>
+</div>
+<div class="space-y-4">
+<h4 class="label-font text-[10px] font-bold uppercase tracking-widest text-secondary">法律</h4>
+<ul class="space-y-2 text-sm text-on-surface-variant">
+<li><a class="hover:text-primary transition-colors" href="#">分销协议</a></li>
+<li><a class="hover:text-primary transition-colors" href="#">隐私政策</a></li>
+<li><a class="hover:text-primary transition-colors" href="#">服务条款</a></li>
+</ul>
+</div>
+</div>
+</div>
+</footer>
+</main>
+</body></html>

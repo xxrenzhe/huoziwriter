@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="zh-CN"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;700&amp;family=Inter:wght@400;500;600&amp;family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "primary-container": "#a73032",
+                    "on-tertiary": "#ffffff",
+                    "on-surface-variant": "#584140",
+                    "surface-tint": "#ab3335",
+                    "on-tertiary-container": "#d5d4d1",
+                    "on-surface": "#1b1c1a",
+                    "primary-fixed-dim": "#ffb3af",
+                    "primary-fixed": "#ffdad7",
+                    "on-background": "#1b1c1a",
+                    "surface-dim": "#dbdad7",
+                    "surface-bright": "#fbf9f6",
+                    "error": "#ba1a1a",
+                    "secondary-fixed-dim": "#cbc6bf",
+                    "on-primary-fixed-variant": "#8a1a20",
+                    "outline-variant": "#dfbfbd",
+                    "on-primary-fixed": "#410005",
+                    "surface-container": "#efeeeb",
+                    "on-error-container": "#93000a",
+                    "error-container": "#ffdad6",
+                    "on-error": "#ffffff",
+                    "outline": "#8b716f",
+                    "on-tertiary-fixed": "#1b1c1a",
+                    "on-secondary-fixed": "#1d1b17",
+                    "surface-container-lowest": "#ffffff",
+                    "tertiary-fixed-dim": "#c7c6c3",
+                    "secondary": "#615e58",
+                    "background": "#0F0F0F",
+                    "inverse-primary": "#ffb3af",
+                    "inverse-surface": "#30312f",
+                    "surface": "#1A1A1A",
+                    "surface-container-low": "#151515",
+                    "inverse-on-surface": "#f2f0ed",
+                    "secondary-container": "#2A2A2A",
+                    "on-secondary": "#ffffff",
+                    "on-secondary-fixed-variant": "#494641",
+                    "tertiary-container": "#5b5c59",
+                    "on-primary": "#ffffff",
+                    "on-secondary-container": "#67645e",
+                    "secondary-fixed": "#e7e2da",
+                    "primary": "#86171d",
+                    "tertiary": "#444442",
+                    "surface-container-highest": "#e4e2df",
+                    "on-primary-container": "#ffc6c3",
+                    "surface-container-high": "#eae8e5",
+                    "surface-variant": "#e4e2df",
+                    "on-tertiary-fixed-variant": "#464744",
+                    "tertiary-fixed": "#e4e2df"
+            },
+            "borderRadius": {
+                    "none": "0px",
+                    "DEFAULT": "0px",
+                    "lg": "0px",
+                    "xl": "0px",
+                    "full": "9999px"
+            },
+            "fontFamily": {
+                    "headline": ["Noto Serif SC"],
+                    "body": ["Noto Serif SC"],
+                    "label": ["Inter"]
+            }
+          },
+        }
+      }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        body { font-family: 'Noto Serif SC', serif; }
+        .label-font { font-family: 'Inter', sans-serif; }
+        ::-webkit-scrollbar { width: 4px; height: 4px; }
+        ::-webkit-scrollbar-track { background: #0F0F0F; }
+        ::-webkit-scrollbar-thumb { background: #a73032; }
+        * { border-radius: 0 !important; }
+    </style>
+</head>
+<body class="bg-[#0F0F0F] text-stone-100 antialiased overflow-hidden">
+<!-- Sidebar Navigation Shell -->
+<aside class="fixed left-0 top-0 h-full z-50 flex flex-col border-r border-stone-800 bg-[#0F0F0F] w-[240px] shrink-0 font-['Noto_Serif_SC'] text-base leading-[1.7]">
+<div class="p-6">
+<h1 class="text-xl font-bold font-sans text-stone-100 tracking-wider">Huozi Writer</h1>
+<p class="text-stone-500 text-xs mt-1 label-font uppercase tracking-widest">高级编辑器</p>
+</div>
+<nav class="flex-1 px-0 mt-4">
+<div class="text-stone-400 px-4 py-3 flex items-center gap-3 hover:bg-stone-900 transition-all cursor-pointer">
+<span class="material-symbols-outlined" data-icon="edit_note">edit_note</span>
+<span class="label-font font-medium">写作</span>
+</div>
+<div class="text-stone-400 px-4 py-3 flex items-center gap-3 hover:bg-stone-900 transition-all cursor-pointer">
+<span class="material-symbols-outlined" data-icon="auto_stories">auto_stories</span>
+<span class="label-font font-medium">书架</span>
+</div>
+<div class="bg-red-900/40 text-stone-100 px-4 py-3 flex items-center gap-3 transition-colors cursor-pointer border-l-4 border-[#A73032]">
+<span class="material-symbols-outlined" data-icon="account_tree">account_tree</span>
+<span class="label-font font-medium">大纲</span>
+</div>
+<div class="text-stone-400 px-4 py-3 flex items-center gap-3 hover:bg-stone-900 transition-all cursor-pointer">
+<span class="material-symbols-outlined" data-icon="inventory_2">inventory_2</span>
+<span class="label-font font-medium">素材</span>
+</div>
+<div class="text-stone-400 px-4 py-3 flex items-center gap-3 hover:bg-stone-900 transition-all cursor-pointer">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+<span class="label-font font-medium">设置</span>
+</div>
+</nav>
+<div class="p-4 mt-auto space-y-1 border-t border-stone-800">
+<div class="text-stone-500 px-4 py-2 flex items-center gap-3 hover:bg-stone-900 transition-all cursor-pointer text-sm">
+<span class="material-symbols-outlined" data-icon="help_outline">help_outline</span>
+<span class="label-font">帮助</span>
+</div>
+<div class="text-stone-500 px-4 py-2 flex items-center gap-3 hover:bg-stone-900 transition-all cursor-pointer text-sm">
+<span class="material-symbols-outlined" data-icon="logout">logout</span>
+<span class="label-font">退出</span>
+</div>
+</div>
+</aside>
+<!-- Main Content Canvas -->
+<main class="ml-[240px] h-screen flex flex-col bg-[#0F0F0F]">
+<!-- Top App Bar -->
+<header class="sticky top-0 right-0 w-full flex items-center justify-between px-8 h-16 z-40 bg-[#0F0F0F]/85 backdrop-blur-md border-b border-stone-800 shadow-sm font-['Noto_Serif_SC'] font-medium">
+<div class="flex items-center gap-8">
+<span class="font-sans font-bold text-lg text-red-500">Engine Routing</span>
+<div class="flex gap-6 items-center">
+<span class="text-stone-500 label-font text-sm tracking-widest cursor-pointer hover:text-red-400">仪表盘</span>
+<span class="text-red-500 font-bold border-b-2 border-[#A73032] label-font text-sm tracking-widest cursor-pointer">统计</span>
+<span class="text-stone-500 label-font text-sm tracking-widest cursor-pointer hover:text-red-400">导出</span>
+</div>
+</div>
+<div class="flex items-center gap-4">
+<div class="relative flex items-center">
+<input class="bg-[#1A1A1A] border-stone-800 text-xs text-stone-300 w-64 focus:ring-1 focus:ring-red-500 h-8 label-font px-3" placeholder="搜索模型路由..." type="text"/>
+</div>
+<button class="bg-[#A73032] text-white px-4 py-1 text-xs label-font uppercase tracking-widest transition-colors hover:bg-[#86171D]">发布</button>
+<span class="material-symbols-outlined text-stone-400 cursor-pointer" data-icon="notifications">notifications</span>
+<div class="w-8 h-8 bg-[#1A1A1A] flex items-center justify-center cursor-pointer border border-stone-800">
+<span class="material-symbols-outlined text-stone-400" data-icon="account_circle">account_circle</span>
+</div>
+</div>
+</header>
+<!-- Dynamic Grid Content -->
+<div class="flex-1 overflow-y-auto p-8 space-y-8">
+<!-- Real-time Compute Load Visualization -->
+<section class="grid grid-cols-1 md:grid-cols-3 gap-6">
+<!-- GPT Load -->
+<div class="bg-[#1A1A1A] p-6 flex flex-col gap-4 border border-stone-800">
+<div class="flex justify-between items-start">
+<div>
+<p class="label-font text-[10px] text-stone-500 uppercase tracking-[0.2em]">主计算核心</p>
+<h3 class="text-xl font-bold font-sans mt-1">GPT-4o Omnis</h3>
+</div>
+<span class="bg-green-900/30 text-green-500 px-2 py-0.5 text-[10px] label-font font-bold">运行中</span>
+</div>
+<div class="h-24 flex items-end gap-1">
+<div class="bg-red-500/20 w-full h-[60%]"></div>
+<div class="bg-red-500/40 w-full h-[80%]"></div>
+<div class="bg-red-500/60 w-full h-[40%]"></div>
+<div class="bg-red-500/20 w-full h-[70%]"></div>
+<div class="bg-red-500/50 w-full h-[90%]"></div>
+<div class="bg-red-500 w-full h-[65%] shadow-[0_0_10px_rgba(167,48,50,0.4)]"></div>
+<div class="bg-stone-800 w-full h-[30%]"></div>
+<div class="bg-stone-800 w-full h-[20%]"></div>
+</div>
+<div class="flex justify-between text-[10px] label-font text-stone-500">
+<span>延迟: 42ms</span>
+<span>负载: 72%</span>
+</div>
+</div>
+<!-- Claude Load -->
+<div class="bg-[#1A1A1A] p-6 flex flex-col gap-4 border border-stone-800">
+<div class="flex justify-between items-start">
+<div>
+<p class="label-font text-[10px] text-stone-500 uppercase tracking-[0.2em]">上下文专家</p>
+<h3 class="text-xl font-bold font-sans mt-1">Claude 3.5 Opus</h3>
+</div>
+<span class="bg-blue-900/30 text-blue-400 px-2 py-0.5 text-[10px] label-font font-bold">激活路由</span>
+</div>
+<div class="h-24 flex items-end gap-1">
+<div class="bg-stone-800 w-full h-[20%]"></div>
+<div class="bg-stone-800 w-full h-[25%]"></div>
+<div class="bg-stone-800 w-full h-[15%]"></div>
+<div class="bg-blue-400/40 w-full h-[45%]"></div>
+<div class="bg-blue-400/60 w-full h-[60%]"></div>
+<div class="bg-blue-400 w-full h-[55%]"></div>
+<div class="bg-stone-800 w-full h-[30%]"></div>
+<div class="bg-stone-800 w-full h-[20%]"></div>
+</div>
+<div class="flex justify-between text-[10px] label-font text-stone-500">
+<span>延迟: 128ms</span>
+<span>负载: 45%</span>
+</div>
+</div>
+<!-- Gemini Load -->
+<div class="bg-[#1A1A1A] p-6 flex flex-col gap-4 border border-stone-800">
+<div class="flex justify-between items-start">
+<div>
+<p class="label-font text-[10px] text-stone-500 uppercase tracking-[0.2em]">多模态引擎</p>
+<h3 class="text-xl font-bold font-sans mt-1">Gemini 1.5 Pro</h3>
+</div>
+<span class="bg-stone-800 text-stone-400 px-2 py-0.5 text-[10px] label-font font-bold">待机</span>
+</div>
+<div class="h-24 flex items-end gap-1">
+<div class="bg-stone-800 w-full h-[10%]"></div>
+<div class="bg-stone-800 w-full h-[10%]"></div>
+<div class="bg-stone-800 w-full h-[10%]"></div>
+<div class="bg-stone-800 w-full h-[10%]"></div>
+<div class="bg-stone-800 w-full h-[10%]"></div>
+<div class="bg-stone-700 w-full h-[15%]"></div>
+<div class="bg-stone-800 w-full h-[10%]"></div>
+<div class="bg-stone-800 w-full h-[10%]"></div>
+</div>
+<div class="flex justify-between text-[10px] label-font text-stone-500">
+<span>延迟: 94ms</span>
+<span>负载: 12%</span>
+</div>
+</div>
+</section>
+<!-- Scheduling Matrix -->
+<section class="bg-[#1A1A1A] border border-stone-800">
+<div class="p-6 border-b border-stone-800 flex justify-between items-center">
+<h2 class="text-lg font-bold tracking-tight">调度矩阵 (Scheduling Matrix)</h2>
+<div class="flex gap-2">
+<button class="bg-stone-800 hover:bg-stone-700 text-xs px-3 py-1 label-font">全部暂停</button>
+<button class="bg-red-800 hover:bg-red-700 text-xs px-3 py-1 label-font">路径优化</button>
+</div>
+</div>
+<div class="overflow-x-auto">
+<table class="w-full text-left label-font text-xs">
+<thead class="bg-[#0F0F0F] text-stone-500 uppercase tracking-widest border-b border-stone-800">
+<tr>
+<th class="p-4 font-semibold">优先级分类</th>
+<th class="p-4 font-semibold">分配模型</th>
+<th class="p-4 font-semibold">上下文限制</th>
+<th class="p-4 font-semibold">令牌速率</th>
+<th class="p-4 font-semibold">故障转移策略</th>
+<th class="p-4 font-semibold">状态</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-stone-800">
+<tr class="hover:bg-stone-900/50">
+<td class="p-4 text-stone-300">L0 - 创意草稿</td>
+<td class="p-4">
+<div class="flex items-center gap-2">
+<div class="w-2 h-2 bg-red-500"></div>
+                                    GPT-4o
+                                </div>
+</td>
+<td class="p-4">128k</td>
+<td class="p-4">950 / min</td>
+<td class="p-4 text-stone-500 italic">回退至 Gemini</td>
+<td class="p-4"><span class="text-red-500">高需求</span></td>
+</tr>
+<tr class="hover:bg-stone-900/50">
+<td class="p-4 text-stone-300">L1 - 结构逻辑</td>
+<td class="p-4">
+<div class="flex items-center gap-2">
+<div class="w-2 h-2 bg-blue-400"></div>
+                                    Claude 3.5 Opus
+                                </div>
+</td>
+<td class="p-4">200k</td>
+<td class="p-4">420 / min</td>
+<td class="p-4 text-stone-500 italic">无回退</td>
+<td class="p-4"><span class="text-stone-400">稳定</span></td>
+</tr>
+<tr class="hover:bg-stone-900/50">
+<td class="p-4 text-stone-300">L2 - 批量处理</td>
+<td class="p-4">
+<div class="flex items-center gap-2">
+<div class="w-2 h-2 bg-stone-600"></div>
+                                    Gemini 1.5 Flash
+                                </div>
+</td>
+<td class="p-4">1M</td>
+<td class="p-4">2400 / min</td>
+<td class="p-4 text-stone-500 italic">队列系统</td>
+<td class="p-4"><span class="text-stone-400">空闲</span></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<!-- Bottom Control Grid -->
+<section class="grid grid-cols-1 md:grid-cols-4 gap-6">
+<!-- System Health -->
+<div class="bg-[#1A1A1A] p-6 flex flex-col justify-between aspect-square border border-stone-800">
+<div>
+<p class="label-font text-[10px] text-stone-500 uppercase tracking-widest">系统健康度</p>
+<h4 class="text-2xl font-bold mt-2">99.98%</h4>
+</div>
+<div class="space-y-2">
+<div class="flex justify-between text-[10px] label-font text-stone-400">
+<span>运行时间</span>
+<span>421天 12小时</span>
+</div>
+<div class="w-full bg-stone-800 h-1">
+<div class="bg-red-500 h-full w-[99%]"></div>
+</div>
+</div>
+</div>
+<!-- Token Usage Bento -->
+<div class="col-span-1 md:col-span-2 bg-[#1A1A1A] p-6 flex flex-col justify-between border border-stone-800">
+<div class="flex justify-between items-start">
+<div>
+<p class="label-font text-[10px] text-stone-500 uppercase tracking-widest">令牌消耗总量</p>
+<h4 class="text-2xl font-bold mt-2">12,842,019</h4>
+</div>
+<div class="text-right">
+<p class="label-font text-[10px] text-stone-500 uppercase tracking-widest">预估成本</p>
+<p class="text-xl font-bold text-red-500">$142.12</p>
+</div>
+</div>
+<div class="flex items-center gap-4 mt-6">
+<div class="flex-1 flex flex-col gap-1">
+<span class="label-font text-[10px] text-stone-500">提示令牌 (PROMPT)</span>
+<div class="h-4 bg-red-900/30 relative">
+<div class="absolute inset-y-0 left-0 bg-red-500 w-[65%]"></div>
+</div>
+</div>
+<div class="flex-1 flex flex-col gap-1">
+<span class="label-font text-[10px] text-stone-500">补全令牌 (COMPLETION)</span>
+<div class="h-4 bg-stone-800 relative">
+<div class="absolute inset-y-0 left-0 bg-stone-600 w-[35%]"></div>
+</div>
+</div>
+</div>
+</div>
+<!-- Industrial Controls Card -->
+<div class="bg-[#1A1A1A] p-6 flex flex-col gap-4 border border-red-900/20">
+<p class="label-font text-[10px] text-stone-500 uppercase tracking-widest">引擎强制覆盖</p>
+<div class="space-y-3">
+<div class="flex items-center justify-between">
+<span class="text-xs label-font text-stone-300">严格质量模式</span>
+<div class="w-8 h-4 bg-red-800 relative cursor-pointer">
+<div class="absolute right-0 top-0 bottom-0 w-4 bg-white"></div>
+</div>
+</div>
+<div class="flex items-center justify-between">
+<span class="text-xs label-font text-stone-300">经济路由</span>
+<div class="w-8 h-4 bg-stone-800 relative cursor-pointer">
+<div class="absolute left-0 top-0 bottom-0 w-4 bg-stone-600"></div>
+</div>
+</div>
+<div class="flex items-center justify-between">
+<span class="text-xs label-font text-stone-300">强制缓存</span>
+<div class="w-8 h-4 bg-red-800 relative cursor-pointer">
+<div class="absolute right-0 top-0 bottom-0 w-4 bg-white"></div>
+</div>
+</div>
+</div>
+<button class="mt-auto w-full py-2 bg-stone-800 hover:bg-stone-700 text-[10px] label-font font-bold uppercase tracking-widest transition-all">恢复默认设置</button>
+</div>
+</section>
+</div>
+</main>
+<!-- Subtle Texture Overlay -->
+<div class="fixed inset-0 pointer-events-none opacity-[0.02] mix-blend-overlay bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')]"></div>
+</body></html>

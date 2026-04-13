@@ -1,0 +1,130 @@
+import { decryptSecret, encryptSecret, pngThumbBuffer } from "./security";
+import { renderMarkdownToWechatHtml } from "./rendering";
+
+type WechatConnectionRow = {
+  id: number;
+  user_id: number;
+  account_name: string | null;
+  original_id: string | null;
+  app_id_encrypted: string;
+  app_secret_encrypted: string;
+  access_token_encrypted: string | null;
+  access_token_expires_at: string | null;
+  status: "valid" | "invalid" | "expired" | "disabled";
+};
+
+async function fetchWechatToken(appId: string, appSecret: string) {
+  const response = await fetch(
+    `https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid=${encodeURIComponent(appId)}&secret=${encodeURIComponent(appSecret)}`,
+    { cache: "no-store" },
+  );
+  const json = await response.json();
+  if (!response.ok || json.errcode) {
+    throw new Error(json.errmsg || "获取微信 access_token 失败");
+  }
+  return json as { access_token: string; expires_in: number };
+}
+
+async function uploadThumb(accessToken: string) {
+  const formData = new FormData();
+  formData.append("media", new Blob([pngThumbBuffer()], { type: "image/png" }), "huozi-thumb.png");
+  const response = await fetch(`https://api.weixin.qq.com/cgi-bin/material/add_material?access_token=${accessToken}&type=image`, {
+    method: "POST",
+    body: formData,
+  });
+  const json = await response.json();
+  if (!response.ok || json.errcode) {
+    throw new Error(json.errmsg || "上传微信封面图失败");
+  }
+  return json.media_id as string;
+}
+
+export async function verifyWechatCredential(appId: string, appSecret: string) {
+  return fetchWechatToken(appId, appSecret);
+}
+
+export function encryptWechatConnection(input: {
+  appId: string;
+  appSecret: string;
+  accessToken?: string | null;
+}) {
+  return {
+    appIdEncrypted: encryptSecret(input.appId),
+    appSecretEncrypted: encryptSecret(input.appSecret),
+    accessTokenEncrypted: input.accessToken ? encryptSecret(input.accessToken) : null,
+  };
+}
+
+export async function resolveWechatAccessToken(connection: WechatConnectionRow) {
+  const cachedToken = decryptSecret(connection.access_token_encrypted);
+  if (
+    cachedToken &&
+    connection.access_token_expires_at &&
+    new Date(connection.access_token_expires_at).getTime() > Date.now() + 5 * 60 * 1000
+  ) {
+    return {
+      access_token: cachedToken,
+      expires_in: Math.max(
+        60,
+        Math.floor((new Date(connection.access_token_expires_at).getTime() - Date.now()) / 1000),
+      ),
+    };
+  }
+
+  const appId = decryptSecret(connection.app_id_encrypted);
+  const appSecret = decryptSecret(connection.app_secret_encrypted);
+  if (!appId || !appSecret) {
+    throw new Error("公众号凭证解密失败");
+  }
+  return fetchWechatToken(appId, appSecret);
+}
+
+export async function publishWechatDraft(input: {
+  connection: WechatConnectionRow;
+  title: string;
+  markdownContent: string;
+  digest?: string;
+  author?: string;
+  templateConfig?: {
+    titleStyle?: string;
+    paragraphLength?: string;
+  } | null;
+}) {
+  const tokenResult = await resolveWechatAccessToken(input.connection);
+  const thumbMediaId = await uploadThumb(tokenResult.access_token);
+  const content = await renderMarkdownToWechatHtml(input.markdownContent, input.title, input.templateConfig ?? null);
+  const payload = {
+    articles: [
+      {
+        title: input.title,
+        author: input.author || "Huozi Writer",
+        digest: input.digest || input.title,
+        content,
+        content_source_url: "",
+        thumb_media_id: thumbMediaId,
+        need_open_comment: 0,
+        only_fans_can_comment: 0,
+      },
+    ],
+  };
+
+  const response = await fetch(`https://api.weixin.qq.com/cgi-bin/draft/add?access_token=${tokenResult.access_token}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+  const json = await response.json();
+  if (!response.ok || json.errcode) {
+    throw new Error(json.errmsg || "推送微信草稿箱失败");
+  }
+
+  return {
+    mediaId: json.media_id as string,
+    accessToken: tokenResult.access_token,
+    expiresIn: tokenResult.expires_in,
+    requestSummary: payload,
+    responseSummary: json,
+  };
+}

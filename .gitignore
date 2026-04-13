@@ -141,3 +141,9 @@ vite.config.ts.timestamp-*
 # Dolt database files (added by bd init)
 .dolt/
 *.db
+*.db-shm
+*.db-wal
+data/
+test-results/
+__pycache__/
+*.py[cod]

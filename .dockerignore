@@ -1,0 +1,16 @@
+.git
+.beads
+node_modules
+**/node_modules
+.next
+**/.next
+dist
+coverage
+logs
+*.log
+.env
+.env.*
+!.env.example
+docs
+oldcode
+secrets

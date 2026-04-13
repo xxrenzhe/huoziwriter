@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+
+<html lang="zh-CN"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;700;900&amp;family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "primary-container": "#a73032",
+                    "on-tertiary": "#ffffff",
+                    "on-surface-variant": "#584140",
+                    "surface-tint": "#ab3335",
+                    "on-tertiary-container": "#d5d4d1",
+                    "on-surface": "#1b1c1a",
+                    "primary-fixed-dim": "#ffb3af",
+                    "primary-fixed": "#ffdad7",
+                    "on-background": "#1b1c1a",
+                    "surface-dim": "#dbdad7",
+                    "surface-bright": "#fbf9f6",
+                    "error": "#ba1a1a",
+                    "secondary-fixed-dim": "#cbc6bf",
+                    "on-primary-fixed-variant": "#8a1a20",
+                    "outline-variant": "#dfbfbd",
+                    "on-primary-fixed": "#410005",
+                    "surface-container": "#efeeeb",
+                    "on-error-container": "#93000a",
+                    "error-container": "#ffdad6",
+                    "on-error": "#ffffff",
+                    "outline": "#8b716f",
+                    "on-tertiary-fixed": "#1b1c1a",
+                    "on-secondary-fixed": "#1d1b17",
+                    "surface-container-lowest": "#ffffff",
+                    "tertiary-fixed-dim": "#c7c6c3",
+                    "secondary": "#615e58",
+                    "background": "#fbf9f6",
+                    "inverse-primary": "#ffb3af",
+                    "inverse-surface": "#30312f",
+                    "surface": "#fbf9f6",
+                    "surface-container-low": "#f5f3f0",
+                    "inverse-on-surface": "#f2f0ed",
+                    "secondary-container": "#e7e2da",
+                    "on-secondary": "#ffffff",
+                    "on-secondary-fixed-variant": "#494641",
+                    "tertiary-container": "#5b5c59",
+                    "on-primary": "#ffffff",
+                    "on-secondary-container": "#67645e",
+                    "secondary-fixed": "#e7e2da",
+                    "primary": "#86171d",
+                    "tertiary": "#444442",
+                    "surface-container-highest": "#e4e2df",
+                    "on-primary-container": "#ffc6c3",
+                    "surface-container-high": "#eae8e5",
+                    "surface-variant": "#e4e2df",
+                    "on-tertiary-fixed-variant": "#464744",
+                    "tertiary-fixed": "#e4e2df"
+            },
+            "fontFamily": {
+                    "headline": ["Noto Serif SC", "serif"],
+                    "body": ["Noto Serif SC", "serif"],
+                    "label": ["Inter", "sans-serif"]
+            },
+            "borderRadius": {
+                "none": "0px",
+                "sm": "0px",
+                "DEFAULT": "0px",
+                "md": "0px",
+                "lg": "0px",
+                "xl": "0px",
+                "2xl": "0px",
+                "3xl": "0px",
+                "full": "0px",
+            }
+          },
+        },
+      }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        body {
+            font-family: 'Noto Serif SC', serif;
+            -webkit-font-smoothing: antialiased;
+        }
+        * {
+            border-radius: 0px !important;
+        }
+    </style>
+</head>
+<body class="bg-surface text-on-surface flex min-h-screen overflow-x-hidden">
+<!-- SideNavBar (Shared Component) -->
+<aside class="fixed left-0 top-0 h-full z-50 flex flex-col border-r border-outline-variant bg-surface-container-low dark:bg-stone-900 w-[240px] shrink-0 font-['Noto_Serif_SC'] text-base leading-[1.7] antialiased">
+<div class="p-8 pb-4">
+<h1 class="text-xl font-bold font-sans text-stone-900 dark:text-stone-100 tracking-wider">Huozi Writer</h1>
+<p class="text-xs text-stone-500 font-sans tracking-widest mt-1">高级编辑器</p>
+</div>
+<nav class="flex-1 mt-6 px-4">
+<div class="space-y-1">
+<a class="text-stone-600 dark:text-stone-400 px-4 py-3 flex items-center gap-3 hover:bg-surface-container transition-all duration-150 ease-in-out" href="#">
+<span class="material-symbols-outlined" data-icon="edit_note">edit_note</span>
+<span class="font-label font-medium tracking-wide">写作</span>
+</a>
+<a class="text-stone-600 dark:text-stone-400 px-4 py-3 flex items-center gap-3 hover:bg-surface-container transition-all duration-150 ease-in-out" href="#">
+<span class="material-symbols-outlined" data-icon="auto_stories">auto_stories</span>
+<span class="font-label font-medium tracking-wide">书架</span>
+</a>
+<a class="text-stone-600 dark:text-stone-400 px-4 py-3 flex items-center gap-3 hover:bg-surface-container transition-all duration-150 ease-in-out" href="#">
+<span class="material-symbols-outlined" data-icon="account_tree">account_tree</span>
+<span class="font-label font-medium tracking-wide">大纲</span>
+</a>
+<a class="text-stone-600 dark:text-stone-400 px-4 py-3 flex items-center gap-3 hover:bg-surface-container transition-all duration-150 ease-in-out" href="#">
+<span class="material-symbols-outlined" data-icon="inventory_2">inventory_2</span>
+<span class="font-label font-medium tracking-wide">素材</span>
+</a>
+<a class="bg-primary-container text-white dark:bg-red-800 dark:text-stone-100 px-4 py-3 flex items-center gap-3 transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+<span class="font-label font-medium tracking-wide">设置</span>
+</a>
+</div>
+<div class="mt-8">
+<button class="w-full bg-primary-container text-white py-3 font-label font-bold text-sm tracking-widest hover:bg-primary transition-colors">
+                新建文稿
+            </button>
+</div>
+</nav>
+<footer class="p-4 space-y-1">
+<a class="text-stone-600 dark:text-stone-400 px-4 py-2 flex items-center gap-3 hover:bg-surface-container transition-all text-sm" href="#">
+<span class="material-symbols-outlined text-lg" data-icon="help_outline">help_outline</span>
+<span class="font-label tracking-wide">帮助</span>
+</a>
+<a class="text-stone-600 dark:text-stone-400 px-4 py-2 flex items-center gap-3 hover:bg-surface-container transition-all text-sm" href="#">
+<span class="material-symbols-outlined text-lg" data-icon="logout">logout</span>
+<span class="font-label tracking-wide">退出</span>
+</a>
+<div class="mt-4 px-4 flex items-center gap-3">
+<div class="w-8 h-8 bg-stone-300 overflow-hidden">
+<img alt="用户头像" class="w-full h-full object-cover" data-alt="close-up portrait of an elderly calligraphy master with a wise expression, cinematic lighting, monochromatic background" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCK2OIohppQ2v9v6YyzcRMqnVDJnyurwEqI8vKgHBKDzMw-KQvnvNvQbfDbWJECvvCM-ykiD4rnSNZy87U4SDz-2LUMDnPzD6_O47PtITiM9Gta7zB0noXsF8tpzdy4W5nx6p2GYgGW12XEHlUVesXgoW9b_RrO6vmBgdnI6MYDrElanF8NedRKwW4pVXJbucuNwA9XZFrKqPs5Hv2Q2HG_kuQSAHqrfl6RO4E_xvTDJ6EhSq59nEpdF-MBBgxjqkG5aTUbuObFVTrj"/>
+</div>
+<div class="overflow-hidden">
+<p class="text-xs font-bold font-sans truncate">学者之室</p>
+</div>
+</div>
+</footer>
+</aside>
+<!-- Main Content Canvas -->
+<main class="ml-[240px] flex-1 flex flex-col bg-surface-container-lowest">
+<!-- TopAppBar (Shared Component) -->
+<header class="sticky top-0 right-0 w-full flex items-center justify-between px-8 z-40 bg-surface/85 dark:bg-stone-950/85 backdrop-blur-md h-16 border-b border-outline-variant font-['Noto_Serif_SC'] font-medium">
+<div class="flex items-center gap-8">
+<span class="font-sans font-bold text-lg text-primary-container dark:text-red-500">Huozi Writer</span>
+<nav class="hidden md:flex items-center gap-6 text-sm">
+<a class="text-stone-500 dark:text-stone-400 hover:text-primary-container transition-colors" href="#">仪表盘</a>
+<a class="text-stone-500 dark:text-stone-400 hover:text-primary-container transition-colors" href="#">统计</a>
+<a class="text-stone-500 dark:text-stone-400 hover:text-primary-container transition-colors" href="#">导出</a>
+</nav>
+</div>
+<div class="flex items-center gap-4">
+<div class="relative flex items-center">
+<input class="bg-surface-container-high border-none text-sm px-4 py-1 w-48 focus:bg-white focus:ring-0 placeholder-stone-400" placeholder="搜索..." type="text"/>
+</div>
+<div class="flex items-center gap-2 text-stone-500">
+<button class="material-symbols-outlined hover:text-primary-container transition-colors" data-icon="notifications">notifications</button>
+<button class="material-symbols-outlined hover:text-primary-container transition-colors" data-icon="account_circle">account_circle</button>
+</div>
+<button class="bg-primary-container text-white px-6 py-1.5 text-sm font-bold tracking-widest hover:opacity-90 transition-opacity">
+                发布
+            </button>
+</div>
+</header>
+<!-- Manifesto Canvas Section -->
+<section class="max-w-5xl mx-auto py-24 px-12 lg:px-24 w-full">
+<!-- Hero Header -->
+<div class="mb-24 space-y-6">
+<span class="font-label text-xs tracking-[0.4em] text-primary-container font-bold uppercase">理念与愿景</span>
+<h2 class="text-6xl font-black leading-tight tracking-tighter text-on-surface">
+                活字：<br/>
+                开发者宣言
+            </h2>
+<div class="h-1 w-24 bg-primary-container"></div>
+</div>
+<!-- Bento Philosophy Grid -->
+<div class="grid grid-cols-12 gap-0 border border-outline-variant">
+<!-- Principles Column -->
+<div class="col-span-12 md:col-span-4 bg-surface-container-low p-10 space-y-12 border-r border-outline-variant">
+<div>
+<h3 class="font-label font-bold text-sm tracking-widest text-primary-container mb-4">原则 01</h3>
+<p class="text-xl font-bold leading-relaxed">纯粹的文字，<br/>不含杂质。</p>
+<p class="mt-4 text-sm text-secondary leading-loose">我们坚信，工具应当消失在思考的瞬间。界面不是目的，而是通往思想的透明路径。</p>
+</div>
+<div>
+<h3 class="font-label font-bold text-sm tracking-widest text-primary-container mb-4">原则 02</h3>
+<p class="text-xl font-bold leading-relaxed">空间即是<br/>思考的深度。</p>
+<p class="mt-4 text-sm text-secondary leading-loose">大量的留白并非浪费，而是给予逻辑呼吸的权利。文字需要空气，正如思考需要寂静。</p>
+</div>
+<div class="bg-primary-container p-8 text-white">
+<p class="font-label text-xs tracking-widest opacity-70 mb-4">核心信念</p>
+<p class="text-2xl font-black italic tracking-tight">"写作者是文字的建筑师。"</p>
+</div>
+</div>
+<!-- Main Text Body -->
+<div class="col-span-12 md:col-span-8 bg-white p-12 lg:p-20">
+<article class="prose prose-stone max-w-none">
+<h4 class="text-4xl font-black mb-12 tracking-tight">写作的禅意</h4>
+<div class="space-y-8 text-lg leading-[1.8] text-on-surface">
+<p>
+                            在数字时代的洪流中，我们逐渐失去了与文字深度互动的能力。碎片化的反馈、过度的装饰、无穷无尽的通知，将创作这一神圣的行为拆解得支离破碎。
+                        </p>
+<blockquote class="border-l-4 border-primary-container pl-8 py-2 my-12 italic font-medium text-2xl">
+                            “真正的创造力并非源于工具的繁复，而是源于对工具的彻底遗忘。”
+                        </blockquote>
+<p>
+<strong>活字 (Huozi Writer)</strong> 的诞生并非为了增加另一个“编辑器”，而是为了建立一个“居所”。一个属于文字的居所，一个让墨色在虚拟纸张上渗透、晕染、沉淀的空间。
+                        </p>
+<div class="grid grid-cols-2 gap-0 border border-outline-variant my-16">
+<div class="bg-surface-container p-8 border-r border-outline-variant">
+<p class="font-bold text-primary-container mb-2 text-sm font-label tracking-widest">壹. 触感</p>
+<p class="text-sm leading-relaxed text-secondary">每一次按键都应带有重力感。我们要模拟的是印刷机压过纸面的张力，而非电子元件的闪烁。</p>
+</div>
+<div class="bg-surface-container-high p-8">
+<p class="font-bold text-primary-container mb-2 text-sm font-label tracking-widest">贰. 凝视</p>
+<p class="text-sm leading-relaxed text-secondary">界面不应分散视线。当你的目光停留在屏幕，你应该只看到你的灵魂正在被构建的模样。</p>
+</div>
+</div>
+<p>
+                            我们拒绝圆角，因为思考是有边界且锐利的；我们拒绝渐变，因为真实的世界充满了明确的阴影；我们拥戴衬线体，因为文明的脊梁是由这些细小的勾勒支撑起来的。
+                        </p>
+<p class="pt-12 text-on-surface-variant font-medium">
+                            这是给每一个在深夜与词语搏斗的人的致意。
+                        </p>
+<div class="mt-16 flex items-center gap-6">
+<div class="h-[1px] flex-1 bg-outline-variant"></div>
+<span class="font-label text-xs tracking-[0.5em] text-secondary">结语</span>
+<div class="h-[1px] flex-1 bg-outline-variant"></div>
+</div>
+</div>
+</article>
+</div>
+</div>
+<!-- Footer Quote Area -->
+<div class="mt-32 border border-outline-variant bg-surface-container-high p-16 flex flex-col items-center text-center space-y-8">
+<span class="material-symbols-outlined text-primary-container text-5xl opacity-40" data-icon="format_quote">format_quote</span>
+<p class="text-3xl font-black max-w-2xl leading-snug">
+                我们不提供功能，我们提供秩序。
+            </p>
+<p class="font-label text-xs tracking-widest text-secondary font-bold">学者之案设计系统 (THE SCHOLAR'S DESK DESIGN SYSTEM)</p>
+<div class="flex gap-0 pt-8 border border-outline-variant">
+<button class="bg-primary-container text-white px-10 py-4 font-label font-bold text-sm tracking-[0.2em] hover:bg-primary transition-all">
+                    加入内测计划
+                </button>
+<button class="bg-white text-on-surface border-l border-outline-variant px-10 py-4 font-label font-bold text-sm tracking-[0.2em] hover:bg-surface-container transition-all">
+                    阅读完整技术文档
+                </button>
+</div>
+</div>
+</section>
+<!-- Decorative Subtle Background Elements -->
+<div class="fixed bottom-12 right-12 opacity-5 pointer-events-none z-0">
+<span class="text-[20rem] font-black leading-none select-none">字</span>
+</div>
+</main>
+</body></html>

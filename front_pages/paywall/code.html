@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+
+<html lang="zh-CN"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;700;900&amp;family=Noto+Sans+SC:wght@400;500;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "primary-container": "#a73032",
+                        "on-tertiary": "#ffffff",
+                        "on-surface-variant": "#584140",
+                        "surface-tint": "#ab3335",
+                        "on-tertiary-container": "#d5d4d1",
+                        "on-surface": "#1b1c1a",
+                        "primary-fixed-dim": "#ffb3af",
+                        "primary-fixed": "#ffdad7",
+                        "on-background": "#1b1c1a",
+                        "surface-dim": "#dbdad7",
+                        "surface-bright": "#fbf9f6",
+                        "error": "#ba1a1a",
+                        "secondary-fixed-dim": "#cbc6bf",
+                        "on-primary-fixed-variant": "#8a1a20",
+                        "outline-variant": "#dfbfbd",
+                        "on-primary-fixed": "#410005",
+                        "surface-container": "#efeeeb",
+                        "on-error-container": "#93000a",
+                        "error-container": "#ffdad6",
+                        "on-error": "#ffffff",
+                        "outline": "#8b716f",
+                        "on-tertiary-fixed": "#1b1c1a",
+                        "on-secondary-fixed": "#1d1b17",
+                        "surface-container-lowest": "#ffffff",
+                        "tertiary-fixed-dim": "#c7c6c3",
+                        "secondary": "#615e58",
+                        "background": "#fbf9f6",
+                        "inverse-primary": "#ffb3af",
+                        "inverse-surface": "#30312f",
+                        "surface": "#fbf9f6",
+                        "surface-container-low": "#f5f3f0",
+                        "inverse-on-surface": "#f2f0ed",
+                        "secondary-container": "#e7e2da",
+                        "on-secondary": "#ffffff",
+                        "on-secondary-fixed-variant": "#494641",
+                        "tertiary-container": "#5b5c59",
+                        "on-primary": "#ffffff",
+                        "on-secondary-container": "#67645e",
+                        "secondary-fixed": "#e7e2da",
+                        "primary": "#86171d",
+                        "tertiary": "#444442",
+                        "surface-container-highest": "#e4e2df",
+                        "on-primary-container": "#ffc6c3",
+                        "surface-container-high": "#eae8e5",
+                        "surface-variant": "#e4e2df",
+                        "on-tertiary-fixed-variant": "#464744",
+                        "tertiary-fixed": "#e4e2df"
+                    },
+                    "borderRadius": {
+                        "none": "0px",
+                        "DEFAULT": "0px",
+                        "lg": "0px",
+                        "xl": "0px",
+                        "full": "0px"
+                    },
+                    "fontFamily": {
+                        "headline": ["Noto Serif SC"],
+                        "body": ["Noto Serif SC"],
+                        "label": ["Noto Sans SC"]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        body {
+            font-family: 'Noto Serif SC', serif;
+            -webkit-font-smoothing: antialiased;
+        }
+        .label-font {
+            font-family: 'Noto Sans SC', sans-serif;
+        }
+        /* Override all rounding */
+        * {
+            border-radius: 0px !important;
+        }
+    </style>
+</head>
+<body class="bg-surface text-on-surface">
+<!-- TopAppBar -->
+<header class="sticky top-0 right-0 w-full flex items-center justify-between px-8 z-40 bg-white/95 backdrop-blur-md h-16 border-b border-surface-container-highest">
+<div class="flex items-center gap-4">
+<span class="font-sans font-bold text-xl text-primary-container tracking-tighter">Huozi Writer</span>
+</div>
+<nav class="hidden md:flex items-center gap-8">
+<a class="label-font text-sm font-medium text-stone-500 hover:text-primary-container transition-colors" href="#">仪表盘</a>
+<a class="label-font text-sm font-medium text-stone-500 hover:text-primary-container transition-colors" href="#">统计</a>
+<a class="label-font text-sm font-medium text-stone-500 hover:text-primary-container transition-colors" href="#">导出</a>
+</nav>
+<div class="flex items-center gap-6">
+<button class="label-font text-sm font-bold bg-primary-container text-white px-6 py-2 tracking-widest hover:bg-primary transition-colors">发布</button>
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-on-surface-variant cursor-pointer">notifications</span>
+<span class="material-symbols-outlined text-on-surface-variant cursor-pointer">account_circle</span>
+</div>
+</div>
+</header>
+<div class="flex flex-col min-h-screen">
+<main class="flex-1 flex flex-col items-center px-6 py-24 bg-surface">
+<!-- Paywall Header -->
+<div class="max-w-4xl w-full text-center mb-20">
+<div class="inline-block bg-primary-container/10 text-primary-container px-4 py-1 label-font text-xs font-bold tracking-[0.2em] mb-6">
+                    朱砂印计划
+                </div>
+<h1 class="text-4xl md:text-6xl font-black mb-8 tracking-tight">开启您的专业创作之旅</h1>
+<p class="text-lg text-secondary max-w-2xl mx-auto leading-relaxed">“工欲善其事，必先利其器。” <br/>专为中文创作者打造的高级排版与协作工具。</p>
+</div>
+<!-- Pricing Grid - Tonal Layering -->
+<div class="max-w-6xl w-full grid grid-cols-1 md:grid-cols-3 bg-surface-container-low border border-surface-container-high">
+<!-- Free Plan -->
+<div class="p-12 flex flex-col items-start border-b md:border-b-0 md:border-r border-surface-container-high transition-colors hover:bg-surface-container">
+<div class="label-font text-xs font-bold text-secondary mb-4 tracking-widest uppercase">基础版</div>
+<div class="flex items-baseline gap-1 mb-8">
+<span class="text-4xl font-black">¥0</span>
+<span class="text-secondary label-font text-sm">/ 永久免费</span>
+</div>
+<div class="w-full space-y-5 mb-12">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-primary-container text-sm">check</span>
+<span class="label-font text-sm text-on-surface">单项目本地存储</span>
+</div>
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-primary-container text-sm">check</span>
+<span class="label-font text-sm text-on-surface">标准 Markdown 支持</span>
+</div>
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-primary-container text-sm">check</span>
+<span class="label-font text-sm text-on-surface">基础深色模式</span>
+</div>
+</div>
+<button class="mt-auto w-full py-4 label-font text-xs font-bold border border-secondary text-secondary hover:bg-secondary hover:text-white transition-colors">当前方案</button>
+</div>
+<!-- Pro Plan (Primary Focus) -->
+<div class="bg-white p-12 flex flex-col items-start relative border-b md:border-b-0 md:border-r border-surface-container-high z-10 shadow-2xl">
+<div class="absolute top-0 right-0 bg-primary-container text-white label-font text-[10px] font-bold px-4 py-1 tracking-widest uppercase">
+                        最受欢迎
+                    </div>
+<div class="label-font text-xs font-bold text-primary-container mb-4 tracking-widest uppercase">朱砂印 · 专业版</div>
+<div class="flex items-baseline gap-1 mb-8">
+<span class="text-4xl font-black">¥28</span>
+<span class="text-secondary label-font text-sm">/ 月度订阅</span>
+</div>
+<div class="w-full space-y-5 mb-12">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-primary-container text-sm" style="font-variation-settings: 'FILL' 1;">verified</span>
+<span class="label-font text-sm text-on-surface font-bold">无限云端项目同步</span>
+</div>
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-primary-container text-sm" style="font-variation-settings: 'FILL' 1;">verified</span>
+<span class="label-font text-sm text-on-surface font-bold">人工智能灵感写作</span>
+</div>
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-primary-container text-sm" style="font-variation-settings: 'FILL' 1;">verified</span>
+<span class="label-font text-sm text-on-surface font-bold">全套活字排版引擎</span>
+</div>
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-primary-container text-sm" style="font-variation-settings: 'FILL' 1;">verified</span>
+<span class="label-font text-sm text-on-surface font-bold">专业格式导出 (PDF/ePub)</span>
+</div>
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-primary-container text-sm" style="font-variation-settings: 'FILL' 1;">verified</span>
+<span class="label-font text-sm text-on-surface font-bold">优先响应技术支持</span>
+</div>
+</div>
+<button class="mt-auto w-full py-4 bg-primary-container text-white label-font text-xs font-black tracking-[0.3em] uppercase hover:bg-primary transition-colors">立即升级</button>
+</div>
+<!-- Team/Studio Plan -->
+<div class="p-12 flex flex-col items-start transition-colors hover:bg-surface-container">
+<div class="label-font text-xs font-bold text-secondary mb-4 tracking-widest uppercase">工作室版</div>
+<div class="flex items-baseline gap-1 mb-8">
+<span class="text-4xl font-black">¥128</span>
+<span class="text-secondary label-font text-sm">/ 季度套餐</span>
+</div>
+<div class="w-full space-y-5 mb-12">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-primary-container text-sm">check</span>
+<span class="label-font text-sm text-on-surface">包含所有专业版功能</span>
+</div>
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-primary-container text-sm">check</span>
+<span class="label-font text-sm text-on-surface">多人实时协作编辑</span>
+</div>
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-primary-container text-sm">check</span>
+<span class="label-font text-sm text-on-surface">版本历史溯源控制</span>
+</div>
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-primary-container text-sm">check</span>
+<span class="label-font text-sm text-on-surface">团队资产共享库</span>
+</div>
+</div>
+<button class="mt-auto w-full py-4 label-font text-xs font-bold border border-on-surface text-on-surface hover:bg-on-surface hover:text-white transition-colors">联系我们</button>
+</div>
+</div>
+<!-- Comparison Table Section -->
+<section class="max-w-6xl w-full mt-40">
+<h2 class="text-2xl font-black mb-16 text-center tracking-widest">方案深度对比</h2>
+<div class="border border-surface-container-high overflow-x-auto">
+<table class="w-full text-left border-collapse label-font min-w-[800px]">
+<thead>
+<tr class="bg-surface-container-low text-[10px] uppercase tracking-[0.2em] font-bold text-secondary border-b border-surface-container-high">
+<th class="p-8">功能特性</th>
+<th class="p-8">基础版</th>
+<th class="p-8 text-primary-container">朱砂印 · 专业版</th>
+<th class="p-8">工作室版</th>
+</tr>
+</thead>
+<tbody class="text-sm">
+<tr class="border-b border-surface-container-high hover:bg-surface-container-lowest transition-colors">
+<td class="p-8 font-medium">云端存储空间</td>
+<td class="p-8 text-secondary">500MB</td>
+<td class="p-8 font-bold text-on-surface">10GB</td>
+<td class="p-8">无限空间</td>
+</tr>
+<tr class="border-b border-surface-container-high hover:bg-surface-container-lowest transition-colors">
+<td class="p-8 font-medium">项目版本回溯</td>
+<td class="p-8 text-secondary">不适用</td>
+<td class="p-8 font-bold text-primary-container">30 天内</td>
+<td class="p-8">永久历史</td>
+</tr>
+<tr class="border-b border-surface-container-high hover:bg-surface-container-lowest transition-colors">
+<td class="p-8 font-medium">AI 纠错与润色</td>
+<td class="p-8 text-secondary">基础级别</td>
+<td class="p-8 font-bold text-primary-container">高级上下文感知</td>
+<td class="p-8">定制模型支持</td>
+</tr>
+<tr class="border-b border-surface-container-high hover:bg-surface-container-lowest transition-colors">
+<td class="p-8 font-medium">导出水印</td>
+<td class="p-8 text-secondary">含品牌水印</td>
+<td class="p-8 font-bold text-primary-container">无水印</td>
+<td class="p-8">无水印</td>
+</tr>
+<tr class="border-b border-surface-container-high hover:bg-surface-container-lowest transition-colors">
+<td class="p-8 font-medium">自定义字体库</td>
+<td class="p-8 text-secondary">3 款内置</td>
+<td class="p-8 font-bold text-primary-container">不限量导入</td>
+<td class="p-8">不限量导入</td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<!-- Testimonial Section -->
+<section class="max-w-6xl w-full mt-40 grid grid-cols-1 md:grid-cols-2 gap-0 border border-surface-container-high bg-surface-container-low">
+<div class="relative overflow-hidden aspect-video md:aspect-auto">
+<img alt="写作空间" class="w-full h-full object-cover grayscale opacity-80" data-alt="close-up of an old wooden writing desk with a glass ink pot, feathered quill, and weathered paper under warm lamp light" src="https://lh3.googleusercontent.com/aida-public/AB6AXuABqX4hhNHWrFWOir0p3jTmOs1wlpWOWqd5TMvZ9AW-sMkDn8pueyYCie2p3LAcNxu0W7dgCcIpUZAC97hixEhF1uWuzzxBRkWBggK2cHqJmTrAhFLcfgnvifwKZmKpMNywiR6lf20HkfNYzl2On_e7yma3TzNsyyt6LR31WH1lvQrGvRcicLa3nOEmEzlqCKGnMm_mtu5dXhJZFrGAzjWoKef7kFNlPaAgw2ACfn5sNi4zRmxvBvccr-4G599oSI5w0pT0SyWjKf2k"/>
+<div class="absolute inset-0 bg-primary-container/20"></div>
+</div>
+<div class="p-12 md:p-20 flex flex-col justify-center bg-white">
+<span class="text-primary-container text-6xl font-black italic leading-none mb-8">“</span>
+<h3 class="text-3xl font-black mb-8 leading-tight">朱砂印让我的写作不再是单纯的文字堆砌，而是一场排版的艺术。</h3>
+<p class="text-secondary leading-relaxed mb-12">我们深知文字的力量，也明白视觉承载的重要性。通过朱砂印，您将获得行业领先的排版引擎，让每一篇文档都具备书籍般的质感。</p>
+<div class="flex items-center gap-5">
+<img alt="作者头像" class="w-14 h-14 grayscale" data-alt="portrait of a thoughtful middle-aged man with glasses in a library setting, soft natural lighting" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDuLVwc_66XQWKPve8gouokLtkUUxZEzrD8bQVHM8p9nj-7n3ti2-qytUoKTDKqSdP7to-oKVFJn9OReGoG_isMlTuFt1WAGz9Z2CwrvS1c_fLxCImFOaH8VVFuwAGcLeJIVvJtkcMxXITmweSkVYddItX_4ZF5E_zpkOce0RygfujhPcchRYq35uulcA3LJV4SKZmxT3h2qqCwb--H2EGw65Edj4a5s-i13RCIGm4ido4IUXD6sIzUtN9K8MPe4dP53PSTqbtfKBqR"/>
+<div>
+<div class="label-font text-sm font-bold">陆子野</div>
+<div class="label-font text-xs text-secondary italic tracking-widest uppercase">自由撰稿人 · 资深用户</div>
+</div>
+</div>
+</div>
+</section>
+<!-- Final CTA -->
+<div class="mt-40 text-center bg-surface-container-low border border-surface-container-high p-20 w-full max-w-5xl">
+<h4 class="text-3xl font-black mb-8 tracking-tight">准备好提升您的创作标准了吗？</h4>
+<p class="label-font text-secondary mb-12 text-lg">加入全球 10,000+ 专业创作者，体验纯净、高效的中文写作。 </p>
+<div class="flex flex-col md:flex-row gap-6 justify-center">
+<button class="bg-primary-container text-white px-12 py-5 label-font font-black tracking-[0.2em] uppercase hover:bg-primary transition-all">立即免费试用</button>
+<button class="bg-white border border-surface-container-high text-on-surface px-12 py-5 label-font font-black tracking-[0.2em] uppercase hover:bg-surface-container-low transition-all">查看全部特性</button>
+</div>
+<div class="mt-12 flex items-center justify-center gap-8 opacity-40">
+<span class="label-font text-[10px] font-bold tracking-widest uppercase">7天无理由退款</span>
+<span class="label-font text-[10px] font-bold tracking-widest uppercase">安全加密支付</span>
+<span class="label-font text-[10px] font-bold tracking-widest uppercase">随时取消订阅</span>
+</div>
+</div>
+</main>
+</div>
+<!-- BottomNavBar (Mobile only) -->
+<nav class="md:hidden fixed bottom-0 left-0 w-full bg-white h-16 flex items-center justify-around z-50 border-t border-surface-container-high">
+<div class="flex flex-col items-center gap-1 text-primary-container">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">edit_note</span>
+<span class="label-font text-[10px] font-bold">写作</span>
+</div>
+<div class="flex flex-col items-center gap-1 text-stone-400">
+<span class="material-symbols-outlined">auto_stories</span>
+<span class="label-font text-[10px]">书架</span>
+</div>
+<div class="flex flex-col items-center gap-1 text-stone-400">
+<span class="material-symbols-outlined">inventory_2</span>
+<span class="label-font text-[10px]">素材</span>
+</div>
+<div class="flex flex-col items-center gap-1 text-stone-400">
+<span class="material-symbols-outlined">settings</span>
+<span class="label-font text-[10px]">设置</span>
+</div>
+</nav>
+<!-- Footer for Desktop -->
+<footer class="hidden md:block py-12 bg-surface-container-low border-t border-surface-container-high text-center">
+<div class="label-font text-[10px] text-stone-400 tracking-[0.4em] uppercase font-bold">
+            © 2024 Huozi Writer · 活字文社
+        </div>
+</footer>
+</body></html>

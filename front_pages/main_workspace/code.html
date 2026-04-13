@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+
+<html lang="zh-CN"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;500;700;900&amp;family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "primary-container": "#a73032",
+                        "on-tertiary": "#ffffff",
+                        "on-surface-variant": "#584140",
+                        "surface-tint": "#ab3335",
+                        "on-tertiary-container": "#d5d4d1",
+                        "on-surface": "#1b1c1a",
+                        "primary-fixed-dim": "#ffb3af",
+                        "primary-fixed": "#ffdad7",
+                        "on-background": "#1b1c1a",
+                        "surface-dim": "#dbdad7",
+                        "surface-bright": "#fbf9f6",
+                        "error": "#ba1a1a",
+                        "secondary-fixed-dim": "#cbc6bf",
+                        "on-primary-fixed-variant": "#8a1a20",
+                        "outline-variant": "#dfbfbd",
+                        "on-primary-fixed": "#410005",
+                        "surface-container": "#efeeeb",
+                        "on-error-container": "#93000a",
+                        "error-container": "#ffdad6",
+                        "on-error": "#ffffff",
+                        "outline": "#8b716f",
+                        "on-tertiary-fixed": "#1b1c1a",
+                        "on-secondary-fixed": "#1d1b17",
+                        "surface-container-lowest": "#ffffff",
+                        "tertiary-fixed-dim": "#c7c6c3",
+                        "secondary": "#615e58",
+                        "background": "#fbf9f6",
+                        "inverse-primary": "#ffb3af",
+                        "inverse-surface": "#30312f",
+                        "surface": "#fbf9f6",
+                        "surface-container-low": "#f5f3f0",
+                        "inverse-on-surface": "#f2f0ed",
+                        "secondary-container": "#e7e2da",
+                        "on-secondary": "#ffffff",
+                        "on-secondary-fixed-variant": "#494641",
+                        "tertiary-container": "#5b5c59",
+                        "on-primary": "#ffffff",
+                        "on-secondary-container": "#67645e",
+                        "secondary-fixed": "#e7e2da",
+                        "primary": "#86171d",
+                        "tertiary": "#444442",
+                        "surface-container-highest": "#e4e2df",
+                        "on-primary-container": "#ffc6c3",
+                        "surface-container-high": "#eae8e5",
+                        "surface-variant": "#e4e2df",
+                        "on-tertiary-fixed-variant": "#464744",
+                        "tertiary-fixed": "#e4e2df"
+                    },
+                    "borderRadius": {
+                        "none": "0px",
+                        "DEFAULT": "0px",
+                        "sm": "0px",
+                        "md": "0px",
+                        "lg": "0px",
+                        "xl": "0px",
+                        "2xl": "0px",
+                        "3xl": "0px",
+                        "full": "0px"
+                    },
+                    "fontFamily": {
+                        "headline": ["Noto Serif SC"],
+                        "body": ["Noto Serif SC"],
+                        "label": ["Inter"],
+                        "sans": ["Inter", "sans-serif"]
+                    }
+                },
+            }
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        body {
+            font-family: 'Noto Serif SC', serif;
+        }
+        .label-font {
+            font-family: 'Inter', sans-serif;
+        }
+        /* Strictly enforce 0px border-radius for all elements */
+        * {
+            border-radius: 0px !important;
+        }
+    </style>
+</head>
+<body class="bg-[#FFFFFF] text-on-surface antialiased overflow-hidden">
+<!-- Unified AppShell Structure -->
+<div class="flex h-screen w-full overflow-hidden">
+<!-- Column 1: SideNavBar (#F5F3F0) -->
+<nav class="w-[240px] shrink-0 h-full flex flex-col bg-[#F5F3F0] border-r border-stone-200/50 z-30">
+<div class="p-6">
+<h1 class="text-xl font-bold font-sans text-stone-900 tracking-wider">Huozi Writer</h1>
+<p class="text-[10px] text-stone-500 label-font mt-1 tracking-widest uppercase">高级编辑器</p>
+</div>
+<div class="mt-8 flex flex-col gap-0">
+<!-- Active Tab: 写作 -->
+<a class="bg-[#A73032] text-white px-6 py-4 flex items-center gap-4 transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="edit_note">edit_note</span>
+<span class="font-medium">写作</span>
+</a>
+<a class="text-stone-600 px-6 py-4 flex items-center gap-4 hover:bg-stone-200/50 transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="auto_stories">auto_stories</span>
+<span class="font-medium">书架</span>
+</a>
+<a class="text-stone-600 px-6 py-4 flex items-center gap-4 hover:bg-stone-200/50 transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="account_tree">account_tree</span>
+<span class="font-medium">大纲</span>
+</a>
+<a class="text-stone-600 px-6 py-4 flex items-center gap-4 hover:bg-stone-200/50 transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="inventory_2">inventory_2</span>
+<span class="font-medium">素材</span>
+</a>
+<a class="text-stone-600 px-6 py-4 flex items-center gap-4 hover:bg-stone-200/50 transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+<span class="font-medium">设置</span>
+</a>
+</div>
+<div class="mt-auto p-6 flex flex-col gap-4">
+<button class="w-full py-3 bg-stone-900 text-white font-sans font-bold text-xs tracking-widest hover:bg-stone-800 transition-colors uppercase">
+                新建文稿
+            </button>
+<div class="flex flex-col gap-1 border-t border-stone-300/30 pt-4">
+<a class="flex items-center gap-3 text-stone-500 text-sm py-2 hover:text-primary-container transition-colors" href="#">
+<span class="material-symbols-outlined text-lg" data-icon="help_outline">help_outline</span>
+                    帮助
+                </a>
+<a class="flex items-center gap-3 text-stone-500 text-sm py-2 hover:text-primary-container transition-colors" href="#">
+<span class="material-symbols-outlined text-lg" data-icon="logout">logout</span>
+                    退出
+                </a>
+</div>
+</div>
+</nav>
+<!-- Column 2: Manuscript List (#FAF9F5) -->
+<section class="w-72 bg-[#FAF9F5] flex flex-col h-full border-r border-stone-200/50 z-20">
+<div class="h-16 flex items-center px-6 border-b border-stone-200/50">
+<h2 class="text-xs label-font font-bold tracking-widest text-stone-500 uppercase">文稿档案</h2>
+</div>
+<div class="flex-1 overflow-y-auto">
+<!-- Manuscript Item: Active -->
+<div class="px-6 py-6 bg-white border-l-4 border-primary-container shadow-sm">
+<p class="text-[10px] label-font text-stone-400 mb-1 uppercase">昨日 23:45</p>
+<h3 class="text-base font-bold text-on-surface leading-tight">《夜航船》第五卷：汴京烟云</h3>
+<p class="text-sm text-stone-500 mt-2 line-clamp-2 leading-relaxed">那晚的风，带着河底沉寂了百年的泥沙味，直扑进雕花窗格里...</p>
+</div>
+<!-- Manuscript Items -->
+<div class="px-6 py-6 hover:bg-white/50 cursor-pointer transition-colors border-b border-stone-100">
+<p class="text-[10px] label-font text-stone-400 mb-1">2023-11-12</p>
+<h3 class="text-base font-medium text-stone-700 leading-tight">未命名的短篇小说</h3>
+<p class="text-sm text-stone-500 mt-2 line-clamp-2 leading-relaxed">他站在雨中，伞盖上的水滴汇成细流，像断掉的琴弦...</p>
+</div>
+<div class="px-6 py-6 hover:bg-white/50 cursor-pointer transition-colors border-b border-stone-100">
+<p class="text-[10px] label-font text-stone-400 mb-1">2023-11-10</p>
+<h3 class="text-base font-medium text-stone-700 leading-tight">散文：山中四季</h3>
+<p class="text-sm text-stone-500 mt-2 line-clamp-2 leading-relaxed">冬日的阳光是吝啬的，只在山腰处抹上一层薄如蝉翼的微温...</p>
+</div>
+</div>
+</section>
+<!-- Column 3: Center Editor (#FFFFFF) -->
+<section class="flex-1 bg-[#FFFFFF] flex flex-col h-full overflow-hidden z-10">
+<!-- Top Bar -->
+<header class="h-16 flex items-center justify-between px-10 border-b border-stone-100">
+<div class="flex items-center gap-8">
+<div class="flex flex-col">
+<span class="text-[10px] label-font text-stone-400 uppercase tracking-tighter">当前章节</span>
+<span class="text-sm font-medium">01 汴京烟云</span>
+</div>
+<div class="flex flex-col">
+<span class="text-[10px] label-font text-stone-400 uppercase tracking-tighter">字数统计</span>
+<span class="text-sm font-medium">2,481</span>
+</div>
+</div>
+<div class="flex items-center gap-6">
+<button class="text-stone-400 hover:text-primary-container transition-colors">
+<span class="material-symbols-outlined text-xl" data-icon="history">history</span>
+</button>
+<button class="text-stone-400 hover:text-primary-container transition-colors">
+<span class="material-symbols-outlined text-xl" data-icon="share">share</span>
+</button>
+<button class="bg-primary-container text-white px-8 py-2 font-sans font-bold text-xs tracking-widest hover:bg-red-800 transition-colors">
+                    保存
+                </button>
+</div>
+</header>
+<!-- Writing Area -->
+<div class="flex-1 overflow-y-auto">
+<article class="max-w-3xl mx-auto py-24 px-12">
+<h1 class="text-4xl font-black text-on-surface mb-16 leading-tight tracking-tight">《夜航船》第五卷：汴京烟云</h1>
+<div class="prose prose-stone max-w-none">
+<p class="text-xl leading-[2.2] text-on-surface mb-10 first-letter:text-5xl first-letter:font-bold first-letter:mr-3 first-letter:float-left first-letter:text-primary-container">
+                        汴京城的夜，从来不是沉静的。瓦舍里的鼓点声能顺着水波传出三里地。苏恒坐在窗槛上，手里捏着一支没蘸墨的狼毫，眼前的宣纸白得晃眼。这种白，像极了那个死在漫天大雪里的午后。
+                    </p>
+<p class="text-xl leading-[2.2] text-on-surface mb-10">
+                        所谓繁华，不过是给这破落的众生涂上一层金粉。他在脑海里反复咀嚼“<span class="bg-primary-container/10 border-b-2 border-primary-container text-primary-container cursor-pointer">极其地</span>”和“<span class="bg-primary-container/10 border-b-2 border-primary-container text-primary-container cursor-pointer">非常地</span>”这两个词。老师曾说过，修饰词是文字的寄生虫，吸干了情感的骨血。
+                    </p>
+<p class="text-xl leading-[2.2] text-on-surface mb-10">
+                        “苏公子，楼下的客人已经等了三个时辰了。” 门外传来书童颤抖的声音。苏恒没有应声。他笔尖终于落在纸上，划出一道惊心动魄的弧度。那是一个“死”字，却写得龙飞凤舞，透着一股不甘。
+                    </p>
+<p class="text-xl leading-[2.2] text-on-surface mb-10">
+                        外头的雨开始大了。打在屋檐上的碎裂声，沉闷得如同钝刀割肉。他忽然想起了那年清明，柳树抽出新芽，江边的少女笑得比春阳还要灿烂。那时候的他，还不知道笔墨能杀人，也不懂什么叫江湖。
+                    </p>
+</div>
+</article>
+</div>
+</section>
+<!-- Column 4: Inspiration Panel (#FAF9F5) -->
+<aside class="w-80 bg-[#FAF9F5] flex flex-col h-full border-l border-stone-200/50">
+<div class="h-16 flex items-center px-6 border-b border-stone-200/50">
+<h2 class="text-xs label-font font-bold tracking-widest text-stone-500 uppercase">写作诊断</h2>
+</div>
+<div class="flex-1 overflow-y-auto p-6 space-y-10">
+<!-- Section: Tags -->
+<div>
+<div class="flex items-center justify-between mb-4">
+<h3 class="text-[10px] label-font font-bold text-stone-400 uppercase tracking-widest">死刑词执行</h3>
+<span class="text-[9px] bg-primary-container text-white px-2 py-0.5 label-font">命中 4 次</span>
+</div>
+<div class="flex flex-wrap gap-2">
+<span class="px-3 py-1.5 bg-stone-800 text-white text-xs label-font">极其地</span>
+<span class="px-3 py-1.5 bg-stone-800 text-white text-xs label-font">非常地</span>
+<span class="px-3 py-1.5 bg-stone-800 text-white text-xs label-font">大概是</span>
+<span class="px-3 py-1.5 bg-stone-800 text-white text-xs label-font">可能吧</span>
+</div>
+</div>
+<!-- Section: Diagnosis -->
+<div>
+<h3 class="text-[10px] label-font font-bold text-stone-400 uppercase tracking-widest mb-4">废话密度诊断</h3>
+<div class="space-y-4">
+<div class="bg-white p-5 border-l-2 border-primary-container shadow-sm">
+<div class="flex items-center gap-2 mb-2 text-primary-container">
+<span class="material-symbols-outlined text-lg" data-icon="warning">warning</span>
+<span class="text-[10px] font-bold label-font uppercase tracking-tighter">修饰语冗余</span>
+</div>
+<p class="text-sm leading-relaxed text-stone-700">“带着河底沉寂了百年的泥沙味” 建议精简为 “泥沙味”。情绪应通过动作而非定语传递。</p>
+</div>
+<div class="bg-white p-5 border-l-2 border-stone-300 shadow-sm">
+<div class="flex items-center gap-2 mb-2 text-stone-400">
+<span class="material-symbols-outlined text-lg" data-icon="info">info</span>
+<span class="text-[10px] font-bold label-font uppercase tracking-tighter">语感平铺</span>
+</div>
+<p class="text-sm leading-relaxed text-stone-600">第二自然段中段节奏过快，建议增加环境描写来缓冲情感冲击。</p>
+</div>
+</div>
+</div>
+<!-- Section: Visual Reference -->
+<div>
+<h3 class="text-[10px] label-font font-bold text-stone-400 uppercase tracking-widest mb-4">时空意象</h3>
+<div class="bg-stone-200 h-48 overflow-hidden relative">
+<img alt="宋代水墨画意境" class="w-full h-full object-cover grayscale opacity-80 hover:opacity-100 transition-opacity duration-500" src="https://lh3.googleusercontent.com/aida-public/AB6AXuALa-ICB2d6v3ENO9LjnSZcd8k3BE--G0P_KKO2NISsQ8SRBmq6iwYga28ALJ1rPCvFU3BVuVriR-NeyHNBn4wexhNvVkV69keYYrob61cAIoBSLL3namefgfkG_uEhKC6nSMhmOckNRfWGNmSUqn6Owiiu0UB0w1IcMhLSvpHlycupTbP4-C9HwnEJSvcxXJeVDef7lSHFKPY-pStdVjThATF_eDHi8_09sARVe_Gvy0pnsb0LcfO6KFrr5lWiHg4rX2dPm4g0_P9q"/>
+<div class="absolute bottom-0 inset-x-0 p-3 bg-stone-900/80 backdrop-blur-sm">
+<p class="text-[9px] label-font text-white uppercase tracking-widest text-center">灵感参考：北宋·汴京河景</p>
+</div>
+</div>
+</div>
+</div>
+<!-- Footer: Status -->
+<div class="p-6 bg-stone-100 border-t border-stone-200/50">
+<div class="flex items-center justify-between">
+<span class="text-[10px] label-font font-bold text-stone-400 uppercase tracking-widest">专注模式：开启</span>
+<div class="w-1.5 h-1.5 bg-emerald-500"></div>
+</div>
+</div>
+</aside>
+</div>
+<!-- Floating Action Button -->
+<button class="fixed bottom-10 right-10 z-50 bg-primary-container text-white w-14 h-14 flex items-center justify-center shadow-xl hover:bg-red-800 transition-colors">
+<span class="material-symbols-outlined" data-icon="auto_fix">auto_fix</span>
+</button>
+</body></html>

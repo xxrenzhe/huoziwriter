@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="zh-CN"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;700;900&amp;family=Inter:wght@400;500;600&amp;family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "primary-container": "#a73032",
+                    "on-tertiary": "#ffffff",
+                    "on-surface-variant": "#584140",
+                    "surface-tint": "#ab3335",
+                    "on-tertiary-container": "#d5d4d1",
+                    "on-surface": "#1b1c1a",
+                    "primary-fixed-dim": "#ffb3af",
+                    "primary-fixed": "#ffdad7",
+                    "on-background": "#1b1c1a",
+                    "surface-dim": "#dbdad7",
+                    "surface-bright": "#fbf9f6",
+                    "error": "#ba1a1a",
+                    "secondary-fixed-dim": "#cbc6bf",
+                    "on-primary-fixed-variant": "#8a1a20",
+                    "outline-variant": "#dfbfbd",
+                    "on-primary-fixed": "#410005",
+                    "surface-container": "#efeeeb",
+                    "on-error-container": "#93000a",
+                    "error-container": "#ffdad6",
+                    "on-error": "#ffffff",
+                    "outline": "#8b716f",
+                    "on-tertiary-fixed": "#1b1c1a",
+                    "on-secondary-fixed": "#1d1b17",
+                    "surface-container-lowest": "#ffffff",
+                    "tertiary-fixed-dim": "#c7c6c3",
+                    "secondary": "#615e58",
+                    "background": "#0F0F0F",
+                    "inverse-primary": "#ffb3af",
+                    "inverse-surface": "#30312f",
+                    "surface": "#0F0F0F",
+                    "surface-container-low": "#1A1A1A",
+                    "inverse-on-surface": "#f2f0ed",
+                    "secondary-container": "#e7e2da",
+                    "on-secondary": "#ffffff",
+                    "on-secondary-fixed-variant": "#494641",
+                    "tertiary-container": "#5b5c59",
+                    "on-primary": "#ffffff",
+                    "on-secondary-container": "#67645e",
+                    "secondary-fixed": "#e7e2da",
+                    "primary": "#86171d",
+                    "tertiary": "#444442",
+                    "surface-container-highest": "#e4e2df",
+                    "on-primary-container": "#ffc6c3",
+                    "surface-container-high": "#eae8e5",
+                    "surface-variant": "#e4e2df",
+                    "on-tertiary-fixed-variant": "#464744",
+                    "tertiary-fixed": "#e4e2df"
+            },
+            "borderRadius": {
+                    "none": "0px",
+                    "DEFAULT": "0px",
+                    "lg": "0px",
+                    "xl": "0px",
+                    "full": "9999px"
+            },
+            "fontFamily": {
+                    "headline": ["Noto Serif SC", "serif"],
+                    "body": ["Noto Serif SC", "serif"],
+                    "label": ["Inter", "sans-serif"]
+            }
+          },
+        },
+      }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        ::-webkit-scrollbar {
+            width: 4px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #444442;
+        }
+        * {
+            border-radius: 0 !important;
+        }
+    </style>
+</head>
+<body class="bg-[#0F0F0F] text-stone-100 font-['Noto_Serif_SC'] selection:bg-primary-container/30">
+<!-- Shell Layout -->
+<div class="flex min-h-screen">
+<!-- SideNavBar -->
+<aside class="fixed left-0 top-0 h-full z-50 flex flex-col bg-[#1A1A1A] w-[240px] shrink-0 border-r border-stone-800/50">
+<div class="p-6 flex flex-col gap-1">
+<span class="text-xl font-bold font-sans text-stone-100 tracking-wider">Huozi Writer</span>
+<span class="text-xs text-stone-500 font-label uppercase tracking-[0.2em]">高级编辑器</span>
+</div>
+<nav class="flex-1 mt-4">
+<div class="space-y-0">
+<a class="text-stone-400 px-6 py-4 flex items-center gap-3 hover:bg-white/5 transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="edit_note">edit_note</span>写作
+                </a>
+<a class="text-stone-400 px-6 py-4 flex items-center gap-3 hover:bg-white/5 transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="auto_stories">auto_stories</span>书架
+                </a>
+<a class="text-stone-400 px-6 py-4 flex items-center gap-3 hover:bg-white/5 transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="account_tree">account_tree</span>大纲
+                </a>
+<a class="text-stone-400 px-6 py-4 flex items-center gap-3 hover:bg-white/5 transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="inventory_2">inventory_2</span>素材
+                </a>
+<a class="bg-[#A73032] text-white px-6 py-4 flex items-center gap-3 transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="payments" style="font-variation-settings: 'FILL' 1;">payments</span>财务中心
+                </a>
+<a class="text-stone-400 px-6 py-4 flex items-center gap-3 hover:bg-white/5 transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>设置
+                </a>
+</div>
+</nav>
+<div class="p-4">
+<button class="w-full bg-[#A73032] text-white py-3 font-label font-medium tracking-wider hover:bg-[#86171D] transition-colors">新建文稿</button>
+</div>
+<div class="mt-auto p-4 border-t border-stone-800">
+<a class="text-stone-400 px-4 py-2 flex items-center gap-3 text-sm hover:text-stone-100 transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="help_outline">help_outline</span>帮助
+            </a>
+<a class="text-stone-400 px-4 py-2 flex items-center gap-3 text-sm hover:text-stone-100 transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="logout">logout</span>退出
+            </a>
+</div>
+</aside>
+<!-- Main Content Canvas -->
+<main class="flex-1 ml-[240px] bg-[#0F0F0F] min-h-screen">
+<!-- TopAppBar -->
+<header class="sticky top-0 right-0 w-full flex items-center justify-between px-8 z-40 bg-[#0F0F0F]/90 backdrop-blur-md h-16 border-b border-stone-800">
+<div class="flex items-center gap-8">
+<span class="font-sans font-bold text-lg text-[#A73032]">财务中心</span>
+<nav class="hidden md:flex gap-6">
+<a class="text-stone-400 font-medium hover:text-[#A73032] transition-colors" href="#">仪表盘</a>
+<a class="text-stone-400 font-medium hover:text-[#A73032] transition-colors" href="#">统计</a>
+<a class="text-stone-400 font-medium hover:text-[#A73032] transition-colors" href="#">导出</a>
+</nav>
+</div>
+<div class="flex items-center gap-4">
+<div class="relative flex items-center bg-[#1A1A1A] px-3 py-1.5 border border-stone-800">
+<span class="material-symbols-outlined text-stone-500 text-sm" data-icon="search">search</span>
+<input class="bg-transparent border-none focus:ring-0 text-sm text-stone-300 w-48 font-label" placeholder="搜索账单..." type="text"/>
+</div>
+<button class="material-symbols-outlined text-stone-400 hover:text-white" data-icon="notifications">notifications</button>
+<button class="material-symbols-outlined text-stone-400 hover:text-white" data-icon="account_circle">account_circle</button>
+<button class="bg-[#A73032] text-white px-6 py-1.5 font-label font-bold text-sm tracking-widest hover:bg-[#86171D] transition-colors">发布</button>
+</div>
+</header>
+<div class="p-12 max-w-7xl mx-auto">
+<!-- Metrics Bento Grid -->
+<div class="grid grid-cols-12 gap-1 mb-12">
+<div class="col-span-12 md:col-span-4 bg-[#1A1A1A] p-8 border-l-4 border-[#A73032]">
+<p class="font-label text-stone-500 text-xs uppercase tracking-[0.2em] mb-2">年度经常性收入 (ARR)</p>
+<h2 class="text-4xl font-bold text-stone-100 font-headline">¥1,248,500</h2>
+<div class="mt-4 flex items-center gap-2 text-emerald-500 text-sm">
+<span class="material-symbols-outlined text-sm" data-icon="trending_up">trending_up</span>
+<span class="font-label">+12.5% 较上月</span>
+</div>
+</div>
+<div class="col-span-12 md:col-span-4 bg-[#1A1A1A] p-8 border-l-4 border-stone-800">
+<p class="font-label text-stone-500 text-xs uppercase tracking-[0.2em] mb-2">活跃订阅用户</p>
+<h2 class="text-4xl font-bold text-stone-100 font-headline">8,429</h2>
+<div class="mt-4 flex items-center gap-2 text-stone-500 text-sm">
+<span class="material-symbols-outlined text-sm" data-icon="group">group</span>
+<span class="font-label">续订率 94.2%</span>
+</div>
+</div>
+<div class="col-span-12 md:col-span-4 bg-[#1A1A1A] p-8 border-l-4 border-stone-800">
+<p class="font-label text-stone-500 text-xs uppercase tracking-[0.2em] mb-2">本月净收益</p>
+<h2 class="text-4xl font-bold text-stone-100 font-headline">¥104,230</h2>
+<div class="mt-4 flex items-center gap-2 text-red-400 text-sm">
+<span class="material-symbols-outlined text-sm" data-icon="trending_down">trending_down</span>
+<span class="font-label">-2.1% 处理费用波动</span>
+</div>
+</div>
+</div>
+<div class="grid grid-cols-12 gap-8">
+<!-- Pricing Management -->
+<section class="col-span-12 lg:col-span-7">
+<div class="flex items-center justify-between mb-6">
+<h3 class="text-xl font-bold font-headline tracking-tight border-b-2 border-[#A73032] pb-1">订阅方案管理</h3>
+<button class="bg-[#1A1A1A] border border-stone-800 text-stone-300 px-4 py-2 font-label text-xs hover:bg-stone-800 transition-colors uppercase tracking-widest">新增定价</button>
+</div>
+<div class="space-y-1">
+<div class="bg-[#1A1A1A] p-6 flex items-center justify-between group hover:bg-[#252525] transition-all">
+<div>
+<h4 class="font-bold text-stone-100 mb-1">墨客版 (Pro)</h4>
+<p class="text-stone-500 text-sm font-label">月付方案 • 无限文稿云同步 • AI 润色插件</p>
+</div>
+<div class="text-right">
+<p class="text-2xl font-bold text-stone-100 font-headline mb-1">¥58 / 月</p>
+<div class="flex gap-4">
+<button class="text-[#A73032] text-xs font-label font-bold tracking-widest uppercase hover:underline">编辑</button>
+<button class="text-stone-500 text-xs font-label font-bold tracking-widest uppercase hover:text-stone-300">禁用</button>
+</div>
+</div>
+</div>
+<div class="bg-[#1A1A1A] p-6 flex items-center justify-between group hover:bg-[#252525] transition-all">
+<div>
+<h4 class="font-bold text-stone-100 mb-1">宗师版 (Elite)</h4>
+<p class="text-stone-500 text-sm font-label">年付方案 • 优先出版渠道 • 多人协作空间</p>
+</div>
+<div class="text-right">
+<p class="text-2xl font-bold text-stone-100 font-headline mb-1">¥588 / 年</p>
+<div class="flex gap-4">
+<button class="text-[#A73032] text-xs font-label font-bold tracking-widest uppercase hover:underline">编辑</button>
+<button class="text-stone-500 text-xs font-label font-bold tracking-widest uppercase hover:text-stone-300">禁用</button>
+</div>
+</div>
+</div>
+<div class="bg-[#1A1A1A] p-6 flex items-center justify-between group hover:bg-[#252525] transition-all">
+<div>
+<h4 class="font-bold text-stone-100 mb-1">寒门版 (Free)</h4>
+<p class="text-stone-500 text-sm font-label">基础编辑 • 3个本地项目 • 社区分享</p>
+</div>
+<div class="text-right">
+<p class="text-2xl font-bold text-stone-100 font-headline mb-1">¥0 / 永久</p>
+<div class="flex gap-4">
+<button class="text-[#A73032] text-xs font-label font-bold tracking-widest uppercase hover:underline">编辑</button>
+<span class="bg-stone-800 text-stone-500 text-[10px] px-2 py-0.5 font-label uppercase tracking-tighter">不可禁用</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Stripe Graph Placeholder -->
+<div class="mt-12 bg-[#1A1A1A] p-8 h-80 relative overflow-hidden flex flex-col justify-end border border-stone-800/50">
+<div class="absolute inset-0 opacity-10 flex items-end">
+<div class="w-full h-48 bg-gradient-to-t from-[#A73032] to-transparent" style="clip-path: polygon(0 80%, 10% 70%, 20% 85%, 30% 60%, 40% 75%, 50% 40%, 60% 55%, 70% 30%, 80% 45%, 90% 20%, 100% 50%, 100% 100%, 0% 100%);"></div>
+</div>
+<div class="relative z-10">
+<h4 class="font-label text-stone-500 text-xs uppercase tracking-[0.2em] mb-1">实时交易流量 (Stripe Live)</h4>
+<p class="text-stone-300 font-headline">每小时更新一次财务汇总报告</p>
+</div>
+</div>
+</section>
+<!-- Transaction Stream -->
+<section class="col-span-12 lg:col-span-5">
+<div class="flex items-center justify-between mb-6">
+<h3 class="text-xl font-bold font-headline tracking-tight border-b-2 border-[#A73032] pb-1">最近交易流水</h3>
+<span class="text-xs font-label text-emerald-500 bg-emerald-500/10 px-2 py-0.5">STRIPE 已连接</span>
+</div>
+<div class="bg-[#1A1A1A] divide-y divide-stone-800 border border-stone-800">
+<div class="p-4 flex items-center justify-between hover:bg-white/5 transition-colors">
+<div class="flex items-center gap-4">
+<div class="w-10 h-10 bg-[#0F0F0F] flex items-center justify-center">
+<span class="material-symbols-outlined text-emerald-500" data-icon="add_circle">add_circle</span>
+</div>
+<div>
+<p class="text-sm font-bold text-stone-100">付款 #920384</p>
+<p class="text-[10px] text-stone-500 font-label uppercase tracking-wider">用户: 墨客_8293 • 墨客版</p>
+</div>
+</div>
+<div class="text-right">
+<p class="text-sm font-bold text-stone-100">+¥58.00</p>
+<p class="text-[10px] text-stone-500 font-label">2 分钟前</p>
+</div>
+</div>
+<div class="p-4 flex items-center justify-between hover:bg-white/5 transition-colors">
+<div class="flex items-center gap-4">
+<div class="w-10 h-10 bg-[#0F0F0F] flex items-center justify-center">
+<span class="material-symbols-outlined text-emerald-500" data-icon="add_circle">add_circle</span>
+</div>
+<div>
+<p class="text-sm font-bold text-stone-100">付款 #920383</p>
+<p class="text-[10px] text-stone-500 font-label uppercase tracking-wider">用户: 文思泉涌 • 宗师版</p>
+</div>
+</div>
+<div class="text-right">
+<p class="text-sm font-bold text-stone-100">+¥588.00</p>
+<p class="text-[10px] text-stone-500 font-label">12 分钟前</p>
+</div>
+</div>
+<div class="p-4 flex items-center justify-between hover:bg-white/5 transition-colors">
+<div class="flex items-center gap-4">
+<div class="w-10 h-10 bg-[#0F0F0F] flex items-center justify-center">
+<span class="material-symbols-outlined text-red-500" data-icon="remove_circle">remove_circle</span>
+</div>
+<div>
+<p class="text-sm font-bold text-stone-100">退款 #920381</p>
+<p class="text-[10px] text-stone-500 font-label uppercase tracking-wider">用户: 匿名作者 • 墨客版</p>
+</div>
+</div>
+<div class="text-right">
+<p class="text-sm font-bold text-red-400">-¥58.00</p>
+<p class="text-[10px] text-stone-500 font-label">45 分钟前</p>
+</div>
+</div>
+</div>
+<button class="w-full mt-6 py-3 bg-[#1A1A1A] border border-stone-800 text-stone-400 text-xs font-label uppercase tracking-widest hover:text-stone-100 hover:bg-stone-800 transition-all">
+                        查看完整账单记录
+                    </button>
+<div class="mt-12 p-6 bg-[#1A1A1A] border border-stone-800/50">
+<h4 class="font-bold text-stone-100 mb-4">支出监控</h4>
+<div class="space-y-4">
+<div>
+<div class="flex justify-between text-xs font-label text-stone-500 mb-2 uppercase tracking-wider">
+<span>AWS 基础架构费用</span>
+<span>72%</span>
+</div>
+<div class="h-1 bg-[#0F0F0F] w-full">
+<div class="h-full bg-[#A73032] w-[72%]"></div>
+</div>
+</div>
+<div>
+<div class="flex justify-between text-xs font-label text-stone-500 mb-2 uppercase tracking-wider">
+<span>OpenAI API 调用</span>
+<span>48%</span>
+</div>
+<div class="h-1 bg-[#0F0F0F] w-full">
+<div class="h-full bg-stone-600 w-[48%]"></div>
+</div>
+</div>
+</div>
+</div>
+</section>
+</div>
+</div>
+<!-- Footer Meta Section -->
+<footer class="p-12 border-t border-stone-800/50 bg-[#0F0F0F] mt-12 flex justify-between items-end">
+<div>
+<h5 class="text-stone-100 font-bold font-headline text-lg mb-2">Huozi Writer 财务控制中心</h5>
+<p class="text-stone-500 font-label text-sm max-w-md">基于朱砂印章与手稿质感的数字化财务管理系统。所有交易由 Stripe 安全加密处理。© 2024 Huozi Writer.</p>
+</div>
+<div class="text-right space-y-2">
+<img alt="Cinnabar Seal" class="inline-block opacity-40 grayscale contrast-125" data-alt="minimalist red wax seal stamp logo with intricate chinese character calligraphy texture isolated on black background" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBsmDTqQ2LK7pEbe7yD0thrLSSvBRmCp5i-kbsj1nEOe4cM3NpZwyd8iyavOQRngCbxiSa2-T7j66N6Z-T2x5Bn1W6TFGgZSlMmop42z2QNVnA7V4tkIrqeblCYr5Dw3RrwVxs_ev5kHnj3a_bZOQDcbh4bEpDWAgtK_7vW1Fxu9z8nQO_8-KrL7UDc15R8XVUrrbcBjBt3O9VnQN03FK4ALRoqAcPzodF6fXSjbK1KNPUGeLdkYy9fKxP6V7xkZv8p3h4V0cbAwXSg"/>
+<p class="text-stone-700 font-label text-[10px] uppercase tracking-widest">版本 4.2.0 稳定版</p>
+</div>
+</footer>
+</main>
+</div>
+</body></html>

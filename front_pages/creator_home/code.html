@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+
+<html lang="zh-CN"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>创作者主页 | Huozi Writer</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;700;900&amp;family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "primary-container": "#a73032",
+                        "on-tertiary": "#ffffff",
+                        "on-surface-variant": "#584140",
+                        "surface-tint": "#ab3335",
+                        "on-tertiary-container": "#d5d4d1",
+                        "on-surface": "#1b1c1a",
+                        "primary-fixed-dim": "#ffb3af",
+                        "primary-fixed": "#ffdad7",
+                        "on-background": "#1b1c1a",
+                        "surface-dim": "#dbdad7",
+                        "surface-bright": "#fbf9f6",
+                        "error": "#ba1a1a",
+                        "secondary-fixed-dim": "#cbc6bf",
+                        "on-primary-fixed-variant": "#8a1a20",
+                        "outline-variant": "#dfbfbd",
+                        "on-primary-fixed": "#410005",
+                        "surface-container": "#efeeeb",
+                        "on-error-container": "#93000a",
+                        "error-container": "#ffdad6",
+                        "on-error": "#ffffff",
+                        "outline": "#8b716f",
+                        "on-tertiary-fixed": "#1b1c1a",
+                        "on-secondary-fixed": "#1d1b17",
+                        "surface-container-lowest": "#ffffff",
+                        "tertiary-fixed-dim": "#c7c6c3",
+                        "secondary": "#615e58",
+                        "background": "#fbf9f6",
+                        "inverse-primary": "#ffb3af",
+                        "inverse-surface": "#30312f",
+                        "surface": "#fbf9f6",
+                        "surface-container-low": "#f5f3f0",
+                        "inverse-on-surface": "#f2f0ed",
+                        "secondary-container": "#e7e2da",
+                        "on-secondary": "#ffffff",
+                        "on-secondary-fixed-variant": "#494641",
+                        "tertiary-container": "#5b5c59",
+                        "on-primary": "#ffffff",
+                        "on-secondary-container": "#67645e",
+                        "secondary-fixed": "#e7e2da",
+                        "primary": "#86171d",
+                        "tertiary": "#444442",
+                        "surface-container-highest": "#e4e2df",
+                        "on-primary-container": "#ffc6c3",
+                        "surface-container-high": "#eae8e5",
+                        "surface-variant": "#e4e2df",
+                        "on-tertiary-fixed-variant": "#464744",
+                        "tertiary-fixed": "#e4e2df"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0px",
+                        "lg": "0px",
+                        "xl": "0px",
+                        "2xl": "0px",
+                        "full": "9999px"
+                    },
+                    "fontFamily": {
+                        "headline": ["Noto Serif SC"],
+                        "body": ["Noto Serif SC"],
+                        "label": ["Inter"]
+                    }
+                },
+            },
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        body {
+            font-family: 'Noto Serif SC', serif;
+            background-color: #fbf9f6;
+        }
+        .scholar-gradient {
+            background: linear-gradient(45deg, #86171d, #a73032);
+        }
+        * {
+            border-radius: 0px !important;
+        }
+    </style>
+</head>
+<body class="text-on-surface antialiased overflow-x-hidden">
+<!-- App Shell Wrapper -->
+<div class="flex min-h-screen">
+<!-- SideNavBar -->
+<aside class="fixed left-0 top-0 h-full z-50 flex flex-col border-r border-stone-200 bg-[#F5F3F0] dark:bg-stone-900 w-[240px] shrink-0 font-['Noto_Serif_SC'] text-base leading-[1.7] antialiased">
+<!-- Brand Header -->
+<div class="p-8 pb-10">
+<div class="flex items-center gap-3 mb-2">
+<div class="w-8 h-8 scholar-gradient flex items-center justify-center text-white font-bold text-xs">墨</div>
+<span class="text-xl font-bold font-sans text-stone-900 dark:text-stone-100 tracking-wider">Huozi Writer</span>
+</div>
+<p class="text-stone-500 text-[10px] font-label uppercase tracking-widest px-1">高级编辑器</p>
+</div>
+<!-- Main Nav Items -->
+<nav class="flex-1 flex flex-col px-4 gap-1">
+<a class="text-stone-600 dark:text-stone-400 px-4 py-3 flex items-center gap-3 hover:bg-stone-200 dark:hover:bg-stone-800 transition-all duration-150 ease-in-out" href="#">
+<span class="material-symbols-outlined" data-icon="edit_note">edit_note</span>
+<span class="font-label font-medium">写作</span>
+</a>
+<a class="text-stone-600 dark:text-stone-400 px-4 py-3 flex items-center gap-3 hover:bg-stone-200 dark:hover:bg-stone-800 transition-all duration-150 ease-in-out" href="#">
+<span class="material-symbols-outlined" data-icon="auto_stories">auto_stories</span>
+<span class="font-label font-medium">书架</span>
+</a>
+<a class="text-stone-600 dark:text-stone-400 px-4 py-3 flex items-center gap-3 hover:bg-stone-200 dark:hover:bg-stone-800 transition-all duration-150 ease-in-out" href="#">
+<span class="material-symbols-outlined" data-icon="account_tree">account_tree</span>
+<span class="font-label font-medium">大纲</span>
+</a>
+<a class="text-stone-600 dark:text-stone-400 px-4 py-3 flex items-center gap-3 hover:bg-stone-200 dark:hover:bg-stone-800 transition-all duration-150 ease-in-out" href="#">
+<span class="material-symbols-outlined" data-icon="inventory_2">inventory_2</span>
+<span class="font-label font-medium">素材</span>
+</a>
+<a class="text-stone-600 dark:text-stone-400 px-4 py-3 flex items-center gap-3 hover:bg-stone-200 dark:hover:bg-stone-800 transition-all duration-150 ease-in-out" href="#">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+<span class="font-label font-medium">设置</span>
+</a>
+</nav>
+<!-- Footer Nav Items -->
+<div class="mt-auto p-4 flex flex-col gap-1 border-t border-stone-200 dark:border-stone-800">
+<a class="text-stone-600 dark:text-stone-400 px-4 py-3 flex items-center gap-3 hover:bg-stone-200 dark:hover:bg-stone-800 transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="help_outline">help_outline</span>
+<span class="font-label font-medium">帮助</span>
+</a>
+<a class="text-stone-600 dark:text-stone-400 px-4 py-3 flex items-center gap-3 hover:bg-stone-200 dark:hover:bg-stone-800 transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="logout">logout</span>
+<span class="font-label font-medium">退出</span>
+</a>
+</div>
+</aside>
+<!-- Main Canvas -->
+<main class="ml-[240px] flex-1 bg-white min-h-screen">
+<!-- TopAppBar -->
+<header class="sticky top-0 right-0 w-full flex items-center justify-between px-12 z-40 bg-white/95 backdrop-blur-md h-16 border-b border-stone-200 shadow-sm font-['Noto_Serif_SC'] font-medium">
+<div class="flex items-center gap-8">
+<h1 class="font-sans font-bold text-lg text-[#A73032]">Huozi Writer</h1>
+<nav class="hidden md:flex items-center gap-6">
+<a class="text-stone-500 hover:text-[#A73032] transition-colors" href="#">仪表盘</a>
+<a class="text-stone-500 hover:text-[#A73032] transition-colors" href="#">统计</a>
+<a class="text-stone-500 hover:text-[#A73032] transition-colors" href="#">导出</a>
+</nav>
+</div>
+<div class="flex items-center gap-6">
+<button class="scholar-gradient text-white px-6 py-1.5 font-label text-sm font-semibold tracking-wide hover:brightness-110 transition-all">发布</button>
+<div class="flex items-center gap-4 text-stone-500">
+<span class="material-symbols-outlined cursor-pointer hover:text-[#A73032]" data-icon="notifications">notifications</span>
+<span class="material-symbols-outlined cursor-pointer hover:text-[#A73032]" data-icon="account_circle">account_circle</span>
+</div>
+</div>
+</header>
+<!-- Creator Hero Section -->
+<section class="px-12 py-20 bg-surface-container-low border-b border-stone-100">
+<div class="max-w-5xl mx-auto flex flex-col md:flex-row items-end gap-12">
+<div class="relative group border border-stone-200 p-2 bg-white">
+<img alt="创作者肖像" class="w-48 h-64 object-cover grayscale block" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAvhovD7JkJDyW22FXVsj3vVDcgjh4aiQQrdWeaLizOIvn5cwzbamvqoHBrK1RZGnDEQo2MNWJtfSuKdBnEho0qsBlWokk2FLbIeVrISASxZHr-b7MRbBoDhug7RcOtatKsoK-sWiKB0I0TiD8jd_HhUiYOg4V29BJNHvZgxSv7fyeFcLdawbNBn_LyXPqL63NqhP94eHZq-DsubPDTev3WWDrhiPWsPywVt_tFM-l0-obIXdcb4fw2XARL9VLrXNYIB553B3xdaM_t"/>
+</div>
+<div class="flex-1 space-y-6">
+<div class="space-y-1">
+<span class="font-label text-xs font-semibold tracking-[0.2em] text-primary-container">签约作家</span>
+<h2 class="text-7xl font-black font-headline tracking-tighter leading-tight">沈墨非</h2>
+</div>
+<p class="text-xl leading-relaxed text-secondary max-w-2xl font-serif">
+                        当代小说家、诗人。致力于在数字化时代重塑古典文学的感官体验。其作品常探讨时间、记忆与文字的物性，笔触冷峻如墨，意境深远。
+                    </p>
+<div class="flex gap-4 pt-4">
+<button class="bg-primary-container text-white px-8 py-3 font-label font-bold text-sm tracking-widest hover:bg-primary transition-colors">关注创作者</button>
+<button class="bg-surface-container-high text-on-surface px-8 py-3 font-label font-bold text-sm tracking-widest hover:bg-surface-container-highest transition-colors">发送私信</button>
+</div>
+</div>
+</div>
+</section>
+<!-- Content Layout -->
+<section class="px-12 py-16 max-w-7xl mx-auto">
+<div class="grid grid-cols-12 gap-12">
+<!-- Stats Panel -->
+<div class="col-span-12 md:col-span-4 bg-surface-container p-10 flex flex-col border border-stone-200">
+<div class="space-y-12">
+<div>
+<h3 class="font-label text-xs font-bold text-tertiary-container tracking-widest mb-6 flex items-center gap-2">
+<span class="w-4 h-[1px] bg-primary-container"></span>
+                                创作统计
+                            </h3>
+<div class="space-y-4">
+<div class="flex justify-between items-baseline border-b border-stone-300/50 pb-2">
+<span class="font-serif italic text-stone-500">已出版作品</span>
+<span class="font-sans text-3xl font-bold">12</span>
+</div>
+<div class="flex justify-between items-baseline border-b border-stone-300/50 pb-2">
+<span class="font-serif italic text-stone-500">总字数累计</span>
+<span class="font-sans text-3xl font-bold">1.4M</span>
+</div>
+</div>
+</div>
+<div>
+<h3 class="font-label text-xs font-bold text-tertiary-container tracking-widest mb-6 flex items-center gap-2">
+<span class="w-4 h-[1px] bg-primary-container"></span>
+                                创作里程碑
+                            </h3>
+<div class="space-y-4">
+<div class="flex items-start gap-3">
+<span class="w-1.5 h-1.5 scholar-gradient mt-1.5 shrink-0"></span>
+<span class="font-label text-sm leading-relaxed text-stone-700">《春蚕》获年度文学奖项</span>
+</div>
+<div class="flex items-start gap-3">
+<span class="w-1.5 h-1.5 scholar-gradient mt-1.5 shrink-0"></span>
+<span class="font-label text-sm leading-relaxed text-stone-700">正式签约上海文学工作室</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Work List Section -->
+<div class="col-span-12 md:col-span-8">
+<div class="flex justify-between items-end mb-8 border-b-2 border-primary-container pb-4">
+<h3 class="text-3xl font-bold font-headline">已发布作品集</h3>
+<div class="flex gap-6 font-label text-xs font-bold text-stone-400">
+<span class="text-primary-container cursor-pointer">全部</span>
+<span class="hover:text-primary transition-colors cursor-pointer">长篇</span>
+<span class="hover:text-primary transition-colors cursor-pointer">短篇</span>
+<span class="hover:text-primary transition-colors cursor-pointer">诗歌</span>
+</div>
+</div>
+<div class="divide-y divide-stone-100">
+<!-- List Item 1 -->
+<div class="group py-8 flex items-center justify-between hover:bg-surface-container-low transition-all px-4 cursor-pointer">
+<div class="flex gap-8 items-center">
+<span class="font-sans text-stone-300 text-lg font-bold group-hover:text-primary-container transition-colors">01</span>
+<div>
+<h4 class="text-2xl font-bold font-headline mb-1">《深山里的钟声》</h4>
+<p class="text-sm text-stone-500 font-serif italic">长篇小说 · 320,000 字 · 2023</p>
+</div>
+</div>
+<div class="flex items-center gap-6 opacity-0 group-hover:opacity-100 transition-opacity">
+<span class="bg-tertiary-container text-white px-2 py-0.5 text-[10px] font-label font-bold tracking-widest">精选</span>
+<span class="material-symbols-outlined text-primary-container" data-icon="arrow_forward">arrow_forward</span>
+</div>
+</div>
+<!-- List Item 2 -->
+<div class="group py-8 flex items-center justify-between hover:bg-surface-container-low transition-all px-4 cursor-pointer">
+<div class="flex gap-8 items-center">
+<span class="font-sans text-stone-300 text-lg font-bold group-hover:text-primary-container transition-colors">02</span>
+<div>
+<h4 class="text-2xl font-bold font-headline mb-1">《回形针记忆》</h4>
+<p class="text-sm text-stone-500 font-serif italic">短篇小说集 · 150,000 字 · 2022</p>
+</div>
+</div>
+<div class="flex items-center gap-6 opacity-0 group-hover:opacity-100 transition-opacity">
+<span class="material-symbols-outlined text-primary-container" data-icon="arrow_forward">arrow_forward</span>
+</div>
+</div>
+<!-- List Item 3 -->
+<div class="group py-8 flex items-center justify-between hover:bg-surface-container-low transition-all px-4 cursor-pointer">
+<div class="flex gap-8 items-center">
+<span class="font-sans text-stone-300 text-lg font-bold group-hover:text-primary-container transition-colors">03</span>
+<div>
+<h4 class="text-2xl font-bold font-headline mb-1">《无声的赋格》</h4>
+<p class="text-sm text-stone-500 font-serif italic">现代诗集 · 45,000 字 · 2021</p>
+</div>
+</div>
+<div class="flex items-center gap-6 opacity-0 group-hover:opacity-100 transition-opacity">
+<span class="bg-tertiary-container text-white px-2 py-0.5 text-[10px] font-label font-bold tracking-widest">诗歌榜</span>
+<span class="material-symbols-outlined text-primary-container" data-icon="arrow_forward">arrow_forward</span>
+</div>
+</div>
+</div>
+<div class="mt-12 flex justify-center">
+<button class="text-stone-400 font-label text-xs font-bold tracking-widest hover:text-primary-container transition-colors flex items-center gap-2 border border-stone-200 px-6 py-2">
+                            查看更多作品
+                            <span class="material-symbols-outlined text-sm" data-icon="keyboard_double_arrow_down">keyboard_double_arrow_down</span>
+</button>
+</div>
+</div>
+</div>
+</section>
+<!-- Visual Break Section -->
+<section class="w-full h-80 relative overflow-hidden bg-stone-900">
+<img alt="书斋背景" class="w-full h-full object-cover grayscale opacity-30" src="https://lh3.googleusercontent.com/aida-public/AB6AXuA2f9Sg4CmTeibDT_DEIDyFWy6-1918m6jiDCkgdIRGawmrSb7erBgKhfjhfD8HRtvH41LtKF7XFH0w4VR-RpoN454lc9U-80WtZAP6X04NOge9BiHi2RuaEgmVsbFzRqju3C9ajrpDKuw_ubQ9Wd3HweS9uz1equmaQ6jUWnH1wmniYlF4XV2yCiwGZuPYAfpy5Xi35-66tkxnx-YpME_P6t36pPncGkHgEFAw2zEugwVn5m6SGRPJSYlNLj604BTbu0f7nsdZ88KJ"/>
+<div class="absolute inset-0 flex items-center justify-center">
+<div class="text-center max-w-xl px-6">
+<span class="material-symbols-outlined text-5xl text-primary-container mb-6 block" data-icon="format_quote">format_quote</span>
+<p class="text-3xl font-headline font-bold leading-relaxed italic text-white">“文字是灵魂的投影，而纸张是它唯一的归宿。”</p>
+<div class="mt-6 w-12 h-0.5 bg-primary-container mx-auto"></div>
+</div>
+</div>
+</section>
+<!-- Recommendation Grid -->
+<section class="px-12 py-24 bg-surface-container-low">
+<div class="max-w-7xl mx-auto">
+<div class="flex items-baseline gap-4 mb-16">
+<h3 class="text-4xl font-bold font-headline">灵感汇聚</h3>
+<p class="text-stone-500 font-serif italic">这些素材构建了我的创作世界</p>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-3 border border-stone-200 bg-stone-200 gap-[1px]">
+<!-- PaperCard 1 -->
+<div class="bg-white p-10 flex flex-col justify-between aspect-square group hover:bg-primary-container transition-all duration-300">
+<span class="font-label text-[10px] font-bold text-stone-400 group-hover:text-stone-300 tracking-widest">档 案 01</span>
+<div>
+<h5 class="text-2xl font-bold mb-4 group-hover:text-white">江城冬日影像</h5>
+<p class="text-stone-500 text-sm leading-relaxed group-hover:text-stone-200">收录了1998年长江流域的百余张纪实摄影，是《深山里的钟声》核心灵感来源。</p>
+</div>
+<div class="flex justify-between items-center pt-8 border-t border-stone-100 group-hover:border-white/20">
+<span class="bg-stone-100 group-hover:bg-white/10 group-hover:text-white px-3 py-1 text-[10px] font-label font-bold">124 张影像</span>
+<span class="material-symbols-outlined text-primary-container group-hover:text-white" data-icon="image">image</span>
+</div>
+</div>
+<!-- PaperCard 2 -->
+<div class="bg-white p-10 flex flex-col justify-between aspect-square group hover:bg-primary-container transition-all duration-300">
+<span class="font-label text-[10px] font-bold text-stone-400 group-hover:text-stone-300 tracking-widest">档 案 02</span>
+<div>
+<h5 class="text-2xl font-bold mb-4 group-hover:text-white">丝绸之路考察笔记</h5>
+<p class="text-stone-500 text-sm leading-relaxed group-hover:text-stone-200">徒步穿越古道的私人随笔与手绘地图，记录了被遗忘的方言片段。</p>
+</div>
+<div class="flex justify-between items-center pt-8 border-t border-stone-100 group-hover:border-white/20">
+<span class="bg-stone-100 group-hover:bg-white/10 group-hover:text-white px-3 py-1 text-[10px] font-label font-bold">48 篇手记</span>
+<span class="material-symbols-outlined text-primary-container group-hover:text-white" data-icon="menu_book">menu_book</span>
+</div>
+</div>
+<!-- PaperCard 3 -->
+<div class="bg-white p-10 flex flex-col justify-between aspect-square group hover:bg-primary-container transition-all duration-300">
+<span class="font-label text-[10px] font-bold text-stone-400 group-hover:text-stone-300 tracking-widest">档 案 03</span>
+<div>
+<h5 class="text-2xl font-bold mb-4 group-hover:text-white">环境音景录</h5>
+<p class="text-stone-500 text-sm leading-relaxed group-hover:text-stone-200">采集自深山古寺、雨后竹林与集市喧嚣的原始音频，还原文字的空间感。</p>
+</div>
+<div class="flex justify-between items-center pt-8 border-t border-stone-100 group-hover:border-white/20">
+<span class="bg-stone-100 group-hover:bg-white/10 group-hover:text-white px-3 py-1 text-[10px] font-label font-bold">12 小时录音</span>
+<span class="material-symbols-outlined text-primary-container group-hover:text-white" data-icon="mic">mic</span>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- Footer -->
+<footer class="bg-white border-t border-stone-200 py-20 px-12">
+<div class="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-12">
+<div class="flex flex-col items-center md:items-start gap-6">
+<div class="flex items-center gap-4">
+<div class="w-12 h-12 scholar-gradient flex items-center justify-center text-white font-bold text-lg">墨</div>
+<div>
+<span class="text-2xl font-bold tracking-wider font-sans block">沈墨非 工作室</span>
+<span class="text-stone-400 text-[10px] font-label uppercase tracking-[0.3em]">Huozi Writer System</span>
+</div>
+</div>
+<p class="text-stone-400 text-[10px] font-label tracking-widest">© 2024 HUOZI WRITER. 版权所有.</p>
+</div>
+<div class="flex gap-10">
+<a class="text-stone-400 hover:text-primary-container transition-colors" href="#"><span class="material-symbols-outlined text-3xl" data-icon="share">share</span></a>
+<a class="text-stone-400 hover:text-primary-container transition-colors" href="#"><span class="material-symbols-outlined text-3xl" data-icon="mail">mail</span></a>
+<a class="text-stone-400 hover:text-primary-container transition-colors" href="#"><span class="material-symbols-outlined text-3xl" data-icon="rss_feed">rss_feed</span></a>
+</div>
+</div>
+</footer>
+</main>
+</div>
+</body></html>

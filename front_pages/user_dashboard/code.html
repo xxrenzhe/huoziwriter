@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+
+<html class="light" lang="zh-CN"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Huozi Writer - 用户大盘</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;700;900&amp;family=Inter:wght@400;500;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "primary-container": "#a73032",
+                    "on-tertiary": "#ffffff",
+                    "on-surface-variant": "#584140",
+                    "surface-tint": "#ab3335",
+                    "on-tertiary-container": "#d5d4d1",
+                    "on-surface": "#1b1c1a",
+                    "primary-fixed-dim": "#ffb3af",
+                    "primary-fixed": "#ffdad7",
+                    "on-background": "#1b1c1a",
+                    "surface-dim": "#dbdad7",
+                    "surface-bright": "#fbf9f6",
+                    "error": "#ba1a1a",
+                    "secondary-fixed-dim": "#cbc6bf",
+                    "on-primary-fixed-variant": "#8a1a20",
+                    "outline-variant": "#dfbfbd",
+                    "on-primary-fixed": "#410005",
+                    "surface-container": "#efeeeb",
+                    "on-error-container": "#93000a",
+                    "error-container": "#ffdad6",
+                    "on-error": "#ffffff",
+                    "outline": "#8b716f",
+                    "on-tertiary-fixed": "#1b1c1a",
+                    "on-secondary-fixed": "#1d1b17",
+                    "surface-container-lowest": "#ffffff",
+                    "tertiary-fixed-dim": "#c7c6c3",
+                    "secondary": "#615e58",
+                    "background": "#fbf9f6",
+                    "inverse-primary": "#ffb3af",
+                    "inverse-surface": "#30312f",
+                    "surface": "#fbf9f6",
+                    "surface-container-low": "#f5f3f0",
+                    "inverse-on-surface": "#f2f0ed",
+                    "secondary-container": "#e7e2da",
+                    "on-secondary": "#ffffff",
+                    "on-secondary-fixed-variant": "#494641",
+                    "tertiary-container": "#5b5c59",
+                    "on-primary": "#ffffff",
+                    "on-secondary-container": "#67645e",
+                    "secondary-fixed": "#e7e2da",
+                    "primary": "#86171d",
+                    "tertiary": "#444442",
+                    "surface-container-highest": "#e4e2df",
+                    "on-primary-container": "#ffc6c3",
+                    "surface-container-high": "#eae8e5",
+                    "surface-variant": "#e4e2df",
+                    "on-tertiary-fixed-variant": "#464744",
+                    "tertiary-fixed": "#e4e2df"
+            },
+            "borderRadius": {
+                    "none": "0px",
+                    "DEFAULT": "0px",
+                    "lg": "0px",
+                    "xl": "0px",
+                    "full": "0px"
+            },
+            "fontFamily": {
+                    "headline": ["Noto Serif SC"],
+                    "body": ["Noto Serif SC"],
+                    "label": ["Inter"]
+            }
+          },
+        },
+      }
+    </script>
+<style>
+        body { font-family: 'Noto Serif SC', serif; }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        /* Remove all rounds globally */
+        * { border-radius: 0px !important; }
+        /* Tonal layering: Surface -> Container Low -> Container -> Container High */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #f5f3f0; }
+        ::-webkit-scrollbar-thumb { background: #dfbfbd; }
+    </style>
+</head>
+<body class="bg-background text-on-surface flex min-h-screen">
+<!-- SideNavBar Shell -->
+<aside class="fixed left-0 top-0 h-full z-50 flex flex-col border-r border-stone-200 bg-surface-container-low h-screen w-[240px] shrink-0 font-['Noto_Serif_SC'] text-base leading-[1.7] antialiased">
+<div class="p-8 flex flex-col gap-2">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 bg-primary flex items-center justify-center text-white">
+<span class="material-symbols-outlined" data-icon="ink_pen">ink_pen</span>
+</div>
+<div class="flex flex-col">
+<h1 class="text-xl font-bold font-sans text-on-surface tracking-wider">Huozi Writer</h1>
+<span class="text-xs font-label text-stone-500">高级编辑器</span>
+</div>
+</div>
+</div>
+<nav class="flex-1 px-4 py-4 space-y-1">
+<a class="text-stone-600 px-4 py-3 flex items-center gap-3 hover:bg-stone-200 transition-all duration-150 ease-in-out" href="#">
+<span class="material-symbols-outlined" data-icon="edit_note">edit_note</span>
+            写作
+        </a>
+<a class="text-stone-600 px-4 py-3 flex items-center gap-3 hover:bg-stone-200 transition-all duration-150 ease-in-out" href="#">
+<span class="material-symbols-outlined" data-icon="auto_stories">auto_stories</span>
+            书架
+        </a>
+<a class="bg-primary text-white px-4 py-3 flex items-center gap-3 transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="account_tree">account_tree</span>
+            大纲
+        </a>
+<a class="text-stone-600 px-4 py-3 flex items-center gap-3 hover:bg-stone-200 transition-all duration-150 ease-in-out" href="#">
+<span class="material-symbols-outlined" data-icon="inventory_2">inventory_2</span>
+            素材
+        </a>
+<a class="text-stone-600 px-4 py-3 flex items-center gap-3 hover:bg-stone-200 transition-all duration-150 ease-in-out" href="#">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+            设置
+        </a>
+</nav>
+<div class="px-8 mb-8">
+<button class="w-full bg-primary text-white py-3 font-label font-medium tracking-widest hover:bg-primary-container transition-colors">
+            新建文稿
+        </button>
+</div>
+<footer class="p-4 border-t border-stone-200 space-y-1">
+<a class="text-stone-500 px-4 py-2 flex items-center gap-3 text-sm hover:text-primary transition-colors" href="#">
+<span class="material-symbols-outlined text-sm" data-icon="help_outline">help_outline</span>
+            帮助
+        </a>
+<a class="text-stone-500 px-4 py-2 flex items-center gap-3 text-sm hover:text-primary transition-colors" href="#">
+<span class="material-symbols-outlined text-sm" data-icon="logout">logout</span>
+            退出
+        </a>
+</footer>
+</aside>
+<!-- Main Content Area -->
+<main class="ml-[240px] flex-1 flex flex-col relative bg-surface">
+<!-- TopAppBar -->
+<header class="sticky top-0 right-0 w-full flex items-center justify-between px-8 z-40 bg-white/90 backdrop-blur-md h-16 border-b border-stone-200 font-['Noto_Serif_SC'] font-medium">
+<div class="flex items-center gap-8">
+<span class="font-sans font-bold text-lg text-primary">用户大盘</span>
+<nav class="hidden md:flex gap-6 text-sm">
+<a class="text-primary font-bold border-b-2 border-primary" href="#">仪表盘</a>
+<a class="text-stone-500 hover:text-primary transition-colors" href="#">统计</a>
+<a class="text-stone-500 hover:text-primary transition-colors" href="#">导出</a>
+</nav>
+</div>
+<div class="flex items-center gap-6">
+<div class="relative flex items-center bg-surface-container px-3 py-1 text-sm border-b border-transparent focus-within:border-primary transition-all">
+<span class="material-symbols-outlined text-stone-400 text-lg mr-2" data-icon="search">search</span>
+<input class="bg-transparent border-none focus:ring-0 p-0 text-on-surface w-48 font-label" placeholder="搜索文稿..." type="text"/>
+</div>
+<div class="flex items-center gap-4 text-stone-500">
+<span class="material-symbols-outlined cursor-pointer hover:text-primary transition-colors" data-icon="notifications">notifications</span>
+<span class="material-symbols-outlined cursor-pointer hover:text-primary transition-colors" data-icon="account_circle">account_circle</span>
+<button class="bg-primary text-white px-5 py-1.5 font-label text-sm hover:bg-primary-container transition-colors">发布</button>
+</div>
+</div>
+</header>
+<!-- Dashboard Canvas -->
+<div class="p-10 max-w-7xl mx-auto w-full space-y-10">
+<!-- Header Section -->
+<section class="flex justify-between items-end">
+<div class="space-y-2">
+<h2 class="text-4xl font-black text-on-surface tracking-tight">创作洞察</h2>
+<p class="text-stone-500 max-w-md">欢迎回来，今日已写作 1,240 字。您的创作效率比上周提升了 12%。</p>
+</div>
+<div class="flex gap-2">
+<button class="bg-surface-container-high px-4 py-2 font-label text-xs tracking-widest uppercase text-stone-600 hover:bg-surface-container-highest transition-colors">本周</button>
+<button class="bg-primary text-white px-4 py-2 font-label text-xs tracking-widest uppercase">本月</button>
+</div>
+</section>
+<!-- KPI Bento Grid - Tonal Layering -->
+<section class="grid grid-cols-1 md:grid-cols-4 gap-4">
+<div class="bg-surface-container-low border border-stone-200 p-8 flex flex-col justify-between h-48">
+<span class="text-xs font-label text-tertiary tracking-widest uppercase">累计总字数</span>
+<div class="space-y-1">
+<div class="text-4xl font-bold text-on-surface">248,502</div>
+<div class="text-primary text-xs font-label">+2,4k 较昨日</div>
+</div>
+</div>
+<div class="bg-surface-container-low border border-stone-200 p-8 flex flex-col justify-between h-48">
+<span class="text-xs font-label text-tertiary tracking-widest uppercase">连续写作天数</span>
+<div class="space-y-1">
+<div class="text-4xl font-bold text-on-surface">14</div>
+<div class="text-stone-400 text-xs font-label">个人最佳: 28 天</div>
+</div>
+</div>
+<div class="bg-surface-container-low border border-stone-200 p-8 flex flex-col justify-between h-48">
+<span class="text-xs font-label text-tertiary tracking-widest uppercase">专注时长 (时)</span>
+<div class="space-y-1">
+<div class="text-4xl font-bold text-on-surface">124.5</div>
+<div class="text-primary text-xs font-label">↑ 8% 效率提升</div>
+</div>
+</div>
+<div class="bg-surface-container-low border border-stone-200 p-8 flex flex-col justify-between h-48">
+<span class="text-xs font-label text-tertiary tracking-widest uppercase">已发布章节</span>
+<div class="space-y-1">
+<div class="text-4xl font-bold text-on-surface">42</div>
+<div class="text-stone-400 text-xs font-label">进行中: 3 章节</div>
+</div>
+</div>
+</section>
+<!-- Charts Section -->
+<section class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+<div class="lg:col-span-2 bg-surface-container-low border border-stone-200 p-10 space-y-8">
+<div class="flex justify-between items-center">
+<h3 class="text-xl font-bold">字数增长趋势</h3>
+<span class="text-xs font-label text-stone-400">单位: 千字 / 日</span>
+</div>
+<div class="flex items-end justify-between h-64 gap-4">
+<div class="flex-1 bg-stone-200 group relative">
+<div class="absolute bottom-0 w-full bg-primary h-[40%] group-hover:bg-primary-container transition-all"></div>
+<span class="absolute -bottom-6 left-1/2 -translate-x-1/2 text-[10px] font-label text-stone-400">周一</span>
+</div>
+<div class="flex-1 bg-stone-200 group relative">
+<div class="absolute bottom-0 w-full bg-primary h-[65%] group-hover:bg-primary-container transition-all"></div>
+<span class="absolute -bottom-6 left-1/2 -translate-x-1/2 text-[10px] font-label text-stone-400">周二</span>
+</div>
+<div class="flex-1 bg-stone-200 group relative">
+<div class="absolute bottom-0 w-full bg-primary h-[85%] group-hover:bg-primary-container transition-all"></div>
+<span class="absolute -bottom-6 left-1/2 -translate-x-1/2 text-[10px] font-label text-stone-400">周三</span>
+</div>
+<div class="flex-1 bg-stone-200 group relative">
+<div class="absolute bottom-0 w-full bg-primary h-[55%] group-hover:bg-primary-container transition-all"></div>
+<span class="absolute -bottom-6 left-1/2 -translate-x-1/2 text-[10px] font-label text-stone-400">周四</span>
+</div>
+<div class="flex-1 bg-stone-200 group relative">
+<div class="absolute bottom-0 w-full bg-primary h-[70%] group-hover:bg-primary-container transition-all"></div>
+<span class="absolute -bottom-6 left-1/2 -translate-x-1/2 text-[10px] font-label text-stone-400">周五</span>
+</div>
+<div class="flex-1 bg-primary/20 group relative">
+<div class="absolute bottom-0 w-full bg-primary h-[95%] group-hover:bg-primary-container transition-all"></div>
+<span class="absolute -bottom-6 left-1/2 -translate-x-1/2 text-[10px] font-label font-bold text-primary">周六</span>
+</div>
+<div class="flex-1 bg-stone-200 group relative">
+<div class="absolute bottom-0 w-full bg-primary h-[30%] group-hover:bg-primary-container transition-all"></div>
+<span class="absolute -bottom-6 left-1/2 -translate-x-1/2 text-[10px] font-label text-stone-400">周日</span>
+</div>
+</div>
+</div>
+<div class="bg-surface-container-low border border-stone-200 p-10 flex flex-col justify-between">
+<div class="space-y-4">
+<h3 class="text-xl font-bold text-on-surface">活跃时段</h3>
+<p class="text-sm text-stone-500 leading-relaxed">您的黄金创作时间段在 <span class="text-primary font-bold">22:00 - 01:00</span>。深夜时的产出质量评估最高。</p>
+</div>
+<div class="grid grid-cols-4 gap-2">
+<div class="h-12 bg-stone-100"></div>
+<div class="h-12 bg-stone-100"></div>
+<div class="h-12 bg-stone-200"></div>
+<div class="h-12 bg-primary/30"></div>
+<div class="h-12 bg-primary/50"></div>
+<div class="h-12 bg-primary/80"></div>
+<div class="h-12 bg-primary"></div>
+<div class="h-12 bg-primary/60"></div>
+<div class="h-12 bg-stone-100"></div>
+<div class="h-12 bg-stone-100"></div>
+<div class="h-12 bg-stone-100"></div>
+<div class="h-12 bg-stone-100"></div>
+</div>
+<div class="pt-6 border-t border-stone-200 flex justify-between items-center">
+<span class="text-xs font-label tracking-widest text-stone-500">时段偏好分析</span>
+<span class="material-symbols-outlined text-primary" data-icon="north_east">north_east</span>
+</div>
+</div>
+</section>
+<!-- Bottom Content -->
+<section class="grid grid-cols-1 md:grid-cols-2 gap-8">
+<!-- Recent Projects -->
+<div class="space-y-6">
+<h3 class="text-xl font-bold flex items-center gap-2">
+                    近期项目
+                    <span class="text-[10px] font-label text-stone-500 font-normal px-2 py-0.5 bg-stone-200 uppercase tracking-widest">活跃中</span>
+</h3>
+<div class="border border-stone-200 divide-y divide-stone-200">
+<div class="bg-white p-6 flex justify-between items-center hover:bg-stone-50 transition-colors cursor-pointer group">
+<div class="space-y-1">
+<h4 class="font-bold text-on-surface">《长安余晖》</h4>
+<p class="text-xs text-stone-400 font-label">最后编辑于 2 小时前 • 12.4k 字</p>
+</div>
+<span class="material-symbols-outlined opacity-0 group-hover:opacity-100 transition-opacity text-stone-300" data-icon="arrow_forward_ios">arrow_forward_ios</span>
+</div>
+<div class="bg-white p-6 flex justify-between items-center hover:bg-stone-50 transition-colors cursor-pointer group">
+<div class="space-y-1">
+<h4 class="font-bold text-on-surface">《墨色海洋》</h4>
+<p class="text-xs text-stone-400 font-label">最后编辑于 昨天 • 45.2k 字</p>
+</div>
+<span class="material-symbols-outlined opacity-0 group-hover:opacity-100 transition-opacity text-stone-300" data-icon="arrow_forward_ios">arrow_forward_ios</span>
+</div>
+<div class="bg-white p-6 flex justify-between items-center hover:bg-stone-50 transition-colors cursor-pointer group">
+<div class="space-y-1">
+<h4 class="font-bold text-on-surface">学术论文：叙事学重构</h4>
+<p class="text-xs text-stone-400 font-label">最后编辑于 3 天前 • 8.1k 字</p>
+</div>
+<span class="material-symbols-outlined opacity-0 group-hover:opacity-100 transition-opacity text-stone-300" data-icon="arrow_forward_ios">arrow_forward_ios</span>
+</div>
+</div>
+</div>
+<!-- Milestones & Motivation -->
+<div class="space-y-6">
+<h3 class="text-xl font-bold">里程碑</h3>
+<div class="grid grid-cols-2 gap-4">
+<div class="bg-white border-b-2 border-primary p-6 space-y-4 border border-stone-200 border-b-primary">
+<div class="w-10 h-10 bg-primary/10 flex items-center justify-center">
+<span class="material-symbols-outlined text-primary" data-icon="auto_awesome" style="font-variation-settings: 'FILL' 1;">auto_awesome</span>
+</div>
+<div class="space-y-1">
+<h4 class="text-sm font-bold">万字突破</h4>
+<p class="text-[10px] font-label text-stone-400 uppercase tracking-tighter">达成日期: 2023.11.12</p>
+</div>
+</div>
+<div class="bg-surface-container-low p-6 space-y-4 border border-stone-200 grayscale opacity-60">
+<div class="w-10 h-10 bg-stone-200 flex items-center justify-center">
+<span class="material-symbols-outlined text-stone-400" data-icon="military_tech">military_tech</span>
+</div>
+<div class="space-y-1">
+<h4 class="text-sm font-bold">百万宏篇</h4>
+<p class="text-[10px] font-label text-stone-400 uppercase tracking-tighter">进度: 24.8%</p>
+</div>
+</div>
+</div>
+<div class="relative bg-on-surface p-8 text-white overflow-hidden group">
+<div class="absolute -right-10 -bottom-10 text-9xl text-white/5 font-black group-hover:scale-110 transition-transform">WRITE</div>
+<div class="relative z-10 space-y-4">
+<p class="italic text-lg font-light leading-relaxed">"写作不是有了灵感才去写，而是写了才有灵感。"</p>
+<div class="flex justify-between items-center">
+<span class="text-xs font-label tracking-widest text-stone-400 uppercase">每日格言</span>
+<button class="text-xs font-label border-b border-stone-500 pb-0.5 hover:text-primary transition-colors">开启今日灵感</button>
+</div>
+</div>
+</div>
+</div>
+</section>
+</div>
+</main>
+<!-- Quick Action FAB -->
+<button class="fixed bottom-10 right-10 w-14 h-14 bg-primary text-white flex items-center justify-center shadow-xl hover:bg-primary-container transition-all z-50">
+<span class="material-symbols-outlined" data-icon="add">add</span>
+</button>
+</body></html>

@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="zh-CN"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>业务总览 - Huozi Writer Admin</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;700;900&amp;family=Inter:wght@400;500;700&amp;family=Noto+Sans+SC:wght@400;500;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "primary": "#A73032",
+                        "background": "#0F0F0F",
+                        "surface": "#1A1A1A",
+                        "border-color": "#2A2A2A"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0px",
+                        "lg": "0px",
+                        "xl": "0px",
+                        "full": "9999px"
+                    },
+                    "fontFamily": {
+                        "headline": ["Noto Serif SC"],
+                        "body": ["Noto Serif SC"],
+                        "label": ["Inter"]
+                    }
+                },
+            }
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        body {
+            background-color: #0F0F0F;
+            color: #efeeeb;
+        }
+        .bento-grid {
+            display: grid;
+            grid-template-columns: repeat(12, 1fr);
+            gap: 1px;
+            background-color: #2A2A2A;
+        }
+        .bento-item {
+            background-color: #1A1A1A;
+            padding: 2rem;
+        }
+    </style>
+</head>
+<body class="font-['Noto_Serif_SC'] antialiased bg-[#0F0F0F] text-[#efeeeb]">
+<!-- SideNavBar -->
+<aside class="fixed left-0 top-0 h-full z-50 flex flex-col w-[240px] shrink-0 bg-[#0F0F0F] border-r border-[#2A2A2A]">
+<div class="p-8">
+<h1 class="text-xl font-bold font-sans text-stone-100 tracking-wider">Huozi Writer</h1>
+<p class="text-stone-500 text-xs mt-1 uppercase tracking-tighter">高级编辑器</p>
+</div>
+<nav class="flex-1 px-4 space-y-1">
+<a class="bg-[#A73032] text-white px-4 py-3 flex items-center gap-3 transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="dashboard">dashboard</span>
+<span class="font-['Noto_Sans_SC'] font-medium tracking-wide text-sm">仪表盘</span>
+</a>
+<a class="text-stone-400 px-4 py-3 flex items-center gap-3 hover:bg-[#1A1A1A] transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="edit_note">edit_note</span>
+<span class="font-['Noto_Sans_SC'] font-medium tracking-wide text-sm">写作</span>
+</a>
+<a class="text-stone-400 px-4 py-3 flex items-center gap-3 hover:bg-[#1A1A1A] transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="auto_stories">auto_stories</span>
+<span class="font-['Noto_Sans_SC'] font-medium tracking-wide text-sm">书架</span>
+</a>
+<a class="text-stone-400 px-4 py-3 flex items-center gap-3 hover:bg-[#1A1A1A] transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="account_tree">account_tree</span>
+<span class="font-['Noto_Sans_SC'] font-medium tracking-wide text-sm">大纲</span>
+</a>
+<a class="text-stone-400 px-4 py-3 flex items-center gap-3 hover:bg-[#1A1A1A] transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="inventory_2">inventory_2</span>
+<span class="font-['Noto_Sans_SC'] font-medium tracking-wide text-sm">素材</span>
+</a>
+<a class="text-stone-400 px-4 py-3 flex items-center gap-3 hover:bg-[#1A1A1A] transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+<span class="font-['Noto_Sans_SC'] font-medium tracking-wide text-sm">设置</span>
+</a>
+</nav>
+<div class="mt-auto border-t border-[#2A2A2A] p-4 space-y-1">
+<a class="text-stone-400 px-4 py-3 flex items-center gap-3 hover:bg-[#1A1A1A] transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="help_outline">help_outline</span>
+<span class="font-['Noto_Sans_SC'] font-medium tracking-wide text-sm">帮助</span>
+</a>
+<a class="text-stone-400 px-4 py-3 flex items-center gap-3 hover:bg-[#1A1A1A] transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="logout">logout</span>
+<span class="font-['Noto_Sans_SC'] font-medium tracking-wide text-sm">退出</span>
+</a>
+</div>
+</aside>
+<!-- Main Content Area -->
+<main class="ml-[240px] min-h-screen">
+<!-- TopAppBar -->
+<header class="sticky top-0 right-0 w-full flex items-center justify-between px-8 z-40 bg-[#0F0F0F]/85 backdrop-blur-md h-16 border-b border-[#2A2A2A]">
+<div class="flex items-center gap-8">
+<span class="font-sans font-bold text-lg text-[#A73032]">Huozi Writer</span>
+<nav class="hidden md:flex gap-6">
+<a class="text-[#A73032] font-bold border-b-2 border-[#A73032] py-4 text-sm font-['Noto_Sans_SC'] tracking-widest" href="#">仪表盘</a>
+<a class="text-stone-400 hover:text-[#A73032] transition-colors py-4 text-sm font-['Noto_Sans_SC'] tracking-widest" href="#">统计</a>
+<a class="text-stone-400 hover:text-[#A73032] transition-colors py-4 text-sm font-['Noto_Sans_SC'] tracking-widest" href="#">导出</a>
+</nav>
+</div>
+<div class="flex items-center gap-6">
+<div class="relative">
+<span class="material-symbols-outlined text-stone-400 absolute left-3 top-1/2 -translate-y-1/2 text-sm" data-icon="search">search</span>
+<input class="bg-[#1A1A1A] border-none text-xs w-64 pl-10 focus:ring-1 focus:ring-[#A73032] font-['Noto_Sans_SC'] py-2 rounded-none" placeholder="搜索全局指标..." type="text"/>
+</div>
+<div class="flex items-center gap-4">
+<button class="bg-[#A73032] text-white px-4 py-1.5 text-xs font-['Noto_Sans_SC'] font-bold tracking-widest hover:bg-[#86171d] transition-colors rounded-none">发布</button>
+<span class="material-symbols-outlined text-stone-400 cursor-pointer" data-icon="notifications">notifications</span>
+<span class="material-symbols-outlined text-stone-400 cursor-pointer" data-icon="account_circle">account_circle</span>
+</div>
+</div>
+</header>
+<!-- Business Overview Canvas -->
+<div class="p-8">
+<div class="mb-8 flex justify-between items-end">
+<div>
+<h2 class="text-4xl font-black text-stone-100 tracking-tight font-['Noto_Serif_SC'] uppercase">业务总览</h2>
+<p class="text-stone-500 mt-2 font-['Noto_Sans_SC'] text-xs tracking-widest uppercase">实时业务表现与资源指标</p>
+</div>
+<div class="flex items-center gap-4 text-xs font-['Noto_Sans_SC']">
+<div class="flex items-center gap-2 text-stone-400">
+<span class="w-3 h-3 bg-[#A73032]"></span>
+<span>实时收入</span>
+</div>
+<div class="flex items-center gap-2 text-stone-400">
+<span class="w-3 h-3 bg-stone-700"></span>
+<span>基础基准</span>
+</div>
+</div>
+</div>
+<!-- Bento Dashboard -->
+<div class="bento-grid border border-[#2A2A2A]">
+<!-- Revenue Card -->
+<div class="bento-item col-span-12 md:col-span-8 row-span-2 border-r border-[#2A2A2A]">
+<div class="flex justify-between items-start mb-12">
+<div>
+<p class="text-stone-500 font-['Noto_Sans_SC'] text-xs tracking-[0.2em] mb-2 uppercase">总收入 (24小时)</p>
+<h3 class="text-6xl font-black text-stone-100 font-['Inter'] tabular-nums tracking-tighter">¥1,428,290.<span class="text-[#A73032] text-4xl">00</span></h3>
+</div>
+<div class="text-right">
+<span class="text-[#A73032] font-['Inter'] font-bold text-sm tracking-tighter flex items-center gap-1 justify-end">
+<span class="material-symbols-outlined text-xs" data-icon="trending_up">trending_up</span>
+                                +14.2%
+                            </span>
+<p class="text-stone-600 text-[10px] font-['Noto_Sans_SC'] mt-1 uppercase">对比上期</p>
+</div>
+</div>
+<!-- SVG Chart -->
+<div class="relative h-64 w-full mt-4">
+<svg class="w-full h-full overflow-visible" preserveaspectratio="none" viewbox="0 0 1000 200">
+<defs>
+<lineargradient id="chartGradient" x1="0%" x2="0%" y1="0%" y2="100%">
+<stop offset="0%" stop-color="#A73032" stop-opacity="0.3"></stop>
+<stop offset="100%" stop-color="#A73032" stop-opacity="0"></stop>
+</lineargradient>
+</defs>
+<line stroke="#2A2A2A" stroke-width="1" x1="0" x2="1000" y1="40" y2="40"></line>
+<line stroke="#2A2A2A" stroke-width="1" x1="0" x2="1000" y1="80" y2="80"></line>
+<line stroke="#2A2A2A" stroke-width="1" x1="0" x2="1000" y1="120" y2="120"></line>
+<line stroke="#2A2A2A" stroke-width="1" x1="0" x2="1000" y1="160" y2="160"></line>
+<path d="M0,160 L50,140 L100,150 L150,110 L200,120 L250,80 L300,95 L350,60 L400,75 L450,40 L500,55 L550,20 L600,45 L650,15 L700,30 L750,5 L800,20 L850,10 L900,25 L950,5 L1000,15 L1000,200 L0,200 Z" fill="url(#chartGradient)"></path>
+<polyline fill="none" points="0,160 50,140 100,150 150,110 200,120 250,80 300,95 350,60 400,75 450,40 500,55 550,20 600,45 650,15 700,30 750,5 800,20 850,10 900,25 950,5 1000,15" stroke="#A73032" stroke-linecap="square" stroke-width="2"></polyline>
+</svg>
+<div class="absolute inset-0 flex justify-between pointer-events-none text-[10px] font-['Inter'] text-stone-600 mt-2">
+<span>00:00</span>
+<span>04:00</span>
+<span>08:00</span>
+<span>12:00</span>
+<span>16:00</span>
+<span>20:00</span>
+<span>23:59</span>
+</div>
+</div>
+</div>
+<!-- Margin Summary -->
+<div class="bento-item col-span-12 md:col-span-4 flex flex-col justify-between">
+<div>
+<p class="text-stone-500 font-['Noto_Sans_SC'] text-xs tracking-[0.2em] mb-8 uppercase">净利润率</p>
+<div class="relative w-40 h-40 mx-auto">
+<svg class="w-full h-full transform -rotate-90" viewbox="0 0 36 36">
+<circle cx="18" cy="18" fill="none" r="16" stroke="#2A2A2A" stroke-width="3"></circle>
+<circle cx="18" cy="18" fill="none" r="16" stroke="#A73032" stroke-dasharray="64, 100" stroke-linecap="butt" stroke-width="3"></circle>
+</svg>
+<div class="absolute inset-0 flex items-center justify-center">
+<span class="text-4xl font-black font-['Inter']">64%</span>
+</div>
+</div>
+</div>
+<div class="mt-8 space-y-4">
+<div class="flex justify-between items-center text-xs font-['Noto_Sans_SC']">
+<span class="text-stone-500 uppercase">运营成本</span>
+<span class="text-stone-100 font-['Inter']">¥514,184</span>
+</div>
+<div class="flex justify-between items-center text-xs font-['Noto_Sans_SC']">
+<span class="text-stone-500 uppercase">Token 平均成本</span>
+<span class="text-stone-100 font-['Inter']">¥0.012/1k</span>
+</div>
+<div class="h-px bg-[#2A2A2A]"></div>
+<div class="flex justify-between items-center text-xs font-['Noto_Sans_SC'] text-[#A73032]">
+<span class="font-bold">预计利润</span>
+<span class="font-black tracking-tight font-['Inter']">¥914,106</span>
+</div>
+</div>
+</div>
+<!-- Token Usage Card -->
+<div class="bento-item col-span-12 md:col-span-4 border-t border-[#2A2A2A]">
+<p class="text-stone-500 font-['Noto_Sans_SC'] text-xs tracking-[0.2em] mb-6 uppercase">Token 使用情况</p>
+<div class="space-y-6">
+<div class="space-y-2">
+<div class="flex justify-between items-end text-[10px] font-['Inter']">
+<span class="text-stone-400">GPT-4-TURBO</span>
+<span class="text-stone-100">82.1M / 100M</span>
+</div>
+<div class="w-full bg-[#0F0F0F] h-1">
+<div class="bg-[#A73032] h-full w-[82%]"></div>
+</div>
+</div>
+<div class="space-y-2">
+<div class="flex justify-between items-end text-[10px] font-['Inter']">
+<span class="text-stone-400">CLAUDE-3-OPUS</span>
+<span class="text-stone-100">12.5M / 50M</span>
+</div>
+<div class="w-full bg-[#0F0F0F] h-1">
+<div class="bg-stone-700 h-full w-[25%]"></div>
+</div>
+</div>
+<div class="space-y-2">
+<div class="flex justify-between items-end text-[10px] font-['Inter']">
+<span class="text-stone-400">HUOZI-70B-LLM</span>
+<span class="text-stone-100">245.9M / 500M</span>
+</div>
+<div class="w-full bg-[#0F0F0F] h-1">
+<div class="bg-[#86171d] h-full w-[49%]"></div>
+</div>
+</div>
+</div>
+</div>
+<!-- Real-time Activity Log -->
+<div class="bento-item col-span-12 md:col-span-4 border-t border-l border-[#2A2A2A]">
+<p class="text-stone-500 font-['Noto_Sans_SC'] text-xs tracking-[0.2em] mb-6 uppercase">实时交易</p>
+<div class="space-y-4">
+<div class="flex items-center gap-4 group">
+<div class="w-1 h-8 bg-[#A73032]"></div>
+<div class="flex-1">
+<p class="text-xs text-stone-100 font-['Noto_Sans_SC']">API 订阅升级</p>
+<p class="text-[10px] text-stone-500 font-['Noto_Sans_SC']">用户 ID: #82910 · 2秒前</p>
+</div>
+<div class="text-xs font-bold text-stone-100 font-['Inter']">+¥1,999</div>
+</div>
+<div class="flex items-center gap-4 group">
+<div class="w-1 h-8 bg-stone-800"></div>
+<div class="flex-1">
+<p class="text-xs text-stone-100 font-['Noto_Sans_SC']">标准版续费</p>
+<p class="text-[10px] text-stone-500 font-['Noto_Sans_SC']">用户 ID: #22144 · 14秒前</p>
+</div>
+<div class="text-xs font-bold text-stone-100 font-['Inter']">+¥299</div>
+</div>
+<div class="flex items-center gap-4 group">
+<div class="w-1 h-8 bg-[#A73032]"></div>
+<div class="flex-1">
+<p class="text-xs text-stone-100 font-['Noto_Sans_SC']">企业级方案锁定</p>
+<p class="text-[10px] text-stone-500 font-['Noto_Sans_SC']">用户 ID: #00452 · 45秒前</p>
+</div>
+<div class="text-xs font-bold text-stone-100 font-['Inter']">+¥12,500</div>
+</div>
+</div>
+</div>
+<!-- System Health -->
+<div class="bento-item col-span-12 md:col-span-4 border-t border-l border-[#2A2A2A] bg-[#141414]">
+<p class="text-stone-500 font-['Noto_Sans_SC'] text-xs tracking-[0.2em] mb-6 uppercase">系统状态</p>
+<div class="flex items-end gap-1.5 mb-8 h-12">
+<div class="w-2 bg-[#A73032] h-6"></div>
+<div class="w-2 bg-[#A73032] h-8"></div>
+<div class="w-2 bg-[#A73032] h-7"></div>
+<div class="w-2 bg-[#A73032] h-10"></div>
+<div class="w-2 bg-stone-800 h-3"></div>
+<div class="w-2 bg-[#A73032] h-11"></div>
+<div class="w-2 bg-[#A73032] h-9"></div>
+<div class="w-2 bg-[#A73032] h-8"></div>
+<div class="w-2 bg-[#A73032] h-10"></div>
+<div class="w-2 bg-[#A73032] h-12"></div>
+</div>
+<div class="grid grid-cols-2 gap-4">
+<div class="p-4 bg-[#1A1A1A] border border-[#2A2A2A]">
+<p class="text-[9px] text-stone-500 mb-1 font-['Noto_Sans_SC'] uppercase">平均延迟</p>
+<p class="text-lg font-black text-[#A73032] font-['Inter']">18ms</p>
+</div>
+<div class="p-4 bg-[#1A1A1A] border border-[#2A2A2A]">
+<p class="text-[9px] text-stone-500 mb-1 font-['Noto_Sans_SC'] uppercase">运行时间</p>
+<p class="text-lg font-black text-stone-100 font-['Inter']">99.98%</p>
+</div>
+</div>
+</div>
+</div>
+<!-- Footer Meta -->
+<div class="mt-12 flex justify-between items-center border-t border-[#2A2A2A] pt-6">
+<div class="flex gap-12">
+<div>
+<p class="text-[10px] text-stone-600 font-['Noto_Sans_SC'] tracking-widest uppercase">服务器集群</p>
+<p class="text-xs text-stone-400 font-['Inter']">EAST-ASIA-MAIN-01</p>
+</div>
+<div>
+<p class="text-[10px] text-stone-600 font-['Noto_Sans_SC'] tracking-widest uppercase">数据库同步状态</p>
+<p class="text-xs text-[#A73032] font-['Noto_Sans_SC'] flex items-center gap-2">
+<span class="w-1.5 h-1.5 bg-[#A73032] rounded-full animate-pulse"></span>
+                            同步完成 (0.4s)
+                        </p>
+</div>
+</div>
+<div class="text-[10px] text-stone-700 font-mono italic">
+                    HUOZI_ADMIN_v4.2.0_SECURE_LAYER
+                </div>
+</div>
+</div>
+</main>
+</body></html>

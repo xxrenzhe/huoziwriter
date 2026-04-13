@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+
+<html lang="zh-CN"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>账号设置 - Huozi Writer</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;700&amp;family=Noto+Sans+SC:wght@400;500;700&amp;family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "primary-container": "#a73032",
+                        "on-tertiary": "#ffffff",
+                        "on-surface-variant": "#584140",
+                        "surface-tint": "#ab3335",
+                        "on-tertiary-container": "#d5d4d1",
+                        "on-surface": "#1b1c1a",
+                        "primary-fixed-dim": "#ffb3af",
+                        "primary-fixed": "#ffdad7",
+                        "on-background": "#1b1c1a",
+                        "surface-dim": "#dbdad7",
+                        "surface-bright": "#fbf9f6",
+                        "error": "#ba1a1a",
+                        "secondary-fixed-dim": "#cbc6bf",
+                        "on-primary-fixed-variant": "#8a1a20",
+                        "outline-variant": "#dfbfbd",
+                        "on-primary-fixed": "#410005",
+                        "surface-container": "#efeeeb",
+                        "on-error-container": "#93000a",
+                        "error-container": "#ffdad6",
+                        "on-error": "#ffffff",
+                        "outline": "#8b716f",
+                        "on-tertiary-fixed": "#1b1c1a",
+                        "on-secondary-fixed": "#1d1b17",
+                        "surface-container-lowest": "#ffffff",
+                        "tertiary-fixed-dim": "#c7c6c3",
+                        "secondary": "#615e58",
+                        "background": "#fbf9f6",
+                        "inverse-primary": "#ffb3af",
+                        "inverse-surface": "#30312f",
+                        "surface": "#fbf9f6",
+                        "surface-container-low": "#f5f3f0",
+                        "inverse-on-surface": "#f2f0ed",
+                        "secondary-container": "#e7e2da",
+                        "on-secondary": "#ffffff",
+                        "on-secondary-fixed-variant": "#494641",
+                        "tertiary-container": "#5b5c59",
+                        "on-primary": "#ffffff",
+                        "on-secondary-container": "#67645e",
+                        "secondary-fixed": "#e7e2da",
+                        "primary": "#86171d",
+                        "tertiary": "#444442",
+                        "surface-container-highest": "#e4e2df",
+                        "on-primary-container": "#ffc6c3",
+                        "surface-container-high": "#eae8e5",
+                        "surface-variant": "#e4e2df",
+                        "on-tertiary-fixed-variant": "#464744",
+                        "tertiary-fixed": "#e4e2df"
+                    },
+                    "borderRadius": {
+                        "none": "0px",
+                        "DEFAULT": "0px",
+                        "lg": "0px",
+                        "xl": "0px",
+                        "2xl": "0px",
+                        "full": "0px"
+                    },
+                    "fontFamily": {
+                        "headline": ["Noto Serif SC", "serif"],
+                        "body": ["Noto Serif SC", "serif"],
+                        "label": ["Noto Sans SC", "sans-serif"]
+                    }
+                },
+            }
+        }
+    </script>
+<style>
+        body { font-family: 'Noto Serif SC', serif; }
+        .font-sans-sc { font-family: 'Noto Sans SC', sans-serif; }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        /* Custom input focus bottom bar */
+        .sharp-input:focus {
+            outline: none;
+            background-color: #ffffff;
+            border-bottom: 2px solid #a73032;
+        }
+        * { border-radius: 0px !important; }
+    </style>
+</head>
+<body class="bg-surface text-on-surface antialiased">
+<!-- Sidebar Navigation Shell -->
+<aside class="fixed left-0 top-0 h-screen w-[240px] flex flex-col shrink-0 bg-[#F5F3F0] dark:bg-stone-900 z-50">
+<div class="p-8">
+<h1 class="text-xl font-bold font-sans text-stone-900 dark:text-stone-100 tracking-wider">Huozi Writer</h1>
+<p class="text-xs text-stone-500 font-sans-sc mt-1">高级编辑器</p>
+</div>
+<nav class="flex-1 px-4 space-y-1">
+<a class="text-stone-600 dark:text-stone-400 px-4 py-3 flex items-center gap-3 hover:bg-stone-200 dark:hover:bg-stone-800 transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="edit_note">edit_note</span>
+<span class="font-sans-sc font-medium">写作</span>
+</a>
+<a class="text-stone-600 dark:text-stone-400 px-4 py-3 flex items-center gap-3 hover:bg-stone-200 dark:hover:bg-stone-800 transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="auto_stories">auto_stories</span>
+<span class="font-sans-sc font-medium">书架</span>
+</a>
+<a class="text-stone-600 dark:text-stone-400 px-4 py-3 flex items-center gap-3 hover:bg-stone-200 dark:hover:bg-stone-800 transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="account_tree">account_tree</span>
+<span class="font-sans-sc font-medium">大纲</span>
+</a>
+<a class="text-stone-600 dark:text-stone-400 px-4 py-3 flex items-center gap-3 hover:bg-stone-200 dark:hover:bg-stone-800 transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="inventory_2">inventory_2</span>
+<span class="font-sans-sc font-medium">素材</span>
+</a>
+<!-- Active State: Settings -->
+<a class="bg-[#A73032] text-white dark:bg-red-800 dark:text-stone-100 px-4 py-3 flex items-center gap-3 transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+<span class="font-sans-sc font-medium">设置</span>
+</a>
+</nav>
+<div class="p-4 mt-auto space-y-1">
+<a class="text-stone-600 dark:text-stone-400 px-4 py-3 flex items-center gap-3 hover:bg-stone-200 dark:hover:bg-stone-800 transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="help_outline">help_outline</span>
+<span class="font-sans-sc font-medium">帮助</span>
+</a>
+<a class="text-stone-600 dark:text-stone-400 px-4 py-3 flex items-center gap-3 hover:bg-stone-200 dark:hover:bg-stone-800 transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="logout">logout</span>
+<span class="font-sans-sc font-medium">退出</span>
+</a>
+</div>
+</aside>
+<!-- Main Content Area -->
+<main class="ml-[240px] flex min-h-screen">
+<!-- Secondary Panel: Settings Navigation -->
+<div class="w-[280px] bg-surface-container shrink-0 p-10 space-y-8 border-r border-outline-variant/10">
+<h2 class="text-2xl font-bold tracking-tight">账户中心</h2>
+<nav class="space-y-6">
+<div class="space-y-3">
+<p class="text-[10px] uppercase tracking-widest text-on-surface-variant font-sans-sc font-bold">基本信息</p>
+<a class="block text-primary font-bold font-sans-sc border-l-2 border-primary-container pl-4" href="#">个人资料</a>
+<a class="block text-secondary hover:text-primary font-sans-sc pl-4 transition-colors" href="#">账号安全</a>
+<a class="block text-secondary hover:text-primary font-sans-sc pl-4 transition-colors" href="#">通知管理</a>
+</div>
+<div class="space-y-3">
+<p class="text-[10px] uppercase tracking-widest text-on-surface-variant font-sans-sc font-bold">订阅与付费</p>
+<a class="block text-secondary hover:text-primary font-sans-sc pl-4 transition-colors" href="#">我的会员</a>
+<a class="block text-secondary hover:text-primary font-sans-sc pl-4 transition-colors" href="#">账单明细</a>
+</div>
+</nav>
+</div>
+<!-- Main Writing Surface / Form Canvas -->
+<div class="flex-1 bg-surface-container-lowest p-16">
+<div class="max-w-3xl mx-auto">
+<header class="mb-12">
+<h3 class="text-3xl font-bold mb-2">个人资料</h3>
+<p class="text-secondary font-sans-sc">管理您的公开信息与账户凭据</p>
+</header>
+<!-- Profile Section -->
+<section class="space-y-12">
+<div class="flex items-start gap-12">
+<div class="shrink-0 group relative">
+<img alt="用户头像" class="w-32 h-32 bg-surface-container-high object-cover grayscale" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCzjkUM63Jp9jrRU4Uty_cXVXnfQceel54Xd8Y2aSyX1FAWH0Z1_wFDXuapKoygnBfXESfCj6Ctdy3xNrrPn4_B7oQCuyz9_S6tNbgamG2_fa-5_S0dPp9dVbkvcl4HSdno-cZi1dJ2sKGEUWX11E8nnJJBiJFbUPGJszg-DCiqbeS3hetHvnPDmZwkflGR4pqF78Kw7gUwfIttC3mLGvEajmly-rC3j5XjUp2jAYFeqRPAJxqhs61HSyUnYFMWAJ7FsOhJUlvtAoiV"/>
+<button class="absolute inset-0 bg-primary-container/80 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+<span class="material-symbols-outlined" data-icon="photo_camera">photo_camera</span>
+</button>
+</div>
+<div class="flex-1 grid grid-cols-2 gap-8">
+<div class="col-span-1 space-y-2">
+<label class="text-xs font-bold font-sans-sc tracking-wider text-secondary">笔名</label>
+<input class="w-full p-4 bg-surface-container-high border-0 border-b border-transparent sharp-input font-sans-sc" type="text" value="墨染青衫"/>
+</div>
+<div class="col-span-1 space-y-2">
+<label class="text-xs font-bold font-sans-sc tracking-wider text-secondary">真实姓名</label>
+<input class="w-full p-4 bg-surface-container-high border-0 border-b border-transparent sharp-input font-sans-sc" placeholder="未填写" type="text"/>
+</div>
+<div class="col-span-2 space-y-2">
+<label class="text-xs font-bold font-sans-sc tracking-wider text-secondary">个人简介</label>
+<textarea class="w-full p-4 bg-surface-container-high border-0 border-b border-transparent sharp-input font-sans-sc resize-none" rows="4">沉迷于古典文学与赛博朋克的交汇点，尝试用文字构建不一样的时空。</textarea>
+</div>
+</div>
+</div>
+<hr class="border-t border-outline-variant/10"/>
+<!-- Preference Settings -->
+<div class="space-y-8">
+<h4 class="text-xl font-bold">偏好设置</h4>
+<div class="space-y-6">
+<!-- Sharp Toggle: Dark Mode -->
+<div class="flex items-center justify-between p-6 bg-surface-container-low border border-outline-variant/5">
+<div>
+<p class="font-bold font-sans-sc">深色模式</p>
+<p class="text-sm text-secondary font-sans-sc">在光线不足的环境中提供更好的写作体验</p>
+</div>
+<div class="w-14 h-7 bg-primary-container flex items-center p-1 cursor-pointer">
+<div class="w-5 h-5 bg-white ml-auto"></div>
+</div>
+</div>
+<!-- Sharp Toggle: Auto Save -->
+<div class="flex items-center justify-between p-6 bg-surface-container-low border border-outline-variant/5">
+<div>
+<p class="font-bold font-sans-sc">实时云端同步</p>
+<p class="text-sm text-secondary font-sans-sc">每隔5秒自动将您的灵感保存至云端</p>
+</div>
+<div class="w-14 h-7 bg-surface-container-highest flex items-center p-1 cursor-pointer">
+<div class="w-5 h-5 bg-secondary"></div>
+</div>
+</div>
+<!-- Sharp Toggle: AI Help -->
+<div class="flex items-center justify-between p-6 bg-surface-container-low border border-outline-variant/5">
+<div>
+<p class="font-bold font-sans-sc">写作辅助增强</p>
+<p class="text-sm text-secondary font-sans-sc">启用AI驱动的词汇优化与语法检查</p>
+</div>
+<div class="w-14 h-7 bg-primary-container flex items-center p-1 cursor-pointer">
+<div class="w-5 h-5 bg-white ml-auto"></div>
+</div>
+</div>
+</div>
+</div>
+<!-- Actions -->
+<div class="flex justify-end gap-6 pt-12">
+<button class="px-10 py-4 font-sans-sc font-bold text-secondary hover:bg-surface-container transition-colors">
+                            重置
+                        </button>
+<button class="px-10 py-4 bg-primary-container text-on-primary font-sans-sc font-bold shadow-[0px_4px_20px_rgba(167,48,50,0.15)] hover:bg-primary transition-colors">
+                            保存更改
+                        </button>
+</div>
+<!-- Danger Zone -->
+<div class="mt-24 p-10 bg-error-container/5 border-l-4 border-error">
+<h4 class="text-error font-bold mb-2">危险区域</h4>
+<p class="text-sm text-on-surface-variant font-sans-sc mb-6">一旦您删除了账户，所有数据将无法恢复。请谨慎操作。</p>
+<button class="px-6 py-3 border border-error text-error font-sans-sc font-bold hover:bg-error hover:text-white transition-colors">
+                            注销账户
+                        </button>
+</div>
+</section>
+</div>
+</div>
+</main>
+</body></html>
