@@ -79,7 +79,7 @@ export function UsersAdminTable() {
             </thead>
             <tbody>
               {[
-                ["huozi", "admin", "团队", "2099-12-31", "启用", "2026-04-12 08:42"],
+                ["huozi", "admin", "藏锋", "2099-12-31", "启用", "2026-04-12 08:42"],
                 ["yanmo018", "user", "游墨", "2026-05-12", "启用", "2026-04-11 21:16"],
                 ["zhihao023", "user", "执毫", "2026-10-03", "锁定", "2026-04-09 14:20"],
                 ["cangfeng011", "user", "藏锋", "2027-01-01", "启用", "2026-04-12 10:08"],
@@ -183,7 +183,7 @@ export function RoutingAdminBoard() {
         <ul className="mt-4 space-y-3 text-sm leading-7 text-stone-400">
           <li>未来接入外部支付与订阅回调</li>
           <li>未来如果要增强外部采集，再单独评估服务端抓取与任务编排扩容</li>
-          <li>未来做团队级模型预算控制</li>
+          <li>未来做更细粒度的个人套餐预算控制</li>
         </ul>
       </aside>
     </section>
@@ -197,7 +197,6 @@ export function FinanceAdminBoard() {
         ["游墨", "￥0", "50 条碎片，1 次/日生成，文本配图建议"],
         ["执毫", "￥108/月", "10 次/日生成，微信草稿箱同步，无限死刑词库"],
         ["藏锋", "￥298/月", "高配额生成，100 次封面图，多个公众号"],
-        ["团队", "定制", "共享碎片池、共享词库、未来多人协作"],
       ].map(([name, price, note], index) => (
         <article
           key={name}

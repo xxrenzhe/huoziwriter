@@ -357,7 +357,7 @@ export async function compileKnowledgeCardFromFragments(
   const consensus = analyzeKnowledgeConsensus(fragments);
 
   const scope = await getUserAccessScope(userId);
-  const workspaceScope = scope.isTeamShared ? "team" : "personal";
+  const workspaceScope = "personal";
   const scopePlaceholders = scope.userIds.map(() => "?").join(", ");
   const existing =
     existingCard ||

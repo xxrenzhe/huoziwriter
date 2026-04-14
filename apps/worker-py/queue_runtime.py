@@ -22,10 +22,22 @@ DEFAULT_VISION_PROMPT = (
     "输出可复用的写作碎片。"
 )
 DEFAULT_FRAGMENT_DISTILL_PROMPT = "你是碎片提纯器。保留时间、地点、数据、冲突，不要写空泛总结。"
+BEIJING_TIMEZONE = timezone(timedelta(hours=8))
 
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def get_current_topic_sync_window(now_utc: datetime) -> datetime | None:
+    now_beijing = now_utc.astimezone(BEIJING_TIMEZONE)
+    if now_beijing.hour < 6:
+        return None
+    if now_beijing.hour < 18:
+        slot_start = now_beijing.replace(hour=6, minute=0, second=0, microsecond=0)
+    else:
+        slot_start = now_beijing.replace(hour=18, minute=0, second=0, microsecond=0)
+    return slot_start.astimezone(timezone.utc)
 
 
 TOPIC_LINK_PATTERN = re.compile(r"""<a[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)</a>""", re.IGNORECASE)
@@ -187,6 +199,8 @@ def ensure_runtime_scheduler_schema(connection: RuntimeConnection) -> None:
     required_columns = [
         ("topic_sources", "owner_user_id"),
         ("topic_sources", "last_fetched_at"),
+        ("topic_sources", "source_type"),
+        ("topic_sources", "priority"),
         ("topic_items", "owner_user_id"),
     ]
 
@@ -195,11 +209,62 @@ def ensure_runtime_scheduler_schema(connection: RuntimeConnection) -> None:
             continue
         if column == "last_fetched_at":
             definition = "TIMESTAMPTZ" if connection.kind == "postgres" else "TEXT"
+        elif column == "priority":
+            definition = "INTEGER DEFAULT 100"
+        elif column == "source_type":
+            definition = "TEXT DEFAULT 'news'"
         else:
             definition = "BIGINT" if connection.kind == "postgres" else "INTEGER"
         connection.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
+    connection.execute("UPDATE topic_sources SET priority = 100 WHERE priority IS NULL")
+    connection.execute("UPDATE topic_sources SET source_type = 'news' WHERE source_type IS NULL")
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS topic_sync_runs (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          sync_window_start TEXT NOT NULL UNIQUE,
+          sync_window_label TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'queued',
+          scheduled_source_count INTEGER NOT NULL DEFAULT 0,
+          enqueued_job_count INTEGER NOT NULL DEFAULT 0,
+          completed_source_count INTEGER NOT NULL DEFAULT 0,
+          failed_source_count INTEGER NOT NULL DEFAULT 0,
+          inserted_item_count INTEGER NOT NULL DEFAULT 0,
+          last_error TEXT,
+          triggered_at TEXT NOT NULL,
+          finished_at TEXT,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+        """
+        if connection.kind == "sqlite"
+        else """
+        CREATE TABLE IF NOT EXISTS topic_sync_runs (
+          id BIGSERIAL PRIMARY KEY,
+          sync_window_start TIMESTAMPTZ NOT NULL UNIQUE,
+          sync_window_label TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'queued',
+          scheduled_source_count INTEGER NOT NULL DEFAULT 0,
+          enqueued_job_count INTEGER NOT NULL DEFAULT 0,
+          completed_source_count INTEGER NOT NULL DEFAULT 0,
+          failed_source_count INTEGER NOT NULL DEFAULT 0,
+          inserted_item_count INTEGER NOT NULL DEFAULT 0,
+          last_error TEXT,
+          triggered_at TIMESTAMPTZ NOT NULL,
+          finished_at TIMESTAMPTZ,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """
+    )
+
     connection.commit()
+
+
+def get_topic_sync_window_label(window_start_utc: datetime) -> str:
+    window_beijing = window_start_utc.astimezone(BEIJING_TIMEZONE)
+    return f"{window_beijing.strftime('%Y-%m-%d')} {window_beijing.strftime('%H:%M')} 北京时间窗口"
 
 
 def open_connection() -> RuntimeConnection:
@@ -245,16 +310,7 @@ def resolve_scope_user_ids(connection: RuntimeConnection, user_id: int) -> list[
     )
     if user is None:
         raise RuntimeError("user not found")
-    if user.get("plan_code") != "team":
-        return [user_id]
-
-    members = connection.fetchall(
-        "SELECT id FROM users WHERE plan_code = ? AND is_active = ? ORDER BY id ASC",
-        ("team", True if connection.kind == "postgres" else 1),
-    )
-    member_ids = [int(member["id"]) for member in members]
-    return member_ids or [user_id]
-    return {}
+    return [user_id]
 
 
 def infer_provider(model: str) -> str:
@@ -956,16 +1012,30 @@ def claim_next_job(connection: RuntimeConnection) -> dict[str, Any] | None:
 def complete_job(connection: RuntimeConnection, job_id: int) -> None:
     now = now_iso()
     now_param = timestamp_value(connection, now)
+    job = connection.fetchone(
+        "SELECT id, job_type, payload_json FROM job_queue WHERE id = ? LIMIT 1",
+        (job_id,),
+    )
     connection.execute(
         "UPDATE job_queue SET status = 'completed', locked_at = NULL, updated_at = ? WHERE id = ?",
         (now_param, job_id),
     )
+    payload = parse_payload(job.get("payload_json")) if job else {}
+    if job and str(job.get("job_type")) == "topicFetch":
+        run_id = int(payload.get("topicSyncRunId") or 0)
+        inserted_count = int(payload.get("insertedCount") or 0)
+        if run_id > 0:
+            record_topic_sync_run_result(connection, run_id, success=True, inserted_count=inserted_count)
     connection.commit()
 
 
 def fail_job(connection: RuntimeConnection, job_id: int, error_message: str) -> None:
     now = now_iso()
     now_param = timestamp_value(connection, now)
+    job = connection.fetchone(
+        "SELECT id, job_type, payload_json FROM job_queue WHERE id = ? LIMIT 1",
+        (job_id,),
+    )
     connection.execute(
         """
         UPDATE job_queue
@@ -974,6 +1044,11 @@ def fail_job(connection: RuntimeConnection, job_id: int, error_message: str) -> 
         """,
         (error_message[:400], now_param, job_id),
     )
+    payload = parse_payload(job.get("payload_json")) if job else {}
+    if job and str(job.get("job_type")) == "topicFetch":
+        run_id = int(payload.get("topicSyncRunId") or 0)
+        if run_id > 0:
+            record_topic_sync_run_result(connection, run_id, success=False, error_message=error_message)
     connection.commit()
 
 
@@ -988,6 +1063,122 @@ def enqueue_job(connection: RuntimeConnection, job_type: str, payload: dict[str,
         (job_type, json_value(connection, payload), now_param, now_param, now_param),
     )
     connection.commit()
+
+
+def upsert_topic_sync_run(
+    connection: RuntimeConnection,
+    window_start: datetime,
+    scheduled_source_count: int,
+    enqueued_job_count: int,
+) -> int:
+    window_start_iso = window_start.replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    window_start_param = timestamp_value(connection, window_start_iso)
+    now = now_iso()
+    now_param = timestamp_value(connection, now)
+    existing = connection.fetchone(
+        """
+        SELECT id, scheduled_source_count, enqueued_job_count, completed_source_count, failed_source_count
+        FROM topic_sync_runs
+        WHERE sync_window_start = ?
+        LIMIT 1
+        """,
+        (window_start_param,),
+    )
+    if existing is None:
+        run_id = connection.insert(
+            """
+            INSERT INTO topic_sync_runs (
+              sync_window_start, sync_window_label, status, scheduled_source_count, enqueued_job_count,
+              completed_source_count, failed_source_count, inserted_item_count, last_error, triggered_at, finished_at, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                window_start_param,
+                get_topic_sync_window_label(window_start),
+                "running",
+                scheduled_source_count,
+                enqueued_job_count,
+                0,
+                0,
+                0,
+                None,
+                now_param,
+                None,
+                now_param,
+                now_param,
+            ),
+        )
+        connection.commit()
+        return run_id
+
+    next_scheduled_count = max(int(existing.get("scheduled_source_count") or 0), scheduled_source_count)
+    next_enqueued_count = int(existing.get("enqueued_job_count") or 0) + enqueued_job_count
+    status = "running"
+    if int(existing.get("completed_source_count") or 0) + int(existing.get("failed_source_count") or 0) >= next_scheduled_count and next_scheduled_count > 0:
+        status = "partial_failed" if int(existing.get("failed_source_count") or 0) > 0 else "completed"
+    connection.execute(
+        """
+        UPDATE topic_sync_runs
+        SET status = ?, scheduled_source_count = ?, enqueued_job_count = ?, updated_at = ?
+        WHERE id = ?
+        """,
+        (status, next_scheduled_count, next_enqueued_count, now_param, int(existing["id"])),
+    )
+    connection.commit()
+    return int(existing["id"])
+
+
+def record_topic_sync_run_result(
+    connection: RuntimeConnection,
+    run_id: int,
+    *,
+    success: bool,
+    inserted_count: int = 0,
+    error_message: str | None = None,
+) -> None:
+    now = now_iso()
+    now_param = timestamp_value(connection, now)
+    existing = connection.fetchone(
+        """
+        SELECT id, scheduled_source_count, completed_source_count, failed_source_count, inserted_item_count
+        FROM topic_sync_runs
+        WHERE id = ?
+        LIMIT 1
+        """,
+        (run_id,),
+    )
+    if existing is None:
+        return
+
+    completed_count = int(existing.get("completed_source_count") or 0) + (1 if success else 0)
+    failed_count = int(existing.get("failed_source_count") or 0) + (0 if success else 1)
+    inserted_item_count = int(existing.get("inserted_item_count") or 0) + max(int(inserted_count), 0)
+    scheduled_count = int(existing.get("scheduled_source_count") or 0)
+    finished = scheduled_count > 0 and completed_count + failed_count >= scheduled_count
+    status = "running"
+    if finished:
+        status = "partial_failed" if failed_count > 0 else "completed"
+    elif failed_count > 0:
+        status = "running"
+
+    connection.execute(
+        """
+        UPDATE topic_sync_runs
+        SET status = ?, completed_source_count = ?, failed_source_count = ?, inserted_item_count = ?,
+            last_error = ?, finished_at = ?, updated_at = ?
+        WHERE id = ?
+        """,
+        (
+            status,
+            completed_count,
+            failed_count,
+            inserted_item_count,
+            error_message[:400] if error_message else None,
+            now_param if finished else None,
+            now_param,
+            run_id,
+        ),
+    )
 
 
 def has_pending_topic_fetch_job(connection: RuntimeConnection, source_id: int) -> bool:
@@ -1572,7 +1763,8 @@ def handle_topic_fetch_job(connection: RuntimeConnection, payload: dict[str, Any
     if not source.get("is_active"):
         return
 
-    sync_topics_for_source(connection, source, int(payload.get("limitPerSource") or 4))
+    inserted = sync_topics_for_source(connection, source, int(payload.get("limitPerSource") or 4))
+    payload["insertedCount"] = int(inserted)
 
 
 def handle_job(connection: RuntimeConnection, job: dict[str, Any]) -> None:
@@ -1592,6 +1784,11 @@ def handle_job(connection: RuntimeConnection, job: dict[str, Any]) -> None:
         return
     if job_type == "topicFetch":
         handle_topic_fetch_job(connection, payload)
+        connection.execute(
+            "UPDATE job_queue SET payload_json = ?, updated_at = ? WHERE id = ?",
+            (json_value(connection, payload), timestamp_value(connection, now_iso()), int(job["id"])),
+        )
+        connection.commit()
         return
 
     connection.execute(
@@ -1603,15 +1800,16 @@ def handle_job(connection: RuntimeConnection, job: dict[str, Any]) -> None:
 
 def run_scheduler_tick(connection: RuntimeConnection) -> dict[str, int]:
     ensure_runtime_scheduler_schema(connection)
-    now = now_iso()
+    now_dt = datetime.now(timezone.utc)
+    now = now_dt.replace(microsecond=0).isoformat().replace("+00:00", "Z")
     stale_lock_before = (
-        datetime.now(timezone.utc) - timedelta(minutes=10)
+        now_dt - timedelta(minutes=10)
     ).replace(microsecond=0).isoformat().replace("+00:00", "Z")
     free_snapshot_before = (
-        datetime.now(timezone.utc) - timedelta(days=3)
+        now_dt - timedelta(days=3)
     ).replace(microsecond=0).isoformat().replace("+00:00", "Z")
     stale_knowledge_before = (
-        datetime.now(timezone.utc) - timedelta(days=7)
+        now_dt - timedelta(days=7)
     ).replace(microsecond=0).isoformat().replace("+00:00", "Z")
     now_param = timestamp_value(connection, now)
     stale_lock_before_param = timestamp_value(connection, stale_lock_before)
@@ -1657,38 +1855,52 @@ def run_scheduler_tick(connection: RuntimeConnection) -> dict[str, int]:
     )
 
     topic_jobs_enqueued = 0
-    sources = connection.fetchall(
-        """
-        SELECT id, owner_user_id, name, homepage_url, last_fetched_at
-        FROM topic_sources
-        WHERE is_active = ?
-        ORDER BY owner_user_id ASC, id ASC
-        """,
-        (True if connection.kind == "postgres" else 1,),
-    )
-
-    for source in sources:
-        last_fetched_at = source.get("last_fetched_at")
-        if last_fetched_at:
-            try:
-                last_fetch_time = datetime.fromisoformat(str(last_fetched_at).replace("Z", "+00:00"))
-                if datetime.now(timezone.utc) - last_fetch_time < timedelta(minutes=30):
-                    continue
-            except ValueError:
-                pass
-
-        if has_pending_topic_fetch_job(connection, int(source["id"])):
-            continue
-
-        enqueue_job(
-            connection,
-            "topicFetch",
-            {
-                "sourceId": int(source["id"]),
-                "limitPerSource": 4,
-            },
+    topic_sync_window = get_current_topic_sync_window(now_dt)
+    if topic_sync_window is not None:
+        sources = connection.fetchall(
+            """
+            SELECT id, owner_user_id, name, homepage_url, source_type, priority, last_fetched_at
+            FROM topic_sources
+            WHERE is_active = ?
+            ORDER BY priority DESC, owner_user_id ASC, id ASC
+            """,
+            (True if connection.kind == "postgres" else 1,),
         )
-        topic_jobs_enqueued += 1
+        due_sources: list[dict[str, Any]] = []
+
+        for source in sources:
+            last_fetched_at = source.get("last_fetched_at")
+            if last_fetched_at:
+                try:
+                    last_fetch_time = datetime.fromisoformat(str(last_fetched_at).replace("Z", "+00:00"))
+                    if last_fetch_time >= topic_sync_window:
+                        continue
+                except ValueError:
+                    pass
+
+            if has_pending_topic_fetch_job(connection, int(source["id"])):
+                continue
+
+            due_sources.append(source)
+
+        topic_sync_run_id = (
+            upsert_topic_sync_run(connection, topic_sync_window, len(due_sources), len(due_sources))
+            if due_sources
+            else 0
+        )
+
+        for source in due_sources:
+            enqueue_job(
+                connection,
+                "topicFetch",
+                {
+                    "sourceId": int(source["id"]),
+                    "limitPerSource": 4,
+                    "topicSyncRunId": topic_sync_run_id,
+                    "topicSyncWindowStart": topic_sync_window.replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+                },
+            )
+            topic_jobs_enqueued += 1
 
     knowledge_refresh_enqueued = 0
     stale_cards = connection.fetchall(

@@ -1,10 +1,12 @@
 import { ensureUserSession } from "@/lib/auth";
+import { getDocumentAuthoringStyleContext } from "@/lib/document-authoring-style-context";
 import { getDocumentWritingContext } from "@/lib/document-writing-context";
 import { buildCommandRewrite } from "@/lib/generation";
 import { fail, ok } from "@/lib/http";
+import { getLanguageGuardRules, getLanguageGuardTokenBlacklist } from "@/lib/language-guard";
 import { getOwnedStyleGenomeById } from "@/lib/marketplace";
 import { assertStyleGenomeApplyAllowed, consumeDailyGenerationQuota } from "@/lib/plan-access";
-import { createDocumentSnapshot, getBannedWords, getDocumentById, saveDocument } from "@/lib/repositories";
+import { createDocumentSnapshot, getDocumentById, saveDocument } from "@/lib/repositories";
 
 export async function POST(request: Request, { params }: { params: { id: string } }) {
   const session = await ensureUserSession();
@@ -28,23 +30,26 @@ export async function POST(request: Request, { params }: { params: { id: string 
       await assertStyleGenomeApplyAllowed(session.userId);
     }
 
-    const [writingContext, bannedWords, styleGenome] = await Promise.all([
+    const [writingContext, languageGuardRules, styleGenome, authoringStyleContext] = await Promise.all([
       getDocumentWritingContext({
         userId: session.userId,
         documentId: document.id,
         title: document.title,
         markdownContent: document.markdown_content,
       }),
-      getBannedWords(session.userId),
+      getLanguageGuardRules(session.userId),
       document.style_genome_id ? getOwnedStyleGenomeById(document.style_genome_id, session.userId) : Promise.resolve(null),
+      getDocumentAuthoringStyleContext(session.userId),
     ]);
 
     const rewritten = await buildCommandRewrite({
       title: document.title,
       markdownContent: document.markdown_content,
       fragments: writingContext.fragments,
-      bannedWords: bannedWords.map((item) => item.word),
+      bannedWords: getLanguageGuardTokenBlacklist(languageGuardRules),
       command,
+      authorPersona: authoringStyleContext.authorPersona,
+      writingStyleProfile: authoringStyleContext.writingStyleProfile,
       outlineNodes: writingContext.outlineNodes,
       knowledgeCards: writingContext.knowledgeCards,
       styleGenome: styleGenome

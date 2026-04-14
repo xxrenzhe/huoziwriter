@@ -1,6 +1,12 @@
 import { getDatabase } from "./db";
 
-type SupportedSceneCode = "fragmentDistill" | "visionNote" | "documentWrite" | "bannedWordAudit";
+type SupportedSceneCode =
+  | "fragmentDistill"
+  | "visionNote"
+  | "documentWrite"
+  | "styleExtract"
+  | "topicSourceScout"
+  | "bannedWordAudit";
 type Provider = "openai" | "anthropic" | "gemini";
 
 type SceneRoute = {

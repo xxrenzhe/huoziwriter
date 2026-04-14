@@ -17,6 +17,7 @@ export async function POST(request: Request, { params }: { params: { id: string;
     documentId: document.id,
     nodeId: Number(params.nodeId),
     fragmentId: Number(body.fragmentId),
+    usageMode: body.usageMode === "image" ? "image" : "rewrite",
   });
   return ok({ attached: true });
 }

@@ -35,6 +35,9 @@ export function MarketingHero() {
             <Link href="/support?type=business" className="bg-cinnabar px-6 py-3 text-sm font-medium text-white">
               获取内测资格
             </Link>
+            <Link href="/tools/style-extractor" className="border border-stone-300 bg-white px-6 py-3 text-sm font-medium text-ink">
+              免费体验文风提取器
+            </Link>
             <Link href="/manifesto" className="border border-stone-300 bg-white px-6 py-3 text-sm font-medium text-ink">
               阅读独立开发者宣言
             </Link>

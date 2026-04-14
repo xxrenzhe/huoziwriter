@@ -1,24 +1,28 @@
 import { TopicRadarStarter } from "@/components/dashboard-client";
 import { TopicSourceManagerClient } from "@/components/topic-source-client";
 import { WriterOverview } from "@/components/writer-views";
+import { getAuthorPersonas } from "@/lib/author-personas";
 import { getKnowledgeCards } from "@/lib/knowledge";
 import { buildTopicAngleOptions, buildTopicJudgementShift, matchTopicToKnowledgeCards } from "@/lib/knowledge-match";
-import { getUserPlanContext } from "@/lib/plan-access";
+import { getCustomTopicSourceLimit, getUserPlanContext } from "@/lib/plan-access";
 import { requireWriterSession } from "@/lib/page-auth";
-import { getTopicItems } from "@/lib/repositories";
+import { getVisibleTopicRecommendationsForUser } from "@/lib/topic-recommendations";
 import { getVisibleTopicSources } from "@/lib/topic-radar";
 
 export default async function RadarPage() {
   const { session } = await requireWriterSession();
-  const [topics, knowledgeCards, sources, planContext] = await Promise.all([
-    getTopicItems(session.userId),
+  const [topics, knowledgeCards, sources, planContext, personas] = await Promise.all([
+    getVisibleTopicRecommendationsForUser(session.userId),
     getKnowledgeCards(session.userId),
     getVisibleTopicSources(session.userId),
     getUserPlanContext(session.userId),
+    getAuthorPersonas(session.userId),
   ]);
   const canStart = planContext.effectivePlanCode !== "free";
-  const canManageSources = ["ultra", "team"].includes(planContext.effectivePlanCode);
-  const sourceScope = planContext.effectivePlanCode === "team" ? "team" : "custom";
+  const canManageSources = ["pro", "ultra"].includes(planContext.effectivePlanCode);
+  const customTopicSourceLimit = getCustomTopicSourceLimit(planContext.effectivePlanCode);
+  const defaultPersona = personas.find((item) => item.isDefault) ?? personas[0] ?? null;
+  const customTopicSources = sources.filter((source) => source.owner_user_id != null);
   const knowledgeMatches = Object.fromEntries(
     topics.map((topic) => [
       topic.id,
@@ -45,8 +49,8 @@ export default async function RadarPage() {
         title="不是再读一遍新闻，而是把热点改造成可落笔的情绪切角。"
         description="系统定时抓取资讯后，不产出流水线摘要，而是生成带情绪方向的大纲入口，让你直接开始组装。"
         metrics={[
-          { label: "今日热点", value: String(topics.length), note: "当前从系统内置源与你的可见作用域自定义源实时汇总。" },
-          { label: "已生成切角", value: canStart ? String(topics.length * 3) : "仅 Pro+ 可见", note: canStart ? "每条热点默认给出三种进入角度。" : "免费版只浏览榜单和标题，不展开情绪切角。" },
+          { label: "今日可见选题", value: String(topics.length), note: `当前已按 ${planContext.plan.name} 套餐限制可见范围，并用${defaultPersona ? `「${defaultPersona.name}」` : "当前人设"}参与排序。` },
+          { label: "已生成切角", value: canStart ? String(topics.length * 3) : "仅 Pro+ 可见", note: canStart ? "每条热点默认给出三种进入角度，并附带推荐理由。" : "免费版只浏览 Top1 榜单标题，不展开情绪切角。" },
           { label: "一键落笔", value: canStart ? "实时生成" : "未开放", note: canStart ? "点击任意热点即可创建文稿并进入编辑器。" : "升级到 Pro 或更高套餐后解锁。" },
         ]}
         cards={[
@@ -61,11 +65,18 @@ export default async function RadarPage() {
         topics={topics.map((topic) => ({
           id: topic.id,
           title: topic.title,
-          sourceName: topic.source_name,
-          emotionLabels: Array.isArray(topic.emotion_labels_json) ? topic.emotion_labels_json : JSON.parse(String(topic.emotion_labels_json ?? "[]")),
+          sourceName: topic.sourceName,
+          sourceType: topic.sourceType,
+          sourcePriority: topic.sourcePriority,
+          sourceUrl: topic.sourceUrl,
+          publishedAt: topic.publishedAt,
+          recommendationType: topic.recommendationType,
+          recommendationReason: topic.recommendationReason,
+          matchedPersonaName: topic.matchedPersonaName,
+          emotionLabels: topic.emotionLabels,
           angleOptions: buildTopicAngleOptions(
             topic.title,
-            Array.isArray(topic.angle_options_json) ? topic.angle_options_json : JSON.parse(String(topic.angle_options_json ?? "[]")),
+            topic.angleOptions,
             knowledgeMatches[topic.id] ?? [],
           ),
           judgementShift: buildTopicJudgementShift(topic.title, knowledgeMatches[topic.id] ?? []),
@@ -78,11 +89,16 @@ export default async function RadarPage() {
           <div className="mt-6">
             <TopicSourceManagerClient
               canManage={canManageSources}
+              currentCustomCount={customTopicSources.length}
+              maxCustomCount={customTopicSourceLimit}
+              planName={planContext.plan.name}
               sources={sources.map((source) => ({
                 id: source.id,
                 name: source.name,
                 homepageUrl: source.homepage_url,
-                scope: source.owner_user_id == null ? "system" : sourceScope,
+                sourceType: source.source_type ?? "news",
+                priority: source.priority ?? 100,
+                scope: source.owner_user_id == null ? "system" : "custom",
               }))}
             />
           </div>
@@ -90,10 +106,9 @@ export default async function RadarPage() {
         <aside className="border border-stone-300/40 bg-[#f4efe6] p-6">
           <div className="text-xs uppercase tracking-[0.24em] text-stone-500">权限边界</div>
           <div className="mt-4 space-y-3 text-sm leading-7 text-stone-700">
-            <p>`free` 只能浏览系统源产出的热点。</p>
-            <p>`pro` 可以一键落笔，但仍只读系统源。</p>
-            <p>`ultra` 可新增自己的外部源，不会污染其他用户的热点池。</p>
-            <p>`team` 新增的源会在团队共享作用域内可见。</p>
+            <p>`free` 仅可见 Top10 的第 1 条，并只浏览标题榜单。</p>
+            <p>`pro` 可见前 5 条，并可启用最多 5 个自定义信源。</p>
+            <p>`ultra` 可见 Top10 全部，且最多可启用 20 个自定义信源与完整工作流。</p>
           </div>
         </aside>
       </section>

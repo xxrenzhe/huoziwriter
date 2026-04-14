@@ -16,8 +16,19 @@ export async function GET() {
       ownerUserId: source.owner_user_id,
       name: source.name,
       homepageUrl: source.homepage_url,
+      sourceType: source.source_type ?? "news",
+      priority: source.priority ?? 100,
       isActive: Boolean(source.is_active),
       scope: source.owner_user_id == null ? "system" : "custom",
+      connectorScope: source.connector_scope ?? (source.owner_user_id == null ? "system" : "custom"),
+      status: source.connector_status ?? "healthy",
+      attemptCount: source.connector_attempt_count ?? 0,
+      consecutiveFailures: source.connector_consecutive_failures ?? 0,
+      lastError: source.connector_last_error,
+      lastHttpStatus: source.connector_last_http_status,
+      nextRetryAt: source.connector_next_retry_at,
+      healthScore: source.connector_health_score ?? 100,
+      degradedReason: source.connector_degraded_reason,
     })),
   );
 }
@@ -38,6 +49,8 @@ export async function POST(request: Request) {
       userId: session.userId,
       name: body.name,
       homepageUrl: body.homepageUrl,
+      sourceType: body.sourceType ? String(body.sourceType) : undefined,
+      priority: body.priority,
     });
     return ok({ created: true });
   } catch (error) {

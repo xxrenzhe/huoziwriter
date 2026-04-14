@@ -52,7 +52,6 @@ export function AdminUsersClient({
           <option value="free">游墨</option>
           <option value="pro">执毫</option>
           <option value="ultra">藏锋</option>
-          <option value="team">团队</option>
         </select>
         <div className="md:col-span-5 text-xs leading-6 text-stone-500">
           {initialPasswordHint}
@@ -124,7 +123,6 @@ function AdminUserRow({
           <option value="free">游墨</option>
           <option value="pro">执毫</option>
           <option value="ultra">藏锋</option>
-          <option value="team">团队</option>
         </select>
       </td>
       <td className="px-6 py-4">
@@ -230,6 +228,344 @@ export function RouteManagerClient({
       {routes.map((route) => (
         <RouteRow key={route.sceneCode} route={route} onSave={handleUpdate} />
       ))}
+    </div>
+  );
+}
+
+export function AdminTopicSourcesClient({
+  sources,
+  recentRuns,
+}: {
+  sources: Array<{
+    id: number;
+    name: string;
+    homepageUrl: string | null;
+    sourceType: string;
+    priority: number;
+    isActive: boolean;
+    lastFetchedAt: string | null;
+    recentFailureCount: number;
+    latestFailure: string | null;
+    createdAt: string;
+    updatedAt: string;
+  }>;
+  recentRuns: Array<{
+    id: number;
+    syncWindowStart: string;
+    syncWindowLabel: string;
+    status: string;
+    scheduledSourceCount: number;
+    enqueuedJobCount: number;
+    completedSourceCount: number;
+    failedSourceCount: number;
+    insertedItemCount: number;
+    lastError: string | null;
+    triggeredAt: string;
+    finishedAt: string | null;
+  }>;
+}) {
+  const router = useRouter();
+  const [name, setName] = useState("");
+  const [homepageUrl, setHomepageUrl] = useState("");
+  const [sourceType, setSourceType] = useState("news");
+  const [priority, setPriority] = useState("100");
+  const [message, setMessage] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [togglingId, setTogglingId] = useState<number | null>(null);
+  const [syncing, setSyncing] = useState(false);
+  const [syncingSourceId, setSyncingSourceId] = useState<number | null>(null);
+  const [retryingRunId, setRetryingRunId] = useState<number | null>(null);
+
+  async function handleSubmit(event: FormEvent) {
+    event.preventDefault();
+    setSubmitting(true);
+    setMessage("");
+    try {
+      const response = await fetch("/api/admin/topic-sources", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, homepageUrl, sourceType, priority: Number(priority || 100) }),
+      });
+      const json = await response.json();
+      if (!response.ok) {
+        setMessage(json.error || "创建系统信息源失败");
+        return;
+      }
+      setName("");
+      setHomepageUrl("");
+      setSourceType("news");
+      setPriority("100");
+      setMessage("系统默认信息源已创建，并已尝试同步热点。");
+      router.refresh();
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function updateSource(sourceId: number, payload: { isActive?: boolean; sourceType?: string; priority?: number }) {
+    setTogglingId(sourceId);
+    setMessage("");
+    try {
+      const response = await fetch(`/api/admin/topic-sources/${sourceId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const json = await response.json();
+      if (!response.ok) {
+        setMessage(json.error || "更新系统信息源失败");
+        return;
+      }
+      setMessage("系统信息源已更新。");
+      router.refresh();
+    } finally {
+      setTogglingId(null);
+    }
+  }
+
+  async function runTopicSync() {
+    setSyncing(true);
+    setMessage("");
+    try {
+      const response = await fetch("/api/admin/topic-sync/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ limitPerSource: 4 }),
+      });
+      const json = await response.json();
+      if (!response.ok) {
+        setMessage(json.error || "手动触发热点同步失败");
+        return;
+      }
+      const failedSourceCount = Number(json.data?.failedSourceCount ?? 0);
+      setMessage(
+        failedSourceCount > 0
+          ? `已触发一轮全局热点同步，扫描 ${json.data?.scheduledSourceCount ?? 0} 个系统源，成功 ${json.data?.completedSourceCount ?? 0} 个，失败 ${failedSourceCount} 个，新增 ${json.data?.inserted ?? 0} 条热点。`
+          : `已触发一轮全局热点同步，本轮扫描 ${json.data?.scheduledSourceCount ?? 0} 个系统源，新增 ${json.data?.inserted ?? 0} 条热点。`,
+      );
+      router.refresh();
+    } finally {
+      setSyncing(false);
+    }
+  }
+
+  async function runSourceSync(sourceId: number) {
+    setSyncingSourceId(sourceId);
+    setMessage("");
+    try {
+      const response = await fetch(`/api/admin/topic-sources/${sourceId}/sync`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ limitPerSource: 4 }),
+      });
+      const json = await response.json();
+      if (!response.ok) {
+        setMessage(json.error || "单个系统源重抓失败");
+        return;
+      }
+      setMessage(
+        Number(json.data?.failedSourceCount ?? 0) > 0
+          ? `系统源「${json.data?.sourceName || sourceId}」重抓失败，已写入失败窗口与队列记录。`
+          : `已重抓系统源「${json.data?.sourceName || sourceId}」，新增 ${json.data?.inserted ?? 0} 条热点。`,
+      );
+      router.refresh();
+    } finally {
+      setSyncingSourceId(null);
+    }
+  }
+
+  async function retrySyncRun(runId: number) {
+    setRetryingRunId(runId);
+    setMessage("");
+    try {
+      const response = await fetch(`/api/admin/topic-sync/${runId}/retry`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ limitPerSource: 4 }),
+      });
+      const json = await response.json();
+      if (!response.ok) {
+        setMessage(json.error || "失败窗口重试失败");
+        return;
+      }
+      const failedSourceCount = Number(json.data?.failedSourceCount ?? 0);
+      setMessage(
+        failedSourceCount > 0
+          ? `已重试同步窗口 #${runId}，重跑 ${json.data?.retriedSourceCount ?? 0} 个失败源，成功 ${json.data?.completedSourceCount ?? 0} 个，仍失败 ${failedSourceCount} 个，新增 ${json.data?.inserted ?? 0} 条热点。`
+          : `已重试同步窗口 #${runId}，重跑 ${json.data?.retriedSourceCount ?? 0} 个失败源，新增 ${json.data?.inserted ?? 0} 条热点。`,
+      );
+      router.refresh();
+    } finally {
+      setRetryingRunId(null);
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="text-sm leading-7 text-stone-400">
+          需要临时补抓一轮时，可直接手动触发全局同步，不必等待 06:00 / 18:00 调度窗口。
+        </div>
+        <button onClick={runTopicSync} disabled={syncing} className={uiPrimitives.primaryButton}>
+          {syncing ? "同步中..." : "立即同步热点"}
+        </button>
+      </div>
+      <form onSubmit={handleSubmit} className={`grid gap-3 p-5 md:grid-cols-[200px_minmax(0,1fr)_140px_120px_160px] ${uiPrimitives.adminPanel}`}>
+        <input value={name} onChange={(event) => setName(event.target.value)} placeholder="系统源名称" className={uiPrimitives.adminInput} />
+        <input value={homepageUrl} onChange={(event) => setHomepageUrl(event.target.value)} placeholder="https://example.com 或 RSS 地址" className={uiPrimitives.adminInput} />
+        <select value={sourceType} onChange={(event) => setSourceType(event.target.value)} className={uiPrimitives.adminSelect}>
+          <option value="youtube">YouTube</option>
+          <option value="reddit">Reddit</option>
+          <option value="x">X</option>
+          <option value="podcast">Podcast</option>
+          <option value="spotify">Spotify</option>
+          <option value="news">News</option>
+          <option value="blog">Blog</option>
+          <option value="rss">RSS</option>
+        </select>
+        <input value={priority} onChange={(event) => setPriority(event.target.value)} placeholder="优先级" className={uiPrimitives.adminInput} />
+        <button disabled={submitting} className={uiPrimitives.primaryButton}>
+          {submitting ? "创建中..." : "新增系统源"}
+        </button>
+      </form>
+      <div className="space-y-3">
+        {sources.map((source) => (
+          <div key={source.id} className={`${uiPrimitives.adminPanel} p-5`}>
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <div className="text-xs uppercase tracking-[0.24em] text-stone-500">System Source</div>
+                <div className="mt-2 font-serifCn text-2xl text-stone-100">{source.name}</div>
+                <div className="mt-2 text-sm text-stone-400">{source.homepageUrl || "未配置主页地址"}</div>
+                <div className="mt-3 text-xs text-stone-500">
+                  创建于 {new Date(source.createdAt).toLocaleString("zh-CN")} · 最近更新 {new Date(source.updatedAt).toLocaleString("zh-CN")}
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                  <span className="border border-stone-700 bg-stone-950 px-2 py-1 text-stone-300">
+                    类型 {source.sourceType}
+                  </span>
+                  <span className="border border-stone-700 bg-stone-950 px-2 py-1 text-stone-300">
+                    优先级 {source.priority}
+                  </span>
+                  <span className="border border-stone-700 bg-stone-950 px-2 py-1 text-stone-300">
+                    {source.lastFetchedAt ? `最近采集 ${new Date(source.lastFetchedAt).toLocaleString("zh-CN")}` : "尚未采集"}
+                  </span>
+                  <span className={`border px-2 py-1 ${source.recentFailureCount > 0 ? "border-[#8f3136] bg-[#2a1718] text-[#efb5b9]" : "border-stone-700 bg-stone-950 text-stone-300"}`}>
+                    最近失败 {source.recentFailureCount} 次
+                  </span>
+                </div>
+                {source.latestFailure ? (
+                  <div className="mt-3 border border-[#8f3136] bg-[#2a1718] px-3 py-3 text-xs leading-6 text-[#efb5b9]">
+                    最近错误：{source.latestFailure}
+                  </div>
+                ) : null}
+                <div className="mt-3 text-xs text-stone-500">
+                  {source.isActive ? "当前已启用，会参与下一轮热点采集。" : "当前已停用，不再参与后续热点采集。"}
+                </div>
+              </div>
+              <div className="flex flex-col gap-2">
+                <select
+                  defaultValue={source.sourceType}
+                  onChange={(event) => updateSource(source.id, { sourceType: event.target.value })}
+                  disabled={togglingId === source.id}
+                  className={uiPrimitives.adminCompactSelect}
+                >
+                  <option value="youtube">YouTube</option>
+                  <option value="reddit">Reddit</option>
+                  <option value="x">X</option>
+                  <option value="podcast">Podcast</option>
+                  <option value="spotify">Spotify</option>
+                  <option value="news">News</option>
+                  <option value="blog">Blog</option>
+                  <option value="rss">RSS</option>
+                </select>
+                <button
+                  onClick={() => {
+                    const next = window.prompt("设置优先级（0-999）", String(source.priority));
+                    if (next == null) return;
+                    updateSource(source.id, { priority: Number(next) });
+                  }}
+                  disabled={togglingId === source.id}
+                  className={uiPrimitives.adminSecondaryButton}
+                >
+                  调整优先级
+                </button>
+                <button
+                  onClick={() => runSourceSync(source.id)}
+                  disabled={syncingSourceId === source.id || togglingId === source.id}
+                  className={uiPrimitives.adminSecondaryButton}
+                >
+                  {syncingSourceId === source.id ? "重抓中..." : "重抓该信源"}
+                </button>
+                <button
+                  onClick={() => updateSource(source.id, { isActive: !source.isActive })}
+                  disabled={togglingId === source.id}
+                  className={uiPrimitives.adminSecondaryButton}
+                >
+                  {togglingId === source.id ? "处理中..." : source.isActive ? "停用" : "启用"}
+                </button>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="border-t border-stone-800 pt-6">
+        <div className="text-xs uppercase tracking-[0.24em] text-cinnabar">Topic Sync Runs</div>
+        <div className="mt-3 text-sm leading-7 text-stone-400">
+          这里记录北京时间 06:00 / 18:00 调度窗口的热点抓取执行结果；若窗口内存在失败源，可直接发起补偿重试。
+        </div>
+        <div className="mt-4 grid gap-3">
+          {recentRuns.length === 0 ? (
+            <div className="border border-stone-800 bg-stone-950 px-4 py-4 text-sm text-stone-400">当前还没有热点调度窗口执行记录。</div>
+          ) : (
+            recentRuns.map((run) => {
+              const canRetry = ["failed", "partial_failed"].includes(run.status) && run.failedSourceCount > 0;
+              return (
+                <div key={run.id} className={`${uiPrimitives.adminPanel} p-5`}>
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <div className="font-medium text-stone-100">{run.syncWindowLabel}</div>
+                      <div className="mt-1 text-xs text-stone-500">
+                        窗口开始：{new Date(run.syncWindowStart).toLocaleString("zh-CN")}
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-3">
+                      <div className={run.status === "completed" ? "text-emerald-400" : run.status === "partial_failed" ? "text-amber-300" : "text-cinnabar"}>
+                        {run.status}
+                      </div>
+                      {canRetry ? (
+                        <button
+                          onClick={() => retrySyncRun(run.id)}
+                          disabled={retryingRunId !== null}
+                          className={uiPrimitives.adminSecondaryButton}
+                        >
+                          {retryingRunId === run.id ? "重试中..." : "重试失败源"}
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2 text-xs text-stone-400">
+                    <span className="border border-stone-800 bg-[#171718] px-3 py-1">应抓取 {run.scheduledSourceCount}</span>
+                    <span className="border border-stone-800 bg-[#171718] px-3 py-1">已入队 {run.enqueuedJobCount}</span>
+                    <span className="border border-stone-800 bg-[#171718] px-3 py-1">成功 {run.completedSourceCount}</span>
+                    <span className="border border-stone-800 bg-[#171718] px-3 py-1">失败 {run.failedSourceCount}</span>
+                    <span className="border border-stone-800 bg-[#171718] px-3 py-1">新增热点 {run.insertedItemCount}</span>
+                  </div>
+                  <div className="mt-3 text-xs leading-6 text-stone-500">
+                    触发：{new Date(run.triggeredAt).toLocaleString("zh-CN")}
+                    {run.finishedAt ? ` · 完成：${new Date(run.finishedAt).toLocaleString("zh-CN")}` : " · 尚未完成"}
+                  </div>
+                  {run.lastError ? (
+                    <div className="mt-3 border border-[#5c2b2f] bg-[#2b1618] px-3 py-3 text-xs leading-6 text-[#f3b5bc]">
+                      最近错误：{run.lastError}
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })
+          )}
+        </div>
+      </div>
+      {message ? <div className="text-sm text-cinnabar">{message}</div> : null}
     </div>
   );
 }

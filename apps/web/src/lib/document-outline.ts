@@ -40,10 +40,15 @@ export async function getDocumentNodes(documentId: number) {
   const refs = await db.query<{
     document_node_id: number;
     fragment_id: number;
+    usage_mode: string | null;
     user_id: number;
+    title: string | null;
     distilled_content: string;
+    source_type: string;
+    source_url: string | null;
+    screenshot_path: string | null;
   }>(
-    `SELECT r.document_node_id, f.id as fragment_id, f.user_id, f.distilled_content
+    `SELECT r.document_node_id, f.id as fragment_id, r.usage_mode, f.user_id, f.title, f.distilled_content, f.source_type, f.source_url, f.screenshot_path
      FROM document_fragment_refs r
      INNER JOIN fragments f ON f.id = r.fragment_id
      WHERE r.document_id = ?
@@ -55,7 +60,16 @@ export async function getDocumentNodes(documentId: number) {
     ...mapNodeRecord(node),
     fragments: refs
       .filter((ref) => ref.document_node_id === node.id)
-      .map((ref) => ({ id: ref.fragment_id, userId: ref.user_id, distilledContent: ref.distilled_content })),
+      .map((ref) => ({
+        id: ref.fragment_id,
+        userId: ref.user_id,
+        title: ref.title,
+        distilledContent: ref.distilled_content,
+        sourceType: ref.source_type,
+        sourceUrl: ref.source_url,
+        screenshotPath: ref.screenshot_path,
+        usageMode: String(ref.usage_mode || "rewrite"),
+      })),
   }));
 }
 
@@ -157,12 +171,14 @@ export async function attachFragmentToNode(input: {
   documentId: number;
   nodeId: number;
   fragmentId: number;
+  usageMode?: "rewrite" | "image";
 }) {
   const db = getDatabase();
   await db.exec(
-    `INSERT INTO document_fragment_refs (document_id, document_node_id, fragment_id, created_at)
-     VALUES (?, ?, ?, ?)`,
-    [input.documentId, input.nodeId, input.fragmentId, new Date().toISOString()],
+    `INSERT INTO document_fragment_refs (document_id, document_node_id, fragment_id, usage_mode, created_at)
+     VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT(document_node_id, fragment_id) DO UPDATE SET usage_mode = excluded.usage_mode`,
+    [input.documentId, input.nodeId, input.fragmentId, input.usageMode ?? "rewrite", new Date().toISOString()],
   );
 }
 
@@ -176,4 +192,76 @@ export async function detachFragmentFromNode(input: {
     "DELETE FROM document_fragment_refs WHERE document_id = ? AND document_node_id = ? AND fragment_id = ?",
     [input.documentId, input.nodeId, input.fragmentId],
   );
+}
+
+export async function syncDocumentNodesFromOutline(input: {
+  documentId: number;
+  sections: Array<{
+    heading: string;
+    goal?: string | null;
+    keyPoints?: string[];
+    evidenceHints?: string[];
+    transition?: string | null;
+  }>;
+}) {
+  const normalizedSections = input.sections
+    .map((section) => {
+      const heading = String(section.heading || "").trim();
+      if (!heading) {
+        return null;
+      }
+      const descriptionParts = [
+        String(section.goal || "").trim() ? `目标：${String(section.goal || "").trim()}` : null,
+        Array.isArray(section.keyPoints) && section.keyPoints.length ? `关键点：${section.keyPoints.map((item) => String(item).trim()).filter(Boolean).join("；")}` : null,
+        Array.isArray(section.evidenceHints) && section.evidenceHints.length ? `证据提示：${section.evidenceHints.map((item) => String(item).trim()).filter(Boolean).join("；")}` : null,
+        String(section.transition || "").trim() ? `衔接：${String(section.transition || "").trim()}` : null,
+      ].filter(Boolean);
+      return {
+        heading,
+        description: descriptionParts.join("\n"),
+      };
+    })
+    .filter(Boolean) as Array<{ heading: string; description: string }>;
+
+  if (normalizedSections.length === 0) {
+    throw new Error("大纲产物里没有可同步的章节");
+  }
+
+  const existingNodes = await getDocumentNodes(input.documentId);
+  const keepCount = Math.min(existingNodes.length, normalizedSections.length);
+
+  for (let index = 0; index < keepCount; index += 1) {
+    await updateDocumentNode({
+      documentId: input.documentId,
+      nodeId: existingNodes[index].id,
+      title: normalizedSections[index].heading,
+      description: normalizedSections[index].description || null,
+      sortOrder: index + 1,
+    });
+  }
+
+  if (normalizedSections.length > existingNodes.length) {
+    for (let index = existingNodes.length; index < normalizedSections.length; index += 1) {
+      const created = await createDocumentNode({
+        documentId: input.documentId,
+        title: normalizedSections[index].heading,
+        description: normalizedSections[index].description || null,
+      });
+      if (created) {
+        await updateDocumentNode({
+          documentId: input.documentId,
+          nodeId: created.id,
+          sortOrder: index + 1,
+        });
+      }
+    }
+  }
+
+  if (existingNodes.length > normalizedSections.length) {
+    for (let index = normalizedSections.length; index < existingNodes.length; index += 1) {
+      await deleteDocumentNode(input.documentId, existingNodes[index].id);
+    }
+  }
+
+  return getDocumentNodes(input.documentId);
 }

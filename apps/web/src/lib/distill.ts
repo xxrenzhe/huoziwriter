@@ -1,5 +1,6 @@
 import { extractJsonObject, generateSceneText } from "./ai-gateway";
 import { loadPrompt } from "./prompt-loader";
+import { fetchWebpageArticle } from "./webpage-reader";
 
 type DistilledCapture = {
   title: string;
@@ -9,52 +10,6 @@ type DistilledCapture = {
   degradedReason?: string | null;
   retryRecommended?: boolean;
 };
-
-function decodeHtmlEntities(value: string) {
-  return value
-    .replaceAll("&nbsp;", " ")
-    .replaceAll("&amp;", "&")
-    .replaceAll("&lt;", "<")
-    .replaceAll("&gt;", ">")
-    .replaceAll("&quot;", '"')
-    .replaceAll("&#39;", "'");
-}
-
-function stripHtml(value: string) {
-  return decodeHtmlEntities(
-    value
-      .replace(/<script[\s\S]*?<\/script>/gi, " ")
-      .replace(/<style[\s\S]*?<\/style>/gi, " ")
-      .replace(/<noscript[\s\S]*?<\/noscript>/gi, " ")
-      .replace(/<[^>]+>/g, " ")
-      .replace(/\s+/g, " ")
-      .trim(),
-  );
-}
-
-async function fetchUrlArticle(url: string) {
-  const response = await fetch(url, {
-    headers: {
-      "User-Agent":
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36",
-    },
-    signal: AbortSignal.timeout(20_000),
-  });
-  if (!response.ok) {
-    throw new Error(`抓取源链接失败，HTTP ${response.status}`);
-  }
-  const html = await response.text();
-  const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
-  const title = titleMatch ? decodeHtmlEntities(titleMatch[1].trim()) : "";
-  const rawText = stripHtml(html).slice(0, 12_000);
-  if (!rawText) {
-    throw new Error("抓取结果为空");
-  }
-  return {
-    title,
-    rawText,
-  };
-}
 
 function inferTitleFromUrl(url: string) {
   try {
@@ -93,9 +48,10 @@ export async function distillCaptureInput(input: {
       throw new Error("URL 不能为空");
     }
     try {
-      const article = await fetchUrlArticle(sourceUrl);
-      sourceTitle = sourceTitle || article.title;
-      rawContent = article.rawText;
+      const article = await fetchWebpageArticle(sourceUrl);
+      sourceTitle = sourceTitle || article.sourceTitle;
+      rawContent = article.rawText.slice(0, 12_000);
+      sourceUrl = article.url || sourceUrl;
     } catch (error) {
       const degradedReason = error instanceof Error ? error.message : "抓取源链接失败";
       const fallback = fallbackDistill({

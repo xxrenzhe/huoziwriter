@@ -7,5 +7,5 @@ export async function GET() {
   if (!session) {
     return fail("未登录", 401);
   }
-  return ok(await getActiveTemplates());
+  return ok(await getActiveTemplates(session.userId));
 }

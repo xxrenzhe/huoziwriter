@@ -68,7 +68,7 @@ function run() {
           const Database = require('better-sqlite3');
           const db = new Database('./data/runtime-smoke.db');
           const row = db.prepare("SELECT username, role, plan_code FROM users WHERE username = ?").get('huozi');
-          if (!row || row.role !== 'admin' || row.plan_code !== 'team') {
+          if (!row || row.role !== 'admin' || row.plan_code !== 'ultra') {
             throw new Error('default admin bootstrap verification failed');
           }
           db.close();

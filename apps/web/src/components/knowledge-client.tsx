@@ -112,7 +112,7 @@ export function KnowledgeGovernanceClient({
                   <td className="px-6 py-4 align-top">
                     <div className="font-serifCn text-xl text-stone-100">{card.title}</div>
                     <div className="mt-2 text-xs uppercase tracking-[0.2em] text-stone-500">{card.cardType}</div>
-                    <div className="mt-2 text-[11px] uppercase tracking-[0.18em] text-stone-500">{card.workspaceScope === "team" ? "team scope" : "personal scope"}</div>
+                    <div className="mt-2 text-[11px] uppercase tracking-[0.18em] text-stone-500">{card.workspaceScope === "personal" ? "personal scope" : card.workspaceScope}</div>
                     <p className="mt-3 max-w-[360px] text-sm leading-7 text-stone-400">{card.summary || "暂无摘要"}</p>
                     {card.conflictFlags.length ? (
                       <div className="mt-3 flex max-w-[360px] flex-wrap gap-2">

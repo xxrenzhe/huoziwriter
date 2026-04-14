@@ -1,9 +1,12 @@
 import { ensureUserSession } from "@/lib/auth";
-import { fail, ok } from "@/lib/http";
+import { completeDocumentWorkflowStage, failDocumentWorkflowStage, setDocumentWorkflowCurrentStage } from "@/lib/document-workflows";
+import { fail, failWithData, ok } from "@/lib/http";
 import { getActiveTemplateById } from "@/lib/marketplace";
-import { assertWechatPublishAllowed } from "@/lib/plan-access";
+import { assertWechatPublishAllowed, assertWechatTemplateAllowed } from "@/lib/plan-access";
+import { evaluatePublishGuard } from "@/lib/publish-guard";
 import { createWechatSyncLog, getDocumentById, getWechatConnectionRaw, saveDocument, updateWechatConnectionToken } from "@/lib/repositories";
 import { encryptSecret } from "@/lib/security";
+import { resolveTemplateRenderConfig } from "@/lib/template-rendering";
 import { publishWechatDraft } from "@/lib/wechat";
 
 export async function POST(request: Request) {
@@ -27,20 +30,33 @@ export async function POST(request: Request) {
   }
 
   try {
+    await setDocumentWorkflowCurrentStage({
+      documentId: document.id,
+      userId: session.userId,
+      stageCode: "publish",
+    });
     const templateId = body.templateId ? String(body.templateId) : document.wechat_template_id;
-    const template = templateId ? await getActiveTemplateById(templateId) : null;
+    await assertWechatTemplateAllowed(session.userId, templateId);
+    const publishGuard = await evaluatePublishGuard({
+      documentId: document.id,
+      userId: session.userId,
+      templateId,
+      wechatConnectionId: connection.id,
+    });
+    if (!publishGuard.canPublish) {
+      return failWithData(publishGuard.blockers.join("；"), 400, {
+        code: "publish_guard_blocked",
+        publishGuard,
+      });
+    }
+    const template = templateId ? await getActiveTemplateById(templateId, session.userId) : null;
     const result = await publishWechatDraft({
       connection,
       title: document.title,
       markdownContent: document.markdown_content,
       digest: body.digest,
       author: body.author,
-      templateConfig: template
-        ? {
-            titleStyle: typeof template.config?.titleStyle === "string" ? template.config.titleStyle : undefined,
-            paragraphLength: typeof template.config?.paragraphLength === "string" ? template.config.paragraphLength : undefined,
-          }
-        : null,
+      templateConfig: resolveTemplateRenderConfig(template),
     });
     await updateWechatConnectionToken({
       connectionId: connection.id,
@@ -64,6 +80,11 @@ export async function POST(request: Request) {
       status: "published",
       wechatTemplateId: templateId ?? null,
     });
+    await completeDocumentWorkflowStage({
+      documentId: document.id,
+      userId: session.userId,
+      stageCode: "publish",
+    });
     return ok({ mediaId: result.mediaId });
   } catch (error) {
     await createWechatSyncLog({
@@ -77,6 +98,11 @@ export async function POST(request: Request) {
       documentId: document.id,
       userId: session.userId,
       status: "publishFailed",
+    });
+    await failDocumentWorkflowStage({
+      documentId: document.id,
+      userId: session.userId,
+      stageCode: "publish",
     });
     return fail(error instanceof Error ? error.message : "推送微信草稿箱失败", 400);
   }

@@ -1,6 +1,6 @@
 import { ensureUserSession } from "@/lib/auth";
 import { fail, ok } from "@/lib/http";
-import { assertStyleGenomeApplyAllowed } from "@/lib/plan-access";
+import { assertCustomTemplateQuota, assertTemplateExtractAllowed } from "@/lib/plan-access";
 import { extractTemplateFromUrl } from "@/lib/template-extractor";
 
 export async function POST(request: Request) {
@@ -10,8 +10,9 @@ export async function POST(request: Request) {
   }
   try {
     const body = await request.json();
-    await assertStyleGenomeApplyAllowed(session.userId);
-    const extracted = await extractTemplateFromUrl(body.url);
+    await assertTemplateExtractAllowed(session.userId);
+    await assertCustomTemplateQuota(session.userId);
+    const extracted = await extractTemplateFromUrl(String(body.url || "").trim(), session.userId);
     return ok(extracted);
   } catch (error) {
     return fail(error instanceof Error ? error.message : "模板抽取失败", 400);

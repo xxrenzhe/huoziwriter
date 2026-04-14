@@ -16,7 +16,7 @@ async function ensureAdmin() {
     password: process.env.DEFAULT_ADMIN_PASSWORD || "REDACTED_ADMIN_PASSWORD",
     displayName: "Huozi Admin",
     role: "admin",
-    planCode: "team",
+    planCode: "ultra",
     mustChangePassword: false,
   });
   console.log("已创建默认管理员 huozi");

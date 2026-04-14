@@ -43,7 +43,7 @@ async function main() {
        WHERE username = 'huozi'
        LIMIT 1`,
     );
-    if (!user || user.role !== "admin" || user.plan_code !== "team") {
+    if (!user || user.role !== "admin" || user.plan_code !== "ultra") {
       throw new Error("postgres admin bootstrap verification failed");
     }
 

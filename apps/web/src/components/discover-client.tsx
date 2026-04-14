@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { startTransition, useState } from "react";
+import { resolveTemplateRenderConfig, summarizeTemplateRenderConfig } from "@/lib/template-rendering";
 
 type GenomeItem = {
   id: number;
@@ -22,19 +23,29 @@ type TemplateItem = {
   name: string;
   description: string | null;
   meta: string | null;
+  ownerUserId: number | null;
+  sourceUrl: string | null;
   config?: Record<string, unknown>;
+  usageCount?: number;
+  lastUsedAt?: string | null;
 };
 
 export function DiscoverClient({
+  canExtractTemplates,
   genomes,
   templates,
   canForkGenomes,
   canPublishGenomes,
+  customTemplateLimit,
+  ownedTemplateCount,
 }: {
+  canExtractTemplates: boolean;
   genomes: GenomeItem[];
   templates: TemplateItem[];
   canForkGenomes: boolean;
   canPublishGenomes: boolean;
+  customTemplateLimit: number;
+  ownedTemplateCount: number;
 }) {
   const router = useRouter();
   const [message, setMessage] = useState("");
@@ -54,15 +65,17 @@ export function DiscoverClient({
   });
 
   function summarizeConfig(config?: Record<string, unknown>) {
-    if (!config) return [] as string[];
-    const summary = [
-      config.tone ? `语气：${String(config.tone)}` : null,
-      config.paragraphLength ? `段落：${String(config.paragraphLength)}` : null,
-      config.titleStyle ? `标题：${String(config.titleStyle)}` : null,
-      Array.isArray(config.bannedWords) && config.bannedWords.length ? `禁词：${config.bannedWords.slice(0, 3).join(" / ")}` : null,
-      Array.isArray(config.bannedPunctuation) && config.bannedPunctuation.length ? `禁用标点：${config.bannedPunctuation.join(" ")}` : null,
-    ].filter(Boolean) as string[];
-    return summary;
+    return summarizeTemplateRenderConfig(config ? { config } : null);
+  }
+
+  function formatLastUsed(value?: string | null) {
+    if (!value) return "暂未使用";
+    return new Date(value).toLocaleString("zh-CN", {
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
   }
 
   function buildTemplatePreview(template?: TemplateItem | null) {
@@ -75,10 +88,10 @@ export function DiscoverClient({
       };
     }
 
-    const config = template.config || {};
-    const tone = String(config.tone || template.meta || "模板");
-    const paragraphLength = String(config.paragraphLength || "medium");
-    const titleStyle = String(config.titleStyle || "plain");
+    const config = resolveTemplateRenderConfig(template);
+    const tone = config?.tone || template.meta || "模板";
+    const paragraphLength = config?.paragraphLength || "medium";
+    const titleStyle = config?.titleStyle || "plain";
 
     return {
       eyebrow: `${template.meta || "模板"} · ${template.version}`,
@@ -100,6 +113,7 @@ export function DiscoverClient({
 
   const selectedTemplate = templates.find((template) => template.id === selectedTemplateId) ?? templates[0] ?? null;
   const templatePreview = buildTemplatePreview(selectedTemplate);
+  const officialTemplates = templates.filter((template) => template.ownerUserId == null);
 
   async function createGenome() {
     if (!canForkGenomes) {
@@ -144,8 +158,8 @@ export function DiscoverClient({
   }
 
   async function extractTemplate() {
-    if (!canForkGenomes) {
-      setMessage("当前套餐仅可浏览模板资产。升级到 Pro 或更高套餐后，才可从 URL 抽取模板。");
+    if (!canExtractTemplates) {
+      setMessage("当前套餐仅可浏览官方模板。升级到 Pro 或更高套餐后，才可从 URL 抽取模板并沉淀到个人空间。");
       return;
     }
     setExtracting(true);
@@ -161,7 +175,7 @@ export function DiscoverClient({
       return;
     }
     setTemplateUrl("");
-    setMessage(`模板“${json.data.name}”已提取入库`);
+    setMessage(`模板“${json.data.name}”已提取并保存到你的个人模板资产`);
     startTransition(() => router.refresh());
   }
 
@@ -182,7 +196,7 @@ export function DiscoverClient({
 
   async function publishGenome(id: number) {
     if (!canPublishGenomes) {
-      setMessage("当前套餐不支持发布排版基因。升级到藏锋或团队版后，才可把私有基因公开到集市。");
+      setMessage("当前套餐不支持发布排版基因。升级到藏锋后，才可把私有基因公开到集市。");
       return;
     }
     const response = await fetch(`/api/style-genomes/${id}/publish`, { method: "POST" });
@@ -229,17 +243,28 @@ export function DiscoverClient({
         <div className="mt-4 grid gap-6 xl:grid-cols-[320px_minmax(0,1fr)_320px]">
           <div className="space-y-3">
             <div className="text-sm leading-7 text-stone-700">
-              把你看到的优质公众号或网页版式抽成模板候选，进入 `template_versions`，后续可继续人工微调。
+              把你看到的优质公众号或网页版式抽成私有模板资产，后续可继续人工微调并直接用于文稿排版。
+            </div>
+            <div className="flex flex-wrap gap-2 text-xs text-stone-500">
+              <span className="border border-stone-300 bg-white px-3 py-1">官方模板 {officialTemplates.length} 个</span>
+              <span className="border border-stone-300 bg-white px-3 py-1">
+                我的私有模板 {ownedTemplateCount}{customTemplateLimit > 0 ? ` / ${customTemplateLimit}` : ""}
+              </span>
+            </div>
+            <div className="border border-stone-300/40 bg-[#fffdfa] px-4 py-3 text-xs leading-6 text-stone-600">
+              {canExtractTemplates
+                ? `当前套餐已开放模板提取。新提取的模板会自动保存到你的个人空间，并可直接出现在编辑器模板列表中。当前额度 ${ownedTemplateCount} / ${customTemplateLimit}。`
+                : "免费版当前只开放官方模板浏览，不支持从链接提取模板，也不会沉淀私有模板资产。"}
             </div>
             <input
               value={templateUrl}
-              disabled={!canForkGenomes}
+              disabled={!canExtractTemplates}
               onChange={(event) => setTemplateUrl(event.target.value)}
               placeholder="粘贴要提取模板的 URL"
               className="w-full border border-stone-300 bg-[#faf7f0] px-4 py-3 text-sm disabled:bg-stone-100 disabled:text-stone-400"
             />
-            <button onClick={extractTemplate} disabled={extracting || !canForkGenomes} className="bg-cinnabar px-4 py-3 text-sm text-white disabled:opacity-60">
-              {!canForkGenomes ? "仅 Pro+ 可提取" : extracting ? "提取中..." : "从 URL 提取模板"}
+            <button onClick={extractTemplate} disabled={extracting || !canExtractTemplates} className="bg-cinnabar px-4 py-3 text-sm text-white disabled:opacity-60">
+              {!canExtractTemplates ? "仅 Pro+ 可提取" : extracting ? "提取中..." : "从 URL 提取模板"}
             </button>
           </div>
           <div className="grid gap-3 md:grid-cols-2">
@@ -249,16 +274,27 @@ export function DiscoverClient({
                 className={`border p-4 ${selectedTemplate?.id === template.id ? "border-cinnabar bg-[#fff7f2]" : "border-stone-300/40 bg-[#faf7f0]"}`}
               >
                 <div className="text-xs uppercase tracking-[0.24em] text-stone-500">
-                  {template.meta || "模板"} · {template.version}
+                  {template.meta || "模板"} · {template.version} · {template.ownerUserId == null ? "官方模板" : "私有模板"}
                 </div>
                 <div className="mt-2 font-serifCn text-2xl text-ink">{template.name}</div>
                 <p className="mt-2 text-sm leading-7 text-stone-700">{template.description || "暂无说明"}</p>
+                {template.sourceUrl ? (
+                  <div className="mt-3 text-xs leading-6 text-stone-500">
+                    来源：<a href={template.sourceUrl} target="_blank" rel="noreferrer" className="text-cinnabar hover:underline">{template.sourceUrl}</a>
+                  </div>
+                ) : null}
                 <div className="mt-3 flex flex-wrap gap-2">
                   {summarizeConfig(template.config).map((item) => (
                     <span key={`${template.id}-${item}`} className="border border-stone-300 bg-white px-3 py-1 text-xs text-stone-700">
                       {item}
                     </span>
                   ))}
+                  {template.ownerUserId != null ? (
+                    <>
+                      <span className="border border-stone-300 bg-white px-3 py-1 text-xs text-stone-700">使用 {template.usageCount ?? 0} 次</span>
+                      <span className="border border-stone-300 bg-white px-3 py-1 text-xs text-stone-700">最近使用 {formatLastUsed(template.lastUsedAt)}</span>
+                    </>
+                  ) : null}
                 </div>
                 <button
                   onClick={() => setSelectedTemplateId(template.id)}
@@ -293,9 +329,13 @@ export function DiscoverClient({
                   <div className="mt-3 space-y-2 text-sm leading-7 text-stone-700">
                     <div>模板 ID：{selectedTemplate.id}</div>
                     <div>模板名称：{selectedTemplate.name}</div>
+                    <div>资产归属：{selectedTemplate.ownerUserId == null ? "官方模板库" : "你的个人空间"}</div>
+                    {selectedTemplate.ownerUserId != null ? <div>累计使用：{selectedTemplate.usageCount ?? 0} 次</div> : null}
+                    {selectedTemplate.ownerUserId != null ? <div>最近使用：{formatLastUsed(selectedTemplate.lastUsedAt)}</div> : null}
                     <div>适用语气：{String(selectedTemplate.config?.tone || "默认")}</div>
                     <div>禁词数：{Array.isArray(selectedTemplate.config?.bannedWords) ? selectedTemplate.config?.bannedWords.length : 0}</div>
                     <div>禁用标点：{Array.isArray(selectedTemplate.config?.bannedPunctuation) && selectedTemplate.config?.bannedPunctuation.length ? selectedTemplate.config?.bannedPunctuation.join(" / ") : "无"}</div>
+                    {selectedTemplate.sourceUrl ? <div>来源链接：{selectedTemplate.sourceUrl}</div> : null}
                   </div>
                 </div>
               </div>
@@ -345,7 +385,7 @@ export function DiscoverClient({
                   disabled={!canPublishGenomes}
                   className="bg-cinnabar px-3 py-2 text-sm text-white disabled:opacity-60"
                 >
-                  {canPublishGenomes ? "发布" : "仅藏锋/团队可发布"}
+                  {canPublishGenomes ? "发布" : "仅 Ultra 可发布"}
                 </button>
               ) : null}
             </div>

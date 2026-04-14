@@ -5,7 +5,7 @@ const adminConfig = {
   email: "admin@huoziwriter.local",
   password: process.env.DEFAULT_ADMIN_PASSWORD || "REDACTED_ADMIN_PASSWORD",
   role: "admin",
-  planCode: "team",
+  planCode: "ultra",
 };
 
 console.log("HuoziWriter 默认管理员配置");

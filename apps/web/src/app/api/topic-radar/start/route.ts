@@ -1,21 +1,14 @@
 import { ensureUserSession } from "@/lib/auth";
+import { generateDocumentStageArtifact } from "@/lib/document-stage-artifacts";
+import { setDocumentWorkflowCurrentStage } from "@/lib/document-workflows";
 import { updateDocumentNode, attachFragmentToNode, getDocumentNodes } from "@/lib/document-outline";
 import { getKnowledgeCards } from "@/lib/knowledge";
 import { matchTopicToKnowledgeCards } from "@/lib/knowledge-match";
 import { distillCaptureInput } from "@/lib/distill";
 import { fail, ok } from "@/lib/http";
 import { assertFragmentQuota, assertTopicRadarStartAllowed } from "@/lib/plan-access";
-import { createDocument, createFragment, getTopicItems } from "@/lib/repositories";
-
-function parseJsonArray(value: string | string[] | null) {
-  if (!value) return [] as string[];
-  if (Array.isArray(value)) return value;
-  try {
-    return JSON.parse(value) as string[];
-  } catch {
-    return [];
-  }
-}
+import { createDocument, createFragment } from "@/lib/repositories";
+import { getVisibleTopicRecommendationsForUser } from "@/lib/topic-recommendations";
 
 function buildTopicNodeBlueprints(input: {
   topicTitle: string;
@@ -58,13 +51,13 @@ export async function POST(request: Request) {
     await assertTopicRadarStartAllowed(session.userId);
     await assertFragmentQuota(session.userId);
     const body = await request.json();
-    const topics = await getTopicItems(session.userId);
+    const topics = await getVisibleTopicRecommendationsForUser(session.userId);
     const topic = topics.find((item) => item.id === Number(body.topicId));
     if (!topic) {
       return fail("热点不存在", 404);
     }
-    const angleOptions = parseJsonArray(topic.angle_options_json);
-    const emotionLabels = parseJsonArray(topic.emotion_labels_json);
+    const angleOptions = topic.angleOptions;
+    const emotionLabels = topic.emotionLabels;
     const requestedAngleIndex = Number.isFinite(Number(body.angleIndex)) ? Number(body.angleIndex) : 0;
     const chosenAngle =
       String(body.chosenAngle || "").trim() ||
@@ -87,10 +80,15 @@ export async function POST(request: Request) {
     const matchedCardLookup = new Map(knowledgeCards.map((card) => [card.id, card]));
 
     const document = await createDocument(session.userId, topic.title);
+    await setDocumentWorkflowCurrentStage({
+      documentId: Number(document!.id),
+      userId: session.userId,
+      stageCode: "audienceAnalysis",
+    });
     const distilled = await distillCaptureInput({
       sourceType: "manual",
       title: topic.title,
-      content: `${topic.title}\n${topic.summary || ""}\n${chosenAngle}\n${topic.source_url || ""}`,
+      content: `${topic.title}\n${topic.summary || ""}\n${topic.recommendationReason}\n${chosenAngle}\n${topic.sourceUrl || ""}`,
     });
     const fragment = await createFragment({
       userId: session.userId,
@@ -98,13 +96,13 @@ export async function POST(request: Request) {
       title: distilled.title,
       rawContent: distilled.rawContent,
       distilledContent: distilled.distilledContent,
-      sourceUrl: topic.source_url,
+      sourceUrl: topic.sourceUrl,
     });
 
     const nodes = await getDocumentNodes(document!.id);
     const nodeBlueprints = buildTopicNodeBlueprints({
       topicTitle: topic.title,
-      sourceName: topic.source_name,
+      sourceName: topic.sourceName,
       summary: topic.summary || "",
       chosenAngle,
       emotionLabels,
@@ -155,10 +153,17 @@ export async function POST(request: Request) {
       });
     }
 
+    await generateDocumentStageArtifact({
+      documentId: document!.id,
+      userId: session.userId,
+      stageCode: "audienceAnalysis",
+    });
+
     return ok({
       documentId: document?.id,
       title: document?.title,
       chosenAngle,
+      matchedPersonaName: topic.matchedPersonaName,
     });
   } catch (error) {
     return fail(error instanceof Error ? error.message : "一键落笔失败", 400);

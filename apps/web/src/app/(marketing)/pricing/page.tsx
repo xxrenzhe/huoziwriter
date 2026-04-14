@@ -1,10 +1,22 @@
 import Link from "next/link";
 import { PricingMatrix } from "@/components/marketing-views";
-import { canUseCoverImageReference, getCoverImageDailyLimit } from "@/lib/plan-access";
+import { getAuthorPersonaLimit } from "@/lib/author-personas";
+import {
+  canUseCoverImageReference,
+  getCoverImageDailyLimit,
+  getCustomTemplateLimit,
+  getCustomTopicSourceLimit,
+  getStyleExtractDailyLimit,
+  getTemplateAccessLimit,
+  getWritingStyleProfileLimit,
+} from "@/lib/plan-access";
 import { getPlans } from "@/lib/repositories";
+import { getTopicRadarVisibleLimit } from "@/lib/topic-recommendations";
+
+type PublicPlanCode = "free" | "pro" | "ultra";
 
 function planFeatures(plan: {
-  code: string;
+  code: PublicPlanCode;
   daily_generation_limit: number | null;
   fragment_limit: number | null;
   custom_banned_word_limit: number | null;
@@ -14,10 +26,23 @@ function planFeatures(plan: {
   can_generate_cover_image: number | boolean;
   can_export_pdf: number | boolean;
 }) {
+  const topicVisibleLimit = getTopicRadarVisibleLimit(plan.code);
+  const customTopicSourceLimit = getCustomTopicSourceLimit(plan.code);
+  const customTemplateLimit = getCustomTemplateLimit(plan.code);
+  const writingStyleProfileLimit = getWritingStyleProfileLimit(plan.code);
+  const templateAccessLimit = getTemplateAccessLimit(plan.code);
+  const styleExtractDailyLimit = getStyleExtractDailyLimit(plan.code);
+  const authorPersonaLimit = getAuthorPersonaLimit(plan.code);
   const features = [
+    `${authorPersonaLimit} 个作者人设`,
+    `情绪罗盘 Top${topicVisibleLimit} 可见`,
+    customTopicSourceLimit > 0 ? `自定义信源 ${customTopicSourceLimit} 个` : "只读系统默认信源",
+    writingStyleProfileLimit > 0 ? `写作风格资产 ${writingStyleProfileLimit} 个` : "文风分析可用，不支持保存资产",
+    `排版模板最多 ${templateAccessLimit} 个`,
+    customTemplateLimit > 0 ? `私有模板资产 ${customTemplateLimit} 个` : "不支持私有模板提取",
+    `文风提取 ${styleExtractDailyLimit} 次/日`,
     plan.fragment_limit == null ? "无限碎片容量" : `${plan.fragment_limit} 条碎片上限`,
     plan.daily_generation_limit == null ? "生成次数不限" : `每日 ${plan.daily_generation_limit} 次生成`,
-    plan.custom_banned_word_limit == null ? "自定义死刑词不限" : `自定义死刑词 ${plan.custom_banned_word_limit} 个`,
     plan.max_wechat_connections == null
       ? "公众号连接不限"
       : plan.max_wechat_connections === 0
@@ -32,9 +57,9 @@ function planFeatures(plan: {
     features.push("支持发布公开基因");
   }
   if (plan.can_generate_cover_image) {
-    const coverImageLimit = getCoverImageDailyLimit(plan.code as "free" | "pro" | "ultra" | "team");
+    const coverImageLimit = getCoverImageDailyLimit(plan.code as "free" | "pro" | "ultra");
     features.push(coverImageLimit > 0 ? `封面图 ${coverImageLimit} 次/天` : "支持真实封面图生成");
-    if (canUseCoverImageReference(plan.code as "free" | "pro" | "ultra" | "team")) {
+    if (canUseCoverImageReference(plan.code as "free" | "pro" | "ultra")) {
       features.push("支持参考图垫图");
     }
   } else {
@@ -44,13 +69,10 @@ function planFeatures(plan: {
     features.push("支持 PDF 导出");
   }
 
-  return features.slice(0, 6);
+  return features.slice(0, 8);
 }
 
-function planPrice(priceCny: number, code: string) {
-  if (code === "team") {
-    return priceCny > 0 ? `￥${priceCny}/月起` : "定制";
-  }
+function planPrice(priceCny: number) {
   return priceCny > 0 ? `￥${priceCny}/月` : "￥0";
 }
 
@@ -58,7 +80,6 @@ function planTagline(code: string) {
   if (code === "free") return "Free";
   if (code === "pro") return "Pro";
   if (code === "ultra") return "Ultra";
-  if (code === "team") return "Team";
   return code.toUpperCase();
 }
 
@@ -66,13 +87,12 @@ function planOrder(code: string) {
   if (code === "free") return 0;
   if (code === "pro") return 1;
   if (code === "ultra") return 2;
-  if (code === "team") return 3;
   return 9;
 }
 
 export default async function PricingPage() {
   const plans = (await getPlans())
-    .filter((plan) => Boolean(plan.is_public))
+    .filter((plan) => Boolean(plan.is_public) && ["free", "pro", "ultra"].includes(plan.code))
     .sort((left, right) => planOrder(left.code) - planOrder(right.code));
 
   return (
@@ -81,16 +101,16 @@ export default async function PricingPage() {
         <div className="text-xs uppercase tracking-[0.3em] text-cinnabar">Pricing & Access</div>
         <h1 className="mt-4 font-serifCn text-4xl font-semibold text-ink md:text-5xl">套餐决定次数、容量和高级功能，不决定底层模型。</h1>
         <p className="mt-4 text-base leading-8 text-stone-700">
-          活字全站统一走后台场景模型路由。套餐差异只体现在生成次数、碎片容量、公众号连接额度、基因集市权限、封面图和 PDF 等高级能力，不按付费档位切换成不同模型。
+          活字只保留 `free / pro / ultra` 三档。套餐差异体现在作者人设数量、情绪罗盘可见位、自定义信源额度、文风资产、模板权限、封面图和发布能力，而不是按付费档位切换成不同模型。
         </p>
       </section>
 
       <PricingMatrix
         plans={plans.map((plan) => ({
           name: plan.name,
-          price: planPrice(plan.price_cny, plan.code),
+          price: planPrice(plan.price_cny),
           tagline: planTagline(plan.code),
-          features: planFeatures(plan),
+          features: planFeatures(plan as typeof plan & { code: PublicPlanCode }),
           featured: plan.code === "pro",
         }))}
       />
@@ -109,7 +129,7 @@ export default async function PricingPage() {
           <div className="text-xs uppercase tracking-[0.24em] text-stone-500">开通方式</div>
           <div className="mt-4 space-y-3 text-sm leading-7 text-stone-700">
             <p>当前版本不开放自助注册，所有账号都由管理员手动创建。</p>
-            <p>如果你需要试用、升级或团队开通，请直接联系支持。</p>
+            <p>如果你需要试用或升级，请直接联系支持。</p>
             <p>后台可手动调整套餐、状态、到期时间和推荐归因关系。</p>
           </div>
           <div className="mt-5 space-y-3">

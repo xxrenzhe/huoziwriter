@@ -1,6 +1,7 @@
 import { getDatabase } from "./db";
 import { decryptSecret, encryptSecret, pngThumbBuffer } from "./security";
 import { renderMarkdownToWechatHtml } from "./rendering";
+import type { TemplateRenderConfig } from "./template-rendering";
 
 type WechatConnectionRow = {
   id: number;
@@ -14,7 +15,21 @@ type WechatConnectionRow = {
   status: "valid" | "invalid" | "expired" | "disabled";
 };
 
+function isMockWechatCredential(appId: string, appSecret: string) {
+  return appId.startsWith("mock_") && appSecret.startsWith("mock_");
+}
+
+function isMockWechatAccessToken(accessToken: string) {
+  return accessToken.startsWith("mock_access_token_");
+}
+
 async function fetchWechatToken(appId: string, appSecret: string) {
+  if (isMockWechatCredential(appId, appSecret)) {
+    return {
+      access_token: `mock_access_token_${appId.slice(5) || "default"}`,
+      expires_in: 7200,
+    };
+  }
   const response = await fetch(
     `https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid=${encodeURIComponent(appId)}&secret=${encodeURIComponent(appSecret)}`,
     { cache: "no-store" },
@@ -36,6 +51,9 @@ async function refreshWechatAccessToken(connection: WechatConnectionRow) {
 }
 
 async function uploadThumb(accessToken: string) {
+  if (isMockWechatAccessToken(accessToken)) {
+    return `mock_thumb_${Date.now()}`;
+  }
   const formData = new FormData();
   formData.append("media", new Blob([pngThumbBuffer()], { type: "image/png" }), "huozi-thumb.png");
   const response = await fetch(`https://api.weixin.qq.com/cgi-bin/material/add_material?access_token=${accessToken}&type=image`, {
@@ -154,10 +172,7 @@ export async function publishWechatDraft(input: {
   markdownContent: string;
   digest?: string;
   author?: string;
-  templateConfig?: {
-    titleStyle?: string;
-    paragraphLength?: string;
-  } | null;
+  templateConfig?: TemplateRenderConfig | null;
 }) {
   const tokenResult = await resolveWechatAccessToken(input.connection);
   const thumbMediaId = await uploadThumb(tokenResult.access_token);
@@ -176,6 +191,21 @@ export async function publishWechatDraft(input: {
       },
     ],
   };
+
+  if (isMockWechatAccessToken(tokenResult.access_token)) {
+    const mediaId = `mock_media_${Date.now()}`;
+    return {
+      mediaId,
+      accessToken: tokenResult.access_token,
+      expiresIn: tokenResult.expires_in,
+      requestSummary: payload,
+      responseSummary: {
+        media_id: mediaId,
+        thumb_media_id: thumbMediaId,
+        mocked: true,
+      },
+    };
+  }
 
   const response = await fetch(`https://api.weixin.qq.com/cgi-bin/draft/add?access_token=${tokenResult.access_token}`, {
     method: "POST",

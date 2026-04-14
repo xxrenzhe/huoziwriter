@@ -112,6 +112,33 @@ function formatKnowledgeStatus(status: string) {
   return status;
 }
 
+function formatTopicRecommendationType(type: "hot" | "persona" | "hybrid") {
+  if (type === "persona") return "人设匹配";
+  if (type === "hybrid") return "热点 × 人设";
+  return "热点优先";
+}
+
+function formatTopicSourceType(type: string) {
+  if (type === "youtube") return "YouTube";
+  if (type === "reddit") return "Reddit";
+  if (type === "x") return "X";
+  if (type === "podcast") return "Podcast";
+  if (type === "spotify") return "Spotify";
+  if (type === "rss") return "RSS";
+  if (type === "blog") return "Blog";
+  return "News";
+}
+
+function formatTopicPublishedAt(value: string | null | undefined) {
+  if (!value) return "时间未知";
+  return new Date(value).toLocaleString("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 async function parseResponseMessage(response: Response) {
   const text = await response.text();
   try {
@@ -126,18 +153,10 @@ export function KnowledgeCardsPanel({
   cards,
   canCompile,
   fragmentCount,
-  isTeamShared = false,
-  sharedFragmentCount = 0,
-  sharedCardCount = 0,
-  sharedMemberCount = 1,
 }: {
   cards: KnowledgeCardSummary[];
   canCompile: boolean;
   fragmentCount: number;
-  isTeamShared?: boolean;
-  sharedFragmentCount?: number;
-  sharedCardCount?: number;
-  sharedMemberCount?: number;
 }) {
   const router = useRouter();
   const [compiling, setCompiling] = useState(false);
@@ -254,11 +273,6 @@ export function KnowledgeCardsPanel({
         </div>
       </div>
       {message ? <div className="border border-stone-300 bg-[#faf7f0] px-4 py-3 text-sm leading-7 text-stone-700">{message}</div> : null}
-      {isTeamShared ? (
-        <div className="border border-stone-300/40 bg-white px-4 py-4 text-sm leading-7 text-stone-700 shadow-ink">
-          当前为团队共享主题档案模式。编译时会综合 {sharedMemberCount} 个团队账号可见碎片；当前可见共享碎片 {sharedFragmentCount} 条，共享主题档案 {sharedCardCount} 张。
-        </div>
-      ) : null}
       {!canCompile ? <div className="border border-dashed border-stone-300 px-4 py-4 text-sm leading-7 text-stone-600">当前只有 {fragmentCount} 条碎片，先去采集中心补充内容，再回来编译主题档案。</div> : null}
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
         <div className="grid gap-4 md:grid-cols-2">
@@ -270,16 +284,11 @@ export function KnowledgeCardsPanel({
                   <div className="text-xs uppercase tracking-[0.24em] text-stone-500">{card.cardType}</div>
                   <div className="text-xs uppercase tracking-[0.2em] text-cinnabar">{formatKnowledgeStatus(card.status)}</div>
                 </div>
-                {card.shared ? (
-                  <div className="mt-3 inline-flex border border-stone-300 bg-[#faf7f0] px-2 py-1 text-[10px] uppercase tracking-[0.18em] text-stone-500">
-                    团队共享{card.ownerUsername ? ` · ${card.ownerUsername}` : ""}
-                  </div>
-                ) : null}
                 <h3 className="mt-4 font-serifCn text-2xl text-ink">{card.title}</h3>
                 <p className="mt-3 text-sm leading-7 text-stone-700">{card.summary || "当前档案仍在生成中，稍后会出现摘要。"}</p>
                 <div className="mt-5 flex flex-wrap gap-3 text-xs text-stone-500">
                   <span>证据碎片 {card.sourceFragmentCount}</span>
-                  <span>{card.workspaceScope === "team" ? "团队作用域" : "个人作用域"}</span>
+                  <span>{card.workspaceScope === "personal" ? "个人作用域" : card.workspaceScope}</span>
                   <span>置信度 {Math.round(card.confidenceScore * 100)}%</span>
                   <span>{card.lastCompiledAt ? `更新于 ${new Date(card.lastCompiledAt).toLocaleString("zh-CN")}` : "待编译"}</span>
                 </div>
@@ -331,15 +340,10 @@ export function KnowledgeCardsPanel({
             <div className="mt-4 space-y-4">
               <div className="border border-stone-300 bg-white p-4">
                 <div className="text-xs uppercase tracking-[0.18em] text-stone-500">{detail.cardType}</div>
-                {detail.shared ? (
-                  <div className="mt-3 inline-flex border border-stone-300 bg-[#faf7f0] px-2 py-1 text-[10px] uppercase tracking-[0.18em] text-stone-500">
-                    团队共享{detail.ownerUsername ? ` · ${detail.ownerUsername}` : ""}
-                  </div>
-                ) : null}
                 <h3 className="mt-3 font-serifCn text-3xl text-ink">{detail.title}</h3>
                 <p className="mt-3 text-sm leading-7 text-stone-700">{detail.summary || "暂无摘要"}</p>
                 <div className="mt-4 flex flex-wrap gap-2 text-xs text-stone-500">
-                  <span>{detail.workspaceScope === "team" ? "团队作用域" : "个人作用域"}</span>
+                  <span>{detail.workspaceScope === "personal" ? "个人作用域" : detail.workspaceScope}</span>
                   <span>置信度 {Math.round(detail.confidenceScore * 100)}%</span>
                   <span>{detail.lastCompiledAt ? `最近编译 ${new Date(detail.lastCompiledAt).toLocaleString("zh-CN")}` : "尚未编译"}</span>
                   <span>{detail.lastVerifiedAt ? `最近核验 ${new Date(detail.lastVerifiedAt).toLocaleString("zh-CN")}` : "待核验"}</span>
@@ -399,11 +403,6 @@ export function KnowledgeCardsPanel({
                         </div>
                         <div className="mt-2 font-serifCn text-xl text-ink">{relatedCard.title}</div>
                         <div className="mt-2 text-sm leading-7 text-stone-700">{relatedCard.summary || "暂无摘要"}</div>
-                        {relatedCard.shared ? (
-                          <div className="mt-2 text-xs uppercase tracking-[0.18em] text-stone-500">
-                            团队共享{relatedCard.ownerUsername ? ` · ${relatedCard.ownerUsername}` : ""}
-                          </div>
-                        ) : null}
                       </button>
                     ))}
                   </div>
@@ -450,12 +449,59 @@ export function TopicRadarStarter({
   knowledgeMatches = {},
   canStart = true,
 }: {
-  topics: Array<{ id: number; title: string; sourceName: string; emotionLabels: string[]; angleOptions: string[]; judgementShift?: string | null }>;
+  topics: Array<{
+    id: number;
+    title: string;
+    sourceName: string;
+    sourceType: string;
+    sourcePriority: number;
+    sourceUrl: string | null;
+    publishedAt: string | null;
+    recommendationType: "hot" | "persona" | "hybrid";
+    recommendationReason: string;
+    matchedPersonaName?: string | null;
+    emotionLabels: string[];
+    angleOptions: string[];
+    judgementShift?: string | null;
+  }>;
   knowledgeMatches?: Record<number, Array<{ id: number; title: string; cardType: string; status: string; confidenceScore: number; summary?: string | null; shared?: boolean; ownerUsername?: string | null }>>;
   canStart?: boolean;
 }) {
   const router = useRouter();
   const [loadingKey, setLoadingKey] = useState<string | null>(null);
+  const [scoutingTopicId, setScoutingTopicId] = useState<number | null>(null);
+  const [sourceScoutPlans, setSourceScoutPlans] = useState<Record<number, {
+    summary: string;
+    searchBrief: string;
+    sourceSuggestions: Array<{
+      platform: string;
+      sourceType: string;
+      queryHint: string;
+      reason: string;
+      freshnessHint: string;
+      expectedValue: string;
+    }>;
+    verificationChecklist: string[];
+    model: string;
+    provider: string;
+    degradedReason: string | null;
+  }>>({});
+  const [sourceScoutErrors, setSourceScoutErrors] = useState<Record<number, string>>({});
+  const [referenceUrl, setReferenceUrl] = useState("");
+  const [referenceLoading, setReferenceLoading] = useState(false);
+  const [referenceMessage, setReferenceMessage] = useState("");
+  const [referenceResult, setReferenceResult] = useState<null | {
+    sourceUrl: string;
+    sourceTitle: string;
+    degradedReason: string | null;
+    candidates: Array<{
+      proposedTitle: string;
+      angleLabel: string;
+      angleReason: string;
+      thesis: string;
+      seedFacts: string[];
+    }>;
+  }>(null);
 
   async function handleStart(topicId: number, angleIndex: number, chosenAngle: string) {
     const key = `${topicId}-${angleIndex}`;
@@ -473,20 +519,180 @@ export function TopicRadarStarter({
     }
   }
 
+  async function handleAnalyzeReference(event: FormEvent) {
+    event.preventDefault();
+    if (!referenceUrl.trim()) return;
+    setReferenceLoading(true);
+    setReferenceMessage("");
+    setReferenceResult(null);
+    try {
+      const response = await fetch("/api/topic-radar/reference-link", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: referenceUrl }),
+      });
+      const json = await response.json();
+      if (!response.ok || !json.success) {
+        throw new Error(json.error || "参考链接拆题失败");
+      }
+      setReferenceResult(json.data);
+      if (json.data?.degradedReason) {
+        setReferenceMessage(`当前结果为降级拆题：${json.data.degradedReason}`);
+      }
+    } catch (error) {
+      setReferenceMessage(error instanceof Error ? error.message : "参考链接拆题失败");
+    } finally {
+      setReferenceLoading(false);
+    }
+  }
+
+  async function handleStartFromReference(candidate: {
+    proposedTitle: string;
+    angleLabel: string;
+    angleReason: string;
+    thesis: string;
+    seedFacts: string[];
+  }, index: number) {
+    if (!referenceResult) return;
+    const key = `reference-${index}`;
+    setLoadingKey(key);
+    const response = await fetch("/api/topic-radar/start-from-reference", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sourceUrl: referenceResult.sourceUrl,
+        sourceTitle: referenceResult.sourceTitle,
+        candidate,
+      }),
+    });
+    const json = await response.json();
+    setLoadingKey(null);
+    if (response.ok && json.success) {
+      router.push(`/editor/${json.data.documentId}`);
+      router.refresh();
+    } else {
+      setReferenceMessage(json.error || "参考链接一键落笔失败");
+    }
+  }
+
+  async function handleScoutSources(topicId: number) {
+    setScoutingTopicId(topicId);
+    setSourceScoutErrors((current) => ({ ...current, [topicId]: "" }));
+    try {
+      const response = await fetch("/api/topic-radar/supplemental-sources", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ topicId }),
+      });
+      const json = await response.json();
+      if (!response.ok || !json.success) {
+        throw new Error(json.error || "补充信源生成失败");
+      }
+      setSourceScoutPlans((current) => ({
+        ...current,
+        [topicId]: json.data,
+      }));
+    } catch (error) {
+      setSourceScoutErrors((current) => ({
+        ...current,
+        [topicId]: error instanceof Error ? error.message : "补充信源生成失败",
+      }));
+    } finally {
+      setScoutingTopicId(null);
+    }
+  }
+
   if (topics.length === 0) {
     return (
-      <div className="border border-dashed border-stone-300 bg-white p-6 text-sm leading-7 text-stone-600 shadow-ink">
-        当前还没有抓到新的热点。系统会在读取默认源和你的可见作用域信息源后自动补货；如果你是 `ultra/team`，也可以先在下方添加新的外部源。
+      <div className="space-y-6">
+        <div className="border border-dashed border-stone-300 bg-white p-6 text-sm leading-7 text-stone-600 shadow-ink">
+          当前还没有抓到新的热点。系统会在读取默认源和你的可见作用域信息源后自动补货；如果你是 `pro` 或 `ultra`，也可以先在下方添加新的外部源。
+        </div>
+        <div className="border border-stone-300/40 bg-white p-5 shadow-ink">
+          <div className="text-xs uppercase tracking-[0.24em] text-stone-500">参考链接拆题</div>
+          <form onSubmit={handleAnalyzeReference} className="mt-4 flex flex-col gap-3 md:flex-row">
+            <input value={referenceUrl} onChange={(event) => setReferenceUrl(event.target.value)} placeholder="粘贴一篇参考文章链接，AI 会拆出多个切角" className="min-w-0 flex-1 border border-stone-300 bg-[#faf7f0] px-4 py-3 text-sm" />
+            <button disabled={referenceLoading} className="bg-cinnabar px-5 py-3 text-sm text-white disabled:opacity-60">
+              {referenceLoading ? "分析中..." : "开始拆题"}
+            </button>
+          </form>
+          {referenceMessage ? <div className="mt-3 text-sm text-cinnabar">{referenceMessage}</div> : null}
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="grid gap-4 xl:grid-cols-3">
-      {topics.map((topic) => (
+    <div className="space-y-6">
+      <div className="border border-stone-300/40 bg-white p-5 shadow-ink">
+        <div className="text-xs uppercase tracking-[0.24em] text-stone-500">参考链接拆题</div>
+        <div className="mt-2 text-sm leading-7 text-stone-700">输入一篇参考文章链接，系统会先读正文，再拆出几个不同的切角，避免你只重复原文观点。</div>
+        <form onSubmit={handleAnalyzeReference} className="mt-4 flex flex-col gap-3 md:flex-row">
+          <input value={referenceUrl} onChange={(event) => setReferenceUrl(event.target.value)} placeholder="https://..." className="min-w-0 flex-1 border border-stone-300 bg-[#faf7f0] px-4 py-3 text-sm" />
+          <button disabled={referenceLoading} className="bg-cinnabar px-5 py-3 text-sm text-white disabled:opacity-60">
+            {referenceLoading ? "分析中..." : "开始拆题"}
+          </button>
+        </form>
+        {referenceMessage ? <div className="mt-3 text-sm text-cinnabar">{referenceMessage}</div> : null}
+        {referenceResult ? (
+          <div className="mt-4 space-y-3">
+            <div className="text-sm text-stone-700">参考来源：{referenceResult.sourceTitle || referenceResult.sourceUrl}</div>
+            {referenceResult.candidates.map((candidate, index) => (
+              <div key={`${candidate.proposedTitle}-${index}`} className="border border-stone-300 bg-[#faf7f0] px-4 py-4">
+                <div className="text-xs uppercase tracking-[0.18em] text-stone-500">{candidate.angleLabel}</div>
+                <div className="mt-2 font-serifCn text-2xl text-ink">{candidate.proposedTitle}</div>
+                <div className="mt-2 text-sm leading-7 text-stone-700">{candidate.angleReason}</div>
+                <div className="mt-2 text-sm leading-7 text-stone-700">主判断：{candidate.thesis}</div>
+                {candidate.seedFacts.length > 0 ? <div className="mt-2 text-xs leading-6 text-stone-500">线索：{candidate.seedFacts.join("；")}</div> : null}
+                <button
+                  type="button"
+                  disabled={!canStart || loadingKey !== null}
+                  onClick={() => handleStartFromReference(candidate, index)}
+                  className="mt-4 border border-cinnabar px-4 py-2 text-sm text-cinnabar disabled:opacity-60"
+                >
+                  {!canStart ? "升级后可一键落笔" : loadingKey === `reference-${index}` ? "生成中..." : "以这个切角落笔"}
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </div>
+      <div className="grid gap-4 xl:grid-cols-3">
+        {topics.map((topic) => (
         <article key={topic.id} className="border border-stone-300/40 bg-white p-5 shadow-ink">
-          <div className="text-xs uppercase tracking-[0.24em] text-stone-500">{topic.sourceName}</div>
+          <div className="flex flex-wrap items-center gap-2 text-xs uppercase tracking-[0.24em] text-stone-500">
+            <span>{topic.sourceName}</span>
+            <span className="border border-stone-300 px-2 py-1">{formatTopicRecommendationType(topic.recommendationType)}</span>
+            {topic.matchedPersonaName ? <span className="border border-[#dcc8a6] bg-[#fff8eb] px-2 py-1 text-[#7d6430]">{topic.matchedPersonaName}</span> : null}
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2 text-xs text-stone-500">
+            <span className="border border-stone-300/70 bg-[#faf7f0] px-2 py-1">
+              信源类型 · {formatTopicSourceType(topic.sourceType)}
+            </span>
+            <span className="border border-stone-300/70 bg-[#faf7f0] px-2 py-1">
+              优先级 · {topic.sourcePriority}
+            </span>
+            <span className="border border-stone-300/70 bg-[#faf7f0] px-2 py-1">
+              发布时间 · {formatTopicPublishedAt(topic.publishedAt)}
+            </span>
+            {topic.sourcePriority >= 140 ? (
+              <span className="border border-[#dcc8a6] bg-[#fff8eb] px-2 py-1 text-[#7d6430]">高权重源</span>
+            ) : null}
+            {topic.sourceUrl ? (
+              <a
+                href={topic.sourceUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="border border-stone-300/70 bg-white px-2 py-1 text-cinnabar transition-colors hover:bg-[#fff8eb]"
+              >
+                查看原始链接
+              </a>
+            ) : null}
+          </div>
           <h2 className="mt-4 font-serifCn text-2xl text-ink">{topic.title}</h2>
+          <div className="mt-4 border border-[#eadfb9] bg-[#fdf6d7] px-3 py-3 text-sm leading-7 text-stone-700">
+            {topic.recommendationReason}
+          </div>
           {!canStart ? (
             <div className="mt-4 border border-dashed border-stone-300 bg-[#faf7f0] px-4 py-4 text-sm leading-7 text-stone-600">
               当前套餐只开放热点榜单浏览。升级到 Pro 或更高套餐后，才会显示情绪切角，并可一键落笔生成大纲树。
@@ -514,6 +720,57 @@ export function TopicRadarStarter({
             </div>
           ) : null}
           {canStart ? (
+            <div className="mt-4 border border-stone-300/70 bg-[#fcfaf5] px-4 py-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <div className="text-xs uppercase tracking-[0.2em] text-stone-500">Gemini 补充信源</div>
+                  <div className="mt-2 text-sm leading-7 text-stone-700">围绕当前选题，补找一手表达、用户讨论和可核对报道，不把模型输出直接当事实。</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleScoutSources(topic.id)}
+                  disabled={scoutingTopicId !== null}
+                  className="border border-cinnabar px-3 py-2 text-sm text-cinnabar disabled:opacity-60"
+                >
+                  {scoutingTopicId === topic.id ? "生成中..." : sourceScoutPlans[topic.id] ? "刷新补充信源" : "生成补充信源"}
+                </button>
+              </div>
+              {sourceScoutErrors[topic.id] ? (
+                <div className="mt-3 text-sm text-cinnabar">{sourceScoutErrors[topic.id]}</div>
+              ) : null}
+              {sourceScoutPlans[topic.id] ? (
+                <div className="mt-4 space-y-3">
+                  <div className="border border-[#e6dcc4] bg-white px-3 py-3 text-sm leading-7 text-stone-700">
+                    {sourceScoutPlans[topic.id].summary}
+                  </div>
+                  <div className="text-sm leading-7 text-stone-700">{sourceScoutPlans[topic.id].searchBrief}</div>
+                  {sourceScoutPlans[topic.id].degradedReason ? (
+                    <div className="text-xs text-stone-500">当前为降级建议模式，原因：{sourceScoutPlans[topic.id].degradedReason}</div>
+                  ) : (
+                    <div className="text-xs text-stone-500">由 {sourceScoutPlans[topic.id].provider} / {sourceScoutPlans[topic.id].model} 生成</div>
+                  )}
+                  <div className="space-y-2">
+                    {sourceScoutPlans[topic.id].sourceSuggestions.map((item, index) => (
+                      <div key={`${topic.id}-${item.platform}-${index}`} className="border border-stone-300 bg-white px-4 py-4">
+                        <div className="flex flex-wrap items-center gap-2 text-xs uppercase tracking-[0.18em] text-stone-500">
+                          <span>{item.platform}</span>
+                          <span className="border border-stone-300 px-2 py-1">{item.sourceType}</span>
+                        </div>
+                        <div className="mt-3 font-mono text-sm text-ink">{item.queryHint}</div>
+                        <div className="mt-2 text-sm leading-7 text-stone-700">{item.reason}</div>
+                        <div className="mt-2 text-xs leading-6 text-stone-500">新鲜度：{item.freshnessHint}</div>
+                        <div className="mt-1 text-xs leading-6 text-stone-500">预期收获：{item.expectedValue}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="border border-dashed border-stone-300 px-4 py-4 text-sm leading-7 text-stone-700">
+                    核查清单：{sourceScoutPlans[topic.id].verificationChecklist.join("；")}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+          {canStart ? (
             <div className="mt-4 space-y-2">
               {topic.angleOptions.slice(0, 3).map((angle, index) => {
                 const key = `${topic.id}-${index}`;
@@ -537,13 +794,14 @@ export function TopicRadarStarter({
             <div className="mt-4 flex flex-wrap gap-2 text-xs text-stone-500">
               {knowledgeMatches[topic.id].map((item) => (
                 <span key={item.id} className="border border-stone-300 px-2 py-1">
-                  {item.cardType} · {Math.round(item.confidenceScore * 100)}%{item.shared ? ` · 团队共享${item.ownerUsername ? `/${item.ownerUsername}` : ""}` : ""}
+                  {item.cardType} · {Math.round(item.confidenceScore * 100)}%
                 </span>
               ))}
             </div>
           ) : null}
         </article>
-      ))}
+        ))}
+      </div>
     </div>
   );
 }

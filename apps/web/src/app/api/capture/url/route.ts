@@ -63,5 +63,9 @@ export async function POST(request: Request) {
     retryUrlFetch: Boolean(distilled.retryRecommended),
     retryDistill: Boolean(distilled.retryRecommended),
   });
-  return ok(fragment ? mapFragment(fragment as CaptureFragmentRecord) : null);
+  return ok({
+    fragment: fragment ? mapFragment(fragment as CaptureFragmentRecord) : null,
+    degradedReason: distilled.degradedReason ?? null,
+    retryRecommended: Boolean(distilled.retryRecommended),
+  });
 }

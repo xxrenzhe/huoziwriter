@@ -1,10 +1,13 @@
 import { getDatabase } from "./db";
 import { DEFAULT_MODEL_ROUTES } from "./domain";
 import { renderMarkdownToHtml } from "./rendering";
+import { getActiveTemplateById } from "./marketplace";
+import { resolveTemplateRenderConfig } from "./template-rendering";
 import { ensureDefaultTopics } from "./topic-radar";
 import { clearPromptCache } from "./prompt-loader";
 import { ensureUsageCounterSchema } from "./usage";
 import { ensureDefaultDocumentNodes } from "./document-outline";
+import { ensureDocumentWorkflow } from "./document-workflows";
 import { ensureMarketplaceSeeds, ensureExtendedProductSchema } from "./schema-bootstrap";
 import { getReferralCodeForUser, matchesReferralCode, normalizeReferralCode, parseReferralCodeUserId } from "./referrals";
 import { appendAuditLog } from "./audit";
@@ -49,6 +52,30 @@ const DEFAULT_PROMPT_SEEDS = [
     changeNotes: "初始化版本",
   },
   {
+    promptId: "style_extract",
+    version: "v1.0.0",
+    category: "analysis",
+    name: "写作风格提取",
+    description: "从网页文章中提炼写作风格画像",
+    filePath: "system:analysis",
+    functionName: "styleExtract",
+    promptContent: "你是中文文风分析师。必须基于正文内容抽取语气、句式、结构、开头结尾习惯和模仿提示，不要空泛赞美。",
+    language: "zh-CN",
+    changeNotes: "初始化版本",
+  },
+  {
+    promptId: "topic_source_scout",
+    version: "v1.0.0",
+    category: "analysis",
+    name: "选题补充信源",
+    description: "围绕选题生成第一手补充信源与补证建议",
+    filePath: "system:analysis",
+    functionName: "topicSourceScout",
+    promptContent: "你是选题研究编辑。围绕一个待写选题，优先推荐 YouTube、Reddit、X、Podcast、Spotify、主流新闻等第一手或近一手信源的补证方向，只输出可执行的搜集建议，不要把模型猜测写成事实。",
+    language: "zh-CN",
+    changeNotes: "初始化版本",
+  },
+  {
     promptId: "banned_word_audit",
     version: "v1.0.0",
     category: "review",
@@ -59,6 +86,54 @@ const DEFAULT_PROMPT_SEEDS = [
     promptContent: "你是终审编辑。删除禁用词，保留事实，拆解长句。",
     language: "zh-CN",
     changeNotes: "初始化版本",
+  },
+  {
+    promptId: "audience_analysis",
+    version: "v1.1.0",
+    category: "analysis",
+    name: "受众分析",
+    description: "根据选题、人设和素材生成读者画像与表达建议",
+    filePath: "system:analysis",
+    functionName: "audienceAnalysis",
+    promptContent: "你是内容策略编辑。你要为一篇中文内容判断真正应该写给谁看、怎么说他们才会继续读。必须优先给出可执行的读者分层、痛点、动机、表达方式、背景认知分层和通俗度建议，避免空泛人口学描述，避免营销套话。",
+    language: "zh-CN",
+    changeNotes: "补强受众分析对读者分层、表达方式与通俗度建议的约束",
+  },
+  {
+    promptId: "outline_planning",
+    version: "v1.1.0",
+    category: "writing",
+    name: "大纲规划",
+    description: "根据选题、人设、受众和素材生成结构化大纲",
+    filePath: "system:writing",
+    functionName: "outlinePlanning",
+    promptContent: "你是专栏主编。请基于主题、人设、受众和素材，设计一份真正可写的结构化文章大纲。大纲必须体现核心观点、论证递进、证据挂载、情绪转折、开头策略和结尾动作，不能把信息并列堆砌成目录。",
+    language: "zh-CN",
+    changeNotes: "补强大纲规划对递进结构、证据提示和开头结尾策略的约束",
+  },
+  {
+    promptId: "fact_check",
+    version: "v1.1.0",
+    category: "review",
+    name: "事实核查",
+    description: "对正文中的事实、数据和案例进行核查提示",
+    filePath: "system:review",
+    functionName: "factCheck",
+    promptContent: "你是事实核查编辑。请只针对正文中的具体事实、数据、案例、时间与因果判断做核查。不能把没有证据支持的表述说成已验证，必须明确区分已验证、待补证据、高风险表述和主观判断，并指出人设与选题是否偏离。",
+    language: "zh-CN",
+    changeNotes: "补强事实核查对证据充分性、风险分级和匹配度校验的约束",
+  },
+  {
+    promptId: "prose_polish",
+    version: "v1.1.0",
+    category: "review",
+    name: "文笔润色",
+    description: "对正文的表达方式、节奏和情绪转折给出润色建议",
+    filePath: "system:review",
+    functionName: "prosePolish",
+    promptContent: "你是终稿润色编辑。润色只负责表达，不负责新增事实。请评估正文的表达方式、金句节奏、专业性、通俗度和情绪转折，给出可直接执行的语言优化建议、重写开头和可落句的金句方向，避免空泛夸奖。",
+    language: "zh-CN",
+    changeNotes: "补强文笔润色对表达约束、重写开头和节奏建议的要求",
   },
   {
     promptId: "wechat_render",
@@ -81,6 +156,9 @@ export async function ensureBootstrapData() {
   await ensureDefaultTopics();
 
   const db = getDatabase();
+  await db.exec("UPDATE users SET plan_code = ? WHERE plan_code = ?", ["ultra", "team"]);
+  await db.exec("UPDATE subscriptions SET plan_code = ? WHERE plan_code = ?", ["ultra", "team"]);
+  await db.exec("DELETE FROM plans WHERE code = ?", ["team"]);
   await db.exec("DELETE FROM ai_model_routes WHERE scene_code = ?", ["coverImage"]);
   for (const route of DEFAULT_MODEL_ROUTES) {
     const exists = await db.queryOne<{ id: number; primary_model: string; fallback_model: string | null; description: string | null }>(
@@ -190,6 +268,65 @@ export async function getLatestCoverImage(userId: number, documentId: number) {
      WHERE user_id = ? AND document_id = ?
      ORDER BY id DESC
      LIMIT 1`,
+    [userId, documentId],
+  );
+}
+
+export async function getLatestCoverImageCandidates(userId: number, documentId: number) {
+  const db = getDatabase();
+  const latestBatch = await db.queryOne<{ batch_token: string }>(
+    `SELECT batch_token
+     FROM cover_image_candidates
+     WHERE user_id = ? AND document_id = ?
+     ORDER BY id DESC
+     LIMIT 1`,
+    [userId, documentId],
+  );
+  if (!latestBatch?.batch_token) {
+    return [] as Array<{
+      id: number;
+      batch_token: string;
+      variant_label: string;
+      prompt: string;
+      image_url: string;
+      is_selected: number | boolean;
+      created_at: string;
+      selected_at: string | null;
+    }>;
+  }
+  return db.query<{
+    id: number;
+    batch_token: string;
+    variant_label: string;
+    prompt: string;
+    image_url: string;
+    is_selected: number | boolean;
+    created_at: string;
+    selected_at: string | null;
+  }>(
+    `SELECT id, batch_token, variant_label, prompt, image_url, is_selected, created_at, selected_at
+     FROM cover_image_candidates
+     WHERE user_id = ? AND document_id = ? AND batch_token = ?
+     ORDER BY id ASC`,
+    [userId, documentId, latestBatch.batch_token],
+  );
+}
+
+export async function getDocumentImagePrompts(userId: number, documentId: number) {
+  const db = getDatabase();
+  return db.query<{
+    id: number;
+    document_node_id: number | null;
+    asset_type: string;
+    title: string;
+    prompt: string;
+    created_at: string;
+    updated_at: string;
+  }>(
+    `SELECT id, document_node_id, asset_type, title, prompt, created_at, updated_at
+     FROM document_image_prompts
+     WHERE user_id = ? AND document_id = ?
+     ORDER BY COALESCE(document_node_id, 0) ASC, id ASC`,
     [userId, documentId],
   );
 }
@@ -597,13 +734,14 @@ export async function getDocumentById(documentId: number, userId?: number) {
 export async function createDocument(userId: number, title: string) {
   const db = getDatabase();
   const now = new Date().toISOString();
-  const html = await renderMarkdownToHtml("");
+  const html = await renderMarkdownToHtml("", { title });
   const result = await db.exec(
     `INSERT INTO documents (user_id, title, markdown_content, html_content, status, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?)`,
     [userId, title, "", html, "draft", now, now],
   );
   await ensureDefaultDocumentNodes(result.lastInsertRowid!);
+  await ensureDocumentWorkflow(result.lastInsertRowid!, "topicRadar");
   await appendAuditLog({
     userId,
     action: "document.create",
@@ -629,10 +767,14 @@ export async function saveDocument(input: {
   }
   const title = input.title ?? current.title;
   const markdownContent = input.markdownContent ?? current.markdown_content;
-  const htmlContent = await renderMarkdownToHtml(markdownContent);
   const status = input.status ?? current.status;
   const styleGenomeId = input.styleGenomeId === undefined ? current.style_genome_id : input.styleGenomeId;
   const wechatTemplateId = input.wechatTemplateId === undefined ? current.wechat_template_id : input.wechatTemplateId;
+  const template = wechatTemplateId ? await getActiveTemplateById(wechatTemplateId, input.userId) : null;
+  const htmlContent = await renderMarkdownToHtml(markdownContent, {
+    title,
+    template: resolveTemplateRenderConfig(template),
+  });
   const now = new Date().toISOString();
   const db = getDatabase();
   await db.exec(
@@ -1275,6 +1417,59 @@ export async function getSupportMessageCount() {
   return db.queryOne<{ count: number }>("SELECT COUNT(*) as count FROM support_messages");
 }
 
+export async function getUserWorkspaceAssetSummary(userId: number) {
+  await ensureExtendedProductSchema();
+  const db = getDatabase();
+  const [
+    documents,
+    fragments,
+    authorPersonas,
+    writingStyleProfiles,
+    knowledgeCards,
+    activeKnowledgeCards,
+    conflictedKnowledgeCards,
+    ownedStyleGenomes,
+    publishedStyleGenomes,
+    customTemplates,
+    coverImages,
+    imagePrompts,
+    customTopicSources,
+    wechatConnections,
+  ] = await Promise.all([
+    db.queryOne<{ count: number }>("SELECT COUNT(*) as count FROM documents WHERE user_id = ?", [userId]),
+    db.queryOne<{ count: number }>("SELECT COUNT(*) as count FROM fragments WHERE user_id = ?", [userId]),
+    db.queryOne<{ count: number }>("SELECT COUNT(*) as count FROM author_personas WHERE user_id = ?", [userId]),
+    db.queryOne<{ count: number }>("SELECT COUNT(*) as count FROM writing_style_profiles WHERE user_id = ?", [userId]),
+    db.queryOne<{ count: number }>("SELECT COUNT(*) as count FROM knowledge_cards WHERE user_id = ?", [userId]),
+    db.queryOne<{ count: number }>("SELECT COUNT(*) as count FROM knowledge_cards WHERE user_id = ? AND status = ?", [userId, "active"]),
+    db.queryOne<{ count: number }>("SELECT COUNT(*) as count FROM knowledge_cards WHERE user_id = ? AND status = ?", [userId, "conflicted"]),
+    db.queryOne<{ count: number }>("SELECT COUNT(*) as count FROM style_genomes WHERE owner_user_id = ?", [userId]),
+    db.queryOne<{ count: number }>("SELECT COUNT(*) as count FROM style_genomes WHERE owner_user_id = ? AND is_public = ?", [userId, true]),
+    db.queryOne<{ count: number }>("SELECT COUNT(*) as count FROM layout_templates WHERE owner_user_id = ?", [userId]),
+    db.queryOne<{ count: number }>("SELECT COUNT(*) as count FROM cover_images WHERE user_id = ?", [userId]),
+    db.queryOne<{ count: number }>("SELECT COUNT(*) as count FROM document_image_prompts WHERE user_id = ?", [userId]),
+    db.queryOne<{ count: number }>("SELECT COUNT(*) as count FROM topic_sources WHERE owner_user_id = ?", [userId]),
+    db.queryOne<{ count: number }>("SELECT COUNT(*) as count FROM wechat_connections WHERE user_id = ?", [userId]),
+  ]);
+
+  return {
+    documentsCount: documents?.count ?? 0,
+    fragmentsCount: fragments?.count ?? 0,
+    authorPersonasCount: authorPersonas?.count ?? 0,
+    writingStyleProfilesCount: writingStyleProfiles?.count ?? 0,
+    knowledgeCardsCount: knowledgeCards?.count ?? 0,
+    activeKnowledgeCardsCount: activeKnowledgeCards?.count ?? 0,
+    conflictedKnowledgeCardsCount: conflictedKnowledgeCards?.count ?? 0,
+    ownedStyleGenomesCount: ownedStyleGenomes?.count ?? 0,
+    publishedStyleGenomesCount: publishedStyleGenomes?.count ?? 0,
+    customTemplatesCount: customTemplates?.count ?? 0,
+    coverImagesCount: coverImages?.count ?? 0,
+    imagePromptsCount: imagePrompts?.count ?? 0,
+    customTopicSourcesCount: customTopicSources?.count ?? 0,
+    wechatConnectionsCount: wechatConnections?.count ?? 0,
+  };
+}
+
 export async function getCurrentSubscriptionForUser(userId: number) {
   const db = getDatabase();
   return db.queryOne<{
@@ -1318,6 +1513,8 @@ export async function getTopicItems(userId?: number) {
       id: number;
       owner_user_id: number | null;
       source_name: string;
+      source_type: string | null;
+      source_priority: number | null;
       title: string;
       summary: string | null;
       emotion_labels_json: string | string[] | null;
@@ -1325,10 +1522,19 @@ export async function getTopicItems(userId?: number) {
       source_url: string | null;
       published_at: string | null;
     }>(
-      `SELECT *
-       FROM topic_items
+      `SELECT
+         ti.*,
+         ts.source_type,
+         ts.priority AS source_priority
+       FROM topic_items ti
+       LEFT JOIN topic_sources ts
+         ON ts.name = ti.source_name
+        AND (
+          (ti.owner_user_id IS NULL AND ts.owner_user_id IS NULL)
+          OR ti.owner_user_id = ts.owner_user_id
+        )
        WHERE owner_user_id IS NULL OR owner_user_id IN (${placeholders})
-       ORDER BY id DESC`,
+       ORDER BY ti.id DESC`,
       scope.userIds,
     );
   }
@@ -1336,13 +1542,28 @@ export async function getTopicItems(userId?: number) {
     id: number;
     owner_user_id: number | null;
     source_name: string;
+    source_type: string | null;
+    source_priority: number | null;
     title: string;
     summary: string | null;
     emotion_labels_json: string | string[] | null;
     angle_options_json: string | string[] | null;
     source_url: string | null;
     published_at: string | null;
-  }>("SELECT * FROM topic_items ORDER BY id DESC");
+  }>(
+    `SELECT
+       ti.*,
+       ts.source_type,
+       ts.priority AS source_priority
+     FROM topic_items ti
+     LEFT JOIN topic_sources ts
+       ON ts.name = ti.source_name
+      AND (
+        (ti.owner_user_id IS NULL AND ts.owner_user_id IS NULL)
+        OR ti.owner_user_id = ts.owner_user_id
+      )
+     ORDER BY ti.id DESC`,
+  );
 }
 
 export async function queueJob(jobType: string, payload: unknown) {

@@ -10,8 +10,9 @@
     "type-check": "pnpm --filter @huoziwriter/web type-check",
     "db:init": "tsx scripts/db-init.ts",
     "db:migrate": "tsx scripts/db-migrate.ts",
-    "verify": "pnpm type-check && pnpm build && python3 -m py_compile apps/worker-py/main.py apps/worker-py/scheduler.py apps/worker-py/queue_runtime.py && node scripts/check-standalone-runtime-init.mjs && pnpm --filter @huoziwriter/web exec node ../../scripts/check-postgres-runtime-init.mjs",
-    "test:e2e": "pnpm build && playwright test"
+    "verify": "pnpm type-check && NEXT_OUTPUT_MODE=standalone pnpm build && python3 -m py_compile apps/worker-py/main.py apps/worker-py/scheduler.py apps/worker-py/queue_runtime.py && node scripts/check-standalone-runtime-init.mjs && pnpm --filter @huoziwriter/web exec node ../../scripts/check-postgres-runtime-init.mjs",
+    "test:e2e": "rm -rf apps/web/.next && pnpm build && playwright test",
+    "test:e2e:smoke": "rm -rf apps/web/.next && pnpm build && playwright test tests/e2e/smoke.spec.ts"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

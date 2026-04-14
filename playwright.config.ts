@@ -12,13 +12,12 @@ export default defineConfig({
     baseURL: "http://127.0.0.1:3101",
   },
   webServer: {
-    command: "pnpm db:init && node apps/web/.next/standalone/apps/web/server.js",
+    command: "pnpm db:init && cd apps/web && rm -rf .next && pnpm dev --port 3101 --hostname 127.0.0.1",
     url: "http://127.0.0.1:3101/login",
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
     env: {
       ...process.env,
-      NODE_ENV: "development",
       PORT: "3101",
       HOSTNAME: "127.0.0.1",
       DATABASE_PATH: databasePath,

@@ -1,4 +1,4 @@
-export type UserPlanCode = "free" | "pro" | "ultra" | "team";
+export type UserPlanCode = "free" | "pro" | "ultra";
 export type UserRole = "admin" | "user";
 export type DocumentStatus =
   | "draft"
@@ -21,7 +21,6 @@ export const PLAN_LABELS: Record<UserPlanCode, string> = {
   free: "游墨",
   pro: "执毫",
   ultra: "藏锋",
-  team: "团队",
 };
 
 export const DEFAULT_MODEL_ROUTES: readonly ModelRouteDefinition[] = [
@@ -42,6 +41,18 @@ export const DEFAULT_MODEL_ROUTES: readonly ModelRouteDefinition[] = [
     primaryModel: "claude-sonnet-4-6",
     fallbackModel: "claude-haiku-4-5",
     description: "正文生成与改写",
+  },
+  {
+    sceneCode: "styleExtract",
+    primaryModel: "gemini-3.0-flash",
+    fallbackModel: "gpt-5.4-mini",
+    description: "文章写作风格提取与结构化分析",
+  },
+  {
+    sceneCode: "topicSourceScout",
+    primaryModel: "gemini-3.0-flash",
+    fallbackModel: "gpt-5.4-mini",
+    description: "选题雷达补充信源建议与补证线索生成",
   },
   {
     sceneCode: "bannedWordAudit",

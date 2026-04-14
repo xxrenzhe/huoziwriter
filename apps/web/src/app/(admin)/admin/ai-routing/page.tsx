@@ -1,12 +1,17 @@
-import { GlobalCoverImageEngineSettings } from "@/components/admin-image-engine-client";
+import { GlobalCoverImageEngineSettings, GlobalObjectStorageSettings } from "@/components/admin-image-engine-client";
 import { RouteManagerClient } from "@/components/admin-client";
 import { getGlobalCoverImageEngine } from "@/lib/image-engine";
+import { getGlobalObjectStorageConfig } from "@/lib/object-storage-config";
 import { requireAdminSession } from "@/lib/page-auth";
 import { getModelRoutes } from "@/lib/repositories";
 
 export default async function AdminAiRoutingPage() {
   await requireAdminSession();
-  const [routes, coverImageEngine] = await Promise.all([getModelRoutes(), getGlobalCoverImageEngine()]);
+  const [routes, coverImageEngine, objectStorage] = await Promise.all([
+    getModelRoutes(),
+    getGlobalCoverImageEngine(),
+    getGlobalObjectStorageConfig(),
+  ]);
   return (
     <div className="space-y-6">
       <RouteManagerClient
@@ -18,6 +23,7 @@ export default async function AdminAiRoutingPage() {
         }))}
       />
       <GlobalCoverImageEngineSettings config={coverImageEngine} />
+      <GlobalObjectStorageSettings config={objectStorage} />
     </div>
   );
 }

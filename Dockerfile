@@ -20,7 +20,7 @@ COPY --from=deps /app /app
 COPY . .
 
 ENV NEXT_TELEMETRY_DISABLED=1
-RUN corepack enable && pnpm --filter @huoziwriter/web build
+RUN corepack enable && NEXT_OUTPUT_MODE=standalone pnpm --filter @huoziwriter/web build
 RUN mkdir -p /tmp/runtime-node_modules \
   && cp -R /app/node_modules/.pnpm/bcryptjs@*/node_modules/bcryptjs /tmp/runtime-node_modules/bcryptjs \
   && cp -R /app/node_modules/.pnpm/postgres@*/node_modules/postgres /tmp/runtime-node_modules/postgres \
