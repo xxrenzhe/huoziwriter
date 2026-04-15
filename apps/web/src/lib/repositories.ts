@@ -65,15 +65,27 @@ const DEFAULT_PROMPT_SEEDS = [
   },
   {
     promptId: "topic_source_scout",
-    version: "v1.0.0",
+    version: "v1.1.0",
     category: "analysis",
     name: "选题补充信源",
     description: "围绕选题生成第一手补充信源与补证建议",
     filePath: "system:analysis",
     functionName: "topicSourceScout",
-    promptContent: "你是选题研究编辑。围绕一个待写选题，优先推荐 YouTube、Reddit、X、Podcast、Spotify、主流新闻等第一手或近一手信源的补证方向，只输出可执行的搜集建议，不要把模型猜测写成事实。",
+    promptContent: "你是选题研究编辑。围绕一个待写选题，优先推荐 YouTube、Reddit、Podcast、Spotify、官方 Blog / Newsroom、RSS / Feed、主流新闻等第一手或近一手信源的补证方向，只输出可执行的搜集建议，不要把模型猜测写成事实。",
     language: "zh-CN",
-    changeNotes: "初始化版本",
+    changeNotes: "移除 X 作为 P0 常规补证来源，补充官方 Blog / Newsroom 与 RSS / Feed 优先级",
+  },
+  {
+    promptId: "topic_supplement",
+    version: "v1.1.0",
+    category: "analysis",
+    name: "选题补证",
+    description: "围绕选题生成补充信源、检索词与补证清单",
+    filePath: "system:analysis",
+    functionName: "topicSupplement",
+    promptContent: "你是选题补证编辑。围绕一个待写选题，优先推荐 YouTube、Reddit、Podcast、Spotify、官方 Blog / Newsroom、RSS / Feed、主流新闻等第一手或近一手信源的补证方向，输出可直接执行的查询词、平台建议与验证清单，不要把模型猜测写成事实。",
+    language: "zh-CN",
+    changeNotes: "移除 X 作为 P0 常规补证来源，补充官方 Blog / Newsroom 与 RSS / Feed 优先级",
   },
   {
     promptId: "banned_word_audit",
@@ -100,6 +112,18 @@ const DEFAULT_PROMPT_SEEDS = [
     changeNotes: "补强受众分析对读者分层、表达方式与通俗度建议的约束",
   },
   {
+    promptId: "audience_profile",
+    version: "v1.0.0",
+    category: "analysis",
+    name: "受众画像",
+    description: "根据选题、人设和素材生成读者画像与表达建议",
+    filePath: "system:analysis",
+    functionName: "audienceProfile",
+    promptContent: "你是内容策略编辑。你要为一篇中文内容判断真正应该写给谁看、怎么说他们才会继续读。必须优先给出可执行的读者分层、痛点、动机、表达方式、背景认知分层和通俗度建议，避免空泛人口学描述，避免营销套话。",
+    language: "zh-CN",
+    changeNotes: "新增二期标准场景码 audienceProfile",
+  },
+  {
     promptId: "outline_planning",
     version: "v1.1.0",
     category: "writing",
@@ -110,6 +134,30 @@ const DEFAULT_PROMPT_SEEDS = [
     promptContent: "你是专栏主编。请基于主题、人设、受众和素材，设计一份真正可写的结构化文章大纲。大纲必须体现核心观点、论证递进、证据挂载、情绪转折、开头策略和结尾动作，不能把信息并列堆砌成目录。",
     language: "zh-CN",
     changeNotes: "补强大纲规划对递进结构、证据提示和开头结尾策略的约束",
+  },
+  {
+    promptId: "outline_plan",
+    version: "v1.0.0",
+    category: "writing",
+    name: "大纲规划场景",
+    description: "根据选题、人设、受众和素材生成结构化大纲",
+    filePath: "system:writing",
+    functionName: "outlinePlan",
+    promptContent: "你是专栏主编。请基于主题、人设、受众和素材，设计一份真正可写的结构化文章大纲。大纲必须体现核心观点、论证递进、证据挂载、情绪转折、开头策略和结尾动作，不能把信息并列堆砌成目录。",
+    language: "zh-CN",
+    changeNotes: "新增二期标准场景码 outlinePlan",
+  },
+  {
+    promptId: "deep_write",
+    version: "v1.0.0",
+    category: "writing",
+    name: "深度写作",
+    description: "围绕大纲、素材和风格生成写作执行卡",
+    filePath: "system:writing",
+    functionName: "deepWrite",
+    promptContent: "你是资深专栏写作教练。请基于标题、大纲、素材、人设、受众和禁词约束，输出真正可执行的写作执行卡，明确章节任务、事实锚点、表达约束、情绪节奏和结尾动作，不要空泛复述大纲。",
+    language: "zh-CN",
+    changeNotes: "新增二期标准场景码 deepWrite",
   },
   {
     promptId: "fact_check",
@@ -134,6 +182,30 @@ const DEFAULT_PROMPT_SEEDS = [
     promptContent: "你是终稿润色编辑。润色只负责表达，不负责新增事实。请评估正文的表达方式、金句节奏、专业性、通俗度和情绪转折，给出可直接执行的语言优化建议、重写开头和可落句的金句方向，避免空泛夸奖。",
     language: "zh-CN",
     changeNotes: "补强文笔润色对表达约束、重写开头和节奏建议的要求",
+  },
+  {
+    promptId: "layout_extract",
+    version: "v1.0.0",
+    category: "publish",
+    name: "排版提取",
+    description: "分析参考文章排版结构并生成模板线索",
+    filePath: "system:publish",
+    functionName: "layoutExtract",
+    promptContent: "你是微信排版分析师。请从参考文章里提取标题层级、分隔节奏、引用样式、重点标记、推荐区块和整体视觉结构，输出可转成模板 DSL 的结构化线索，不要只做审美评价。",
+    language: "zh-CN",
+    changeNotes: "新增二期标准场景码 layoutExtract",
+  },
+  {
+    promptId: "publish_guard",
+    version: "v1.0.0",
+    category: "publish",
+    name: "发布守门",
+    description: "对发布前内容完整度、证据风险和配置缺口做检查",
+    filePath: "system:publish",
+    functionName: "publishGuard",
+    promptContent: "你是发布守门编辑。请在发布前检查内容是否存在证据缺口、事实高风险、标题与正文不一致、缺少封面或模板、公众号配置缺失等问题，输出结构化阻断项、警告项和放行条件。",
+    language: "zh-CN",
+    changeNotes: "新增二期标准场景码 publishGuard",
   },
   {
     promptId: "wechat_render",
@@ -874,6 +946,165 @@ export async function getFragmentsByUser(userId: number) {
   );
 }
 
+export async function getAssetFilesByUser(userId: number) {
+  await ensureExtendedProductSchema();
+  const db = getDatabase();
+  return db.query<{
+    id: number;
+    document_id: number | null;
+    document_title: string | null;
+    asset_scope: string;
+    asset_type: string;
+    legacy_asset_id: number;
+    batch_token: string | null;
+    variant_label: string | null;
+    storage_provider: string | null;
+    public_url: string | null;
+    original_object_key: string | null;
+    compressed_object_key: string | null;
+    thumbnail_object_key: string | null;
+    mime_type: string | null;
+    byte_length: number | null;
+    status: string;
+    created_at: string;
+    updated_at: string;
+  }>(
+    `SELECT
+       af.id,
+       af.document_id,
+       d.title AS document_title,
+       af.asset_scope,
+       af.asset_type,
+       af.legacy_asset_id,
+       af.batch_token,
+       af.variant_label,
+       af.storage_provider,
+       af.public_url,
+       af.original_object_key,
+       af.compressed_object_key,
+       af.thumbnail_object_key,
+       af.mime_type,
+       af.byte_length,
+       af.status,
+       af.created_at,
+       af.updated_at
+     FROM asset_files af
+     LEFT JOIN documents d ON d.id = af.document_id
+     WHERE af.user_id = ?
+     ORDER BY af.updated_at DESC, af.id DESC`,
+    [userId],
+  );
+}
+
+function parseAssetManifest(
+  value: unknown,
+): Record<string, unknown> | null {
+  if (!value) return null;
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value) as Record<string, unknown>;
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null;
+    } catch {
+      return null;
+    }
+  }
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+}
+
+function readAssetVariantMeta(
+  value: unknown,
+): { objectKey: string | null; byteLength: number | null } {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return { objectKey: null, byteLength: null };
+  }
+  const record = value as Record<string, unknown>;
+  const objectKey = String(record.objectKey || "").trim() || null;
+  const byteLength = Number(record.byteLength || 0);
+  return {
+    objectKey,
+    byteLength: Number.isFinite(byteLength) && byteLength > 0 ? byteLength : null,
+  };
+}
+
+export async function getImageAssetStorageSummary(userId: number) {
+  await ensureExtendedProductSchema();
+  const db = getDatabase();
+  const rows = await db.query<{
+    id: number;
+    asset_type: string;
+    byte_length: number | null;
+    manifest_json: string | Record<string, unknown> | null;
+    public_url: string | null;
+    original_object_key: string | null;
+    compressed_object_key: string | null;
+    thumbnail_object_key: string | null;
+    status: string;
+  }>(
+    `SELECT
+       id,
+       asset_type,
+       byte_length,
+       manifest_json,
+       public_url,
+       original_object_key,
+       compressed_object_key,
+       thumbnail_object_key,
+       status
+     FROM asset_files
+     WHERE user_id = ? AND asset_type = ?
+     ORDER BY id ASC`,
+    [userId, "cover_image"],
+  );
+
+  const objects = new Map<string, number>();
+
+  for (const row of rows) {
+    const manifest = parseAssetManifest(row.manifest_json);
+    const variants = [
+      readAssetVariantMeta(manifest?.original),
+      readAssetVariantMeta(manifest?.compressed),
+      readAssetVariantMeta(manifest?.thumbnail),
+    ];
+
+    const fallbackKeys = [
+      { key: String(row.original_object_key || "").trim(), bytes: null as number | null },
+      { key: String(row.compressed_object_key || "").trim(), bytes: row.byte_length },
+      { key: String(row.thumbnail_object_key || "").trim(), bytes: null as number | null },
+    ];
+
+    let rowTracked = false;
+
+    for (const variant of variants) {
+      if (!variant.objectKey) continue;
+      rowTracked = true;
+      const current = objects.get(variant.objectKey) ?? 0;
+      objects.set(variant.objectKey, Math.max(current, variant.byteLength ?? 0));
+    }
+
+    for (const fallback of fallbackKeys) {
+      if (!fallback.key || objects.has(fallback.key)) continue;
+      rowTracked = true;
+      const bytes = Number(fallback.bytes || 0);
+      objects.set(fallback.key, Number.isFinite(bytes) && bytes > 0 ? bytes : 0);
+    }
+
+    if (rowTracked) {
+      continue;
+    }
+
+    const bytes = Number(row.byte_length || 0);
+    const fallbackIdentity = String(row.public_url || "").trim() || `asset-file:${row.id}`;
+    objects.set(fallbackIdentity, Number.isFinite(bytes) && bytes > 0 ? bytes : 0);
+  }
+
+  return {
+    assetRecordCount: rows.length,
+    readyAssetRecordCount: rows.filter((row) => row.status === "ready").length,
+    uniqueObjectCount: objects.size,
+    usedBytes: Array.from(objects.values()).reduce((total, value) => total + value, 0),
+  };
+}
+
 export async function createFragment(input: {
   userId: number;
   sourceType: string;
@@ -1304,13 +1535,18 @@ export async function createWechatSyncLog(input: {
   requestSummary?: unknown;
   responseSummary?: unknown;
   failureReason?: string | null;
+  failureCode?: string | null;
   retryCount?: number;
+  documentVersionHash?: string | null;
+  templateId?: string | null;
+  idempotencyKey?: string | null;
 }) {
+  await ensureExtendedProductSchema();
   const db = getDatabase();
   await db.exec(
     `INSERT INTO wechat_sync_logs (
-      user_id, document_id, wechat_connection_id, media_id, status, request_summary, response_summary, failure_reason, retry_count, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      user_id, document_id, wechat_connection_id, media_id, status, request_summary, response_summary, failure_reason, failure_code, retry_count, document_version_hash, template_id, idempotency_key, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       input.userId,
       input.documentId,
@@ -1320,7 +1556,11 @@ export async function createWechatSyncLog(input: {
       input.requestSummary ?? null,
       input.responseSummary ?? null,
       input.failureReason ?? null,
+      input.failureCode ?? null,
       input.retryCount ?? 0,
+      input.documentVersionHash ?? null,
+      input.templateId ?? null,
+      input.idempotencyKey ?? null,
       new Date().toISOString(),
       new Date().toISOString(),
     ],
@@ -1328,6 +1568,7 @@ export async function createWechatSyncLog(input: {
 }
 
 export async function getWechatSyncLogs(userId: number) {
+  await ensureExtendedProductSchema();
   const db = getDatabase();
   return db.query<{
     id: number;
@@ -1339,7 +1580,11 @@ export async function getWechatSyncLogs(userId: number) {
     request_summary: string | Record<string, unknown> | null;
     response_summary: string | Record<string, unknown> | null;
     failure_reason: string | null;
+    failure_code: string | null;
     retry_count: number;
+    document_version_hash: string | null;
+    template_id: string | null;
+    idempotency_key: string | null;
     created_at: string;
   }>(
     `SELECT
@@ -1352,7 +1597,11 @@ export async function getWechatSyncLogs(userId: number) {
        l.request_summary,
        l.response_summary,
        l.failure_reason,
+       l.failure_code,
        l.retry_count,
+       l.document_version_hash,
+       l.template_id,
+       l.idempotency_key,
        l.created_at
      FROM wechat_sync_logs l
      INNER JOIN documents d ON d.id = l.document_id
@@ -1360,6 +1609,45 @@ export async function getWechatSyncLogs(userId: number) {
      WHERE l.user_id = ?
      ORDER BY l.id DESC`,
     [userId],
+  );
+}
+
+export async function getLatestWechatSyncLogForDocument(input: {
+  userId: number;
+  documentId: number;
+  wechatConnectionId?: number | null;
+  documentVersionHash?: string | null;
+}) {
+  await ensureExtendedProductSchema();
+  const db = getDatabase();
+  const clauses = ["user_id = ?", "document_id = ?"];
+  const params: unknown[] = [input.userId, input.documentId];
+  if (input.wechatConnectionId != null) {
+    clauses.push("wechat_connection_id = ?");
+    params.push(input.wechatConnectionId);
+  }
+  if (input.documentVersionHash) {
+    clauses.push("document_version_hash = ?");
+    params.push(input.documentVersionHash);
+  }
+  return db.queryOne<{
+    id: number;
+    media_id: string | null;
+    status: string;
+    failure_reason: string | null;
+    failure_code: string | null;
+    retry_count: number;
+    document_version_hash: string | null;
+    template_id: string | null;
+    idempotency_key: string | null;
+    created_at: string;
+  }>(
+    `SELECT id, media_id, status, failure_reason, failure_code, retry_count, document_version_hash, template_id, idempotency_key, created_at
+     FROM wechat_sync_logs
+     WHERE ${clauses.join(" AND ")}
+     ORDER BY id DESC
+     LIMIT 1`,
+    params,
   );
 }
 

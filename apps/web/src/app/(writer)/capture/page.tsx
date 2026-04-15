@@ -1,10 +1,14 @@
 import { CaptureForms } from "@/components/writer-client";
 import { CaptureStudio } from "@/components/writer-views";
+import { hasAuthorPersona } from "@/lib/author-personas";
 import { requireWriterSession } from "@/lib/page-auth";
 import { getFragmentsByUser } from "@/lib/repositories";
 
 export default async function CapturePage() {
   const { session } = await requireWriterSession();
+  if (!(await hasAuthorPersona(session.userId))) {
+    return null;
+  }
   const fragments = await getFragmentsByUser(session.userId);
 
   return (

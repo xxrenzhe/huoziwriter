@@ -1,7 +1,7 @@
 import { TopicRadarStarter } from "@/components/dashboard-client";
 import { TopicSourceManagerClient } from "@/components/topic-source-client";
 import { WriterOverview } from "@/components/writer-views";
-import { getAuthorPersonas } from "@/lib/author-personas";
+import { getAuthorPersonas, hasAuthorPersona } from "@/lib/author-personas";
 import { getKnowledgeCards } from "@/lib/knowledge";
 import { buildTopicAngleOptions, buildTopicJudgementShift, matchTopicToKnowledgeCards } from "@/lib/knowledge-match";
 import { getCustomTopicSourceLimit, getUserPlanContext } from "@/lib/plan-access";
@@ -9,8 +9,21 @@ import { requireWriterSession } from "@/lib/page-auth";
 import { getVisibleTopicRecommendationsForUser } from "@/lib/topic-recommendations";
 import { getVisibleTopicSources } from "@/lib/topic-radar";
 
+function parseStringList(value: string | string[] | null | undefined) {
+  if (!value) return [] as string[];
+  if (Array.isArray(value)) return value;
+  try {
+    return JSON.parse(value) as string[];
+  } catch {
+    return [];
+  }
+}
+
 export default async function RadarPage() {
   const { session } = await requireWriterSession();
+  if (!(await hasAuthorPersona(session.userId))) {
+    return null;
+  }
   const [topics, knowledgeCards, sources, planContext, personas] = await Promise.all([
     getVisibleTopicRecommendationsForUser(session.userId),
     getKnowledgeCards(session.userId),
@@ -32,6 +45,8 @@ export default async function RadarPage() {
           id: card.id,
           title: card.title,
           summary: card.summary,
+          latestChangeSummary: card.latest_change_summary,
+          overturnedJudgements: parseStringList(card.overturned_judgements_json),
           card_type: card.card_type,
           status: card.status,
           confidence_score: card.confidence_score,
@@ -99,6 +114,14 @@ export default async function RadarPage() {
                 sourceType: source.source_type ?? "news",
                 priority: source.priority ?? 100,
                 scope: source.owner_user_id == null ? "system" : "custom",
+                status: source.connector_status ?? "healthy",
+                attemptCount: source.connector_attempt_count ?? 0,
+                consecutiveFailures: source.connector_consecutive_failures ?? 0,
+                lastError: source.connector_last_error,
+                lastHttpStatus: source.connector_last_http_status,
+                nextRetryAt: source.connector_next_retry_at,
+                healthScore: source.connector_health_score ?? 100,
+                degradedReason: source.connector_degraded_reason,
               }))}
             />
           </div>

@@ -2,6 +2,8 @@ export type MatchableKnowledgeCard = {
   id: number;
   title: string;
   summary: string | null;
+  latestChangeSummary?: string | null;
+  overturnedJudgements?: string[];
   cardType?: string;
   card_type?: string;
   status: string;
@@ -19,6 +21,8 @@ export type TopicKnowledgeMatch = {
   status: string;
   confidenceScore: number;
   summary: string | null;
+  latestChangeSummary: string | null;
+  overturnedJudgements: string[];
   shared: boolean;
   ownerUsername: string | null;
 };
@@ -60,6 +64,8 @@ export function matchTopicToKnowledgeCards(topicTitle: string, cards: MatchableK
       status: card.status,
       confidenceScore: card.confidenceScore ?? card.confidence_score ?? 0.5,
       summary: card.summary ?? null,
+      latestChangeSummary: card.latestChangeSummary ?? null,
+      overturnedJudgements: Array.isArray(card.overturnedJudgements) ? card.overturnedJudgements : [],
       shared: Boolean(card.shared),
       ownerUsername: card.ownerUsername ?? card.owner_username ?? null,
     }));
@@ -78,16 +84,17 @@ export function buildTopicJudgementShift(topicTitle: string, matches: TopicKnowl
 
   const lead = matches[0];
   const summary = shorten(lead.summary);
+  const latestChange = shorten(lead.latestChangeSummary, 60);
 
   if (lead.status === "conflicted") {
-    return `旧判断出现冲突：${lead.title}${summary ? ` 当前档案里同时存在“${summary}”等相反信号。` : " 当前档案里已经出现相反信号。"}这次切角要先解释哪些事实已经打架。`;
+    return `旧判断出现冲突：${lead.title}${latestChange ? ` 最近变化是“${latestChange}”。` : summary ? ` 当前档案里同时存在“${summary}”等相反信号。` : " 当前档案里已经出现相反信号。"}这次切角要先解释哪些事实已经打架。`;
   }
 
   if (lead.status === "stale") {
-    return `旧判断可能过期：${lead.title}${summary ? ` 上次沉淀的结论是“${summary}”。` : ""}这次切角要先交代哪些新变化让旧结论不够用了。`;
+    return `旧判断可能过期：${lead.title}${latestChange ? ` 最近补入的变化是“${latestChange}”。` : summary ? ` 上次沉淀的结论是“${summary}”。` : ""}这次切角要先交代哪些新变化让旧结论不够用了。`;
   }
 
-  return `旧判断参照：${lead.title}${summary ? `，已有结论是“${summary}”。` : "。"}这次切角重点写新增变量到底修正了什么。`;
+  return `旧判断参照：${lead.title}${latestChange ? `，最近变化是“${latestChange}”。` : summary ? `，已有结论是“${summary}”。` : "。"}这次切角重点写新增变量到底修正了什么。`;
 }
 
 export function buildTopicAngleOptions(

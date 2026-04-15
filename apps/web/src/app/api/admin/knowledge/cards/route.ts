@@ -21,7 +21,6 @@ export async function GET() {
         id: card.id,
         userId: card.user_id,
         username: card.username,
-        workspaceScope: card.workspace_scope,
         cardType: card.card_type,
         title: card.title,
         summary: card.summary,

@@ -1,5 +1,7 @@
 import { getAuthorPersonas } from "./author-personas";
 import { getDatabase } from "./db";
+import { getKnowledgeCards } from "./knowledge";
+import { matchTopicToKnowledgeCards } from "./knowledge-match";
 import { getUserPlanContext } from "./plan-access";
 import { ensureExtendedProductSchema } from "./schema-bootstrap";
 import { getVisibleTopicEvents } from "./topic-radar";
@@ -573,30 +575,69 @@ async function materializeDailyTopicRecommendationsForUser(userId: number) {
     return stored;
   }
 
-  const [topics, personas, excludedTitleKeys] = await Promise.all([
+  const [topics, personas, excludedTitleKeys, knowledgeCards] = await Promise.all([
     getVisibleTopicEvents(userId),
     getAuthorPersonas(userId),
     listRecentRecommendationDedupKeys(userId, recommendationDate),
+    getKnowledgeCards(userId),
   ]);
 
-  const generated = rankTopicsByPersona({
+  const knowledgeMatchableCards = knowledgeCards.map((card) => ({
+    id: card.id,
+    title: card.title,
+    summary: card.summary,
+    latestChangeSummary: card.latest_change_summary,
+    overturnedJudgements: parseJsonArray(card.overturned_judgements_json),
+    card_type: card.card_type,
+    status: card.status,
+    confidence_score: card.confidence_score,
+  }));
+
+  const applyObservationBoost = (items: RankedTopicRecommendation[]) =>
+    items
+      .map((item) => {
+        const matches = matchTopicToKnowledgeCards(item.title, knowledgeMatchableCards, 2);
+        if (matches.length === 0) {
+          return item;
+        }
+        const lead = matches[0];
+        const observationBoost =
+          (lead.latestChangeSummary ? 8 : 0)
+          + ((lead.overturnedJudgements?.length ?? 0) > 0 ? 12 : 0)
+          + (lead.status === "conflicted" ? 10 : lead.status === "stale" ? 6 : 0);
+        const observationReason = [
+          "命中已有主题档案",
+          lead.latestChangeSummary ? `最近变化：${lead.latestChangeSummary}` : null,
+          lead.overturnedJudgements?.length ? `旧判断受影响：${lead.overturnedJudgements.slice(0, 2).join("；")}` : null,
+          lead.status === "conflicted" ? "该主题当前存在相反信号，连续观察价值更高。" : null,
+        ].filter(Boolean).join("；");
+        return {
+          ...item,
+          relevanceScore: clampScore(item.relevanceScore + observationBoost * 0.6),
+          priorityScore: clampScore(item.priorityScore + observationBoost),
+          recommendationReason: `${item.recommendationReason}${observationReason ? ` 连续观察价值：${observationReason}` : ""}`,
+        } satisfies RankedTopicRecommendation;
+      })
+      .sort((left, right) => right.priorityScore - left.priorityScore || right.relevanceScore - left.relevanceScore || right.id - left.id);
+
+  const generated = applyObservationBoost(rankTopicsByPersona({
     topics,
     personas,
     resultLimit: DAILY_RECOMMENDATION_LIMIT,
     excludedTitleKeys,
-  });
+  }));
 
   const filled =
     generated.length >= DAILY_RECOMMENDATION_LIMIT
       ? generated
-      : dedupeRecommendations({
+        : dedupeRecommendations({
           candidates: [
             ...generated,
-            ...rankTopicsByPersona({
+            ...applyObservationBoost(rankTopicsByPersona({
               topics,
               personas,
               resultLimit: DAILY_RECOMMENDATION_LIMIT * 3,
-            }),
+            })),
           ],
           resultLimit: DAILY_RECOMMENDATION_LIMIT,
         });
@@ -611,10 +652,47 @@ async function materializeDailyTopicRecommendationsForUser(userId: number) {
 }
 
 export async function getVisibleTopicRecommendationsForUser(userId: number) {
-  const [topics, planContext] = await Promise.all([
+  const [topics, planContext, knowledgeCards] = await Promise.all([
     materializeDailyTopicRecommendationsForUser(userId),
     getUserPlanContext(userId),
+    getKnowledgeCards(userId),
   ]);
 
-  return topics.slice(0, getTopicRadarVisibleLimit(planContext.effectivePlanCode));
+  const knowledgeMatchableCards = knowledgeCards.map((card) => ({
+    id: card.id,
+    title: card.title,
+    summary: card.summary,
+    latestChangeSummary: card.latest_change_summary,
+    overturnedJudgements: parseJsonArray(card.overturned_judgements_json),
+    card_type: card.card_type,
+    status: card.status,
+    confidence_score: card.confidence_score,
+  }));
+
+  const boosted = topics
+    .map((item) => {
+      const lead = matchTopicToKnowledgeCards(item.title, knowledgeMatchableCards, 1)[0];
+      if (!lead) {
+        return item;
+      }
+      const observationBoost =
+        (lead.latestChangeSummary ? 4 : 0)
+        + ((lead.overturnedJudgements?.length ?? 0) > 0 ? 6 : 0)
+        + (lead.status === "conflicted" ? 6 : lead.status === "stale" ? 3 : 0);
+      const observationReason = [
+        lead.latestChangeSummary ? `最近变化：${lead.latestChangeSummary}` : null,
+        lead.overturnedJudgements?.length ? `旧判断受影响：${lead.overturnedJudgements.slice(0, 2).join("；")}` : null,
+      ].filter(Boolean).join("；");
+      return {
+        ...item,
+        priorityScore: clampScore(item.priorityScore + observationBoost),
+        recommendationReason:
+          observationReason && !item.recommendationReason.includes("连续观察价值")
+            ? `${item.recommendationReason} 连续观察价值：${observationReason}`
+            : item.recommendationReason,
+      } satisfies RankedTopicRecommendation;
+    })
+    .sort((left, right) => right.priorityScore - left.priorityScore || right.relevanceScore - left.relevanceScore || right.id - left.id);
+
+  return boosted.slice(0, getTopicRadarVisibleLimit(planContext.effectivePlanCode));
 }

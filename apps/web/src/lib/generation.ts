@@ -20,6 +20,8 @@ type KnowledgeCardContext = {
   summary: string | null;
   keyFacts: string[];
   openQuestions?: string[];
+  latestChangeSummary?: string | null;
+  overturnedJudgements?: string[];
   status: string;
   confidenceScore: number;
   matchedFragmentCount?: number;
@@ -192,7 +194,9 @@ function buildKnowledgeGuide(knowledgeCards: KnowledgeCardContext[] = []) {
       [
         `${index + 1}. ${card.title}（状态：${card.status}，置信度：${Math.round(card.confidenceScore * 100)}%${card.matchedFragmentCount ? `，命中挂载碎片 ${card.matchedFragmentCount} 条` : ""}）`,
         card.summary ? `摘要：${card.summary}` : null,
+        card.latestChangeSummary ? `最近变化：${card.latestChangeSummary}` : null,
         card.keyFacts.length ? `关键事实：${card.keyFacts.slice(0, 3).join("；")}` : null,
+        card.overturnedJudgements?.length ? `待重验旧判断：${card.overturnedJudgements.slice(0, 2).join("；")}` : null,
         card.openQuestions?.length ? `待确认：${card.openQuestions.slice(0, 2).join("；")}` : null,
       ]
         .filter(Boolean)

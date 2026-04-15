@@ -5,9 +5,17 @@ import { WritingStyleProfilesPanel } from "@/components/writing-style-profiles-c
 import { WechatConnectionsManager } from "@/components/writer-client";
 import { SettingsOverviewCards } from "@/components/writer-views";
 import { getActiveTemplates } from "@/lib/marketplace";
-import { getAuthorPersonas, getAuthorPersonaLimitForUser } from "@/lib/author-personas";
+import { getAuthorPersonaCatalog, getAuthorPersonas, getAuthorPersonaLimitForUser, hasAuthorPersona } from "@/lib/author-personas";
 import { requireWriterSession } from "@/lib/page-auth";
-import { canExtractPrivateTemplate, getCoverImageQuotaStatus, getCustomTemplateLimit, getCustomTopicSourceLimit, getUserPlanContext, getWritingStyleProfileLimit } from "@/lib/plan-access";
+import {
+  canExtractPrivateTemplate,
+  getCoverImageQuotaStatus,
+  getCustomTemplateLimit,
+  getCustomTopicSourceLimit,
+  getImageAssetStorageQuotaStatus,
+  getUserPlanContext,
+  getWritingStyleProfileLimit,
+} from "@/lib/plan-access";
 import { getVisibleTopicSources } from "@/lib/topic-radar";
 import { getDailyGenerationUsage } from "@/lib/usage";
 import { getAffiliateOverview, getCurrentSubscriptionForUser, getUserWorkspaceAssetSummary, getWechatConnections } from "@/lib/repositories";
@@ -55,6 +63,15 @@ function formatAssetDate(value: string | null | undefined) {
   });
 }
 
+function formatBytes(value: number | null | undefined) {
+  const size = Number(value || 0);
+  if (!Number.isFinite(size) || size <= 0) return "0 B";
+  if (size >= 1024 * 1024 * 1024) return `${(size / 1024 / 1024 / 1024).toFixed(1)} GB`;
+  if (size >= 1024 * 1024) return `${(size / 1024 / 1024).toFixed(1)} MB`;
+  if (size >= 1024) return `${Math.round(size / 1024)} KB`;
+  return `${size} B`;
+}
+
 function formatConnectionStatus(status: string) {
   if (status === "valid") return "可发布";
   if (status === "expired") return "待刷新";
@@ -76,16 +93,21 @@ function formatSourceTypeLabel(value: string | null | undefined) {
 
 export default async function SettingsPage() {
   const { session, user } = await requireWriterSession();
-  const [connections, dailyGenerationUsage, affiliate, topicSources, subscription, coverImageQuota, planContext, personas, personaLimit, writingStyleProfiles, workspaceAssets, templates] = await Promise.all([
+  if (!(await hasAuthorPersona(session.userId))) {
+    return null;
+  }
+  const [connections, dailyGenerationUsage, affiliate, topicSources, subscription, coverImageQuota, imageAssetQuota, planContext, personas, personaLimit, personaCatalog, writingStyleProfiles, workspaceAssets, templates] = await Promise.all([
     getWechatConnections(session.userId),
     getDailyGenerationUsage(session.userId),
     getAffiliateOverview(session.userId),
     getVisibleTopicSources(session.userId),
     getCurrentSubscriptionForUser(session.userId),
     getCoverImageQuotaStatus(session.userId),
+    getImageAssetStorageQuotaStatus(session.userId),
     getUserPlanContext(session.userId),
     getAuthorPersonas(session.userId),
     getAuthorPersonaLimitForUser(session.userId),
+    getAuthorPersonaCatalog(),
     getWritingStyleProfiles(session.userId),
     getUserWorkspaceAssetSummary(session.userId),
     getActiveTemplates(session.userId),
@@ -208,7 +230,7 @@ export default async function SettingsPage() {
           ["微信公众号授权", canManageWechatConnections ? `当前已绑定 ${connections.length} 个公众号连接，默认连接可直接用于草稿箱推送。` : `当前套餐为 ${currentPlan?.name || effectivePlanCode}，暂不开放公众号连接与草稿箱推送。`],
           [
             "订阅与配额",
-            `当前套餐为 ${currentPlan?.name || effectivePlanCode}，今日生成 ${dailyGenerationUsage}${currentPlan?.daily_generation_limit == null ? " / 不限" : ` / ${currentPlan.daily_generation_limit}`}，封面图 ${coverImageQuota.used}${coverImageQuota.limit == null ? " / 不限" : ` / ${coverImageQuota.limit}`}。`,
+            `当前套餐为 ${currentPlan?.name || effectivePlanCode}，今日生成 ${dailyGenerationUsage}${currentPlan?.daily_generation_limit == null ? " / 不限" : ` / ${currentPlan.daily_generation_limit}`}，封面图 ${coverImageQuota.used}${coverImageQuota.limit == null ? " / 不限" : ` / ${coverImageQuota.limit}`}，图片资产空间 ${formatBytes(imageAssetQuota.usedBytes)} / ${formatBytes(imageAssetQuota.limitBytes)}。`,
           ],
           [
             "推荐与增长",
@@ -245,6 +267,9 @@ export default async function SettingsPage() {
               ["作者人设", "#persona-assets"],
               ["写作风格", "#style-assets"],
               ["模板资产", "#template-assets"],
+              ["碎片素材", "/fragments"],
+              ["主题档案", "/knowledge"],
+              ["图片资产", "/assets"],
               ["信息源配置", "#topic-sources"],
               ["账号信息", "#account-profile"],
               ["订阅与账单", "#billing-center"],
@@ -420,6 +445,18 @@ export default async function SettingsPage() {
               <Link href="/discover" className="border border-stone-300 bg-white px-4 py-3 text-sm text-ink">
                 管理模板与排版基因
               </Link>
+              <Link href="/knowledge" className="border border-stone-300 bg-white px-4 py-3 text-sm text-ink">
+                查看主题档案
+              </Link>
+              <Link href="/assets" className="border border-stone-300 bg-white px-4 py-3 text-sm text-ink">
+                打开图片资产
+              </Link>
+              <Link href="/fragments" className="border border-stone-300 bg-white px-4 py-3 text-sm text-ink">
+                查看碎片素材
+              </Link>
+              <Link href="/connections" className="border border-stone-300 bg-white px-4 py-3 text-sm text-ink">
+                管理发布连接
+              </Link>
               <Link href="/radar" className="border border-stone-300 bg-white px-4 py-3 text-sm text-ink">
                 去情绪罗盘
               </Link>
@@ -433,12 +470,13 @@ export default async function SettingsPage() {
           </div>
           <div id="persona-assets" className="border border-stone-300/40 bg-white p-6 shadow-ink">
             <AuthorPersonaManager
-              initialPersonas={personas}
-              maxCount={personaLimit}
-              currentPlanName={currentPlan?.name || effectivePlanCode}
-              canAnalyzeFromSources={effectivePlanCode !== "free"}
-              availableWritingStyles={writingStyleProfiles.map((profile) => ({ id: profile.id, name: profile.name }))}
-            />
+        initialPersonas={personas}
+        maxCount={personaLimit}
+        currentPlanName={currentPlan?.name || effectivePlanCode}
+        canAnalyzeFromSources={effectivePlanCode !== "free"}
+        availableWritingStyles={writingStyleProfiles.map((profile) => ({ id: profile.id, name: profile.name }))}
+        tagCatalog={personaCatalog}
+      />
           </div>
           {getWritingStyleProfileLimit(effectivePlanCode) > 0 ? (
             <div id="style-assets" className="border border-stone-300/40 bg-white p-6 shadow-ink">
@@ -523,6 +561,14 @@ export default async function SettingsPage() {
                   sourceType: source.source_type ?? "news",
                   priority: source.priority ?? 100,
                   scope: source.owner_user_id == null ? "system" : "custom",
+                  status: source.connector_status ?? "healthy",
+                  attemptCount: source.connector_attempt_count ?? 0,
+                  consecutiveFailures: source.connector_consecutive_failures ?? 0,
+                  lastError: source.connector_last_error,
+                  lastHttpStatus: source.connector_last_http_status,
+                  nextRetryAt: source.connector_next_retry_at,
+                  healthScore: source.connector_health_score ?? 100,
+                  degradedReason: source.connector_degraded_reason,
                 }))}
               />
             </div>
@@ -574,8 +620,10 @@ export default async function SettingsPage() {
               <div>碎片容量：{currentPlan?.fragment_limit == null ? "不限" : `${currentPlan.fragment_limit} 条`}</div>
               <div>死刑词上限：{currentPlan?.custom_banned_word_limit == null ? "不限" : `${currentPlan.custom_banned_word_limit} 个`}</div>
               <div>封面图额度：{coverImageQuota.used}{coverImageQuota.limit == null ? " / 不限" : ` / ${coverImageQuota.limit}`}</div>
+              <div>图片资产空间：{formatBytes(imageAssetQuota.usedBytes)} / {formatBytes(imageAssetQuota.limitBytes)}</div>
               <div>私有模板资产：{customTemplateLimit > 0 ? `${ownedTemplates.length} / ${customTemplateLimit}` : "未开放"}</div>
               <div>自定义信源：{customTopicSourceLimit > 0 ? `${customTopicSources.length} / ${customTopicSourceLimit}` : "未开放"}</div>
+              <div>唯一图片对象：{imageAssetQuota.uniqueObjectCount} 个</div>
               <div>订阅来源：{subscription?.source || "manual"}</div>
             </div>
             <div className="mt-6 flex flex-wrap gap-3">

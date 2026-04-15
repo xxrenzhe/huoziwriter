@@ -1,4 +1,5 @@
 import { requireAdmin } from "@/lib/auth";
+import { syncCoverAssetToAssetFiles } from "@/lib/asset-files";
 import { appendAuditLog } from "@/lib/audit";
 import { getDatabase } from "@/lib/db";
 import { fail, ok } from "@/lib/http";
@@ -115,6 +116,20 @@ export async function POST(request: Request) {
               target.id,
             ],
           );
+          await syncCoverAssetToAssetFiles({
+            assetScope: "cover",
+            legacyAssetId: target.id,
+            userId: target.userId,
+            documentId: target.documentId,
+            batchToken: target.batchToken,
+            variantLabel: target.variantLabel,
+            imageUrl: rebuilt.imageUrl,
+            storageProvider: rebuilt.storageProvider,
+            originalObjectKey: rebuilt.originalObjectKey,
+            compressedObjectKey: rebuilt.compressedObjectKey,
+            thumbnailObjectKey: rebuilt.thumbnailObjectKey,
+            assetManifestJson: rebuilt.assetManifest,
+          });
         } else {
           await db.exec(
             `UPDATE cover_image_candidates
@@ -130,6 +145,20 @@ export async function POST(request: Request) {
               target.id,
             ],
           );
+          await syncCoverAssetToAssetFiles({
+            assetScope: "candidate",
+            legacyAssetId: target.id,
+            userId: target.userId,
+            documentId: target.documentId,
+            batchToken: target.batchToken,
+            variantLabel: target.variantLabel,
+            imageUrl: rebuilt.imageUrl,
+            storageProvider: rebuilt.storageProvider,
+            originalObjectKey: rebuilt.originalObjectKey,
+            compressedObjectKey: rebuilt.compressedObjectKey,
+            thumbnailObjectKey: rebuilt.thumbnailObjectKey,
+            assetManifestJson: rebuilt.assetManifest,
+          });
         }
         rebuiltCount += 1;
       } catch (error) {

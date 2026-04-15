@@ -19,7 +19,11 @@ export async function GET() {
       requestSummary: log.request_summary,
       responseSummary: log.response_summary,
       failureReason: log.failure_reason,
+      failureCode: log.failure_code,
       retryCount: log.retry_count,
+      documentVersionHash: log.document_version_hash,
+      templateId: log.template_id,
+      idempotencyKey: log.idempotency_key,
       createdAt: log.created_at,
     })),
   );

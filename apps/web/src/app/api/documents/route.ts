@@ -1,3 +1,4 @@
+import { assertAuthorPersonaReady } from "@/lib/author-personas";
 import { createDocument, getDocumentsByUser } from "@/lib/repositories";
 import { ensureUserSession } from "@/lib/auth";
 import { fail, ok } from "@/lib/http";
@@ -26,11 +27,16 @@ export async function POST(request: Request) {
   if (!session) {
     return fail("未登录", 401);
   }
-  const body = await request.json();
-  const document = await createDocument(session.userId, body.title || "未命名文稿");
-  return ok({
-    id: document?.id,
-    title: document?.title,
-    status: document?.status,
-  });
+  try {
+    await assertAuthorPersonaReady(session.userId);
+    const body = await request.json();
+    const document = await createDocument(session.userId, body.title || "未命名文稿");
+    return ok({
+      id: document?.id,
+      title: document?.title,
+      status: document?.status,
+    });
+  } catch (error) {
+    return fail(error instanceof Error ? error.message : "创建文稿失败", 400);
+  }
 }

@@ -30,6 +30,7 @@ export function analyzeAiNoise(content: string) {
       longSentenceCount: 0,
       repeatedConnectorCount: 0,
       findings: [] as string[],
+      reasonDetails: [] as Array<{ label: string; reason: string; count: number; suggestion?: string }>,
       suggestions: ["先粘贴一段草稿，再开始扫描。"],
     };
   }
@@ -50,6 +51,48 @@ export function analyzeAiNoise(content: string) {
 
   const score = Math.min(100, rawScore);
   const level = score >= 80 ? "high" : score >= 45 ? "medium" : "low";
+  const reasonDetails = [
+    bannedHits.length
+      ? {
+          label: "死刑词",
+          reason: "这类抽象词会直接把句子推向机器腔，读者很难看到具体动作、对象和结果。",
+          count: bannedHits.reduce((total, item) => total + item.count, 0),
+          suggestion: "把抽象判断改成具体事实、动作关系或代价结果。",
+        }
+      : null,
+    emptyHits.length
+      ? {
+          label: "空话短语",
+          reason: "句子像正确但空泛的结论模板，没有事实锚点时会明显拉低信息密度。",
+          count: emptyHits.reduce((total, item) => total + item.count, 0),
+          suggestion: "空话后面必须补数字、案例、角色或证据，否则整句删除。",
+        }
+      : null,
+    transitionHits.length
+      ? {
+          label: "过度转折",
+          reason: "连接词太密时，文章会更像播音稿或汇报稿，而不是自然推进的论证。",
+          count: transitionHits.reduce((total, item) => total + item.count, 0),
+          suggestion: "删掉无效转折，直接让事实句或判断句接上下一句。",
+        }
+      : null,
+    longSentences.length
+      ? {
+          label: "长句堆叠",
+          reason: "一口气塞进多个动作和判断，会让段落显得模板化且不利于读者换气。",
+          count: longSentences.length,
+          suggestion: "把每句拆到只保留一个核心动作或判断。",
+        }
+      : null,
+    repeatedConnectorCount > 2
+      ? {
+          label: "连接词重复",
+          reason: "反复使用同一类起手式，会形成模型式重复句型。",
+          count: repeatedConnectorCount,
+          suggestion: "删掉高频起手式，直接进入事实、对象和结论。",
+        }
+      : null,
+  ].filter(Boolean) as Array<{ label: string; reason: string; count: number; suggestion?: string }>;
   const findings = [
     bannedHits.length ? `命中死刑词：${bannedHits.map((item) => item.phrase).join(" / ")}` : null,
     emptyHits.length ? `命中空话短语：${emptyHits.map((item) => item.phrase).join(" / ")}` : null,
@@ -74,6 +117,7 @@ export function analyzeAiNoise(content: string) {
     longSentenceCount: longSentences.length,
     repeatedConnectorCount,
     findings,
+    reasonDetails,
     suggestions,
   };
 }

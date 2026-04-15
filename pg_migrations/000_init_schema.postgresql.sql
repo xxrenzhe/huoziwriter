@@ -445,6 +445,19 @@ CREATE TABLE IF NOT EXISTS author_persona_sources (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS persona_tags (
+  id BIGSERIAL PRIMARY KEY,
+  tag_key TEXT NOT NULL UNIQUE,
+  tag_name TEXT NOT NULL,
+  tag_type TEXT NOT NULL,
+  description TEXT,
+  sort_order INTEGER NOT NULL DEFAULT 100,
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  is_system BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS language_guard_rules (
   id BIGSERIAL PRIMARY KEY,
   user_id BIGINT NOT NULL,
@@ -585,6 +598,29 @@ CREATE TABLE IF NOT EXISTS cover_images (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS asset_files (
+  id BIGSERIAL PRIMARY KEY,
+  user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  document_id BIGINT REFERENCES documents(id) ON DELETE SET NULL,
+  asset_scope TEXT NOT NULL,
+  asset_type TEXT NOT NULL DEFAULT 'cover_image',
+  legacy_asset_id BIGINT NOT NULL,
+  batch_token TEXT,
+  variant_label TEXT,
+  storage_provider TEXT,
+  public_url TEXT,
+  original_object_key TEXT,
+  compressed_object_key TEXT,
+  thumbnail_object_key TEXT,
+  mime_type TEXT,
+  byte_length INTEGER,
+  status TEXT NOT NULL DEFAULT 'ready',
+  manifest_json JSONB,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(asset_scope, legacy_asset_id)
+);
+
 CREATE TABLE IF NOT EXISTS cover_image_candidates (
   id BIGSERIAL PRIMARY KEY,
   user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -693,7 +729,16 @@ INSERT INTO ai_model_routes (scene_code, primary_model, fallback_model, descript
   ('visionNote', 'gemini-3.0-flash', 'gpt-5.4-mini', '截图视觉理解与结构化笔记生成'),
   ('documentWrite', 'claude-sonnet-4-6', 'claude-haiku-4-5', '正文生成与改写'),
   ('styleExtract', 'gemini-3.0-flash', 'gpt-5.4-mini', '文章写作风格提取与结构化分析'),
+  ('topicSupplement', 'gemini-3.0-flash', 'gpt-5.4-mini', '选题补证信源补充与查询建议生成'),
+  ('topicSourceScout', 'gemini-3.0-flash', 'gpt-5.4-mini', '选题雷达补充信源建议与补证线索生成'),
+  ('audienceProfile', 'claude-sonnet-4-6', 'claude-haiku-4-5', '受众画像分析与表达策略生成'),
+  ('outlinePlan', 'claude-sonnet-4-6', 'claude-haiku-4-5', '结构化大纲规划与标题策略生成'),
+  ('deepWrite', 'claude-sonnet-4-6', 'claude-haiku-4-5', '深度写作执行卡与正文生成策略'),
+  ('factCheck', 'gpt-5.4-mini', 'gpt-5.4-nano', '事实核查、风险分级与证据缺口分析'),
+  ('prosePolish', 'gpt-5.4-mini', 'gpt-5.4-nano', '文笔润色、语言节奏与表达修订建议'),
   ('bannedWordAudit', 'gpt-5.4-mini', 'gpt-5.4-nano', '死刑词与长句审校'),
+  ('layoutExtract', 'gemini-3.0-flash', 'gpt-5.4-mini', '文章排版结构提取与模板 DSL 生成'),
+  ('publishGuard', 'gpt-5.4-mini', 'gpt-5.4-nano', '发布前守门检查与风险总结'),
   ('wechatRender', 'internal-renderer', 'fallback-renderer', '微信排版渲染')
 ON CONFLICT (scene_code) DO NOTHING;
 
@@ -704,11 +749,17 @@ INSERT INTO prompt_versions (
   ('vision_note', 'v1.0.0', 'capture', '截图视觉理解', '从截图中提取可复用的事实与上下文', 'system:capture', 'visionNote', '你是截图理解编辑。必须先看图，再提取正文、数字、图表结论、界面状态和异常信号，输出可复用的写作碎片。', 'zh-CN', TRUE, '初始化版本'),
   ('document_write', 'v1.0.0', 'writing', '正文生成', '根据碎片和大纲生成正文', 'system:writing', 'documentWrite', '你是中文专栏作者。根据节点和碎片生成短句、克制、反机器腔调的正文。', 'zh-CN', TRUE, '初始化版本'),
   ('style_extract', 'v1.0.0', 'analysis', '写作风格提取', '从网页文章中提炼写作风格画像', 'system:analysis', 'styleExtract', '你是中文文风分析师。必须基于正文内容抽取语气、句式、结构、开头结尾习惯和模仿提示，不要空泛赞美。', 'zh-CN', TRUE, '初始化版本'),
+  ('topic_supplement', 'v1.0.0', 'analysis', '选题补证', '围绕选题生成补充信源、检索词与补证清单', 'system:analysis', 'topicSupplement', '你是选题补证编辑。围绕一个待写选题，优先推荐 YouTube、Reddit、X、Podcast、Spotify、主流新闻等第一手或近一手信源的补证方向，输出可直接执行的查询词、平台建议与验证清单，不要把模型猜测写成事实。', 'zh-CN', TRUE, '新增二期标准场景码 topicSupplement'),
   ('banned_word_audit', 'v1.0.0', 'review', '死刑词审校', '检查并替换死刑词与长句', 'system:review', 'bannedWordAudit', '你是终审编辑。删除禁用词，保留事实，拆解长句。', 'zh-CN', TRUE, '初始化版本'),
+  ('audience_profile', 'v1.0.0', 'analysis', '受众画像', '根据选题、人设和素材生成读者画像与表达建议', 'system:analysis', 'audienceProfile', '你是内容策略编辑。你要为一篇中文内容判断真正应该写给谁看、怎么说他们才会继续读。必须优先给出可执行的读者分层、痛点、动机、表达方式、背景认知分层和通俗度建议，避免空泛人口学描述，避免营销套话。', 'zh-CN', TRUE, '新增二期标准场景码 audienceProfile'),
   ('audience_analysis', 'v1.0.0', 'analysis', '受众分析', '根据选题、人设和素材生成读者画像与表达建议', 'system:analysis', 'audienceAnalysis', '你是内容策略编辑。请基于选题、人设、素材和当前文稿，输出结构化的受众分析，重点给出读者分层、痛点、表达方式与语言通俗度建议。', 'zh-CN', TRUE, '初始化版本'),
+  ('outline_plan', 'v1.0.0', 'writing', '大纲规划场景', '根据选题、人设、受众和素材生成结构化大纲', 'system:writing', 'outlinePlan', '你是专栏主编。请基于主题、人设、受众和素材，设计一份真正可写的结构化文章大纲。大纲必须体现核心观点、论证递进、证据挂载、情绪转折、开头策略和结尾动作，不能把信息并列堆砌成目录。', 'zh-CN', TRUE, '新增二期标准场景码 outlinePlan'),
   ('outline_planning', 'v1.0.0', 'writing', '大纲规划', '根据选题、人设、受众和素材生成结构化大纲', 'system:writing', 'outlinePlanning', '你是专栏主编。请基于主题、人设、受众和素材，输出结构化文章大纲，覆盖核心观点、论证路径、情绪转折、开头钩子和结尾收束。', 'zh-CN', TRUE, '初始化版本'),
+  ('deep_write', 'v1.0.0', 'writing', '深度写作', '围绕大纲、素材和风格生成写作执行卡', 'system:writing', 'deepWrite', '你是资深专栏写作教练。请基于标题、大纲、素材、人设、受众和禁词约束，输出真正可执行的写作执行卡，明确章节任务、事实锚点、表达约束、情绪节奏和结尾动作，不要空泛复述大纲。', 'zh-CN', TRUE, '新增二期标准场景码 deepWrite'),
   ('fact_check', 'v1.0.0', 'review', '事实核查', '对正文中的事实、数据和案例进行核查提示', 'system:review', 'factCheck', '你是事实核查编辑。请标出正文里需要核查的数据、案例、时间与因果推断，区分已验证、待补证据、风险表述与主观判断。', 'zh-CN', TRUE, '初始化版本'),
   ('prose_polish', 'v1.0.0', 'review', '文笔润色', '对正文的表达方式、节奏和情绪转折给出润色建议', 'system:review', 'prosePolish', '你是终稿润色编辑。请评估正文的表达方式、金句节奏、专业性、通俗度和情绪转折，输出可执行的语言优化建议。', 'zh-CN', TRUE, '初始化版本'),
+  ('layout_extract', 'v1.0.0', 'publish', '排版提取', '分析参考文章排版结构并生成模板线索', 'system:publish', 'layoutExtract', '你是微信排版分析师。请从参考文章里提取标题层级、分隔节奏、引用样式、重点标记、推荐区块和整体视觉结构，输出可转成模板 DSL 的结构化线索，不要只做审美评价。', 'zh-CN', TRUE, '新增二期标准场景码 layoutExtract'),
+  ('publish_guard', 'v1.0.0', 'publish', '发布守门', '对发布前内容完整度、证据风险和配置缺口做检查', 'system:publish', 'publishGuard', '你是发布守门编辑。请在发布前检查内容是否存在证据缺口、事实高风险、标题与正文不一致、缺少封面或模板、公众号配置缺失等问题，输出结构化阻断项、警告项和放行条件。', 'zh-CN', TRUE, '新增二期标准场景码 publishGuard'),
   ('wechat_render', 'v1.0.0', 'publish', '微信排版器', '将 Markdown 转为适合微信公众号的 HTML', 'system:publish', 'wechatRender', '你是微信排版器。输出适配公众号草稿箱的简洁 HTML。', 'zh-CN', TRUE, '初始化版本')
 ON CONFLICT (prompt_id, version) DO NOTHING;
 

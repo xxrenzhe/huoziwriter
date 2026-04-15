@@ -1,13 +1,8 @@
 import { ensureUserSession } from "@/lib/auth";
-import { completeDocumentWorkflowStage, failDocumentWorkflowStage, setDocumentWorkflowCurrentStage } from "@/lib/document-workflows";
+import { setDocumentWorkflowPendingPublishIntent } from "@/lib/document-workflows";
 import { fail, failWithData, ok } from "@/lib/http";
-import { getActiveTemplateById } from "@/lib/marketplace";
-import { assertWechatPublishAllowed, assertWechatTemplateAllowed } from "@/lib/plan-access";
-import { evaluatePublishGuard } from "@/lib/publish-guard";
-import { createWechatSyncLog, getDocumentById, getWechatConnectionRaw, saveDocument, updateWechatConnectionToken } from "@/lib/repositories";
-import { encryptSecret } from "@/lib/security";
-import { resolveTemplateRenderConfig } from "@/lib/template-rendering";
-import { publishWechatDraft } from "@/lib/wechat";
+import { assertWechatPublishAllowed } from "@/lib/plan-access";
+import { WechatPublishError, publishDocumentToWechat } from "@/lib/wechat-publish";
 
 export async function POST(request: Request) {
   const session = await ensureUserSession();
@@ -17,93 +12,48 @@ export async function POST(request: Request) {
   await assertWechatPublishAllowed(session.userId);
 
   const body = await request.json();
-  const document = await getDocumentById(Number(body.documentId), session.userId);
-  if (!document) {
+  const documentId = Number(body.documentId);
+  const wechatConnectionId = Number(body.wechatConnectionId);
+  if (!Number.isInteger(documentId) || documentId <= 0) {
     return fail("文稿不存在", 404);
   }
-  const connection = await getWechatConnectionRaw(Number(body.wechatConnectionId), session.userId);
-  if (!connection) {
-    return fail("公众号连接不存在", 404);
-  }
-  if (connection.status === "disabled") {
-    return fail("公众号连接已停用", 400);
+  if (!Number.isInteger(wechatConnectionId) || wechatConnectionId <= 0) {
+    try {
+      await setDocumentWorkflowPendingPublishIntent({
+        documentId,
+        userId: session.userId,
+        intent: {
+          templateId: body.templateId ? String(body.templateId) : null,
+          reason: "missing_connection",
+        },
+      });
+    } catch (error) {
+      return fail(error instanceof Error ? error.message : "保存待恢复发布意图失败", 400);
+    }
+    return failWithData("当前还没有可用公众号连接，已保留待发布状态。", 400, {
+      code: "connection_missing",
+      retryable: false,
+    });
   }
 
   try {
-    await setDocumentWorkflowCurrentStage({
-      documentId: document.id,
+    const result = await publishDocumentToWechat({
       userId: session.userId,
-      stageCode: "publish",
+      documentId,
+      wechatConnectionId,
+      templateId: body.templateId ? String(body.templateId) : null,
+      digest: typeof body.digest === "string" ? body.digest : null,
+      author: typeof body.author === "string" ? body.author : null,
     });
-    const templateId = body.templateId ? String(body.templateId) : document.wechat_template_id;
-    await assertWechatTemplateAllowed(session.userId, templateId);
-    const publishGuard = await evaluatePublishGuard({
-      documentId: document.id,
-      userId: session.userId,
-      templateId,
-      wechatConnectionId: connection.id,
-    });
-    if (!publishGuard.canPublish) {
-      return failWithData(publishGuard.blockers.join("；"), 400, {
-        code: "publish_guard_blocked",
-        publishGuard,
+    return ok({ mediaId: result.mediaId, reused: result.reused, idempotencyKey: result.idempotencyKey });
+  } catch (error) {
+    if (error instanceof WechatPublishError) {
+      return failWithData(error.message, 400, {
+        code: error.code,
+        retryable: error.retryable,
+        publishGuard: error.publishGuard,
       });
     }
-    const template = templateId ? await getActiveTemplateById(templateId, session.userId) : null;
-    const result = await publishWechatDraft({
-      connection,
-      title: document.title,
-      markdownContent: document.markdown_content,
-      digest: body.digest,
-      author: body.author,
-      templateConfig: resolveTemplateRenderConfig(template),
-    });
-    await updateWechatConnectionToken({
-      connectionId: connection.id,
-      userId: session.userId,
-      accessTokenEncrypted: encryptSecret(result.accessToken),
-      accessTokenExpiresAt: new Date(Date.now() + result.expiresIn * 1000).toISOString(),
-      status: "valid",
-    });
-    await createWechatSyncLog({
-      userId: session.userId,
-      documentId: document.id,
-      wechatConnectionId: connection.id,
-      mediaId: result.mediaId,
-      status: "success",
-      requestSummary: result.requestSummary,
-      responseSummary: result.responseSummary,
-    });
-    await saveDocument({
-      documentId: document.id,
-      userId: session.userId,
-      status: "published",
-      wechatTemplateId: templateId ?? null,
-    });
-    await completeDocumentWorkflowStage({
-      documentId: document.id,
-      userId: session.userId,
-      stageCode: "publish",
-    });
-    return ok({ mediaId: result.mediaId });
-  } catch (error) {
-    await createWechatSyncLog({
-      userId: session.userId,
-      documentId: document.id,
-      wechatConnectionId: connection.id,
-      status: "failed",
-      failureReason: error instanceof Error ? error.message : "推送失败",
-    });
-    await saveDocument({
-      documentId: document.id,
-      userId: session.userId,
-      status: "publishFailed",
-    });
-    await failDocumentWorkflowStage({
-      documentId: document.id,
-      userId: session.userId,
-      stageCode: "publish",
-    });
     return fail(error instanceof Error ? error.message : "推送微信草稿箱失败", 400);
   }
 }

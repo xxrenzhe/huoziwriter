@@ -1,6 +1,7 @@
 import { DiscoverClient } from "@/components/discover-client";
 import Link from "next/link";
 import { WriterOverview } from "@/components/writer-views";
+import { hasAuthorPersona } from "@/lib/author-personas";
 import { getActiveTemplates, getStyleGenomes } from "@/lib/marketplace";
 import { requireWriterSession } from "@/lib/page-auth";
 import { canExtractPrivateTemplate, getCustomTemplateLimit, getTemplateAccessLimit, getUserPlanContext } from "@/lib/plan-access";
@@ -44,6 +45,9 @@ function parseConfig(value: string | null) {
 
 export default async function DiscoverPage() {
   const { session } = await requireWriterSession();
+  if (!(await hasAuthorPersona(session.userId))) {
+    return null;
+  }
   const [topics, planContext, genomes, templates] = await Promise.all([
     getVisibleTopicRecommendationsForUser(session.userId),
     getUserPlanContext(session.userId),

@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { ChangeEvent, FormEvent, startTransition, useMemo, useRef, useState } from "react";
-import { deriveAuthorPersonaName, PERSONA_IDENTITY_OPTIONS, PERSONA_WRITING_STYLE_OPTIONS } from "@/lib/persona-catalog";
+import { deriveAuthorPersonaName } from "@/lib/persona-catalog";
 
 type PersonaItem = {
   id: number;
@@ -29,6 +29,14 @@ type PersonaAnalysisFileSource = {
   mimeType: string | null;
 };
 
+type PersonaTagOption = {
+  id: number;
+  key: string;
+  label: string;
+  description?: string | null;
+  sortOrder?: number;
+};
+
 function toggleTag(current: string[], value: string) {
   if (current.includes(value)) {
     return current.filter((item) => item !== value);
@@ -45,6 +53,7 @@ export function AuthorPersonaManager({
   currentPlanName,
   canAnalyzeFromSources = false,
   availableWritingStyles = [],
+  tagCatalog,
   mandatory = false,
 }: {
   initialPersonas: PersonaItem[];
@@ -52,6 +61,10 @@ export function AuthorPersonaManager({
   currentPlanName: string;
   canAnalyzeFromSources?: boolean;
   availableWritingStyles?: Array<{ id: number; name: string }>;
+  tagCatalog: {
+    identity: PersonaTagOption[];
+    writingStyle: PersonaTagOption[];
+  };
   mandatory?: boolean;
 }) {
   const router = useRouter();
@@ -72,6 +85,8 @@ export function AuthorPersonaManager({
 
   const reachedLimit = personas.length >= maxCount;
   const shouldBlock = mandatory && personas.length === 0;
+  const identityOptions = tagCatalog.identity.map((item) => item.label);
+  const writingStyleOptions = tagCatalog.writingStyle.map((item) => item.label);
   const resolvedName = useMemo(
     () => name.trim() || deriveAuthorPersonaName(identityTags, writingStyleTags),
     [identityTags, name, writingStyleTags],
@@ -323,6 +338,12 @@ export function AuthorPersonaManager({
                     </span>
                   ))}
                 </div>
+                <div className="border border-stone-300 bg-white px-4 py-4 text-sm leading-7 text-stone-700">
+                  完成后建议按最短路径开始：
+                  <div className="mt-2">1. 先去采集页补 2-3 条素材。</div>
+                  <div>2. 再去情绪罗盘挑一个切口，不要直接空白开写。</div>
+                  <div>3. 进入编辑器后先确认标题和大纲，再写正文。</div>
+                </div>
               </div>
             ) : null}
           </div>
@@ -510,18 +531,18 @@ export function AuthorPersonaManager({
           <div className="space-y-3">
             <div className="text-xs uppercase tracking-[0.24em] text-stone-500">身份维度</div>
             <div className="flex flex-wrap gap-2">
-              {PERSONA_IDENTITY_OPTIONS.map((option) => {
-                const active = identityTags.includes(option);
+              {tagCatalog.identity.map((option) => {
+                const active = identityTags.includes(option.label);
                 return (
                   <button
-                    key={option}
+                    key={option.key}
                     type="button"
-                    onClick={() => setIdentityTags((current) => toggleTag(current, option))}
+                    onClick={() => setIdentityTags((current) => toggleTag(current, option.label))}
                     className={`border px-3 py-2 text-sm ${
                       active ? "border-cinnabar bg-cinnabar text-white" : "border-stone-300 bg-[#faf7f0] text-stone-700"
                     }`}
                   >
-                    {option}
+                    {option.label}
                   </button>
                 );
               })}
@@ -531,18 +552,18 @@ export function AuthorPersonaManager({
           <div className="space-y-3">
             <div className="text-xs uppercase tracking-[0.24em] text-stone-500">写作风格</div>
             <div className="flex flex-wrap gap-2">
-              {PERSONA_WRITING_STYLE_OPTIONS.map((option) => {
-                const active = writingStyleTags.includes(option);
+              {tagCatalog.writingStyle.map((option) => {
+                const active = writingStyleTags.includes(option.label);
                 return (
                   <button
-                    key={option}
+                    key={option.key}
                     type="button"
-                    onClick={() => setWritingStyleTags((current) => toggleTag(current, option))}
+                    onClick={() => setWritingStyleTags((current) => toggleTag(current, option.label))}
                     className={`border px-3 py-2 text-sm ${
                       active ? "border-cinnabar bg-cinnabar text-white" : "border-stone-300 bg-[#faf7f0] text-stone-700"
                     }`}
                   >
-                    {option}
+                    {option.label}
                   </button>
                 );
               })}

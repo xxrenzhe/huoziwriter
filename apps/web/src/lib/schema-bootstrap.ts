@@ -1,6 +1,8 @@
 import { STYLE_TEMPLATE_LIBRARY } from "./catalog";
+import { syncLegacyCoverAssetsToAssetFiles } from "./asset-files";
 import { getDatabase } from "./db";
 import { syncLegacyTemplateVersionsToLayoutTemplates, syncTemplateVersionToLayoutTemplates } from "./layout-templates";
+import { syncPersonaCatalogToPersonaTags } from "./persona-tags";
 import { syncLegacyTopicSourcesToSourceConnectors, syncTopicSourceToSourceConnector } from "./source-connectors";
 
 async function execAll(statements: string[]) {
@@ -188,6 +190,18 @@ export async function ensureExtendedProductSchema() {
       created_at ${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "NOW()" : "(datetime('now'))"},
       updated_at ${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "NOW()" : "(datetime('now'))"}
     )`,
+    `CREATE TABLE IF NOT EXISTS persona_tags (
+      id ${getDatabase().type === "postgres" ? "BIGSERIAL" : "INTEGER"} PRIMARY KEY ${getDatabase().type === "postgres" ? "" : "AUTOINCREMENT"},
+      tag_key TEXT NOT NULL UNIQUE,
+      tag_name TEXT NOT NULL,
+      tag_type TEXT NOT NULL,
+      description TEXT,
+      sort_order INTEGER NOT NULL DEFAULT 100,
+      is_active ${getDatabase().type === "postgres" ? "BOOLEAN" : "INTEGER"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "TRUE" : "1"},
+      is_system ${getDatabase().type === "postgres" ? "BOOLEAN" : "INTEGER"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "TRUE" : "1"},
+      created_at ${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "NOW()" : "(datetime('now'))"},
+      updated_at ${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "NOW()" : "(datetime('now'))"}
+    )`,
     `CREATE TABLE IF NOT EXISTS language_guard_rules (
       id ${getDatabase().type === "postgres" ? "BIGSERIAL" : "INTEGER"} PRIMARY KEY ${getDatabase().type === "postgres" ? "" : "AUTOINCREMENT"},
       user_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"} NOT NULL,
@@ -229,6 +243,16 @@ export async function ensureExtendedProductSchema() {
       created_at ${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "NOW()" : "(datetime('now'))"},
       updated_at ${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "NOW()" : "(datetime('now'))"}
     )`,
+    `CREATE TABLE IF NOT EXISTS first_success_guides (
+      id ${getDatabase().type === "postgres" ? "BIGSERIAL" : "INTEGER"} PRIMARY KEY ${getDatabase().type === "postgres" ? "" : "AUTOINCREMENT"},
+      user_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"} NOT NULL UNIQUE,
+      completed_steps_json TEXT,
+      guide_config_json ${getDatabase().type === "postgres" ? "JSONB" : "TEXT"},
+      dismissed_at ${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"},
+      last_viewed_at ${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"},
+      created_at ${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "NOW()" : "(datetime('now'))"},
+      updated_at ${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "NOW()" : "(datetime('now'))"}
+    )`,
     `CREATE TABLE IF NOT EXISTS style_genome_forks (
       id ${getDatabase().type === "postgres" ? "BIGSERIAL" : "INTEGER"} PRIMARY KEY ${getDatabase().type === "postgres" ? "" : "AUTOINCREMENT"},
       source_genome_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"} NOT NULL,
@@ -247,6 +271,8 @@ export async function ensureExtendedProductSchema() {
       key_facts_json TEXT,
       open_questions_json TEXT,
       conflict_flags_json ${getDatabase().type === "postgres" ? "JSONB" : "TEXT"},
+      latest_change_summary TEXT,
+      overturned_judgements_json TEXT,
       confidence_score REAL NOT NULL DEFAULT 0.5,
       status TEXT NOT NULL DEFAULT 'draft',
       last_compiled_at ${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"},
@@ -323,6 +349,28 @@ export async function ensureExtendedProductSchema() {
       prompt TEXT NOT NULL,
       image_url TEXT NOT NULL,
       created_at ${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "NOW()" : "(datetime('now'))"}
+    )`,
+    `CREATE TABLE IF NOT EXISTS asset_files (
+      id ${getDatabase().type === "postgres" ? "BIGSERIAL" : "INTEGER"} PRIMARY KEY ${getDatabase().type === "postgres" ? "" : "AUTOINCREMENT"},
+      user_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"} NOT NULL,
+      document_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"},
+      asset_scope TEXT NOT NULL,
+      asset_type TEXT NOT NULL DEFAULT 'cover_image',
+      legacy_asset_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"} NOT NULL,
+      batch_token TEXT,
+      variant_label TEXT,
+      storage_provider TEXT,
+      public_url TEXT,
+      original_object_key TEXT,
+      compressed_object_key TEXT,
+      thumbnail_object_key TEXT,
+      mime_type TEXT,
+      byte_length INTEGER,
+      status TEXT NOT NULL DEFAULT 'ready',
+      manifest_json ${getDatabase().type === "postgres" ? "JSONB" : "TEXT"},
+      created_at ${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "NOW()" : "(datetime('now'))"},
+      updated_at ${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "NOW()" : "(datetime('now'))"},
+      UNIQUE(asset_scope, legacy_asset_id)
     )`,
     `CREATE TABLE IF NOT EXISTS cover_image_candidates (
       id ${getDatabase().type === "postgres" ? "BIGSERIAL" : "INTEGER"} PRIMARY KEY ${getDatabase().type === "postgres" ? "" : "AUTOINCREMENT"},
@@ -558,10 +606,21 @@ export async function ensureExtendedProductSchema() {
   await ensureColumn("author_personas", "tone_constraints_json", "TEXT");
   await ensureColumn("author_personas", "audience_hints_json", "TEXT");
   await ensureColumn("author_personas", "source_mode", "TEXT NOT NULL DEFAULT 'manual'");
+  await ensureColumn("persona_tags", "description", "TEXT");
+  await ensureColumn("persona_tags", "sort_order", "INTEGER NOT NULL DEFAULT 100");
+  await ensureColumn("persona_tags", "is_active", `${getDatabase().type === "postgres" ? "BOOLEAN" : "INTEGER"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "TRUE" : "1"}`);
+  await ensureColumn("persona_tags", "is_system", `${getDatabase().type === "postgres" ? "BOOLEAN" : "INTEGER"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "TRUE" : "1"}`);
   await ensureColumn("knowledge_cards", "workspace_scope", "TEXT NOT NULL DEFAULT 'personal'");
   await ensureColumn("knowledge_cards", "conflict_flags_json", getDatabase().type === "postgres" ? "JSONB" : "TEXT");
+  await ensureColumn("knowledge_cards", "latest_change_summary", "TEXT");
+  await ensureColumn("knowledge_cards", "overturned_judgements_json", getDatabase().type === "postgres" ? "JSONB" : "TEXT");
+  await ensureColumn("first_success_guides", "guide_config_json", getDatabase().type === "postgres" ? "JSONB" : "TEXT");
   await ensureColumn("document_fragment_refs", "usage_mode", "TEXT NOT NULL DEFAULT 'rewrite'");
   await ensureColumn("document_workflows", "pending_publish_intent_json", getDatabase().type === "postgres" ? "JSONB" : "TEXT");
+  await ensureColumn("wechat_sync_logs", "failure_code", "TEXT");
+  await ensureColumn("wechat_sync_logs", "document_version_hash", "TEXT");
+  await ensureColumn("wechat_sync_logs", "template_id", "TEXT");
+  await ensureColumn("wechat_sync_logs", "idempotency_key", "TEXT");
   await ensureColumn("global_object_storage_configs", "provider_preset", "TEXT NOT NULL DEFAULT 'local'");
   await ensureColumn("topic_sources", "owner_user_id", getDatabase().type === "postgres" ? "BIGINT" : "INTEGER");
   await ensureColumn("topic_sources", "last_fetched_at", getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT");
@@ -633,11 +692,27 @@ export async function ensureExtendedProductSchema() {
   await ensureColumn("cover_image_candidates", "compressed_object_key", "TEXT");
   await ensureColumn("cover_image_candidates", "thumbnail_object_key", "TEXT");
   await ensureColumn("cover_image_candidates", "asset_manifest_json", getDatabase().type === "postgres" ? "JSONB" : "TEXT");
+  await ensureColumn("asset_files", "document_id", getDatabase().type === "postgres" ? "BIGINT" : "INTEGER");
+  await ensureColumn("asset_files", "asset_type", "TEXT NOT NULL DEFAULT 'cover_image'");
+  await ensureColumn("asset_files", "batch_token", "TEXT");
+  await ensureColumn("asset_files", "variant_label", "TEXT");
+  await ensureColumn("asset_files", "storage_provider", "TEXT");
+  await ensureColumn("asset_files", "public_url", "TEXT");
+  await ensureColumn("asset_files", "original_object_key", "TEXT");
+  await ensureColumn("asset_files", "compressed_object_key", "TEXT");
+  await ensureColumn("asset_files", "thumbnail_object_key", "TEXT");
+  await ensureColumn("asset_files", "mime_type", "TEXT");
+  await ensureColumn("asset_files", "byte_length", "INTEGER");
+  await ensureColumn("asset_files", "status", "TEXT NOT NULL DEFAULT 'ready'");
+  await ensureColumn("asset_files", "manifest_json", getDatabase().type === "postgres" ? "JSONB" : "TEXT");
+  await ensureColumn("asset_files", "updated_at", `${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "NOW()" : "(datetime('now'))"}`);
   await ensureTopicSourceScopedUniqueness();
   await ensureColumn("topic_sources", "source_type", "TEXT NOT NULL DEFAULT 'news'");
   await ensureColumn("topic_sources", "priority", "INTEGER NOT NULL DEFAULT 100");
   await ensureColumn("topic_sources", "last_fetched_at", getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT");
   await syncLegacyTopicSourcesToSourceConnectors();
+  await syncLegacyCoverAssetsToAssetFiles();
+  await syncPersonaCatalogToPersonaTags();
   await syncLegacyTemplateVersionsToLayoutTemplates();
 }
 
@@ -692,7 +767,13 @@ export async function ensureMarketplaceSeeds() {
   }
 
   for (const source of [
+    { name: "YouTube Official Blog", homepageUrl: "https://blog.youtube/", sourceType: "youtube", priority: 98 },
+    { name: "Reddit r/technology", homepageUrl: "https://www.reddit.com/r/technology/", sourceType: "reddit", priority: 96 },
+    { name: "The Vergecast RSS", homepageUrl: "https://feeds.megaphone.fm/vergecast", sourceType: "podcast", priority: 94 },
+    { name: "Spotify Newsroom Podcasts", homepageUrl: "https://newsroom.spotify.com/category/podcasts/", sourceType: "spotify", priority: 92 },
     { name: "晚点 LatePost", homepageUrl: "https://www.latepost.com", sourceType: "news", priority: 90 },
+    { name: "OpenAI News", homepageUrl: "https://openai.com/news/", sourceType: "blog", priority: 88 },
+    { name: "GitHub Changelog Feed", homepageUrl: "https://github.blog/changelog/feed/", sourceType: "rss", priority: 86 },
     { name: "36Kr", homepageUrl: "https://36kr.com", sourceType: "news", priority: 80 },
     { name: "华尔街日报 Wall Street Journal", homepageUrl: "https://www.wsj.com", sourceType: "news", priority: 70 },
   ]) {

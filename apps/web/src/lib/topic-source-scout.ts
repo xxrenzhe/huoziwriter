@@ -28,7 +28,7 @@ function uniqueTrimmed(values: unknown, limit = 5) {
 
 function normalizeSourceType(value: unknown) {
   const normalized = String(value || "news").trim().toLowerCase();
-  if (["youtube", "reddit", "x", "podcast", "spotify", "news"].includes(normalized)) {
+  if (["youtube", "reddit", "podcast", "spotify", "news", "blog", "rss"].includes(normalized)) {
     return normalized;
   }
   return "news";
@@ -37,9 +37,10 @@ function normalizeSourceType(value: unknown) {
 function normalizePlatform(type: string) {
   if (type === "youtube") return "YouTube";
   if (type === "reddit") return "Reddit";
-  if (type === "x") return "X";
   if (type === "podcast") return "Podcast";
   if (type === "spotify") return "Spotify";
+  if (type === "blog") return "官方 Blog / Newsroom";
+  if (type === "rss") return "RSS / Feed";
   return "主流新闻";
 }
 
@@ -79,7 +80,6 @@ function buildFallbackSuggestions(input: {
   matchedPersonaName?: string | null;
   sourceUrl?: string | null;
 }) {
-  const personaLead = input.matchedPersonaName ? `${input.matchedPersonaName} 视角` : "作者视角";
   const baseTitle = input.title.trim();
   let sourceDomain: string | null = null;
   if (input.sourceUrl) {
@@ -107,14 +107,6 @@ function buildFallbackSuggestions(input: {
       expectedValue: "补到用户反馈、反例和一线使用感受",
     },
     {
-      platform: "X",
-      sourceType: "x",
-      queryHint: `${baseTitle} ${personaLead}`,
-      reason: "快速确认事件扩散路径、关键人物发言和二次转述是否失真。",
-      freshnessHint: "优先近 48 小时时间线",
-      expectedValue: "补到关键账号原话、转发脉络与观点对撞",
-    },
-    {
       platform: "Podcast",
       sourceType: "podcast",
       queryHint: `${baseTitle} podcast interview`,
@@ -131,12 +123,20 @@ function buildFallbackSuggestions(input: {
       expectedValue: "补到较完整的讨论框架和引用线索",
     },
     {
-      platform: "主流新闻",
-      sourceType: "news",
-      queryHint: sourceDomain ? `${baseTitle} ${sourceDomain}` : `${baseTitle} 最新报道`,
-      reason: "用于交叉确认时间、数字、公司名和政策表述，防止引用失真。",
-      freshnessHint: "优先 24 小时内更新稿",
-      expectedValue: "补到可核对的数据、时间点和正式表述",
+      platform: "官方 Blog / Newsroom",
+      sourceType: "blog",
+      queryHint: sourceDomain ? `${sourceDomain} newsroom ${baseTitle}` : `${baseTitle} 官方 blog`,
+      reason: "优先补官方公告、Newsroom 和博客原文，减少被二手转述带偏。",
+      freshnessHint: "优先近 30 天原始发布",
+      expectedValue: "补到官方口径、变更说明和一手上下文",
+    },
+    {
+      platform: "RSS / Feed",
+      sourceType: "rss",
+      queryHint: sourceDomain ? `${sourceDomain} rss ${baseTitle}` : `${baseTitle} rss feed`,
+      reason: "优先找可持续订阅的 Feed 源，方便后续重复跟踪同一主题。",
+      freshnessHint: "优先近 7 天 Feed 更新",
+      expectedValue: "补到连续更新线索、时间点和可复用回链",
     },
   ] satisfies SourceSuggestion[];
 }
@@ -150,7 +150,7 @@ function buildFallbackPlan(input: {
 }) {
   return {
     summary: `围绕“${input.title}”，先补一手表达，再补时间线和数字，最后再决定最终下笔角度。`,
-    searchBrief: `Gemini 补充信源当前走降级策略。优先搜 YouTube / Reddit / X，再用 Podcast、Spotify 和主流新闻做交叉核对。${input.matchedPersonaName ? ` 当前优先贴合「${input.matchedPersonaName}」的人设切口。` : ""}`,
+    searchBrief: `Gemini 补充信源当前走降级策略。优先搜 YouTube / Reddit / Podcast / Spotify，再用官方 Blog、RSS 和主流报道做交叉核对。${input.matchedPersonaName ? ` 当前优先贴合「${input.matchedPersonaName}」的人设切口。` : ""}`,
     sourceSuggestions: buildFallbackSuggestions(input),
     verificationChecklist: [
       "至少确认 2 个独立来源都提到同一核心事实，再写进正文。",
@@ -180,9 +180,9 @@ export async function generateTopicSourceScout(input: {
     const userPrompt = [
       "请围绕下面这个待写选题，给出补充信源建议。",
       "Gemini 只做补证建议，不直接充当事实来源。",
-      "优先级：YouTube、Reddit、X、Podcast、Spotify、主流新闻。",
+      "优先级：YouTube、Reddit、Podcast、Spotify、官方 Blog / Newsroom、RSS / Feed、主流新闻。",
       "必须返回 JSON，不要解释，不要 markdown。",
-      '字段要求：{"summary":"字符串","searchBrief":"字符串","sourceSuggestions":[{"platform":"字符串","sourceType":"youtube|reddit|x|podcast|spotify|news","queryHint":"字符串","reason":"字符串","freshnessHint":"字符串","expectedValue":"字符串"}],"verificationChecklist":[""]}',
+      '字段要求：{"summary":"字符串","searchBrief":"字符串","sourceSuggestions":[{"platform":"字符串","sourceType":"youtube|reddit|podcast|spotify|blog|rss|news","queryHint":"字符串","reason":"字符串","freshnessHint":"字符串","expectedValue":"字符串"}],"verificationChecklist":[""]}',
       "sourceSuggestions 返回 4-6 条，verificationChecklist 返回 3-5 条。",
       "queryHint 必须是用户可直接复制去搜索的短查询；reason 必须解释为什么这个平台值得补证。",
       "不要编造已经找到的事实，不要输出具体数据结论。",
@@ -195,7 +195,7 @@ export async function generateTopicSourceScout(input: {
     ].join("\n");
 
     const result = await generateSceneText({
-      sceneCode: "topicSourceScout",
+      sceneCode: "topicSupplement",
       systemPrompt,
       userPrompt,
       temperature: 0.2,

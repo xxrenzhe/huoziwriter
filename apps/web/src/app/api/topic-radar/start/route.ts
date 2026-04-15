@@ -1,3 +1,4 @@
+import { assertAuthorPersonaReady } from "@/lib/author-personas";
 import { ensureUserSession } from "@/lib/auth";
 import { generateDocumentStageArtifact } from "@/lib/document-stage-artifacts";
 import { setDocumentWorkflowCurrentStage } from "@/lib/document-workflows";
@@ -48,6 +49,7 @@ export async function POST(request: Request) {
     return fail("未登录", 401);
   }
   try {
+    await assertAuthorPersonaReady(session.userId);
     await assertTopicRadarStartAllowed(session.userId);
     await assertFragmentQuota(session.userId);
     const body = await request.json();
@@ -109,7 +111,7 @@ export async function POST(request: Request) {
       knowledgeHints: matchedCards
         .map((matchedCard) => matchedCardLookup.get(matchedCard.id))
         .filter((card): card is NonNullable<typeof card> => Boolean(card))
-        .map((card) => `${card.title}${card.summary ? `：${card.summary.slice(0, 60)}` : ""}`),
+        .map((card) => `${card.title}${card.latest_change_summary ? `：最近变化 ${card.latest_change_summary.slice(0, 60)}` : card.summary ? `：${card.summary.slice(0, 60)}` : ""}`),
     });
 
     for (const [index, blueprint] of nodeBlueprints.entries()) {

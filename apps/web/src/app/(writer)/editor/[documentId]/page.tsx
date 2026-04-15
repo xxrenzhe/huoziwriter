@@ -1,13 +1,23 @@
 import { DocumentEditorClient } from "@/components/writer-client";
+import { hasAuthorPersona } from "@/lib/author-personas";
 import { getDocumentAuthoringStyleContext } from "@/lib/document-authoring-style-context";
 import { getDocumentStageArtifacts } from "@/lib/document-stage-artifacts";
+import { getDocumentWritingContext } from "@/lib/document-writing-context";
 import { getDocumentWorkflow } from "@/lib/document-workflows";
 import { getDocumentNodes } from "@/lib/document-outline";
 import { getRelevantKnowledgeCardsForDocument } from "@/lib/knowledge";
 import { getLanguageGuardRules } from "@/lib/language-guard";
 import { getActiveTemplates, getOwnedStyleGenomes } from "@/lib/marketplace";
 import { requireWriterSession } from "@/lib/page-auth";
-import { canUseCoverImageReference, canUseHistoryReferences, getCoverImageQuotaStatus, getSnapshotRetentionDays, getTemplateAccessLimit, getUserPlanContext } from "@/lib/plan-access";
+import {
+  canUseCoverImageReference,
+  canUseHistoryReferences,
+  getCoverImageQuotaStatus,
+  getImageAssetStorageQuotaStatus,
+  getSnapshotRetentionDays,
+  getTemplateAccessLimit,
+  getUserPlanContext,
+} from "@/lib/plan-access";
 import { getDocumentById, getDocumentImagePrompts, getDocumentSnapshots, getFragmentsByUser, getLatestCoverImage, getLatestCoverImageCandidates, getWechatConnections, getWechatSyncLogs } from "@/lib/repositories";
 
 export default async function EditorPage({
@@ -16,8 +26,11 @@ export default async function EditorPage({
   params: { documentId: string };
 }) {
   const { session } = await requireWriterSession();
+  if (!(await hasAuthorPersona(session.userId))) {
+    return null;
+  }
   const snapshotRetentionDays = await getSnapshotRetentionDays(session.userId);
-  const [document, fragments, languageGuardRules, connections, snapshots, planContext, nodes, workflow, stageArtifacts, coverImage, coverImageCandidates, imagePrompts, styleGenomes, templates, syncLogs, coverImageQuota, authoringContext] = await Promise.all([
+  const [document, fragments, languageGuardRules, connections, snapshots, planContext, nodes, workflow, stageArtifacts, coverImage, coverImageCandidates, imagePrompts, styleGenomes, templates, syncLogs, coverImageQuota, imageAssetQuota, authoringContext] = await Promise.all([
     getDocumentById(Number(params.documentId), session.userId),
     getFragmentsByUser(session.userId),
     getLanguageGuardRules(session.userId),
@@ -34,6 +47,7 @@ export default async function EditorPage({
     getActiveTemplates(session.userId),
     getWechatSyncLogs(session.userId),
     getCoverImageQuotaStatus(session.userId),
+    getImageAssetStorageQuotaStatus(session.userId),
     getDocumentAuthoringStyleContext(session.userId),
   ]);
 
@@ -41,12 +55,20 @@ export default async function EditorPage({
     return <div className="border border-stone-300/40 bg-white p-6">文稿不存在。</div>;
   }
 
-  const relevantKnowledgeCards = await getRelevantKnowledgeCardsForDocument(session.userId, {
-    documentTitle: document.title,
-    markdownContent: document.markdown_content,
-    nodeTitles: nodes.map((node) => node.title),
-    attachedFragmentIds: nodes.flatMap((node) => node.fragments.map((fragment) => fragment.id)),
-  });
+  const [relevantKnowledgeCards, writingContext] = await Promise.all([
+    getRelevantKnowledgeCardsForDocument(session.userId, {
+      documentTitle: document.title,
+      markdownContent: document.markdown_content,
+      nodeTitles: nodes.map((node) => node.title),
+      attachedFragmentIds: nodes.flatMap((node) => node.fragments.map((fragment) => fragment.id)),
+    }),
+    getDocumentWritingContext({
+      userId: session.userId,
+      documentId: document.id,
+      title: document.title,
+      markdownContent: document.markdown_content,
+    }),
+  ]);
   const currentPlan = planContext.plan;
   const templateLimit = getTemplateAccessLimit(currentPlan.code as "free" | "pro" | "ultra");
   const accessibleTemplates = [
@@ -134,11 +156,16 @@ export default async function EditorPage({
         .slice(0, 3)
         .map((log) => ({
           id: log.id,
+          documentId: log.document_id,
           connectionName: log.connection_name,
           mediaId: log.media_id,
           status: log.status,
           failureReason: log.failure_reason,
+          failureCode: log.failure_code,
           retryCount: log.retry_count,
+          documentVersionHash: log.document_version_hash,
+          templateId: log.template_id,
+          idempotencyKey: log.idempotency_key,
           createdAt: log.created_at,
           requestSummary: log.request_summary,
           responseSummary: log.response_summary,
@@ -154,7 +181,9 @@ export default async function EditorPage({
       canPublishToWechat={(currentPlan.max_wechat_connections ?? 0) > 0}
       planName={currentPlan.name}
       authoringContext={authoringContext}
+      seriesInsight={writingContext.seriesInsight ?? null}
       coverImageQuota={coverImageQuota}
+      imageAssetQuota={imageAssetQuota}
       initialCoverImageCandidates={coverImageCandidates.map((candidate) => ({
         id: candidate.id,
         variantLabel: candidate.variant_label,

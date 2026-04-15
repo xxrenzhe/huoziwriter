@@ -1,4 +1,5 @@
 import { ensureUserSession } from "@/lib/auth";
+import { syncCoverAssetToAssetFiles } from "@/lib/asset-files";
 import { appendAuditLog } from "@/lib/audit";
 import { getDatabase } from "@/lib/db";
 import { fail, ok } from "@/lib/http";
@@ -42,7 +43,7 @@ export async function POST(request: Request) {
     }
 
     const createdAt = new Date().toISOString();
-    await db.exec(
+    const result = await db.exec(
       `INSERT INTO cover_images (
         user_id, document_id, prompt, image_url, storage_provider, original_object_key, compressed_object_key, thumbnail_object_key, asset_manifest_json, created_at
       )
@@ -60,6 +61,21 @@ export async function POST(request: Request) {
         createdAt,
       ],
     );
+    const assetFileId = await syncCoverAssetToAssetFiles({
+      assetScope: "cover",
+      legacyAssetId: Number(result.lastInsertRowid || 0),
+      userId: session.userId,
+      documentId: candidate.document_id,
+      batchToken: candidate.batch_token,
+      variantLabel: candidate.variant_label,
+      imageUrl: candidate.image_url,
+      storageProvider: candidate.storage_provider,
+      originalObjectKey: candidate.original_object_key,
+      compressedObjectKey: candidate.compressed_object_key,
+      thumbnailObjectKey: candidate.thumbnail_object_key,
+      assetManifestJson: candidate.asset_manifest_json,
+      createdAt,
+    });
     await db.exec(
       `UPDATE cover_image_candidates
        SET is_selected = ?, selected_at = ?
@@ -86,6 +102,7 @@ export async function POST(request: Request) {
       imageUrl: candidate.image_url,
       prompt: candidate.prompt,
       variantLabel: candidate.variant_label,
+      assetFileId,
       createdAt,
     });
   } catch (error) {

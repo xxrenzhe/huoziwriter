@@ -1,8 +1,8 @@
-import { getDefaultAuthorPersona } from "./author-personas";
+import { assertAuthorPersonaReady } from "./author-personas";
 import { getWritingStyleProfileById } from "./writing-style-profiles";
 
 export async function getDocumentAuthoringStyleContext(userId: number) {
-  const authorPersona = await getDefaultAuthorPersona(userId);
+  const authorPersona = await assertAuthorPersonaReady(userId);
   const writingStyleProfile = authorPersona?.boundWritingStyleProfileId
     ? await getWritingStyleProfileById(userId, authorPersona.boundWritingStyleProfileId)
     : null;

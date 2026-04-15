@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ChangeEvent, FormEvent, startTransition, useEffect, useMemo, useRef, useState } from "react";
+import { analyzeAiNoise } from "@/lib/ai-noise-scan";
 import type { ImageAuthoringStyleContext } from "@/lib/image-authoring-context";
 import { buildNodeVisualSuggestion, buildVisualSuggestion } from "@/lib/image-prompting";
 import { collectLanguageGuardHits, type LanguageGuardRule } from "@/lib/language-guard-core";
@@ -75,6 +76,15 @@ async function parseResponsePayload(response: Response) {
       data: null as Record<string, unknown> | null,
     };
   }
+}
+
+function formatBytes(value: number | null | undefined) {
+  const size = Number(value || 0);
+  if (!Number.isFinite(size) || size <= 0) return "0 B";
+  if (size >= 1024 * 1024 * 1024) return `${(size / 1024 / 1024 / 1024).toFixed(1)} GB`;
+  if (size >= 1024 * 1024) return `${(size / 1024 / 1024).toFixed(1)} MB`;
+  if (size >= 1024) return `${Math.round(size / 1024)} KB`;
+  return `${size} B`;
 }
 
 export function CaptureForms() {
@@ -722,10 +732,11 @@ type KnowledgeCardPanelItem = {
   userId: number;
   ownerUsername: string | null;
   shared: boolean;
-  workspaceScope: string;
   cardType: string;
   title: string;
   summary: string | null;
+  latestChangeSummary: string | null;
+  overturnedJudgements: string[];
   keyFacts: string[];
   openQuestions: string[];
   conflictFlags: string[];
@@ -742,15 +753,31 @@ type KnowledgeCardPanelItem = {
 
 type RecentSyncLogItem = {
   id: number;
+  documentId?: number;
   connectionName: string | null;
   mediaId: string | null;
   status: string;
   failureReason: string | null;
+  failureCode: string | null;
   retryCount: number;
+  documentVersionHash: string | null;
+  templateId: string | null;
+  idempotencyKey: string | null;
   createdAt: string;
   requestSummary: string | Record<string, unknown> | null;
   responseSummary: string | Record<string, unknown> | null;
 };
+
+type SeriesInsightItem = {
+  label: string | null;
+  reason: string | null;
+  commonTerms: string[];
+  coreStances: string[];
+  driftRisks: string[];
+  backgroundChecklist: string[];
+  whyNow: string[];
+  relatedDocumentCount: number;
+} | null;
 
 type StageArtifactItem = {
   stageCode: string;
@@ -799,6 +826,8 @@ type HistoryReferenceSelectionItem = {
 
 type HistoryReferenceSuggestionItem = HistoryReferenceSelectionItem & {
   score?: number;
+  seriesLabel?: string | null;
+  consistencyHint?: string | null;
 };
 
 type AudienceSelectionDraft = {
@@ -874,7 +903,47 @@ type PublishPreviewState = {
     canPublish: boolean;
     blockers: string[];
     warnings: string[];
-    checks: Array<{ key: string; label: string; status: "passed" | "warning" | "blocked"; detail: string }>;
+    suggestions: string[];
+    checks: Array<{
+      key: string;
+      label: string;
+      status: "passed" | "warning" | "blocked";
+      severity: "blocking" | "warning" | "suggestion";
+      detail: string;
+      targetStageCode?: string;
+      actionLabel?: string;
+    }>;
+    stageReadiness: Array<{
+      stageCode: string;
+      title: string;
+      status: "ready" | "needs_attention" | "blocked";
+      detail: string;
+    }>;
+    aiNoise: {
+      score: number;
+      level: string;
+      findings: string[];
+      suggestions: string[];
+    };
+    materialReadiness: {
+      attachedFragmentCount: number;
+      uniqueSourceTypeCount: number;
+      screenshotCount: number;
+    };
+    connectionHealth: {
+      connectionName: string | null;
+      status: string;
+      detail: string;
+      tokenExpiresAt: string | null;
+    };
+    latestAttempt: {
+      status: string;
+      createdAt: string;
+      failureReason: string | null;
+      failureCode: string | null;
+      retryCount: number;
+      mediaId: string | null;
+    } | null;
   };
   generatedAt: string;
 };
@@ -883,6 +952,7 @@ type PendingPublishIntent = {
   documentId: number;
   createdAt: string;
   templateId: string | null;
+  reason: "missing_connection" | "auth_failed";
 };
 
 type ExternalFetchIssueRecord = {
@@ -940,6 +1010,35 @@ function getPayloadRecordArray(payload: Record<string, unknown> | null | undefin
 function getPayloadRecord(payload: Record<string, unknown> | null | undefined, key: string) {
   const value = payload?.[key];
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
+function formatPublishFailureCode(code: string | null | undefined) {
+  if (!code) return "未分类";
+  if (code === "auth_failed") return "凭证失败";
+  if (code === "media_failed") return "媒体素材失败";
+  if (code === "rate_limited") return "频率限制";
+  if (code === "content_invalid") return "内容格式问题";
+  return "上游异常";
+}
+
+function formatPublishStageStatus(status: "ready" | "needs_attention" | "blocked") {
+  if (status === "ready") return "已就绪";
+  if (status === "blocked") return "阻断";
+  return "待处理";
+}
+
+function formatStageChecklistStatus(status: "ready" | "needs_attention" | "blocked") {
+  if (status === "ready") return "已完成";
+  if (status === "blocked") return "阻断项";
+  return "待补充";
+}
+
+function formatViewpointAction(action: string) {
+  if (action === "adopted") return "已采纳";
+  if (action === "softened") return "已弱化";
+  if (action === "deferred") return "暂缓采用";
+  if (action === "conflicted") return "判定冲突";
+  return action || "未说明";
 }
 
 function getAudienceSelectionDraft(payload: Record<string, unknown> | null | undefined): AudienceSelectionDraft {
@@ -1116,6 +1215,7 @@ function readPendingPublishIntent(documentId: number): PendingPublishIntent | nu
       documentId: parsed.documentId,
       createdAt: String(parsed.createdAt || new Date().toISOString()),
       templateId: parsed.templateId ? String(parsed.templateId) : null,
+      reason: String((parsed as { reason?: string | null }).reason || "") === "missing_connection" ? "missing_connection" : "auth_failed",
     };
   } catch {
     return null;
@@ -1267,10 +1367,11 @@ function buildHighlightedKnowledgeCard(
     userId: typeof detail.userId === "number" ? detail.userId : fallback?.userId ?? 0,
     ownerUsername: detail.ownerUsername ?? fallback?.ownerUsername ?? null,
     shared: typeof detail.shared === "boolean" ? detail.shared : fallback?.shared ?? false,
-    workspaceScope: detail.workspaceScope ?? fallback?.workspaceScope ?? "personal",
     cardType: detail.cardType ?? fallback?.cardType ?? "topic",
     title: detail.title,
     summary: detail.summary ?? fallback?.summary ?? null,
+    latestChangeSummary: detail.latestChangeSummary ?? fallback?.latestChangeSummary ?? null,
+    overturnedJudgements: Array.isArray(detail.overturnedJudgements) ? detail.overturnedJudgements : fallback?.overturnedJudgements ?? [],
     keyFacts: Array.isArray(detail.keyFacts) ? detail.keyFacts : fallback?.keyFacts ?? [],
     openQuestions: Array.isArray(detail.openQuestions) ? detail.openQuestions : fallback?.openQuestions ?? [],
     conflictFlags: Array.isArray(detail.conflictFlags) ? detail.conflictFlags : fallback?.conflictFlags ?? [],
@@ -1423,7 +1524,9 @@ export function DocumentEditorClient({
   canPublishToWechat,
   planName,
   authoringContext,
+  seriesInsight,
   coverImageQuota: initialCoverImageQuota,
+  imageAssetQuota: initialImageAssetQuota,
   initialCoverImageCandidates,
   initialImagePrompts,
   initialCoverImage,
@@ -1453,7 +1556,17 @@ export function DocumentEditorClient({
   canPublishToWechat: boolean;
   planName: string;
   authoringContext: ImageAuthoringStyleContext | null;
+  seriesInsight: SeriesInsightItem;
   coverImageQuota: { used: number; limit: number | null; remaining: number | null };
+  imageAssetQuota: {
+    usedBytes: number;
+    limitBytes: number;
+    remainingBytes: number;
+    assetRecordCount: number;
+    readyAssetRecordCount: number;
+    uniqueObjectCount: number;
+    reservedGenerationBytes: number;
+  };
   initialCoverImageCandidates: CoverImageCandidateItem[];
   initialImagePrompts: DocumentImagePromptItem[];
   initialCoverImage: { imageUrl: string; prompt: string; createdAt: string } | null;
@@ -1468,6 +1581,7 @@ export function DocumentEditorClient({
   const [nodes, setNodes] = useState(initialNodes);
   const [fragmentPool, setFragmentPool] = useState(initialFragments);
   const [wechatConnections, setWechatConnections] = useState(initialConnections);
+  const [syncLogs, setSyncLogs] = useState(recentSyncLogs);
   const [knowledgeCardItems, setKnowledgeCardItems] = useState(knowledgeCards);
   const [workflow, setWorkflow] = useState(initialWorkflow);
   const [stageArtifacts, setStageArtifacts] = useState(initialStageArtifacts);
@@ -1485,12 +1599,14 @@ export function DocumentEditorClient({
   const [coverImage, setCoverImage] = useState(initialCoverImage);
   const [coverImageCandidates, setCoverImageCandidates] = useState(initialCoverImageCandidates);
   const [coverImageQuota, setCoverImageQuota] = useState(initialCoverImageQuota);
+  const [imageAssetQuota, setImageAssetQuota] = useState(initialImageAssetQuota);
   const [imagePrompts, setImagePrompts] = useState(initialImagePrompts);
   const [coverImageReferenceDataUrl, setCoverImageReferenceDataUrl] = useState<string | null>(null);
   const [generatingCover, setGeneratingCover] = useState(false);
   const [selectingCoverCandidateId, setSelectingCoverCandidateId] = useState<number | null>(null);
   const [savingImagePrompts, setSavingImagePrompts] = useState(false);
   const [publishing, setPublishing] = useState(false);
+  const [retryingPublish, setRetryingPublish] = useState(false);
   const [loadingDiffId, setLoadingDiffId] = useState<number | null>(null);
   const [refreshingKnowledgeId, setRefreshingKnowledgeId] = useState<number | null>(null);
   const [expandedKnowledgeCardId, setExpandedKnowledgeCardId] = useState<number | null>(knowledgeCards[0]?.id ?? null);
@@ -1612,8 +1728,73 @@ export function DocumentEditorClient({
     () => wechatConnections.find((connection) => String(connection.id) === selectedConnectionId) ?? null,
     [wechatConnections, selectedConnectionId],
   );
-  const latestSyncLog = recentSyncLogs[0] ?? null;
+  const latestSyncLog = syncLogs[0] ?? null;
   const visualSuggestion = useMemo(() => buildVisualSuggestion(title, markdown, authoringContext), [authoringContext, title, markdown]);
+  const outlineMaterialReadiness = useMemo(() => {
+    const activeNodes = outlineMaterials?.nodes ?? nodes;
+    const allFragments = activeNodes.flatMap((node) => node.fragments);
+    const uniqueFragmentIds = new Set(allFragments.map((fragment) => fragment.id));
+    const uniqueSourceTypes = new Set(allFragments.map((fragment) => String(fragment.sourceType || "manual")));
+    const screenshotCount = allFragments.filter((fragment) => String(fragment.usageMode || "") === "image" || String(fragment.sourceType || "") === "screenshot").length;
+    const flags = [
+      uniqueFragmentIds.size < 2 ? "缺最小素材集" : null,
+      uniqueSourceTypes.size <= 1 ? "信源过单一" : null,
+      screenshotCount === 0 ? "缺证据型素材" : null,
+    ].filter(Boolean) as string[];
+    const score = Math.max(
+      0,
+      Math.min(
+        100,
+        100
+          - (uniqueFragmentIds.size < 2 ? 40 : 0)
+          - (uniqueSourceTypes.size <= 1 ? 25 : 0)
+          - (screenshotCount === 0 ? 15 : 0),
+      ),
+    );
+    return {
+      fragmentCount: uniqueFragmentIds.size,
+      sourceTypeCount: uniqueSourceTypes.size,
+      screenshotCount,
+      score,
+      flags,
+      status:
+        uniqueFragmentIds.size === 0
+          ? "blocked"
+          : uniqueSourceTypes.size <= 1
+            ? "warning"
+            : "passed",
+      detail:
+        uniqueFragmentIds.size === 0
+          ? "当前大纲节点还没有挂素材，至少补 2 条文字素材再确认大纲。"
+          : uniqueFragmentIds.size < 2
+            ? "素材条数还不够，建议先补齐最小素材集，再继续确认标题和章节。"
+            : uniqueSourceTypes.size <= 1
+              ? "素材已挂入，但信源类型过于单一，建议补链接或截图证据。"
+              : screenshotCount === 0
+                ? "基础素材已够，但还缺证据型素材，后续事实核查会更容易卡住。"
+                : `已挂 ${uniqueFragmentIds.size} 条素材，覆盖 ${uniqueSourceTypes.size} 类来源，当前可支撑大纲推进。`,
+    };
+  }, [nodes, outlineMaterials]);
+  const audienceArtifact = useMemo(
+    () => stageArtifacts.find((item) => item.stageCode === "audienceAnalysis") ?? null,
+    [stageArtifacts],
+  );
+  const outlineArtifact = useMemo(
+    () => stageArtifacts.find((item) => item.stageCode === "outlinePlanning") ?? null,
+    [stageArtifacts],
+  );
+  const deepWritingArtifact = useMemo(
+    () => stageArtifacts.find((item) => item.stageCode === "deepWriting") ?? null,
+    [stageArtifacts],
+  );
+  const factCheckArtifact = useMemo(
+    () => stageArtifacts.find((item) => item.stageCode === "factCheck") ?? null,
+    [stageArtifacts],
+  );
+  const prosePolishArtifact = useMemo(
+    () => stageArtifacts.find((item) => item.stageCode === "prosePolish") ?? null,
+    [stageArtifacts],
+  );
   const currentStage = useMemo(
     () => workflow.stages.find((stage) => stage.code === workflow.currentStageCode) ?? workflow.stages[0] ?? null,
     [workflow],
@@ -1633,6 +1814,191 @@ export function DocumentEditorClient({
   const currentFactCheckSelection = useMemo(
     () => getFactCheckSelectionDraft(currentStageArtifact?.payload),
     [currentStageArtifact],
+  );
+  const audienceSelectionState = useMemo(
+    () => getAudienceSelectionDraft(audienceArtifact?.payload),
+    [audienceArtifact],
+  );
+  const outlineSelectionState = useMemo(
+    () => getOutlineSelectionDraft(outlineArtifact?.payload),
+    [outlineArtifact],
+  );
+  const liveAiNoise = useMemo(() => analyzeAiNoise(markdown), [markdown]);
+  const activeAiNoiseRecord = useMemo(
+    () => getPayloadRecord(prosePolishArtifact?.payload, "aiNoise") ?? (liveAiNoise as unknown as Record<string, unknown>),
+    [liveAiNoise, prosePolishArtifact],
+  );
+  const activeAiNoiseScore = Number(activeAiNoiseRecord?.score ?? 0);
+  const historyPlanCount = useMemo(
+    () => getPayloadRecordArray(deepWritingArtifact?.payload, "historyReferencePlan").length,
+    [deepWritingArtifact],
+  );
+  const outlineGapHintsForGuide = useMemo(
+    () => getPayloadStringArray(outlineArtifact?.payload, "materialGapHints"),
+    [outlineArtifact],
+  );
+  const titleConfirmedForGuide = Boolean((outlineSelectionState.selectedTitle || "").trim() || String(outlineArtifact?.payload?.workingTitle || "").trim());
+  const factCheckReady = Boolean(factCheckArtifact?.status === "ready" && factCheckArtifact?.payload);
+  const prosePolishReady = Boolean(prosePolishArtifact?.status === "ready" && prosePolishArtifact?.payload);
+  const editorStageChecklist = useMemo(() => {
+    const topicReady = Boolean(title.trim() && title.trim() !== "未命名文稿");
+    const audienceReady = Boolean(
+      audienceSelectionState.selectedReaderLabel
+      && audienceSelectionState.selectedLanguageGuidance
+      && audienceSelectionState.selectedCallToAction,
+    );
+    const outlineReady = Boolean(outlineArtifact?.status === "ready" && outlineArtifact?.payload);
+    const deepWritingReady = Boolean(deepWritingArtifact?.status === "ready" && deepWritingArtifact?.payload);
+    const publishBlockedByConnection = canPublishToWechat && (!selectedConnection || selectedConnection.status !== "valid");
+    const publishBlockedByCover = !coverImage;
+
+    return [
+      {
+        stageCode: "topicRadar",
+        title: "选题与受众",
+        status: !topicReady ? "blocked" : !audienceReady ? "needs_attention" : "ready",
+        detail: !topicReady
+          ? "标题仍是空白或占位状态，先明确这篇到底在写什么。"
+          : !audienceReady
+            ? "切口已经有了，但目标读者、表达方式或结尾动作还没确认完整。"
+            : "标题、目标读者和表达方式都已明确。",
+      },
+      {
+        stageCode: "outlinePlanning",
+        title: "大纲规划",
+        status: !outlineReady ? "blocked" : outlineMaterialReadiness.status !== "passed" || outlineGapHintsForGuide.length > 0 || !titleConfirmedForGuide ? "needs_attention" : "ready",
+        detail: !outlineReady
+          ? "还没有生成可执行大纲。"
+          : outlineMaterialReadiness.status !== "passed"
+            ? `${outlineMaterialReadiness.detail}${outlineMaterialReadiness.flags.length ? ` 当前缺口：${outlineMaterialReadiness.flags.join("、")}。` : ""}`
+            : outlineGapHintsForGuide.length > 0
+              ? `大纲已生成，但仍提示这些素材缺口：${outlineGapHintsForGuide.join("；")}`
+              : !titleConfirmedForGuide
+                ? "大纲已生成，但还没明确确认最终标题。"
+                : "标题、结构和素材入口都已就位。",
+      },
+      {
+        stageCode: "deepWriting",
+        title: "深度写作",
+        status: !deepWritingReady ? "blocked" : canUseHistoryReferences && historyPlanCount === 0 ? "needs_attention" : "ready",
+        detail: !deepWritingReady
+          ? "还没有生成正文执行卡。"
+          : canUseHistoryReferences && historyPlanCount === 0
+            ? "执行卡已生成，但系列旧文承接还没补进去。"
+            : canUseHistoryReferences
+              ? "执行卡、关键事实和旧文承接都已准备。"
+              : "执行卡已生成。当前套餐不支持旧文自然引用，可手动补桥接句替代。",
+      },
+      {
+        stageCode: "prosePolish",
+        title: "润色收口",
+        status: !factCheckReady ? "blocked" : !prosePolishReady ? "needs_attention" : activeAiNoiseScore >= 70 || liveLanguageGuardHits.length > 0 ? "needs_attention" : "ready",
+        detail: !factCheckReady
+          ? "事实核查还没完成，先别急着只修语气。"
+          : !prosePolishReady
+            ? "润色结果还没生成，建议在发布前先跑一轮表达诊断。"
+            : activeAiNoiseScore >= 70
+              ? `AI 噪声得分 ${activeAiNoiseScore}，仍有明显空话或模板句需要重写。`
+              : liveLanguageGuardHits.length > 0
+                ? `仍命中 ${liveLanguageGuardHits.length} 条语言守卫规则，建议先清理机器味。`
+                : "语气、节奏和语言守卫都已收口。",
+      },
+      {
+        stageCode: "publish",
+        title: canPublishToWechat ? "发布准备" : "交付准备",
+        status: !titleConfirmedForGuide || !factCheckReady ? "blocked" : publishBlockedByCover || publishBlockedByConnection ? "needs_attention" : "ready",
+        detail: !titleConfirmedForGuide
+          ? "发布前还没确认最终标题。"
+          : !factCheckReady
+            ? "发布前需要先跑完事实核查。"
+            : canPublishToWechat
+              ? publishBlockedByCover
+                ? "微信推送前还缺封面图。"
+                : publishBlockedByConnection
+                  ? "微信推送能力已开放，但当前还没有可用公众号连接。"
+                  : "微信连接、封面图和正文已具备发布条件。"
+              : publishBlockedByCover
+                ? "当前套餐不推微信，但仍建议补一张封面图再导出交付。"
+                : "当前套餐走导出交付路径即可，不必等到发布页才发现不可用。",
+      },
+    ] as Array<{ stageCode: string; title: string; status: "ready" | "needs_attention" | "blocked"; detail: string }>;
+  }, [
+    activeAiNoiseScore,
+    audienceSelectionState.selectedCallToAction,
+    audienceSelectionState.selectedLanguageGuidance,
+    audienceSelectionState.selectedReaderLabel,
+    canPublishToWechat,
+    canUseHistoryReferences,
+    coverImage,
+    deepWritingArtifact,
+    factCheckReady,
+    historyPlanCount,
+    liveLanguageGuardHits.length,
+    outlineArtifact,
+    outlineGapHintsForGuide,
+    outlineMaterialReadiness.detail,
+    outlineMaterialReadiness.flags,
+    outlineMaterialReadiness.status,
+    prosePolishReady,
+    selectedConnection,
+    title,
+    titleConfirmedForGuide,
+  ]);
+  const planCapabilityHints = useMemo(
+    () =>
+      [
+        !canUseStyleGenomes
+          ? {
+              key: "style-genome",
+              title: "排版基因套用",
+              detail: `${planName} 当前只能浏览排版基因。替代路径：沿用默认规则，先在发布前预览里确认模板效果。`,
+            }
+          : null,
+        !canUseHistoryReferences
+          ? {
+              key: "history-reference",
+              title: "历史文章自然引用",
+              detail: `${planName} 当前不支持旧文自然引用。替代路径：在深写执行卡里手动补 1 句桥接句，把旧判断写进正文。`,
+            }
+          : null,
+        !canGenerateCoverImage
+          ? {
+              key: "cover-generate",
+              title: "封面图生成",
+              detail: `${planName} 当前只开放配图 Prompt。替代路径：先保存 Prompt 或导出 HTML，再用外部工具生成封面图。`,
+            }
+          : null,
+        canGenerateCoverImage && !canUseCoverImageReference
+          ? {
+              key: "cover-reference",
+              title: "参考图垫图",
+              detail: `${planName} 当前可直接生成封面图，但不能上传参考图。替代路径：先生成候选图，再从候选图里挑一张入库。`,
+            }
+          : null,
+        !canPublishToWechat
+          ? {
+              key: "wechat-publish",
+              title: "微信草稿箱推送",
+              detail: `${planName} 当前不开放公众号推送。替代路径：继续走 HTML / Markdown 导出，不要等到发布页才发现不可用。`,
+            }
+          : null,
+        !canExportPdf
+          ? {
+              key: "pdf-export",
+              title: "PDF 导出",
+              detail: `${planName} 当前不开放 PDF。替代路径：优先导出 HTML 或 Markdown，再做外部排版。`,
+            }
+          : null,
+      ].filter(Boolean) as Array<{ key: string; title: string; detail: string }>,
+    [
+      canExportPdf,
+      canGenerateCoverImage,
+      canPublishToWechat,
+      canUseCoverImageReference,
+      canUseHistoryReferences,
+      canUseStyleGenomes,
+      planName,
+    ],
   );
   const audienceReaderSegments = useMemo(
     () => getPayloadRecordArray(currentStageArtifact?.payload, "readerSegments"),
@@ -1700,16 +2066,19 @@ export function DocumentEditorClient({
   }, [currentStageArtifact]);
   const currentStageAction = currentStage ? GENERATABLE_STAGE_ACTIONS[currentStage.code] : null;
   const coverImageLimitReached = coverImageQuota.limit != null && coverImageQuota.used >= coverImageQuota.limit;
+  const imageAssetStorageLimitReached = imageAssetQuota.remainingBytes < imageAssetQuota.reservedGenerationBytes;
   const canShowWechatControls = canPublishToWechat;
   const hasUnsavedWechatRenderInputs =
     title !== lastSavedRef.current.title ||
     markdown !== lastSavedRef.current.markdown ||
     wechatTemplateId !== lastSavedRef.current.wechatTemplateId;
-  const coverImageButtonDisabled = !canGenerateCoverImage || generatingCover || coverImageLimitReached;
+  const coverImageButtonDisabled = !canGenerateCoverImage || generatingCover || coverImageLimitReached || imageAssetStorageLimitReached;
   const coverImageButtonLabel = !canGenerateCoverImage
     ? "当前套餐仅提供文本配图建议"
     : coverImageLimitReached
       ? "今日封面图额度已用尽"
+      : imageAssetStorageLimitReached
+        ? "图片资产空间不足"
       : generatingCover
         ? "封面图生成中..."
         : "生成 16:9 封面图";
@@ -2350,7 +2719,8 @@ export function DocumentEditorClient({
       return;
     }
     if (!selectedConnectionId || wechatConnections.length === 0) {
-      await openWechatConnectModal(true);
+      await openWechatConnectModal(true, "missing_connection");
+      setMessage("当前还没有可用公众号连接，已保留待发布状态。补录 AppID / AppSecret 后会自动恢复发布。");
       return;
     }
     await continuePublishWithConnection(Number(selectedConnectionId));
@@ -2444,6 +2814,7 @@ export function DocumentEditorClient({
       documentId: document.id,
       createdAt: new Date().toISOString(),
       templateId: wechatTemplateId,
+      reason: "missing_connection",
     } satisfies PendingPublishIntent;
     setPendingPublishIntent(nextIntent);
     if (typeof window !== "undefined") {
@@ -2486,13 +2857,24 @@ export function DocumentEditorClient({
     } catch {}
   }
 
-  async function openWechatConnectModal(continuePublish = false) {
+  async function openWechatConnectModal(
+    continuePublish = false,
+    reason: PendingPublishIntent["reason"] = "missing_connection",
+  ) {
     if (!canShowWechatControls) {
       setMessage(`${planName}套餐暂不支持微信草稿箱推送。升级到 Pro 或更高套餐后再发布。`);
       return;
     }
     if (continuePublish) {
-      await persistPendingPublishIntent(undefined, { silent: true });
+      await persistPendingPublishIntent(
+        {
+          documentId: document.id,
+          createdAt: new Date().toISOString(),
+          templateId: wechatTemplateId,
+          reason,
+        },
+        { silent: true },
+      );
     }
     setContinuePublishAfterWechatConnect(continuePublish);
     setWechatConnectIsDefault(wechatConnections.length === 0);
@@ -2506,7 +2888,7 @@ export function DocumentEditorClient({
       return;
     }
     if (!selectedConnectionId || wechatConnections.length === 0) {
-      await openWechatConnectModal(true);
+      await openWechatConnectModal(true, pendingPublishIntent.reason);
       return;
     }
     setMessage("正在恢复上次中断的发布流程。");
@@ -2522,6 +2904,17 @@ export function DocumentEditorClient({
     const nextConnections = json.data as WechatConnectionItem[];
     setWechatConnections(nextConnections);
     return nextConnections;
+  }
+
+  async function reloadSyncLogs() {
+    const response = await fetch("/api/wechat/sync-logs");
+    const json = await response.json();
+    if (!response.ok || !json.success || !Array.isArray(json.data)) {
+      throw new Error(json.error || "同步日志刷新失败");
+    }
+    const nextLogs = (json.data as RecentSyncLogItem[]).filter((item) => item.documentId === document.id);
+    setSyncLogs(nextLogs.slice(0, 3));
+    return nextLogs;
   }
 
   async function continuePublishWithConnection(connectionId: number) {
@@ -2550,6 +2943,25 @@ export function DocumentEditorClient({
             setView("preview");
           }
         }
+        const errorCode = payload.data && typeof payload.data.code === "string" ? payload.data.code : "";
+        if (errorCode === "auth_failed") {
+          await persistPendingPublishIntent({
+            documentId: document.id,
+            createdAt: new Date().toISOString(),
+            templateId: wechatTemplateId,
+            reason: "auth_failed",
+          }, { silent: true });
+          setContinuePublishAfterWechatConnect(true);
+          setWechatConnectAccountName(selectedConnection?.accountName || "");
+          setWechatConnectOriginalId(selectedConnection?.originalId || "");
+          setWechatConnectAppId("");
+          setWechatConnectAppSecret("");
+          setWechatConnectIsDefault(Boolean(selectedConnection?.isDefault) || wechatConnections.length === 0);
+          setWechatConnectMessage("当前公众号凭证不可用。补录 AppID / AppSecret 后，系统会自动继续本次发布。");
+          setShowWechatConnectModal(true);
+          setMessage("公众号凭证不可用，已保留待发布状态。补录凭证后会自动恢复发布。");
+          return false;
+        }
         throw new Error(payload.message);
       }
       const json = await response.json().catch(() => null);
@@ -2557,6 +2969,7 @@ export function DocumentEditorClient({
       setStatus("published");
       setView("preview");
       await reloadDocumentMeta();
+      await reloadSyncLogs();
       refreshRouter(router);
       setMessage(
         json?.success && json?.data?.mediaId
@@ -2569,6 +2982,53 @@ export function DocumentEditorClient({
       return false;
     } finally {
       setPublishing(false);
+    }
+  }
+
+  async function retryLatestPublish() {
+    if (!selectedConnectionId) {
+      setMessage("请先选择一个公众号连接再重试。");
+      return;
+    }
+    setRetryingPublish(true);
+    setMessage("");
+    try {
+      const saved = await saveDocument(undefined, undefined, false);
+      if (!saved) {
+        return;
+      }
+      const response = await fetch("/api/wechat/publish/retry", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          documentId: document.id,
+          wechatConnectionId: Number(selectedConnectionId),
+          templateId: wechatTemplateId,
+        }),
+      });
+      const payload = await parseResponsePayload(response);
+      if (!response.ok) {
+        const nextPreview = await requestPublishPreview({ silent: true, setLoading: false });
+        if (nextPreview) {
+          setPublishPreview(nextPreview);
+          setView("preview");
+        }
+        throw new Error(payload.message);
+      }
+      await clearPendingPublishIntent();
+      await reloadDocumentMeta();
+      await reloadSyncLogs();
+      const nextPreview = await requestPublishPreview({ silent: true, setLoading: false });
+      if (nextPreview) {
+        setPublishPreview(nextPreview);
+      }
+      setStatus("published");
+      setView("preview");
+      setMessage("已按最近失败上下文重新推送到微信草稿箱。");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "发布重试失败");
+    } finally {
+      setRetryingPublish(false);
     }
   }
 
@@ -2649,6 +3109,9 @@ export function DocumentEditorClient({
       );
       if (json.data.quota) {
         setCoverImageQuota(json.data.quota);
+      }
+      if (json.data.storageQuota) {
+        setImageAssetQuota(json.data.storageQuota);
       }
     } catch {
       setMessage("封面图生成失败");
@@ -3207,6 +3670,8 @@ export function DocumentEditorClient({
       const deepWritingVoiceChecklist = currentStageArtifact ? getPayloadStringArray(currentStageArtifact.payload, "voiceChecklist") : [];
       const deepWritingMustUseFacts = currentStageArtifact ? getPayloadStringArray(currentStageArtifact.payload, "mustUseFacts") : [];
       const deepWritingBannedWatchlist = currentStageArtifact ? getPayloadStringArray(currentStageArtifact.payload, "bannedWordWatchlist") : [];
+      const deepWritingSeriesChecklist = currentStageArtifact ? getPayloadStringArray(currentStageArtifact.payload, "seriesChecklist") : [];
+      const deepWritingSeriesInsight = currentStageArtifact ? getPayloadRecord(currentStageArtifact.payload, "seriesInsight") : null;
       const deepWritingFinalChecklist = currentStageArtifact ? getPayloadStringArray(currentStageArtifact.payload, "finalChecklist") : [];
       const deepWritingHistoryPlans = currentStageArtifact ? getPayloadRecordArray(currentStageArtifact.payload, "historyReferencePlan") : [];
       return (
@@ -3274,6 +3739,33 @@ export function DocumentEditorClient({
               ) : null}
               {String(currentStageArtifact.payload?.targetEmotion || "").trim() ? (
                 <div className="text-sm leading-7 text-stone-700">目标情绪：{String(currentStageArtifact.payload?.targetEmotion)}</div>
+              ) : null}
+              {(seriesInsight || deepWritingSeriesInsight) ? (
+                <div className="border border-[#dcc8a6] bg-[#fff8eb] px-4 py-4">
+                  <div className="text-xs uppercase tracking-[0.18em] text-stone-500">当前文章所属系列</div>
+                  <div className="mt-2 font-medium text-ink">
+                    {String((deepWritingSeriesInsight?.label as string | undefined) || seriesInsight?.label || "连续观察主题")}
+                  </div>
+                  {String((deepWritingSeriesInsight?.reason as string | undefined) || seriesInsight?.reason || "").trim() ? (
+                    <div className="mt-2 text-sm leading-7 text-stone-700">
+                      {String((deepWritingSeriesInsight?.reason as string | undefined) || seriesInsight?.reason || "")}
+                    </div>
+                  ) : null}
+                  {((Array.isArray(deepWritingSeriesInsight?.commonTerms) ? deepWritingSeriesInsight?.commonTerms : seriesInsight?.commonTerms) ?? []).length > 0 ? (
+                    <div className="mt-3 flex flex-wrap gap-2 text-xs text-stone-700">
+                      {((Array.isArray(deepWritingSeriesInsight?.commonTerms) ? deepWritingSeriesInsight?.commonTerms : seriesInsight?.commonTerms) ?? []).map((item) => (
+                        <span key={`series-term-${item}`} className="border border-stone-300 bg-white px-3 py-2">{item}</span>
+                      ))}
+                    </div>
+                  ) : null}
+                  {deepWritingSeriesChecklist.length > 0 ? (
+                    <div className="mt-3 space-y-2 text-sm leading-7 text-stone-700">
+                      {deepWritingSeriesChecklist.map((item) => (
+                        <div key={item}>- {item}</div>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
               ) : null}
               {deepWritingSections.length > 0 ? (
                 <div className="space-y-3">
@@ -3431,7 +3923,10 @@ export function DocumentEditorClient({
                   return (
                     <div key={item.referencedDocumentId} className="border border-stone-300/60 px-4 py-4">
                       <div className="flex items-center justify-between gap-3">
-                        <div className="font-medium text-ink">《{item.title}》</div>
+                        <div>
+                          <div className="font-medium text-ink">《{item.title}》</div>
+                          {item.seriesLabel ? <div className="mt-1 text-xs text-stone-500">{item.seriesLabel}</div> : null}
+                        </div>
                         <button
                           type="button"
                           onClick={() => toggleHistoryReferenceSelection(item)}
@@ -3446,6 +3941,7 @@ export function DocumentEditorClient({
                         </button>
                       </div>
                       {item.relationReason ? <div className="mt-2 text-sm leading-7 text-stone-700">{item.relationReason}</div> : null}
+                      {item.consistencyHint ? <div className="mt-2 text-xs leading-6 text-[#7d6430]">{item.consistencyHint}</div> : null}
                       {item.bridgeSentence ? <div className="mt-2 text-xs leading-6 text-stone-500">桥接句建议：{item.bridgeSentence}</div> : null}
                     </div>
                   );
@@ -3723,6 +4219,72 @@ export function DocumentEditorClient({
                       {loadingOutlineMaterials ? "刷新中..." : "刷新素材面板"}
                     </button>
                   </div>
+                <div className={`border px-4 py-4 text-sm leading-7 ${
+                  outlineMaterialReadiness.status === "passed"
+                    ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                      : outlineMaterialReadiness.status === "warning"
+                        ? "border-[#dfd2b0] bg-[#fff8e8] text-[#7d6430]"
+                        : "border-[#d8b0b2] bg-[#fff7f7] text-[#8f3136]"
+                  }`}>
+                    <div className="text-xs uppercase tracking-[0.18em]">素材可用性评分</div>
+                    <div className="mt-2 font-serifCn text-2xl">{outlineMaterialReadiness.score}</div>
+                    <div className="mt-2">{outlineMaterialReadiness.detail}</div>
+                    <div className="mt-2 text-xs">
+                      挂载素材 {outlineMaterialReadiness.fragmentCount} 条 · 来源类型 {outlineMaterialReadiness.sourceTypeCount} 类 · 截图证据 {outlineMaterialReadiness.screenshotCount} 条
+                    </div>
+                    {outlineMaterialReadiness.flags.length > 0 ? (
+                      <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                        {outlineMaterialReadiness.flags.map((flag) => (
+                          <span key={flag} className="border border-current/30 px-2 py-1">
+                            {flag}
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                  <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_320px]">
+                    <div className="grid gap-3">
+                      {knowledgeCardItems.slice(0, 2).map((card) => (
+                        <div key={`outline-knowledge-${card.id}`} className="border border-stone-300 bg-white px-4 py-4">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <div className="font-medium text-ink">{card.title}</div>
+                            <span className="border border-stone-300 px-2 py-1 text-[11px] text-stone-500">
+                              置信度 {Math.round(card.confidenceScore * 100)}%
+                            </span>
+                          </div>
+                          <div className="mt-2 text-sm leading-7 text-stone-700">{card.summary || "暂无主题摘要"}</div>
+                          {card.latestChangeSummary ? (
+                            <div className="mt-2 border border-[#dcc8a6] bg-[#fff8eb] px-3 py-2 text-xs leading-6 text-stone-700">
+                              最近变化：{card.latestChangeSummary}
+                            </div>
+                          ) : null}
+                          {card.conflictFlags.length > 0 ? (
+                            <div className="mt-2 border border-[#d8b0b2] bg-[#fff7f7] px-3 py-2 text-xs leading-6 text-[#8f3136]">
+                              冲突提醒：{card.conflictFlags.join("；")}
+                            </div>
+                          ) : null}
+                        </div>
+                      ))}
+                    </div>
+                    <div className="border border-stone-300 bg-white px-4 py-4">
+                      <div className="text-xs uppercase tracking-[0.18em] text-stone-500">主题档案摘要侧栏</div>
+                      <div className="mt-2 text-sm leading-7 text-stone-700">
+                        大纲阶段优先参考当前命中的主题档案，先判断这次新增变量修正了什么旧结论，再决定章节顺序和证据挂载。
+                      </div>
+                      {knowledgeCardItems.length > 0 ? (
+                        <div className="mt-3 space-y-2 text-xs leading-6 text-stone-500">
+                          {knowledgeCardItems.slice(0, 3).map((card) => (
+                            <div key={`outline-side-${card.id}`}>
+                              {card.title}
+                              {card.overturnedJudgements.length > 0 ? ` · 旧判断受影响 ${card.overturnedJudgements[0]}` : ""}
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="mt-3 text-xs leading-6 text-stone-500">当前还没有命中的主题档案，先补素材后再刷新。</div>
+                      )}
+                    </div>
+                  </div>
                   <div className="grid gap-3">
                     {Array.from({ length: 3 }).map((_, index) => (
                       <textarea
@@ -3784,7 +4346,6 @@ export function DocumentEditorClient({
                           })
                           .map((fragment) => (
                             <option key={fragment.id} value={fragment.id}>
-                              {fragment.shared ? "[共享] " : ""}
                               {fragment.title ? `${fragment.title} · ` : ""}
                               {formatFragmentSourceType(fragment.sourceType)} · {fragment.distilledContent.slice(0, 28)}
                             </option>
@@ -3972,7 +4533,7 @@ export function DocumentEditorClient({
                       <div key={`${item.viewpoint || index}`} className="border border-stone-300/60 px-4 py-3">
                         <div className="font-medium text-ink">{String(item.viewpoint || `补充观点 ${index + 1}`)}</div>
                         <div className="mt-2 text-sm leading-7 text-stone-700">
-                          处理方式：{String(item.action || "未说明")}；{String(item.note || "暂无说明")}
+                          处理方式：{formatViewpointAction(String(item.action || ""))}；采纳理由：{String(item.note || "暂无说明")}
                         </div>
                       </div>
                     ))}
@@ -4289,14 +4850,40 @@ export function DocumentEditorClient({
                                       <div key={`${item.title || evidenceIndex}`} className="border border-stone-300/60 bg-[#faf7f0] px-3 py-3">
                                         <div className="flex flex-wrap items-center justify-between gap-3">
                                           <div className="text-sm font-medium text-ink">{String(item.title || `证据 ${evidenceIndex + 1}`)}</div>
-                                          <div className="text-[11px] uppercase tracking-[0.18em] text-stone-500">
-                                            {String(item.sourceType || "manual")}
+                                          <div className="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-stone-500">
+                                            <span>{String(item.sourceType || "manual")}</span>
+                                            {String(item.confidenceLabel || "").trim() ? (
+                                              <span className="border border-stone-300 px-2 py-1 normal-case tracking-normal">
+                                                {String(item.confidenceLabel)}
+                                              </span>
+                                            ) : null}
                                           </div>
                                         </div>
                                         <div className="mt-2 text-sm leading-7 text-stone-700">{String(item.excerpt || "暂无摘要")}</div>
                                         {String(item.rationale || "").trim() ? (
                                           <div className="mt-2 text-xs leading-6 text-stone-500">{String(item.rationale)}</div>
                                         ) : null}
+                                        <div className="mt-3 flex flex-wrap gap-2 text-xs text-stone-500">
+                                          {Number(item.fragmentId || 0) > 0 ? (
+                                            <span className="border border-stone-300 bg-white px-3 py-2">
+                                              原始碎片回链 · Fragment #{Number(item.fragmentId)}
+                                            </span>
+                                          ) : null}
+                                          {String(item.knowledgeTitle || "").trim() ? (
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                if (Number(item.knowledgeCardId || 0) > 0) {
+                                                  setExpandedKnowledgeCardId(Number(item.knowledgeCardId));
+                                                  setHighlightedKnowledgeCardId(Number(item.knowledgeCardId));
+                                                }
+                                              }}
+                                              className="border border-stone-300 bg-white px-3 py-2 text-stone-700"
+                                            >
+                                              主题档案回链 · {String(item.knowledgeTitle)}
+                                            </button>
+                                          ) : null}
+                                        </div>
                                         {String(item.sourceUrl || "").trim() ? (
                                           <a
                                             href={String(item.sourceUrl)}
@@ -4410,6 +4997,34 @@ export function DocumentEditorClient({
                 ) : null}
                 {getPayloadStringArray(currentStageArtifact.payload, "rhythmAdvice").length > 0 ? (
                   <div className="text-sm leading-7 text-stone-700">节奏建议：{getPayloadStringArray(currentStageArtifact.payload, "rhythmAdvice").join("；")}</div>
+                ) : null}
+                {getPayloadRecord(currentStageArtifact.payload, "aiNoise") ? (
+                  <div className="border border-stone-300/60 bg-[#fcfaf5] px-4 py-3 text-sm leading-7 text-stone-700">
+                    <div>AI 噪声分数：{String(getPayloadRecord(currentStageArtifact.payload, "aiNoise")?.score || "0")}</div>
+                    <div className="mt-1">噪声等级：{String(getPayloadRecord(currentStageArtifact.payload, "aiNoise")?.level || "unknown")}</div>
+                    {Array.isArray(getPayloadRecord(currentStageArtifact.payload, "aiNoise")?.findings) && (getPayloadRecord(currentStageArtifact.payload, "aiNoise")?.findings as unknown[]).length > 0 ? (
+                      <div className="mt-2 text-xs leading-6 text-stone-500">
+                        {((getPayloadRecord(currentStageArtifact.payload, "aiNoise")?.findings as unknown[]) ?? []).map((item) => String(item || "").trim()).filter(Boolean).join("；")}
+                      </div>
+                    ) : null}
+                    {Array.isArray(getPayloadRecord(currentStageArtifact.payload, "aiNoise")?.reasonDetails)
+                      && (getPayloadRecord(currentStageArtifact.payload, "aiNoise")?.reasonDetails as unknown[]).length > 0 ? (
+                      <div className="mt-3 space-y-2">
+                        {((getPayloadRecord(currentStageArtifact.payload, "aiNoise")?.reasonDetails as unknown[]) ?? [])
+                          .filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object" && !Array.isArray(item))
+                          .map((item, index) => (
+                          <div key={`${item.label || index}`} className="border border-stone-300/60 bg-white px-3 py-3 text-xs leading-6 text-stone-700">
+                            <div className="font-medium text-ink">
+                              {String(item.label || `原因 ${index + 1}`)}
+                              {Number(item.count || 0) > 0 ? ` · ${String(item.count)}` : ""}
+                            </div>
+                            <div className="mt-1">{String(item.reason || "暂无解释")}</div>
+                            {String(item.suggestion || "").trim() ? <div className="mt-1 text-stone-500">建议：{String(item.suggestion)}</div> : null}
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
                 ) : null}
               </>
             ) : null}
@@ -4570,6 +5185,39 @@ export function DocumentEditorClient({
           <div className="mt-3 text-xs leading-6 text-stone-500">点击任一阶段即可切换当前进度；当前阶段之前的步骤会自动标记为已完成。</div>
         </div>
         <div className="border border-stone-300/40 bg-[#faf7f0] p-5">
+          <div className="text-xs uppercase tracking-[0.24em] text-stone-500">阶段完成定义</div>
+          <div className="mt-3 space-y-2">
+            {editorStageChecklist.map((stage) => (
+              <div key={stage.stageCode} className="border border-stone-300 bg-white px-4 py-3">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div className="font-medium text-ink">{stage.title}</div>
+                    <div className="mt-1 text-sm leading-6 text-stone-700">{stage.detail}</div>
+                  </div>
+                  <div className={`text-xs ${
+                    stage.status === "ready" ? "text-emerald-700" : stage.status === "blocked" ? "text-[#8f3136]" : "text-[#7d6430]"
+                  }`}>
+                    {formatStageChecklistStatus(stage.status)}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+        {planCapabilityHints.length > 0 ? (
+          <div className="border border-stone-300/40 bg-[#faf7f0] p-5">
+            <div className="text-xs uppercase tracking-[0.24em] text-stone-500">权限前置提示</div>
+            <div className="mt-3 space-y-2">
+              {planCapabilityHints.map((hint) => (
+                <div key={hint.key} className="border border-stone-300 bg-white px-4 py-3 text-sm leading-7 text-stone-700">
+                  <div className="font-medium text-ink">{hint.title}</div>
+                  <div className="mt-1">{hint.detail}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
+        <div className="border border-stone-300/40 bg-[#faf7f0] p-5">
           <div className="flex items-start justify-between gap-3">
             <div>
               <div className="text-xs uppercase tracking-[0.24em] text-stone-500">阶段洞察卡</div>
@@ -4614,7 +5262,6 @@ export function DocumentEditorClient({
                         <div className="mt-2 flex flex-wrap gap-2 text-xs text-stone-500">
                           <span className="border border-stone-300 px-2 py-1">{card.cardType}</span>
                           <span className="border border-stone-300 px-2 py-1">{formatKnowledgeStatus(card.status)}</span>
-                          <span className="border border-stone-300 px-2 py-1">{card.workspaceScope === "personal" ? "个人作用域" : card.workspaceScope}</span>
                           <span className="border border-stone-300 px-2 py-1">置信度 {Math.round(card.confidenceScore * 100)}%</span>
                         </div>
                       </div>
@@ -4642,6 +5289,11 @@ export function DocumentEditorClient({
                       </div>
                     </div>
                     <p className="mt-3 text-sm leading-7 text-stone-700">{card.summary || "暂无摘要"}</p>
+                    {card.latestChangeSummary ? (
+                      <div className="mt-3 border border-[#dcc8a6] bg-[#fff8eb] px-3 py-3 text-sm leading-7 text-stone-700">
+                        最近变化：{card.latestChangeSummary}
+                      </div>
+                    ) : null}
                     <div className="mt-3 flex flex-wrap gap-2 text-xs text-stone-500">
                       <span>命中文稿挂载碎片 {card.matchedFragmentCount} 条</span>
                       <span>来源碎片 {card.sourceFragmentIds.length} 条</span>
@@ -4673,6 +5325,15 @@ export function DocumentEditorClient({
                           <span key={`${card.id}-fact-${index}`} className="border border-[#dcc8a6] bg-[#fff8eb] px-3 py-2 text-xs leading-6 text-stone-700">
                             {fact}
                           </span>
+                        ))}
+                      </div>
+                    ) : null}
+                    {card.overturnedJudgements.length > 0 ? (
+                      <div className="mt-3 space-y-2">
+                        {card.overturnedJudgements.slice(0, 3).map((item, index) => (
+                          <div key={`${card.id}-overturned-${index}`} className="border border-[#d8b0b2] bg-[#fff7f7] px-3 py-3 text-xs leading-6 text-[#8f3136]">
+                            {item}
+                          </div>
                         ))}
                       </div>
                     ) : null}
@@ -4841,9 +5502,17 @@ export function DocumentEditorClient({
               ? "，当前套餐只输出配图 Prompt。"
               : coverImageLimitReached
                 ? "，今日额度已耗尽。"
+                : imageAssetStorageLimitReached
+                  ? `，图片资产空间不足，当前已用 ${formatBytes(imageAssetQuota.usedBytes)} / ${formatBytes(imageAssetQuota.limitBytes)}。`
                 : coverImageQuota.remaining != null
                   ? `，还可生成 ${coverImageQuota.remaining} 次。`
                   : "。"}
+          </div>
+          <div className="mt-1 text-xs leading-6 text-stone-500">
+            图片资产空间 {formatBytes(imageAssetQuota.usedBytes)} / {formatBytes(imageAssetQuota.limitBytes)}
+            {imageAssetStorageLimitReached
+              ? `，本次生成至少还需预留 ${formatBytes(imageAssetQuota.reservedGenerationBytes)}。`
+              : `，当前还剩 ${formatBytes(imageAssetQuota.remainingBytes)}。`}
           </div>
           {coverImageCandidates.length > 0 ? (
             <div className="mt-4 space-y-3 border-t border-stone-200 pt-4">
@@ -4991,7 +5660,10 @@ export function DocumentEditorClient({
                 <div className="mt-3 border border-[#dfd2b0] bg-[#fff8e8] px-4 py-4 text-sm leading-7 text-[#7d6430]">
                   <div className="text-xs uppercase tracking-[0.18em] text-[#7d6430]">待恢复发布意图</div>
                   <div className="mt-2">
-                    上一次发布在 {new Date(pendingPublishIntent.createdAt).toLocaleString("zh-CN")} 因缺少公众号凭证而中断。
+                    上一次发布在 {new Date(pendingPublishIntent.createdAt).toLocaleString("zh-CN")}
+                    {pendingPublishIntent.reason === "missing_connection"
+                      ? " 因尚未配置公众号连接而中断。"
+                      : " 因公众号凭证不可用而中断。"}
                     {pendingPublishIntent.templateId ? " 这次恢复时会继续沿用当前编辑器里的模板和正文状态。" : " 恢复后会直接沿用当前编辑器里的正文状态继续发布。"}
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">
@@ -5036,6 +5708,24 @@ export function DocumentEditorClient({
                 ) : null}
                 {publishPreview ? (
                   <div className="mt-4 space-y-3 border-t border-stone-200 pt-4">
+                    <div className="grid gap-3 md:grid-cols-4">
+                      <div className="border border-stone-300 bg-[#faf7f0] px-3 py-3 text-sm text-stone-700">
+                        <div className="text-xs uppercase tracking-[0.18em] text-stone-500">阻断项</div>
+                        <div className="mt-2 font-serifCn text-2xl text-ink">{publishPreview.publishGuard.blockers.length}</div>
+                      </div>
+                      <div className="border border-stone-300 bg-[#faf7f0] px-3 py-3 text-sm text-stone-700">
+                        <div className="text-xs uppercase tracking-[0.18em] text-stone-500">警告项</div>
+                        <div className="mt-2 font-serifCn text-2xl text-ink">{publishPreview.publishGuard.warnings.length}</div>
+                      </div>
+                      <div className="border border-stone-300 bg-[#faf7f0] px-3 py-3 text-sm text-stone-700">
+                        <div className="text-xs uppercase tracking-[0.18em] text-stone-500">AI 噪声</div>
+                        <div className="mt-2 font-serifCn text-2xl text-ink">{publishPreview.publishGuard.aiNoise.score}</div>
+                      </div>
+                      <div className="border border-stone-300 bg-[#faf7f0] px-3 py-3 text-sm text-stone-700">
+                        <div className="text-xs uppercase tracking-[0.18em] text-stone-500">素材挂载</div>
+                        <div className="mt-2 font-serifCn text-2xl text-ink">{publishPreview.publishGuard.materialReadiness.attachedFragmentCount}</div>
+                      </div>
+                    </div>
                     <div className={`border px-3 py-3 text-sm leading-7 ${
                       publishPreview.publishGuard.canPublish
                         ? "border-emerald-200 bg-emerald-50 text-emerald-700"
@@ -5045,12 +5735,41 @@ export function DocumentEditorClient({
                         ? "发布守门检查已通过。"
                         : `发布守门检查未通过：${publishPreview.publishGuard.blockers.join("；")}`}
                     </div>
+                    <div className="border border-stone-300 bg-[#fcfaf5] px-4 py-4">
+                      <div className="text-xs uppercase tracking-[0.18em] text-stone-500">阶段完成定义</div>
+                      <div className="mt-3 grid gap-2">
+                        {publishPreview.publishGuard.stageReadiness.map((stage) => (
+                          <div key={stage.stageCode} className="flex flex-wrap items-start justify-between gap-3 border border-stone-300 bg-white px-3 py-3 text-sm">
+                            <div>
+                              <div className="font-medium text-ink">{stage.title}</div>
+                              <div className="mt-1 leading-6 text-stone-700">{stage.detail}</div>
+                            </div>
+                            <div className={`text-xs ${
+                              stage.status === "ready" ? "text-emerald-700" : stage.status === "blocked" ? "text-[#8f3136]" : "text-[#7d6430]"
+                            }`}>
+                              {formatPublishStageStatus(stage.status)}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
                     <div className="grid gap-2">
                       {publishPreview.publishGuard.checks.map((check) => (
                         <div key={check.key} className="flex flex-wrap items-start justify-between gap-3 border border-stone-300 bg-[#faf7f0] px-3 py-3 text-sm">
                           <div>
                             <div className="font-medium text-ink">{check.label}</div>
                             <div className="mt-1 leading-6 text-stone-700">{check.detail}</div>
+                            {check.actionLabel && check.targetStageCode ? (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  void updateWorkflow(check.targetStageCode as typeof workflow.currentStageCode, "set");
+                                }}
+                                className="mt-3 border border-stone-300 bg-white px-3 py-2 text-xs text-stone-700"
+                              >
+                                {check.actionLabel}
+                              </button>
+                            ) : null}
                           </div>
                           <div className={`shrink-0 text-xs ${
                             check.status === "passed"
@@ -5064,6 +5783,32 @@ export function DocumentEditorClient({
                         </div>
                       ))}
                     </div>
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <div className="border border-stone-300 bg-white px-4 py-4 text-sm leading-7 text-stone-700">
+                        <div className="text-xs uppercase tracking-[0.18em] text-stone-500">连接自检</div>
+                        <div className="mt-2 font-medium text-ink">{publishPreview.publishGuard.connectionHealth.connectionName || "未选择连接"}</div>
+                        <div className="mt-2">状态：{publishPreview.publishGuard.connectionHealth.status}</div>
+                        <div className="mt-1">{publishPreview.publishGuard.connectionHealth.detail}</div>
+                        <div className="mt-1 text-xs text-stone-500">
+                          {publishPreview.publishGuard.connectionHealth.tokenExpiresAt
+                            ? `Token 到期：${new Date(publishPreview.publishGuard.connectionHealth.tokenExpiresAt).toLocaleString("zh-CN")}`
+                            : "尚未记录 Token 到期时间"}
+                        </div>
+                      </div>
+                      <div className="border border-stone-300 bg-white px-4 py-4 text-sm leading-7 text-stone-700">
+                        <div className="text-xs uppercase tracking-[0.18em] text-stone-500">AI 噪声与素材</div>
+                        <div className="mt-2">噪声等级：{publishPreview.publishGuard.aiNoise.level}</div>
+                        <div className="mt-1">信源类型：{publishPreview.publishGuard.materialReadiness.uniqueSourceTypeCount}</div>
+                        <div className="mt-1">截图证据：{publishPreview.publishGuard.materialReadiness.screenshotCount}</div>
+                        {publishPreview.publishGuard.aiNoise.findings.length > 0 ? (
+                          <div className="mt-3 space-y-1 text-xs text-stone-500">
+                            {publishPreview.publishGuard.aiNoise.findings.map((item) => (
+                              <div key={item}>{item}</div>
+                            ))}
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
                     {publishPreview.publishGuard.warnings.length > 0 ? (
                       <div className="space-y-2">
                         {publishPreview.publishGuard.warnings.map((warning) => (
@@ -5071,6 +5816,48 @@ export function DocumentEditorClient({
                             {warning}
                           </div>
                         ))}
+                      </div>
+                    ) : null}
+                    {publishPreview.publishGuard.suggestions.length > 0 ? (
+                      <div className="space-y-2">
+                        {publishPreview.publishGuard.suggestions.map((suggestion) => (
+                          <div key={suggestion} className="border border-stone-300 bg-[#faf7f0] px-3 py-3 text-xs leading-6 text-stone-600">
+                            {suggestion}
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                    {publishPreview.publishGuard.latestAttempt ? (
+                      <div className={`border px-4 py-4 text-sm leading-7 ${
+                        publishPreview.publishGuard.latestAttempt.status === "failed"
+                          ? "border-[#d8b0b2] bg-[#fff7f7] text-[#8f3136]"
+                          : "border-emerald-200 bg-emerald-50 text-emerald-700"
+                      }`}>
+                        <div className="text-xs uppercase tracking-[0.18em]">最近一次发布尝试</div>
+                        <div className="mt-2">
+                          {new Date(publishPreview.publishGuard.latestAttempt.createdAt).toLocaleString("zh-CN")} ·
+                          {publishPreview.publishGuard.latestAttempt.status === "failed" ? " 失败" : " 成功"}
+                        </div>
+                        {publishPreview.publishGuard.latestAttempt.status === "failed" ? (
+                          <div className="mt-1">
+                            {publishPreview.publishGuard.latestAttempt.failureReason || "未记录失败原因"}
+                            {publishPreview.publishGuard.latestAttempt.failureCode ? ` · ${formatPublishFailureCode(publishPreview.publishGuard.latestAttempt.failureCode)}` : ""}
+                          </div>
+                        ) : (
+                          <div className="mt-1">
+                            {publishPreview.publishGuard.latestAttempt.mediaId ? `草稿媒体 ID：${publishPreview.publishGuard.latestAttempt.mediaId}` : "最近一次推送成功。"}
+                          </div>
+                        )}
+                        {publishPreview.publishGuard.latestAttempt.status === "failed" ? (
+                          <button
+                            type="button"
+                            onClick={retryLatestPublish}
+                            disabled={retryingPublish || !selectedConnectionId}
+                            className="mt-3 border border-cinnabar bg-white px-4 py-2 text-sm text-cinnabar disabled:opacity-60"
+                          >
+                            {retryingPublish ? "重试中..." : "按最近失败上下文重试"}
+                          </button>
+                        ) : null}
                       </div>
                     ) : null}
                     <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
@@ -5162,7 +5949,22 @@ export function DocumentEditorClient({
                         : "微信已返回成功，但未回填媒体 ID。"
                       : latestSyncLog.failureReason || "未记录失败原因"}
                   </div>
+                  {latestSyncLog.failureCode ? (
+                    <div className="mt-2 text-xs text-stone-500">失败分类：{formatPublishFailureCode(latestSyncLog.failureCode)}</div>
+                  ) : null}
                   {latestSyncLog.retryCount > 0 ? <div className="mt-2 text-xs text-stone-500">重试次数：{latestSyncLog.retryCount}</div> : null}
+                  {latestSyncLog.documentVersionHash ? <div className="mt-2 text-xs text-stone-500">版本哈希：{latestSyncLog.documentVersionHash.slice(0, 12)}</div> : null}
+                  {latestSyncLog.templateId ? <div className="mt-1 text-xs text-stone-500">模板：{latestSyncLog.templateId}</div> : null}
+                  {latestSyncLog.status === "failed" ? (
+                    <button
+                      type="button"
+                      onClick={retryLatestPublish}
+                      disabled={retryingPublish || !selectedConnectionId}
+                      className="mt-3 border border-cinnabar bg-white px-4 py-2 text-sm text-cinnabar disabled:opacity-60"
+                    >
+                      {retryingPublish ? "重试中..." : "直接重试这次发布"}
+                    </button>
+                  ) : null}
                 </div>
                 {(latestSyncLog.requestSummary || latestSyncLog.responseSummary) ? (
                   <div className="space-y-2">

@@ -1,5 +1,5 @@
 import { ensureUserSession } from "@/lib/auth";
-import { createAuthorPersona, getAuthorPersonaLimitForUser, getAuthorPersonas } from "@/lib/author-personas";
+import { createAuthorPersona, getAuthorPersonaCatalog, getAuthorPersonaLimitForUser, getAuthorPersonas } from "@/lib/author-personas";
 import { fail, ok } from "@/lib/http";
 
 export async function GET() {
@@ -8,11 +8,12 @@ export async function GET() {
     return fail("未登录", 401);
   }
 
-  const [personas, maxCount] = await Promise.all([
+  const [personas, maxCount, catalog] = await Promise.all([
     getAuthorPersonas(session.userId),
     getAuthorPersonaLimitForUser(session.userId),
+    getAuthorPersonaCatalog(),
   ]);
-  return ok({ personas, maxCount });
+  return ok({ personas, maxCount, catalog });
 }
 
 export async function POST(request: Request) {

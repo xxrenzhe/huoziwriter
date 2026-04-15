@@ -255,9 +255,21 @@ type SyncLogRow = {
   requestSummary: string | Record<string, unknown> | null;
   responseSummary: string | Record<string, unknown> | null;
   failureReason: string | null;
+  failureCode?: string | null;
   retryCount: number;
+  documentVersionHash?: string | null;
+  templateId?: string | null;
   createdAt: string;
 };
+
+function formatSyncFailureCode(code: string | null | undefined) {
+  if (!code) return null;
+  if (code === "auth_failed") return "凭证失败";
+  if (code === "media_failed") return "媒体素材失败";
+  if (code === "rate_limited") return "频率限制";
+  if (code === "content_invalid") return "内容格式问题";
+  return "上游异常";
+}
 
 function renderSyncAction(log: SyncLogRow, canPublishToWechat: boolean) {
   if (log.status === "success") {
@@ -354,6 +366,7 @@ export function SyncLogTable({
                 <td className="px-6 py-4 text-stone-600">
                   <div>{log.connectionName || "未命名公众号"}</div>
                   {log.retryCount > 0 ? <div className="mt-2 text-xs text-stone-500">重试次数：{log.retryCount}</div> : null}
+                  {log.templateId ? <div className="mt-1 text-xs text-stone-500">模板：{log.templateId}</div> : null}
                 </td>
                 <td className="px-6 py-4 text-stone-600">
                   <div>{new Date(log.createdAt).toLocaleString("zh-CN")}</div>
@@ -363,6 +376,8 @@ export function SyncLogTable({
                     {log.status === "success" ? "✅ 推送成功" : `❌ ${log.failureReason || "推送失败"}`}
                   </span>
                   {log.failureReason ? <div className="mt-2 text-xs leading-6 text-cinnabar">{log.failureReason}</div> : null}
+                  {log.failureCode ? <div className="mt-2 text-xs leading-6 text-stone-500">失败分类：{formatSyncFailureCode(log.failureCode)}</div> : null}
+                  {log.documentVersionHash ? <div className="mt-1 text-xs leading-6 text-stone-500">版本哈希：{log.documentVersionHash.slice(0, 12)}</div> : null}
                 </td>
                 <td className="px-6 py-4 text-cinnabar">
                   {renderSyncAction(log, canPublishToWechat)}

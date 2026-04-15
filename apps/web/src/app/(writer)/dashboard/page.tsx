@@ -1,4 +1,5 @@
 import { CreateDocumentForm, DocumentList, KnowledgeCardsPanel } from "@/components/dashboard-client";
+import { hasAuthorPersona } from "@/lib/author-personas";
 import { getKnowledgeCards } from "@/lib/knowledge";
 import { getUserPlanContext } from "@/lib/plan-access";
 import { WriterOverview } from "@/components/writer-views";
@@ -18,6 +19,9 @@ function parseStringList(value: string | string[] | null) {
 
 export default async function DashboardPage() {
   const { session } = await requireWriterSession();
+  if (!(await hasAuthorPersona(session.userId))) {
+    return null;
+  }
   const [documents, fragments, syncLogs, topics, knowledgeCards, planContext] = await Promise.all([
     getDocumentsByUser(session.userId),
     getFragmentsByUser(session.userId),
@@ -72,7 +76,6 @@ export default async function DashboardPage() {
           id: card.id,
           title: card.title,
           cardType: card.card_type,
-          workspaceScope: card.workspace_scope,
           summary: card.summary,
           conflictFlags: parseStringList(card.conflict_flags_json),
           confidenceScore: card.confidence_score,

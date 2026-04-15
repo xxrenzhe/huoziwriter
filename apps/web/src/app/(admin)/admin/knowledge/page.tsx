@@ -23,7 +23,6 @@ export default async function AdminKnowledgePage() {
         username: card.username,
         title: card.title,
         cardType: card.card_type,
-        workspaceScope: card.workspace_scope,
         summary: card.summary,
         conflictFlags: parseStringList(card.conflict_flags_json),
         confidenceScore: card.confidence_score,

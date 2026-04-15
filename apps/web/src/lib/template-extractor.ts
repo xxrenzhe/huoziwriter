@@ -1,6 +1,8 @@
+import { extractJsonObject, generateSceneText } from "./ai-gateway";
 import { getDatabase } from "./db";
 import { fetchExternalText } from "./external-fetch";
 import { syncTemplateVersionToLayoutTemplates } from "./layout-templates";
+import { loadPrompt } from "./prompt-loader";
 import { ensureExtendedProductSchema } from "./schema-bootstrap";
 
 function decodeHtml(value: string) {
@@ -82,6 +84,135 @@ function deriveTemplateConfig(html: string) {
   };
 }
 
+const TITLE_STYLE_OPTIONS = ["plain", "serif", "sharp"] as const;
+const PARAGRAPH_LENGTH_OPTIONS = ["short", "medium", "long"] as const;
+const BACKGROUND_STYLE_OPTIONS = ["paper", "scroll", "newsprint"] as const;
+const EMPHASIS_STYLE_OPTIONS = ["marker", "underline", "badge"] as const;
+const QUOTE_STYLE_OPTIONS = ["note", "editorial", "news"] as const;
+const CODE_BLOCK_STYLE_OPTIONS = ["ink", "soft", "terminal"] as const;
+const COMMAND_BLOCK_STYLE_OPTIONS = ["command", "soft-command", "terminal"] as const;
+const DIVIDER_STYLE_OPTIONS = ["hairline", "seal", "dots"] as const;
+const RECOMMENDATION_STYLE_OPTIONS = ["compact", "card", "checklist"] as const;
+
+function pickEnumValue<T extends readonly string[]>(value: unknown, options: T, fallback: T[number]) {
+  const normalized = String(value || "").trim();
+  return (options as readonly string[]).includes(normalized) ? (normalized as T[number]) : fallback;
+}
+
+function normalizeStringArray(value: unknown, limit = 8) {
+  return Array.isArray(value)
+    ? Array.from(new Set(value.map((item) => String(item || "").trim()).filter(Boolean))).slice(0, limit)
+    : [];
+}
+
+function normalizeTemplateConfig(value: unknown, fallback: ReturnType<typeof deriveTemplateConfig>) {
+  const parsed = value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+  const identity = parsed.identity && typeof parsed.identity === "object" && !Array.isArray(parsed.identity)
+    ? parsed.identity as Record<string, unknown>
+    : {};
+  const layout = parsed.layout && typeof parsed.layout === "object" && !Array.isArray(parsed.layout)
+    ? parsed.layout as Record<string, unknown>
+    : {};
+  const typography = parsed.typography && typeof parsed.typography === "object" && !Array.isArray(parsed.typography)
+    ? parsed.typography as Record<string, unknown>
+    : {};
+  const blocks = parsed.blocks && typeof parsed.blocks === "object" && !Array.isArray(parsed.blocks)
+    ? parsed.blocks as Record<string, unknown>
+    : {};
+  const constraints = parsed.constraints && typeof parsed.constraints === "object" && !Array.isArray(parsed.constraints)
+    ? parsed.constraints as Record<string, unknown>
+    : {};
+  const extraction = parsed.extraction && typeof parsed.extraction === "object" && !Array.isArray(parsed.extraction)
+    ? parsed.extraction as Record<string, unknown>
+    : {};
+
+  const tone = String(identity.tone || parsed.tone || fallback.identity.tone || "克制报道").trim() || "克制报道";
+  const titleStyle = pickEnumValue(typography.titleStyle || parsed.titleStyle, TITLE_STYLE_OPTIONS, fallback.typography.titleStyle as (typeof TITLE_STYLE_OPTIONS)[number]);
+  const paragraphLength = pickEnumValue(layout.paragraphLength || parsed.paragraphLength, PARAGRAPH_LENGTH_OPTIONS, fallback.layout.paragraphLength as (typeof PARAGRAPH_LENGTH_OPTIONS)[number]);
+  const backgroundStyle = pickEnumValue(layout.backgroundStyle || parsed.backgroundStyle, BACKGROUND_STYLE_OPTIONS, fallback.layout.backgroundStyle as (typeof BACKGROUND_STYLE_OPTIONS)[number]);
+  const emphasisStyle = pickEnumValue(typography.emphasisStyle || parsed.emphasisStyle, EMPHASIS_STYLE_OPTIONS, fallback.typography.emphasisStyle as (typeof EMPHASIS_STYLE_OPTIONS)[number]);
+  const quoteStyle = pickEnumValue(typography.quoteStyle || parsed.quoteStyle, QUOTE_STYLE_OPTIONS, fallback.typography.quoteStyle as (typeof QUOTE_STYLE_OPTIONS)[number]);
+  const codeBlockStyle = pickEnumValue(blocks.codeBlockStyle || parsed.codeBlockStyle, CODE_BLOCK_STYLE_OPTIONS, fallback.blocks.codeBlockStyle as (typeof CODE_BLOCK_STYLE_OPTIONS)[number]);
+  const commandBlockStyle = pickEnumValue(blocks.commandBlockStyle || parsed.commandBlockStyle, COMMAND_BLOCK_STYLE_OPTIONS, fallback.blocks.commandBlockStyle as (typeof COMMAND_BLOCK_STYLE_OPTIONS)[number]);
+  const dividerStyle = pickEnumValue(layout.dividerStyle || parsed.dividerStyle, DIVIDER_STYLE_OPTIONS, fallback.layout.dividerStyle as (typeof DIVIDER_STYLE_OPTIONS)[number]);
+  const recommendationStyle = pickEnumValue(blocks.recommendationStyle || parsed.recommendationStyle, RECOMMENDATION_STYLE_OPTIONS, fallback.blocks.recommendationStyle as (typeof RECOMMENDATION_STYLE_OPTIONS)[number]);
+
+  return {
+    schemaVersion: "v2",
+    tone,
+    paragraphLength,
+    titleStyle,
+    backgroundStyle,
+    emphasisStyle,
+    quoteStyle,
+    codeBlockStyle,
+    commandBlockStyle,
+    dividerStyle,
+    recommendationStyle,
+    identity: {
+      tone,
+      sourceExcerpt: String(identity.sourceExcerpt || fallback.identity.sourceExcerpt || "").trim().slice(0, 160),
+    },
+    layout: {
+      paragraphLength,
+      backgroundStyle,
+      dividerStyle,
+    },
+    typography: {
+      titleStyle,
+      emphasisStyle,
+      quoteStyle,
+    },
+    blocks: {
+      codeBlockStyle,
+      commandBlockStyle,
+      recommendationStyle,
+    },
+    constraints: {
+      bannedWords: normalizeStringArray(constraints.bannedWords || parsed.bannedWords, 10),
+      bannedPunctuation: normalizeStringArray(constraints.bannedPunctuation || parsed.bannedPunctuation, 10),
+    },
+    extraction: {
+      headingDensity: typeof extraction.headingDensity === "number" ? extraction.headingDensity : fallback.extraction.headingDensity,
+      listUsage: String(extraction.listUsage || fallback.extraction.listUsage || "").trim() || fallback.extraction.listUsage,
+      serifScore: typeof extraction.serifScore === "number" ? extraction.serifScore : fallback.extraction.serifScore,
+      strongScore: typeof extraction.strongScore === "number" ? extraction.strongScore : fallback.extraction.strongScore,
+      paragraphCount: typeof extraction.paragraphCount === "number" ? extraction.paragraphCount : fallback.extraction.paragraphCount,
+      codeBlockCount: typeof extraction.codeBlockCount === "number" ? extraction.codeBlockCount : fallback.extraction.codeBlockCount,
+    },
+  };
+}
+
+async function deriveTemplateConfigWithAi(input: {
+  title: string;
+  finalUrl: string;
+  html: string;
+  fallback: ReturnType<typeof deriveTemplateConfig>;
+}) {
+  const systemPrompt = await loadPrompt("layout_extract");
+  const strippedText = stripHtml(input.html).slice(0, 3500);
+  const userPrompt = [
+    "请分析下面网页文章的排版结构，并输出 JSON，不要解释，不要 markdown。",
+    '字段：{"tone":"字符串","titleStyle":"plain|serif|sharp","paragraphLength":"short|medium|long","backgroundStyle":"paper|scroll|newsprint","emphasisStyle":"marker|underline|badge","quoteStyle":"note|editorial|news","codeBlockStyle":"ink|soft|terminal","commandBlockStyle":"command|soft-command|terminal","dividerStyle":"hairline|seal|dots","recommendationStyle":"compact|card|checklist","identity":{"tone":"字符串","sourceExcerpt":"字符串"},"constraints":{"bannedWords":[""],"bannedPunctuation":[""]},"extraction":{"headingDensity":0,"listUsage":"freeform|structured","serifScore":0,"strongScore":0,"paragraphCount":0,"codeBlockCount":0}}',
+    "只允许使用给定枚举值，不要杜撰新的样式名。",
+    "如果页面结构不明显，优先选择最贴近的微信排版风格，而不是输出空值。",
+    `页面标题：${input.title || "未命名页面"}`,
+    `页面地址：${input.finalUrl}`,
+    `当前启发式候选：${JSON.stringify(input.fallback)}`,
+    "页面正文摘要：",
+    strippedText,
+  ].join("\n");
+
+  const result = await generateSceneText({
+    sceneCode: "layoutExtract",
+    systemPrompt,
+    userPrompt,
+    temperature: 0.1,
+  });
+
+  return normalizeTemplateConfig(extractJsonObject(result.text), input.fallback);
+}
+
 function deriveTemplateName(title: string, hostname: string) {
   const cleanTitle = title.trim().replace(/\s+/g, " ").slice(0, 18);
   return cleanTitle || `${hostname} 提取模板`;
@@ -114,7 +245,19 @@ export async function extractTemplateFromUrl(url: string, userId?: number) {
   });
   const html = response.text;
   const title = extractTitle(html);
-  const config = deriveTemplateConfig(html);
+  const heuristicConfig = deriveTemplateConfig(html);
+  const config = await (async () => {
+    try {
+      return await deriveTemplateConfigWithAi({
+        title,
+        finalUrl: response.finalUrl || normalizedUrl,
+        html,
+        fallback: heuristicConfig,
+      });
+    } catch {
+      return heuristicConfig;
+    }
+  })();
   const db = getDatabase();
   const now = new Date().toISOString();
   const finalHostname = (() => {

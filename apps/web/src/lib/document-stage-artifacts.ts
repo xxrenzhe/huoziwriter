@@ -1,4 +1,5 @@
 import { extractJsonObject, generateSceneText } from "./ai-gateway";
+import { analyzeAiNoise } from "./ai-noise-scan";
 import { getDatabase } from "./db";
 import { getDocumentAuthoringStyleContext } from "./document-authoring-style-context";
 import { getSavedDocumentHistoryReferences } from "./document-history-references";
@@ -9,6 +10,7 @@ import { canUseHistoryReferences, getUserPlanContext } from "./plan-access";
 import { loadPrompt } from "./prompt-loader";
 import { getDocumentById } from "./repositories";
 import { ensureExtendedProductSchema } from "./schema-bootstrap";
+import { scoreSemanticMatch } from "./semantic-search";
 
 export type DocumentArtifactStageCode = Extract<
   DocumentWorkflowStageCode,
@@ -91,14 +93,27 @@ type GenerationContext = {
   }>;
   outlineNodes: Array<{ title: string; description: string | null }>;
   knowledgeCards: Array<{
+    id: number;
     title: string;
     summary: string | null;
     keyFacts: string[];
     openQuestions: string[];
+    latestChangeSummary: string | null;
+    overturnedJudgements: string[];
     status: string;
     confidenceScore: number;
     matchedFragmentCount: number;
   }>;
+  seriesInsight: {
+    label: string | null;
+    reason: string | null;
+    commonTerms: string[];
+    coreStances: string[];
+    driftRisks: string[];
+    backgroundChecklist: string[];
+    whyNow: string[];
+    relatedDocumentCount: number;
+  } | null;
   bannedWords: string[];
   languageGuardRules: LanguageGuardRule[];
   audienceSelection: {
@@ -262,6 +277,17 @@ function buildFactCheckEvidenceCards(
   checks: Array<{ claim: string; status: string; suggestion: string }>,
 ) {
   return checks.slice(0, 8).map((check) => {
+    const matchedKnowledgeCard = context.knowledgeCards
+      .map((card) => ({
+        card,
+        score: scoreSemanticMatch(
+          `${check.claim}\n${check.suggestion}`,
+          `${card.title}\n${card.summary ?? ""}\n${card.keyFacts.join("；")}\n${card.latestChangeSummary ?? ""}`,
+        ),
+      }))
+      .filter((item) => item.score >= 0.18)
+      .sort((left, right) => right.score - left.score || right.card.confidenceScore - left.card.confidenceScore)
+      .map((item) => item.card)[0] ?? null;
     const matchedEvidence = context.evidenceFragments
       .map((fragment) => ({
         fragment,
@@ -276,6 +302,18 @@ function buildFactCheckEvidenceCards(
         excerpt: truncateText(item.fragment.distilledContent, 120),
         sourceType: item.fragment.sourceType,
         sourceUrl: item.fragment.sourceUrl,
+        knowledgeCardId: matchedKnowledgeCard?.id ?? null,
+        knowledgeTitle: matchedKnowledgeCard?.title ?? null,
+        confidenceLabel:
+          matchedKnowledgeCard == null
+            ? "待补主题档案"
+            : matchedKnowledgeCard.status === "conflicted"
+              ? "存在冲突"
+              : matchedKnowledgeCard.confidenceScore >= 0.75
+                ? "高置信"
+                : matchedKnowledgeCard.confidenceScore >= 0.58
+                  ? "中置信"
+                  : "待验证",
         rationale:
           item.fragment.sourceType === "url" && item.fragment.sourceUrl
             ? "可回到原链接核对一手表述。"
@@ -534,13 +572,22 @@ function fallbackDeepWriting(context: GenerationContext) {
       useWhen: item.relationReason || "当需要补前情、延伸判断或形成自然承接时再引用。",
       bridgeSentence: item.bridgeSentence || "",
     })),
+    seriesInsight: context.seriesInsight,
+    seriesChecklist: context.seriesInsight
+      ? [
+          context.seriesInsight.label ? `当前文章属于「${context.seriesInsight.label}」这条连续写作线。` : null,
+          ...context.seriesInsight.driftRisks.slice(0, 2),
+          ...context.seriesInsight.whyNow.slice(0, 2),
+        ].filter(Boolean)
+      : [],
     finalChecklist: [
       "标题、开头、结尾与已确认大纲保持一致，不要临时换题。",
       "先写判断，再写事实，不要把背景介绍铺满前两段。",
       "截图素材只能作为原图插入，不要改写成伪引用。",
       "历史文章只能自然带出，不要生成“相关文章”区块。",
       "有数字、时间、案例的句子优先保留来源锚点或谨慎语气。",
-    ],
+      context.seriesInsight?.driftRisks[0] || null,
+    ].filter(Boolean),
   } satisfies Record<string, unknown>;
 }
 
@@ -578,6 +625,7 @@ function fallbackProsePolish(context: GenerationContext) {
   const firstSentence = plain.split(/[。！？!?]/).map((item) => item.trim()).find(Boolean) || context.document.title;
   const bannedHits = context.bannedWords.filter((word) => plain.includes(word)).slice(0, 4);
   const languageGuardHits = collectLanguageGuardHits(plain, context.languageGuardRules).slice(0, 6);
+  const aiNoise = analyzeAiNoise(context.document.markdownContent);
   return {
     summary: "这版稿子适合继续做语言降噪与节奏修整，重点是缩短重句、增强首段抓力，并把判断句打得更硬。",
     overallDiagnosis: longParagraph ? "段落偏长，节奏略闷，需要切分。" : "整体节奏可用，但还可以再提升开头与收尾的记忆点。",
@@ -617,6 +665,7 @@ function fallbackProsePolish(context: GenerationContext) {
       "连续两段解释之后，插入一句短结论换气。",
       "每个二级标题下优先保留 2-3 个事实锚点，不要把判断埋进长段落。",
     ],
+    aiNoise,
   } satisfies Record<string, unknown>;
 }
 
@@ -803,6 +852,11 @@ function normalizeDeepWritingPayload(value: unknown, fallback: Record<string, un
         : uniqueStrings(fallback.bannedWordWatchlist, 8),
     sectionBlueprint: sectionBlueprint.length ? sectionBlueprint : fallbackSectionBlueprint,
     historyReferencePlan: historyReferencePlan.length ? historyReferencePlan : fallbackHistoryReferencePlan,
+    seriesInsight: normalizeRecord(payload?.seriesInsight) || normalizeRecord(fallback.seriesInsight) || null,
+    seriesChecklist:
+      uniqueStrings(payload?.seriesChecklist, 6).length
+        ? uniqueStrings(payload?.seriesChecklist, 6)
+        : uniqueStrings(fallback.seriesChecklist, 6),
     finalChecklist:
       uniqueStrings(payload?.finalChecklist, 6).length
         ? uniqueStrings(payload?.finalChecklist, 6)
@@ -848,6 +902,9 @@ function normalizeFactCheckPayload(value: unknown, fallback: Record<string, unkn
                   excerpt: String(evidence?.excerpt || "").trim(),
                   sourceType: String(evidence?.sourceType || "manual").trim(),
                   sourceUrl: String(evidence?.sourceUrl || "").trim() || null,
+                  knowledgeCardId: Number(evidence?.knowledgeCardId || 0) || null,
+                  knowledgeTitle: String(evidence?.knowledgeTitle || "").trim() || null,
+                  confidenceLabel: String(evidence?.confidenceLabel || "").trim() || null,
                   rationale: String(evidence?.rationale || "").trim(),
                 }))
                 .filter((evidence) => evidence.title && evidence.excerpt)
@@ -917,6 +974,7 @@ function normalizeProsePolishPayload(value: unknown, fallback: Record<string, un
     rewrittenLead: String(payload?.rewrittenLead || fallback.rewrittenLead || "").trim(),
     punchlines: uniqueStrings(payload?.punchlines, 5).length ? uniqueStrings(payload?.punchlines, 5) : uniqueStrings(fallback.punchlines, 5),
     rhythmAdvice: uniqueStrings(payload?.rhythmAdvice, 5).length ? uniqueStrings(payload?.rhythmAdvice, 5) : uniqueStrings(fallback.rhythmAdvice, 5),
+    aiNoise: normalizeRecord(payload?.aiNoise) || normalizeRecord(fallback.aiNoise),
   } satisfies Record<string, unknown>;
 }
 
@@ -1021,6 +1079,7 @@ async function buildGenerationContext(documentId: number, userId: number): Promi
       })),
     outlineNodes: writingContext.outlineNodes,
     knowledgeCards: writingContext.knowledgeCards,
+    seriesInsight: writingContext.seriesInsight ?? null,
     bannedWords: getLanguageGuardTokenBlacklist(languageGuardRules),
     languageGuardRules,
     audienceSelection: getAudienceSelection(audienceArtifact?.payload),
@@ -1105,7 +1164,7 @@ async function upsertArtifact(input: {
 async function generateWithPrompt(input: {
   stageCode: DocumentArtifactStageCode;
   promptId: string;
-  sceneCode: "documentWrite" | "bannedWordAudit";
+  sceneCode: "documentWrite" | "bannedWordAudit" | "audienceProfile" | "outlinePlan" | "deepWrite" | "factCheck" | "prosePolish";
   userPrompt: string;
   fallback: Record<string, unknown>;
   normalize: (value: unknown, fallback: Record<string, unknown>) => Record<string, unknown>;
@@ -1174,7 +1233,7 @@ async function generateAudienceAnalysis(context: GenerationContext) {
   return generateWithPrompt({
     stageCode: "audienceAnalysis",
     promptId: "audience_analysis",
-    sceneCode: "documentWrite",
+    sceneCode: "audienceProfile",
     userPrompt,
     fallback,
     normalize: normalizeAudiencePayload,
@@ -1221,7 +1280,7 @@ async function generateOutlinePlanning(context: GenerationContext) {
   return generateWithPrompt({
     stageCode: "outlinePlanning",
     promptId: "outline_planning",
-    sceneCode: "documentWrite",
+    sceneCode: "outlinePlan",
     userPrompt,
     fallback,
     normalize: normalizeOutlinePayload,
@@ -1249,6 +1308,7 @@ async function generateDeepWriting(context: GenerationContext) {
     "mustUseFacts 只保留真正值得写进正文的事实锚点，不超过 6 条。",
     "historyReferencePlan 最多 2 条，没有可用旧文时返回空数组。",
     "finalChecklist 必须覆盖标题一致性、事实密度、死刑词规避、结尾动作或判断收束。",
+    "如果已提供 seriesInsight 或 seriesChecklist，请保留下来并显式提醒系列口径一致性。",
     "如果大纲里已经确认了标题、开头、目标情绪、结尾策略，必须优先沿用。",
     `文稿标题：${context.document.title}`,
     `作者人设：${listPersonaSummary(context)}`,
@@ -1268,6 +1328,15 @@ async function generateDeepWriting(context: GenerationContext) {
     context.historyReferences.length
       ? `已保存历史文章自然引用：${context.historyReferences.map((item) => `《${item.title}》${item.relationReason ? `：${item.relationReason}` : ""}${item.bridgeSentence ? `；桥接句：${item.bridgeSentence}` : ""}`).join("；")}`
       : "暂无历史文章自然引用设置。",
+    context.seriesInsight
+      ? `系列一致性：${[
+          context.seriesInsight.label ? `系列标签 ${context.seriesInsight.label}` : null,
+          context.seriesInsight.reason ? `归因理由 ${context.seriesInsight.reason}` : null,
+          context.seriesInsight.commonTerms.length ? `常用术语 ${context.seriesInsight.commonTerms.join(" / ")}` : null,
+          context.seriesInsight.driftRisks.length ? `口径漂移风险 ${context.seriesInsight.driftRisks.join("；")}` : null,
+          context.seriesInsight.whyNow.length ? `为什么现在值得继续写 ${context.seriesInsight.whyNow.join("；")}` : null,
+        ].filter(Boolean).join("；")}`
+      : "当前暂无明确系列约束。",
     `死刑词名单：${context.bannedWords.join("、") || "无"}`,
     `当前正文摘要：${truncateText(stripMarkdown(context.document.markdownContent), 800) || "暂无正文，请按大纲和素材组织初稿。"}`,
   ].filter(Boolean).join("\n");
@@ -1275,7 +1344,7 @@ async function generateDeepWriting(context: GenerationContext) {
   return generateWithPrompt({
     stageCode: "deepWriting",
     promptId: "document_write",
-    sceneCode: "documentWrite",
+    sceneCode: "deepWrite",
     userPrompt,
     fallback,
     normalize: normalizeDeepWritingPayload,
@@ -1301,12 +1370,19 @@ async function generateFactCheck(context: GenerationContext) {
     `绑定文风资产细节：\n${listWritingStyleProfileSummary(context)}`,
     `当前正文：${context.document.markdownContent || "暂无正文"}`,
     `可对照事实：${getSourceFacts(context, 8).join("；") || "暂无对照事实"}`,
+    context.seriesInsight
+      ? `系列助手提示：${[
+          context.seriesInsight.label ? `当前系列 ${context.seriesInsight.label}` : null,
+          context.seriesInsight.coreStances.length ? `核心立场 ${context.seriesInsight.coreStances.join("；")}` : null,
+          context.seriesInsight.driftRisks.length ? `口径漂移风险 ${context.seriesInsight.driftRisks.join("；")}` : null,
+        ].filter(Boolean).join("；")}`
+      : "当前暂无系列历史约束。",
   ].join("\n");
 
   return generateWithPrompt({
     stageCode: "factCheck",
     promptId: "fact_check",
-    sceneCode: "bannedWordAudit",
+    sceneCode: "factCheck",
     userPrompt,
     fallback,
     normalize: (value, baseFallback) => normalizeFactCheckPayload(value, baseFallback, context),
@@ -1339,7 +1415,7 @@ async function generateProsePolish(context: GenerationContext) {
   return generateWithPrompt({
     stageCode: "prosePolish",
     promptId: "prose_polish",
-    sceneCode: "bannedWordAudit",
+    sceneCode: "prosePolish",
     userPrompt,
     fallback,
     normalize: normalizeProsePolishPayload,

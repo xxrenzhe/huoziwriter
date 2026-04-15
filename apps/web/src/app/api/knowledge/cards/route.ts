@@ -21,12 +21,13 @@ export async function GET() {
   return ok(
     cards.map((card) => ({
       id: card.id,
-      workspaceScope: card.workspace_scope,
       cardType: card.card_type,
       title: card.title,
       slug: card.slug,
       summary: card.summary,
       conflictFlags: parseConflictFlags(card.conflict_flags_json),
+      latestChangeSummary: card.latest_change_summary,
+      overturnedJudgements: parseConflictFlags(card.overturned_judgements_json),
       sourceFragmentIds: card.source_fragment_ids,
       confidenceScore: card.confidence_score,
       status: card.status,

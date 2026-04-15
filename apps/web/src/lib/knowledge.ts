@@ -16,12 +16,13 @@ type KnowledgeCardListItem = {
   id: number;
   user_id: number;
   owner_username: string | null;
-  workspace_scope: string;
   card_type: string;
   title: string;
   slug: string;
   summary: string | null;
   conflict_flags_json: string | string[] | null;
+  latest_change_summary: string | null;
+  overturned_judgements_json: string | string[] | null;
   confidence_score: number;
   status: string;
   last_compiled_at: string | null;
@@ -248,6 +249,55 @@ function analyzeKnowledgeConsensus(fragments: CompileFragment[]) {
   };
 }
 
+function buildKnowledgeChangeInsights(input: {
+  title: string;
+  previousSummary: string | null;
+  previousKeyFacts: string[];
+  previousConflictFlags: string[];
+  previousStatus: string | null;
+  nextSummary: string;
+  nextKeyFacts: string[];
+  nextConflictFlags: string[];
+  nextStatus: string;
+}) {
+  if (!input.previousSummary && input.previousKeyFacts.length === 0) {
+    return {
+      latestChangeSummary: `首次编译「${input.title}」，已沉淀当前阶段的主题摘要与关键事实。`,
+      overturnedJudgements: [] as string[],
+    };
+  }
+
+  const nextFactSet = new Set(input.nextKeyFacts);
+  const newlyConflicted = input.nextConflictFlags.filter((flag) => !input.previousConflictFlags.includes(flag));
+  const resolvedConflicts = input.previousConflictFlags.filter((flag) => !input.nextConflictFlags.includes(flag));
+  const outdatedFacts = input.previousKeyFacts
+    .filter((fact) => !nextFactSet.has(fact))
+    .slice(0, 3)
+    .map((fact) => `旧判断待重验：${fact}`);
+
+  const overturnedJudgements = Array.from(
+    new Set([
+      ...(input.previousStatus && input.previousStatus !== input.nextStatus && input.nextStatus === "conflicted" && input.previousSummary
+        ? [`原先摘要「${input.previousSummary.slice(0, 48)}」出现反向信号，需要重新核实。`]
+        : []),
+      ...outdatedFacts,
+      ...newlyConflicted.map((flag) => `新增冲突信号：${flag}，旧结论可能已失效。`),
+    ]),
+  ).slice(0, 4);
+
+  const summaryParts = [
+    newlyConflicted.length ? `新增冲突：${newlyConflicted.join("、")}` : null,
+    resolvedConflicts.length ? `已缓解冲突：${resolvedConflicts.join("、")}` : null,
+    input.previousSummary && input.previousSummary !== input.nextSummary ? `摘要已更新为「${input.nextSummary.slice(0, 72)}」` : null,
+    !newlyConflicted.length && !resolvedConflicts.length && outdatedFacts.length === 0 ? "补入了新的事实与表述，整体判断保持连续" : null,
+  ].filter(Boolean);
+
+  return {
+    latestChangeSummary: summaryParts.join("；") || `围绕「${input.title}」补入了新的事实变化。`,
+    overturnedJudgements,
+  };
+}
+
 async function loadFragmentsForCompile(userId: number, fragmentIds?: number[]) {
   const db = getDatabase();
   const scope = await getUserAccessScope(userId);
@@ -309,7 +359,6 @@ async function getKnowledgeCardRecord(userId: number, cardId: number) {
     id: number;
     user_id: number;
     owner_username: string | null;
-    workspace_scope: string;
     card_type: string;
     title: string;
     slug: string;
@@ -317,6 +366,8 @@ async function getKnowledgeCardRecord(userId: number, cardId: number) {
     key_facts_json: string | string[] | null;
     open_questions_json: string | string[] | null;
     conflict_flags_json: string | string[] | null;
+    latest_change_summary: string | null;
+    overturned_judgements_json: string | string[] | null;
     confidence_score: number;
     status: string;
     last_compiled_at: string | null;
@@ -355,9 +406,21 @@ export async function compileKnowledgeCardFromFragments(
   const summary = fragments.map((fragment) => fragment.distilled_content).join("；").slice(0, 300);
   const keyFacts = fragments.slice(0, 4).map((fragment) => fragment.distilled_content);
   const consensus = analyzeKnowledgeConsensus(fragments);
+  const previousKeyFacts = existingCard ? parseList(existingCard.key_facts_json) : [];
+  const previousConflictFlags = existingCard ? parseList(existingCard.conflict_flags_json) : [];
+  const changeInsights = buildKnowledgeChangeInsights({
+    title,
+    previousSummary: existingCard?.summary ?? null,
+    previousKeyFacts,
+    previousConflictFlags,
+    previousStatus: existingCard?.status ?? null,
+    nextSummary: summary,
+    nextKeyFacts: keyFacts,
+    nextConflictFlags: consensus.conflictFlags,
+    nextStatus: consensus.status,
+  });
 
   const scope = await getUserAccessScope(userId);
-  const workspaceScope = "personal";
   const scopePlaceholders = scope.userIds.map(() => "?").join(", ");
   const existing =
     existingCard ||
@@ -370,11 +433,10 @@ export async function compileKnowledgeCardFromFragments(
   if (!cardId) {
     await db.exec(
       `INSERT INTO knowledge_cards (
-        user_id, workspace_scope, card_type, title, slug, summary, key_facts_json, open_questions_json, conflict_flags_json, confidence_score, status, last_compiled_at, last_verified_at, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        user_id, card_type, title, slug, summary, key_facts_json, open_questions_json, conflict_flags_json, latest_change_summary, overturned_judgements_json, confidence_score, status, last_compiled_at, last_verified_at, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         userId,
-        workspaceScope,
         pickCardType(primary),
         title,
         slug,
@@ -382,6 +444,8 @@ export async function compileKnowledgeCardFromFragments(
         keyFacts,
         consensus.openQuestions,
         consensus.conflictFlags,
+        changeInsights.latestChangeSummary,
+        changeInsights.overturnedJudgements,
         consensus.confidenceScore,
         consensus.status,
         now,
@@ -395,9 +459,23 @@ export async function compileKnowledgeCardFromFragments(
   } else {
     await db.exec(
       `UPDATE knowledge_cards
-       SET workspace_scope = ?, card_type = ?, title = ?, summary = ?, key_facts_json = ?, open_questions_json = ?, conflict_flags_json = ?, confidence_score = ?, status = ?, last_compiled_at = ?, updated_at = ?
+       SET card_type = ?, title = ?, summary = ?, key_facts_json = ?, open_questions_json = ?, conflict_flags_json = ?, latest_change_summary = ?, overturned_judgements_json = ?, confidence_score = ?, status = ?, last_compiled_at = ?, updated_at = ?
        WHERE id = ?`,
-      [workspaceScope, pickCardType(primary), title, summary, keyFacts, consensus.openQuestions, consensus.conflictFlags, consensus.confidenceScore, consensus.status, now, now, cardId],
+      [
+        pickCardType(primary),
+        title,
+        summary,
+        keyFacts,
+        consensus.openQuestions,
+        consensus.conflictFlags,
+        changeInsights.latestChangeSummary,
+        changeInsights.overturnedJudgements,
+        consensus.confidenceScore,
+        consensus.status,
+        now,
+        now,
+        cardId,
+      ],
     );
     await db.exec("DELETE FROM knowledge_card_fragments WHERE knowledge_card_id = ?", [cardId]);
   }
@@ -438,11 +516,12 @@ export async function compileKnowledgeCardFromFragments(
         keyFacts,
         openQuestions: consensus.openQuestions,
         conflictFlags: consensus.conflictFlags,
+        latestChangeSummary: changeInsights.latestChangeSummary,
+        overturnedJudgements: changeInsights.overturnedJudgements,
         sourceFragmentIds: fragments.map((fragment) => fragment.id),
         relatedCardIds: relatedCards.map((card) => card.id),
         status: consensus.status,
         confidenceScore: consensus.confidenceScore,
-        workspaceScope,
       },
       consensus.changeSummary,
       null,
@@ -548,7 +627,6 @@ export async function getKnowledgeCardDetail(userId: number, cardId: number) {
     userId: card.user_id,
     ownerUsername: card.owner_username,
     shared: card.user_id !== userId,
-    workspaceScope: card.workspace_scope,
     cardType: card.card_type,
     title: card.title,
     slug: card.slug,
@@ -556,6 +634,8 @@ export async function getKnowledgeCardDetail(userId: number, cardId: number) {
     keyFacts: parseList(card.key_facts_json),
     openQuestions: parseList(card.open_questions_json),
     conflictFlags: parseList(card.conflict_flags_json),
+    latestChangeSummary: card.latest_change_summary,
+    overturnedJudgements: parseList(card.overturned_judgements_json),
     sourceFragmentIds: fragments.map((fragment) => fragment.fragment_id),
     relatedCardIds: relatedCards.map((item) => item.related_card_id),
     relatedCards: relatedCards

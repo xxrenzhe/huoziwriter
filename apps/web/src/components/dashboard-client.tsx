@@ -69,7 +69,6 @@ type KnowledgeCardSummary = {
   id: number;
   title: string;
   cardType: string;
-  workspaceScope: string;
   summary: string | null;
   conflictFlags: string[];
   confidenceScore: number;
@@ -85,7 +84,6 @@ type KnowledgeCardDetail = {
   userId: number;
   ownerUsername: string | null;
   shared: boolean;
-  workspaceScope: string;
   cardType: string;
   title: string;
   summary: string | null;
@@ -288,7 +286,6 @@ export function KnowledgeCardsPanel({
                 <p className="mt-3 text-sm leading-7 text-stone-700">{card.summary || "当前档案仍在生成中，稍后会出现摘要。"}</p>
                 <div className="mt-5 flex flex-wrap gap-3 text-xs text-stone-500">
                   <span>证据碎片 {card.sourceFragmentCount}</span>
-                  <span>{card.workspaceScope === "personal" ? "个人作用域" : card.workspaceScope}</span>
                   <span>置信度 {Math.round(card.confidenceScore * 100)}%</span>
                   <span>{card.lastCompiledAt ? `更新于 ${new Date(card.lastCompiledAt).toLocaleString("zh-CN")}` : "待编译"}</span>
                 </div>
@@ -343,7 +340,6 @@ export function KnowledgeCardsPanel({
                 <h3 className="mt-3 font-serifCn text-3xl text-ink">{detail.title}</h3>
                 <p className="mt-3 text-sm leading-7 text-stone-700">{detail.summary || "暂无摘要"}</p>
                 <div className="mt-4 flex flex-wrap gap-2 text-xs text-stone-500">
-                  <span>{detail.workspaceScope === "personal" ? "个人作用域" : detail.workspaceScope}</span>
                   <span>置信度 {Math.round(detail.confidenceScore * 100)}%</span>
                   <span>{detail.lastCompiledAt ? `最近编译 ${new Date(detail.lastCompiledAt).toLocaleString("zh-CN")}` : "尚未编译"}</span>
                   <span>{detail.lastVerifiedAt ? `最近核验 ${new Date(detail.lastVerifiedAt).toLocaleString("zh-CN")}` : "待核验"}</span>
@@ -464,7 +460,18 @@ export function TopicRadarStarter({
     angleOptions: string[];
     judgementShift?: string | null;
   }>;
-  knowledgeMatches?: Record<number, Array<{ id: number; title: string; cardType: string; status: string; confidenceScore: number; summary?: string | null; shared?: boolean; ownerUsername?: string | null }>>;
+  knowledgeMatches?: Record<number, Array<{
+    id: number;
+    title: string;
+    cardType: string;
+    status: string;
+    confidenceScore: number;
+    summary?: string | null;
+    latestChangeSummary?: string | null;
+    overturnedJudgements?: string[];
+    shared?: boolean;
+    ownerUsername?: string | null;
+  }>>;
   canStart?: boolean;
 }) {
   const router = useRouter();
@@ -494,12 +501,29 @@ export function TopicRadarStarter({
     sourceUrl: string;
     sourceTitle: string;
     degradedReason: string | null;
+    judgementShift?: string | null;
+    knowledgeMatches?: Array<{
+      id: number;
+      title: string;
+      cardType: string;
+      status: string;
+      confidenceScore: number;
+      summary?: string | null;
+      latestChangeSummary?: string | null;
+      overturnedJudgements?: string[];
+      shared?: boolean;
+      ownerUsername?: string | null;
+    }>;
     candidates: Array<{
       proposedTitle: string;
       angleLabel: string;
       angleReason: string;
+      whyNow?: string;
       thesis: string;
       seedFacts: string[];
+      matchedKnowledgeTitle?: string | null;
+      latestChangeSummary?: string | null;
+      impactedJudgements?: string[];
     }>;
   }>(null);
 
@@ -550,8 +574,12 @@ export function TopicRadarStarter({
     proposedTitle: string;
     angleLabel: string;
     angleReason: string;
+    whyNow?: string;
     thesis: string;
     seedFacts: string[];
+    matchedKnowledgeTitle?: string | null;
+    latestChangeSummary?: string | null;
+    impactedJudgements?: string[];
   }, index: number) {
     if (!referenceResult) return;
     const key = `reference-${index}`;
@@ -637,13 +665,44 @@ export function TopicRadarStarter({
         {referenceResult ? (
           <div className="mt-4 space-y-3">
             <div className="text-sm text-stone-700">参考来源：{referenceResult.sourceTitle || referenceResult.sourceUrl}</div>
+            {referenceResult.judgementShift ? (
+              <div className="border border-[#eadfb9] bg-[#fdf6d7] px-4 py-4 text-sm leading-7 text-stone-700">
+                {referenceResult.judgementShift}
+              </div>
+            ) : null}
+            {referenceResult.knowledgeMatches?.length ? (
+              <div className="border border-stone-300 bg-[#faf7f0] px-4 py-4 text-sm leading-7 text-stone-700">
+                已命中主题档案：{referenceResult.knowledgeMatches.map((item) => item.title).join(" / ")}
+                {referenceResult.knowledgeMatches[0]?.overturnedJudgements?.length ? (
+                  <div className="mt-2 text-xs leading-6 text-stone-500">
+                    受影响旧判断：{referenceResult.knowledgeMatches[0].overturnedJudgements?.slice(0, 2).join("；")}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
             {referenceResult.candidates.map((candidate, index) => (
               <div key={`${candidate.proposedTitle}-${index}`} className="border border-stone-300 bg-[#faf7f0] px-4 py-4">
                 <div className="text-xs uppercase tracking-[0.18em] text-stone-500">{candidate.angleLabel}</div>
                 <div className="mt-2 font-serifCn text-2xl text-ink">{candidate.proposedTitle}</div>
                 <div className="mt-2 text-sm leading-7 text-stone-700">{candidate.angleReason}</div>
+                {candidate.matchedKnowledgeTitle ? (
+                  <div className="mt-2 text-xs leading-6 text-stone-500">
+                    对照档案：{candidate.matchedKnowledgeTitle}
+                    {candidate.latestChangeSummary ? ` · 最近变化：${candidate.latestChangeSummary}` : ""}
+                  </div>
+                ) : null}
+                {candidate.whyNow ? (
+                  <div className="mt-2 border border-[#dcc8a6] bg-[#fff8eb] px-3 py-3 text-sm leading-7 text-stone-700">
+                    为什么现在值得写：{candidate.whyNow}
+                  </div>
+                ) : null}
                 <div className="mt-2 text-sm leading-7 text-stone-700">主判断：{candidate.thesis}</div>
                 {candidate.seedFacts.length > 0 ? <div className="mt-2 text-xs leading-6 text-stone-500">线索：{candidate.seedFacts.join("；")}</div> : null}
+                {candidate.impactedJudgements?.length ? (
+                  <div className="mt-2 text-xs leading-6 text-stone-500">
+                    旧判断受影响：{candidate.impactedJudgements.join("；")}
+                  </div>
+                ) : null}
                 <button
                   type="button"
                   disabled={!canStart || loadingKey !== null}
@@ -703,6 +762,11 @@ export function TopicRadarStarter({
               已命中 {knowledgeMatches[topic.id].length} 个主题档案：
               {" "}
               {knowledgeMatches[topic.id].map((item) => item.title).join(" / ")}
+              {knowledgeMatches[topic.id][0]?.latestChangeSummary ? (
+                <div className="mt-2 text-xs leading-6 text-stone-500">
+                  最近变化：{knowledgeMatches[topic.id][0].latestChangeSummary}
+                </div>
+              ) : null}
             </div>
           ) : null}
           {canStart ? (
@@ -797,6 +861,11 @@ export function TopicRadarStarter({
                   {item.cardType} · {Math.round(item.confidenceScore * 100)}%
                 </span>
               ))}
+            </div>
+          ) : null}
+          {canStart && knowledgeMatches[topic.id]?.[0]?.overturnedJudgements?.length ? (
+            <div className="mt-3 border border-[#d8b0b2] bg-[#fff7f7] px-3 py-3 text-xs leading-6 text-[#8f3136]">
+              {knowledgeMatches[topic.id][0].overturnedJudgements?.slice(0, 2).join("；")}
             </div>
           ) : null}
         </article>

@@ -6,6 +6,7 @@ type SchedulerTopicSyncBody = {
   limitPerSource?: number;
   force?: boolean;
   windowHour?: number;
+  windowMinute?: number;
 };
 
 export async function POST(request: Request) {
@@ -25,6 +26,7 @@ export async function POST(request: Request) {
       limitPerSource: Number.isFinite(Number(body.limitPerSource)) ? Number(body.limitPerSource) : 4,
       force: Boolean(body.force),
       windowHour: body.windowHour === 18 ? 18 : body.windowHour === 6 ? 6 : undefined,
+      windowMinute: body.windowMinute === 15 ? 15 : body.windowMinute === 45 ? 45 : 0,
     });
     return ok(result);
   } catch (error) {

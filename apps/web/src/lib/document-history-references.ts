@@ -41,6 +41,14 @@ function buildBridgeSentence(currentTitle: string, candidateTitle: string) {
   return `前面我在《${candidateTitle}》里已经提过这个问题的另一面，这次想把它放回“${currentTitle}”的语境里继续说透。`;
 }
 
+function buildSeriesLabel(currentTitle: string, candidateTitle: string) {
+  const shared = tokenize(currentTitle).filter((token) => tokenize(candidateTitle).includes(token) && token.length >= 2);
+  if (shared.length === 0) {
+    return "跨主题补充";
+  }
+  return `系列线索：${shared.slice(0, 2).join(" / ")}`;
+}
+
 export async function suggestDocumentHistoryReferences(input: {
   userId: number;
   documentId: number;
@@ -65,6 +73,7 @@ export async function suggestDocumentHistoryReferences(input: {
         currentMarkdown: input.currentMarkdown,
         candidate,
       });
+      const directTitleHits = countDirectTitleHits(input.currentTitle, candidate.title);
       const semanticScore = scoreSemanticMatch(
         `${input.currentTitle}\n${input.currentMarkdown.slice(0, 2200)}`,
         `${candidate.title}\n${candidate.markdown_content.slice(0, 3200)}`,
@@ -74,11 +83,18 @@ export async function suggestDocumentHistoryReferences(input: {
         title: candidate.title,
         relationReason:
           semanticScore >= 0.42
-            ? "语义相近且判断线连续，适合在正文里自然承接。"
+            ? "语义相近且判断线连续，适合在正文里自然承接，并帮助保持系列口径一致。"
             : score >= 24
-              ? "主题重叠明显，可作为旧判断的补充背景。"
+              ? "主题重叠明显，可作为旧判断的补充背景，避免这篇文章重新铺垫全部上下文。"
               : "存在可回带的议题交集，适合作为轻量旧文锚点。",
         bridgeSentence: buildBridgeSentence(input.currentTitle, candidate.title),
+        seriesLabel: buildSeriesLabel(input.currentTitle, candidate.title),
+        consistencyHint:
+          directTitleHits > 0
+            ? "当前标题与旧文存在直接主题重合，写作时要统一术语和结论口径。"
+            : semanticScore >= 0.42
+              ? "虽然标题不同，但判断线连续，适合在正文里说明“这次补了什么新变量”。"
+              : "更适合作为背景回带，而不是主论点支撑。",
         score,
       };
     })

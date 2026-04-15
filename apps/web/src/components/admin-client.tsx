@@ -404,7 +404,7 @@ export function AdminTopicSourcesClient({
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="text-sm leading-7 text-stone-400">
-          需要临时补抓一轮时，可直接手动触发全局同步，不必等待 06:00 / 18:00 调度窗口。
+          需要临时补抓一轮时，可直接手动触发全局同步，不必等待 06:00 / 18:00 主窗口或 06:15 / 06:45 / 18:15 / 18:45 补偿窗口。
         </div>
         <button onClick={runTopicSync} disabled={syncing} className={uiPrimitives.primaryButton}>
           {syncing ? "同步中..." : "立即同步热点"}
@@ -416,7 +416,6 @@ export function AdminTopicSourcesClient({
         <select value={sourceType} onChange={(event) => setSourceType(event.target.value)} className={uiPrimitives.adminSelect}>
           <option value="youtube">YouTube</option>
           <option value="reddit">Reddit</option>
-          <option value="x">X</option>
           <option value="podcast">Podcast</option>
           <option value="spotify">Spotify</option>
           <option value="news">News</option>
@@ -471,7 +470,6 @@ export function AdminTopicSourcesClient({
                 >
                   <option value="youtube">YouTube</option>
                   <option value="reddit">Reddit</option>
-                  <option value="x">X</option>
                   <option value="podcast">Podcast</option>
                   <option value="spotify">Spotify</option>
                   <option value="news">News</option>
@@ -511,7 +509,7 @@ export function AdminTopicSourcesClient({
       <div className="border-t border-stone-800 pt-6">
         <div className="text-xs uppercase tracking-[0.24em] text-cinnabar">Topic Sync Runs</div>
         <div className="mt-3 text-sm leading-7 text-stone-400">
-          这里记录北京时间 06:00 / 18:00 调度窗口的热点抓取执行结果；若窗口内存在失败源，可直接发起补偿重试。
+          这里记录北京时间 06:00 / 18:00 主窗口，以及 06:15 / 06:45 / 18:15 / 18:45 补偿窗口内的热点抓取执行结果；若窗口内存在失败源，可直接发起补偿重试。
         </div>
         <div className="mt-4 grid gap-3">
           {recentRuns.length === 0 ? (

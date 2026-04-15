@@ -7,6 +7,7 @@ export type ObjectStorageProviderName =
 
 export type ObjectStorageProviderPreset =
   | "local"
+  | "aws-s3"
   | "cloudflare-r2"
   | "aliyun-oss"
   | "tencent-cos"
@@ -34,6 +35,16 @@ export const OBJECT_STORAGE_PROVIDER_PRESETS: ObjectStorageProviderPresetMeta[] 
     regionPlaceholder: "",
     publicBaseUrlPlaceholder: "",
     pathPrefixSuggestion: "",
+  },
+  {
+    id: "aws-s3",
+    label: "AWS S3",
+    description: "AWS 原生对象存储，适合直接接入标准 S3 生产环境。",
+    providerName: OBJECT_STORAGE_PROVIDER_NAME_S3_COMPATIBLE,
+    endpointPlaceholder: "https://s3.us-east-1.amazonaws.com",
+    regionPlaceholder: "us-east-1",
+    publicBaseUrlPlaceholder: "https://<bucket>.s3.<region>.amazonaws.com",
+    pathPrefixSuggestion: "wechat/assets",
   },
   {
     id: "cloudflare-r2",
@@ -115,6 +126,7 @@ export function normalizeObjectStorageProviderPreset(
 
   switch (String(value || "").trim()) {
     case "cloudflare-r2":
+    case "aws-s3":
     case "aliyun-oss":
     case "tencent-cos":
     case "minio":

@@ -24,6 +24,7 @@ export type PendingPublishIntent = {
   documentId: number;
   createdAt: string;
   templateId: string | null;
+  reason: "missing_connection" | "auth_failed";
 };
 
 const WORKFLOW_STAGE_CATALOG: Array<{ code: DocumentWorkflowStageCode; title: string }> = [
@@ -103,6 +104,7 @@ function parsePendingPublishIntent(value: string | PendingPublishIntent | null |
     documentId,
     createdAt: String(parsed.createdAt || new Date().toISOString()),
     templateId: parsed.templateId ? String(parsed.templateId) : null,
+    reason: String(parsed.reason || "") === "missing_connection" ? "missing_connection" : "auth_failed",
   } satisfies PendingPublishIntent;
 }
 
@@ -223,7 +225,7 @@ export async function failDocumentWorkflowStage(input: {
 export async function setDocumentWorkflowPendingPublishIntent(input: {
   documentId: number;
   userId: number;
-  intent: { createdAt?: string | null; templateId?: string | null };
+  intent: { createdAt?: string | null; templateId?: string | null; reason?: string | null };
 }) {
   await ensureDocumentAccess(input.documentId, input.userId);
   await ensureDocumentWorkflow(input.documentId);
@@ -232,6 +234,7 @@ export async function setDocumentWorkflowPendingPublishIntent(input: {
     documentId: input.documentId,
     createdAt: String(input.intent.createdAt || new Date().toISOString()),
     templateId: input.intent.templateId ? String(input.intent.templateId) : null,
+    reason: String(input.intent.reason || "") === "missing_connection" ? "missing_connection" : "auth_failed",
   } satisfies PendingPublishIntent;
   await db.exec(
     `UPDATE document_workflows

@@ -23,6 +23,14 @@ DEFAULT_VISION_PROMPT = (
 )
 DEFAULT_FRAGMENT_DISTILL_PROMPT = "你是碎片提纯器。保留时间、地点、数据、冲突，不要写空泛总结。"
 BEIJING_TIMEZONE = timezone(timedelta(hours=8))
+TOPIC_SYNC_TRIGGER_SLOTS_BEIJING = {
+    (6, 0),
+    (6, 15),
+    (6, 45),
+    (18, 0),
+    (18, 15),
+    (18, 45),
+}
 
 
 def now_iso() -> str:
@@ -31,7 +39,7 @@ def now_iso() -> str:
 
 def get_current_topic_sync_window(now_utc: datetime) -> datetime | None:
     now_beijing = now_utc.astimezone(BEIJING_TIMEZONE)
-    if now_beijing.hour < 6:
+    if (now_beijing.hour, now_beijing.minute) not in TOPIC_SYNC_TRIGGER_SLOTS_BEIJING:
         return None
     if now_beijing.hour < 18:
         slot_start = now_beijing.replace(hour=6, minute=0, second=0, microsecond=0)

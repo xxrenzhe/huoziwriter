@@ -5,8 +5,16 @@ type SupportedSceneCode =
   | "visionNote"
   | "documentWrite"
   | "styleExtract"
+  | "topicSupplement"
   | "topicSourceScout"
-  | "bannedWordAudit";
+  | "audienceProfile"
+  | "outlinePlan"
+  | "deepWrite"
+  | "factCheck"
+  | "prosePolish"
+  | "bannedWordAudit"
+  | "layoutExtract"
+  | "publishGuard";
 type Provider = "openai" | "anthropic" | "gemini";
 
 type SceneRoute = {

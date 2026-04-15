@@ -302,7 +302,7 @@ async function ensureDefaultAdmin(runtime, mode) {
           username, email, password_hash, display_name, referral_code, role, plan_code, must_change_password, is_active, created_at, updated_at
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())
         RETURNING id`,
-        ["huozi", "admin@huoziwriter.local", passwordHash, "Huozi Admin", null, "admin", "team", false, true],
+        ["huozi", "admin@huoziwriter.local", passwordHash, "Huozi Admin", null, "admin", "ultra", false, true],
       );
       userId = inserted?.id;
     } else {
@@ -310,7 +310,7 @@ async function ensureDefaultAdmin(runtime, mode) {
         `INSERT INTO users (
           username, email, password_hash, display_name, referral_code, role, plan_code, must_change_password, is_active, created_at, updated_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        ["huozi", "admin@huoziwriter.local", passwordHash, "Huozi Admin", null, "admin", "team", 0, 1, new Date().toISOString(), new Date().toISOString()],
+        ["huozi", "admin@huoziwriter.local", passwordHash, "Huozi Admin", null, "admin", "ultra", 0, 1, new Date().toISOString(), new Date().toISOString()],
       );
       userId = Number(inserted.lastInsertRowid);
     }
@@ -321,14 +321,14 @@ async function ensureDefaultAdmin(runtime, mode) {
         `UPDATE users
          SET role = $1, plan_code = $2, must_change_password = $3, is_active = $4, updated_at = NOW()
          WHERE id = $5`,
-        ["admin", "team", false, true, userId],
+        ["admin", "ultra", false, true, userId],
       );
     } else {
       await runtime.run(
         `UPDATE users
          SET role = ?, plan_code = ?, must_change_password = ?, is_active = ?, updated_at = ?
          WHERE id = ?`,
-        ["admin", "team", 0, 1, new Date().toISOString(), userId],
+        ["admin", "ultra", 0, 1, new Date().toISOString(), userId],
       );
     }
     console.log("runtime-db-init: default admin already exists");
@@ -339,13 +339,13 @@ async function ensureDefaultAdmin(runtime, mode) {
     await runtime.run("UPDATE users SET referral_code = $1, updated_at = NOW() WHERE id = $2", [referralCode, userId]);
     const activeSubscription = await runtime.get(
       "SELECT id FROM subscriptions WHERE user_id = $1 AND plan_code = $2 AND status = $3 ORDER BY id DESC LIMIT 1",
-      [userId, "team", "active"],
+      [userId, "ultra", "active"],
     );
     if (!activeSubscription) {
       await runtime.run(
         `INSERT INTO subscriptions (user_id, plan_code, status, start_at, source, created_at, updated_at)
          VALUES ($1, $2, $3, NOW(), $4, NOW(), NOW())`,
-        [userId, "team", "active", "manual"],
+        [userId, "ultra", "active", "manual"],
       );
     }
     return;
@@ -354,13 +354,13 @@ async function ensureDefaultAdmin(runtime, mode) {
   await runtime.run("UPDATE users SET referral_code = ?, updated_at = ? WHERE id = ?", [referralCode, new Date().toISOString(), userId]);
   const activeSubscription = await runtime.get(
     "SELECT id FROM subscriptions WHERE user_id = ? AND plan_code = ? AND status = ? ORDER BY id DESC LIMIT 1",
-    [userId, "team", "active"],
+    [userId, "ultra", "active"],
   );
   if (!activeSubscription) {
     await runtime.run(
       `INSERT INTO subscriptions (user_id, plan_code, status, start_at, source, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [userId, "team", "active", new Date().toISOString(), "manual", new Date().toISOString(), new Date().toISOString()],
+      [userId, "ultra", "active", new Date().toISOString(), "manual", new Date().toISOString(), new Date().toISOString()],
     );
   }
 }

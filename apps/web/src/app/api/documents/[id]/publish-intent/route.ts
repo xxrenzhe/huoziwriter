@@ -32,6 +32,7 @@ export async function PUT(request: Request, { params }: { params: { id: string }
       intent: {
         createdAt: body.createdAt ? String(body.createdAt) : null,
         templateId: body.templateId ? String(body.templateId) : null,
+        reason: body.reason ? String(body.reason) : null,
       },
     });
     return ok({ pendingPublishIntent: workflow.pendingPublishIntent ?? null });

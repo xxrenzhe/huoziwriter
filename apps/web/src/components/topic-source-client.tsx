@@ -10,7 +10,22 @@ export function TopicSourceManagerClient({
   maxCustomCount = 0,
   planName = "",
 }: {
-  sources: Array<{ id: number; name: string; homepageUrl: string | null; sourceType: string; priority: number; scope: "system" | "custom" }>;
+  sources: Array<{
+    id: number;
+    name: string;
+    homepageUrl: string | null;
+    sourceType: string;
+    priority: number;
+    scope: "system" | "custom";
+    status?: string;
+    attemptCount?: number;
+    consecutiveFailures?: number;
+    lastError?: string | null;
+    lastHttpStatus?: number | null;
+    nextRetryAt?: string | null;
+    healthScore?: number;
+    degradedReason?: string | null;
+  }>;
   canManage: boolean;
   currentCustomCount?: number;
   maxCustomCount?: number;
@@ -34,6 +49,13 @@ export function TopicSourceManagerClient({
     if (value === "rss") return "RSS";
     if (value === "blog") return "Blog";
     return "News";
+  }
+
+  function formatSourceStatusLabel(value: string | undefined) {
+    if (value === "degraded") return "降级";
+    if (value === "failed") return "失败";
+    if (value === "paused") return "暂停";
+    return "健康";
   }
 
   async function handleSubmit(event: FormEvent) {
@@ -103,7 +125,6 @@ export function TopicSourceManagerClient({
           <select value={sourceType} onChange={(event) => setSourceType(event.target.value)} disabled={reachedLimit} className="border border-stone-300 bg-white px-4 py-3 text-sm disabled:bg-stone-100">
             <option value="youtube">YouTube</option>
             <option value="reddit">Reddit</option>
-            <option value="x">X</option>
             <option value="podcast">Podcast</option>
             <option value="spotify">Spotify</option>
             <option value="news">News</option>
@@ -136,7 +157,23 @@ export function TopicSourceManagerClient({
                 <span className="border border-stone-300 bg-[#faf7f0] px-2 py-1">
                   优先级 · {source.priority}
                 </span>
+                <span className="border border-stone-300 bg-[#faf7f0] px-2 py-1">
+                  状态 · {formatSourceStatusLabel(source.status)}
+                </span>
+                <span className="border border-stone-300 bg-[#faf7f0] px-2 py-1">
+                  健康分 · {Math.round(Number(source.healthScore ?? 100))}
+                </span>
               </div>
+              {source.degradedReason || source.lastError || source.nextRetryAt ? (
+                <div className="mt-3 space-y-1 text-xs leading-6 text-stone-500">
+                  {source.degradedReason ? <div>降级原因：{source.degradedReason}</div> : null}
+                  {source.lastError ? <div>最近错误：{source.lastError}{source.lastHttpStatus ? `（HTTP ${source.lastHttpStatus}）` : ""}</div> : null}
+                  {source.nextRetryAt ? <div>下次重试：{new Date(source.nextRetryAt).toLocaleString("zh-CN")}</div> : null}
+                  {typeof source.attemptCount === "number" || typeof source.consecutiveFailures === "number" ? (
+                    <div>尝试次数：{source.attemptCount ?? 0} · 连续失败：{source.consecutiveFailures ?? 0}</div>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
             {canManage && source.scope !== "system" ? (
               <div className="flex flex-wrap items-center gap-2">
@@ -148,7 +185,6 @@ export function TopicSourceManagerClient({
                 >
                   <option value="youtube">YouTube</option>
                   <option value="reddit">Reddit</option>
-                  <option value="x">X</option>
                   <option value="podcast">Podcast</option>
                   <option value="spotify">Spotify</option>
                   <option value="news">News</option>

@@ -183,7 +183,7 @@ function clampScore(value: number, max = 100) {
 
 function normalizeTopicSourceType(value: string | null | undefined) {
   const normalized = String(value || "news").trim().toLowerCase();
-  if (["youtube", "reddit", "x", "podcast", "spotify", "news", "blog", "rss"].includes(normalized)) {
+  if (["youtube", "reddit", "podcast", "spotify", "news", "blog", "rss"].includes(normalized)) {
     return normalized;
   }
   return "news";
@@ -652,6 +652,7 @@ function getShanghaiDateParts(value: Date) {
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",
+    minute: "2-digit",
     hour12: false,
   });
   const parts = formatter.formatToParts(value);
@@ -661,18 +662,33 @@ function getShanghaiDateParts(value: Date) {
     month: String(record.month || "01"),
     day: String(record.day || "01"),
     hour: Number(record.hour || "0"),
+    minute: Number(record.minute || "0"),
   };
 }
 
-function resolveScheduledTopicSyncWindow(options?: { triggeredAt?: Date; windowHour?: number }) {
+function normalizeSchedulerWindowMinute(value: number | null | undefined) {
+  if (value === 15 || value === 45) {
+    return value;
+  }
+  return 0;
+}
+
+function resolveScheduledTopicSyncWindow(options?: { triggeredAt?: Date; windowHour?: number; windowMinute?: number }) {
   const triggeredAt = options?.triggeredAt ?? new Date();
   const parts = getShanghaiDateParts(triggeredAt);
   const windowHour = options?.windowHour === 18 ? 18 : options?.windowHour === 6 ? 6 : parts.hour >= 12 ? 18 : 6;
+  const windowMinute =
+    options?.windowMinute === 0 || options?.windowMinute === 15 || options?.windowMinute === 45
+      ? options.windowMinute
+      : normalizeSchedulerWindowMinute(parts.minute >= 45 ? 45 : parts.minute >= 15 ? 15 : 0);
   const hourLabel = String(windowHour).padStart(2, "0");
+  const minuteLabel = String(windowMinute).padStart(2, "0");
+  const isCompensationWindow = windowMinute !== 0;
   return {
     windowHour,
-    syncWindowStart: `${parts.year}-${parts.month}-${parts.day}T${hourLabel}:00:00+08:00`,
-    windowLabel: `定时触发热点同步 · 北京时间 ${parts.year}-${parts.month}-${parts.day} ${hourLabel}:00`,
+    windowMinute,
+    syncWindowStart: `${parts.year}-${parts.month}-${parts.day}T${hourLabel}:${minuteLabel}:00+08:00`,
+    windowLabel: `定时触发热点同步${isCompensationWindow ? "（补偿窗口）" : ""} · 北京时间 ${parts.year}-${parts.month}-${parts.day} ${hourLabel}:${minuteLabel}`,
   };
 }
 
@@ -1099,6 +1115,7 @@ export async function runScheduledTopicSync(options?: {
   limitPerSource?: number;
   triggeredAt?: Date;
   windowHour?: number;
+  windowMinute?: number;
   force?: boolean;
 }) {
   await ensureExtendedProductSchema();
@@ -1106,6 +1123,7 @@ export async function runScheduledTopicSync(options?: {
   const window = resolveScheduledTopicSyncWindow({
     triggeredAt: options?.triggeredAt,
     windowHour: options?.windowHour,
+    windowMinute: options?.windowMinute,
   });
   const existing = await getTopicSyncRunByWindowStart(window.syncWindowStart)
     ?? await getLatestTopicSyncRunByLabel(window.windowLabel);
@@ -1274,11 +1292,7 @@ export async function ensureDefaultTopics() {
   const db = getDatabase();
   const count = await db.queryOne<{ count: number }>("SELECT COUNT(*) as count FROM topic_items");
   if ((count?.count ?? 0) > 0) {
-    const latest = await db.queryOne<{ created_at: string }>("SELECT created_at FROM topic_items ORDER BY id DESC LIMIT 1");
-    const latestAt = latest?.created_at ? new Date(latest.created_at).getTime() : 0;
-    if (Date.now() - latestAt < 60 * 60 * 1000) {
-      return;
-    }
+    return;
   }
   await syncTopicRadar({ limitPerSource: 4 });
 }

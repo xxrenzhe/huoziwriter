@@ -1,3 +1,4 @@
+import { assertAuthorPersonaReady } from "@/lib/author-personas";
 import { ensureUserSession } from "@/lib/auth";
 import { fail, ok } from "@/lib/http";
 import { assertTopicRadarStartAllowed } from "@/lib/plan-access";
@@ -11,6 +12,7 @@ export async function POST(request: Request) {
   }
 
   try {
+    await assertAuthorPersonaReady(session.userId);
     await assertTopicRadarStartAllowed(session.userId);
     const body = await request.json().catch(() => ({}));
     const topicId = Number(body.topicId);

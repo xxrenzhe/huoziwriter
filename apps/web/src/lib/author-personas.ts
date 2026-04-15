@@ -2,6 +2,7 @@ import { extractJsonObject, generateSceneText } from "./ai-gateway";
 import { deriveAuthorPersonaName, PERSONA_IDENTITY_OPTIONS, PERSONA_WRITING_STYLE_OPTIONS } from "./persona-catalog";
 import { getDatabase } from "./db";
 import { getUserPlanContext } from "./plan-access";
+import { getPersonaTagCatalog, getPersonaTagOptionValues } from "./persona-tags";
 import { ensureExtendedProductSchema } from "./schema-bootstrap";
 import { getWritingStyleProfileById } from "./writing-style-profiles";
 
@@ -132,9 +133,22 @@ export async function getAuthorPersonas(userId: number) {
   }));
 }
 
+export async function getAuthorPersonaCatalog() {
+  await ensureExtendedProductSchema();
+  return getPersonaTagCatalog();
+}
+
 export async function getDefaultAuthorPersona(userId: number) {
   const personas = await getAuthorPersonas(userId);
   return personas.find((item) => item.isDefault) ?? personas[0] ?? null;
+}
+
+export async function assertAuthorPersonaReady(userId: number) {
+  const persona = await getDefaultAuthorPersona(userId);
+  if (!persona) {
+    throw new Error("首次进入写作系统前，请先配置至少 1 个默认作者人设");
+  }
+  return persona;
 }
 
 async function countAuthorPersonas(userId: number) {
@@ -144,6 +158,10 @@ async function countAuthorPersonas(userId: number) {
     [userId],
   );
   return row?.count ?? 0;
+}
+
+export async function hasAuthorPersona(userId: number) {
+  return (await countAuthorPersonas(userId)) > 0;
 }
 
 async function getAuthorPersonaRow(userId: number, personaId: number) {
@@ -189,8 +207,9 @@ export async function createAuthorPersona(input: {
 }) {
   await ensureExtendedProductSchema();
   const db = getDatabase();
-  const identityTags = normalizeTags(input.identityTags, PERSONA_IDENTITY_OPTIONS, "身份维度");
-  const writingStyleTags = normalizeTags(input.writingStyleTags, PERSONA_WRITING_STYLE_OPTIONS, "写作风格");
+  const catalog = await getPersonaTagOptionValues();
+  const identityTags = normalizeTags(input.identityTags, catalog.identity.length ? catalog.identity : PERSONA_IDENTITY_OPTIONS, "身份维度");
+  const writingStyleTags = normalizeTags(input.writingStyleTags, catalog.writingStyle.length ? catalog.writingStyle : PERSONA_WRITING_STYLE_OPTIONS, "写作风格");
   const boundWritingStyleProfileId = await resolveBoundWritingStyleProfileId(input.userId, input.boundWritingStyleProfileId);
   const limit = await getAuthorPersonaLimitForUser(input.userId);
   const existingCount = await countAuthorPersonas(input.userId);
@@ -264,12 +283,13 @@ export async function updateAuthorPersona(input: {
     throw new Error("作者人设不存在");
   }
 
+  const catalog = await getPersonaTagOptionValues();
   const identityTags = input.identityTags == null
     ? parseTagList(current.identity_tags_json)
-    : normalizeTags(input.identityTags, PERSONA_IDENTITY_OPTIONS, "身份维度");
+    : normalizeTags(input.identityTags, catalog.identity.length ? catalog.identity : PERSONA_IDENTITY_OPTIONS, "身份维度");
   const writingStyleTags = input.writingStyleTags == null
     ? parseTagList(current.writing_style_tags_json)
-    : normalizeTags(input.writingStyleTags, PERSONA_WRITING_STYLE_OPTIONS, "写作风格");
+    : normalizeTags(input.writingStyleTags, catalog.writingStyle.length ? catalog.writingStyle : PERSONA_WRITING_STYLE_OPTIONS, "写作风格");
   const boundWritingStyleProfileId = input.boundWritingStyleProfileId === undefined
     ? current.bound_writing_style_profile_id
     : await resolveBoundWritingStyleProfileId(input.userId, input.boundWritingStyleProfileId);
@@ -322,6 +342,9 @@ async function analyzeAuthorPersonaSource(input: {
   name?: string | null;
   sources: AuthorPersonaAnalysisSourceInput[];
 }) {
+  const catalog = await getPersonaTagOptionValues();
+  const identityOptions = catalog.identity.length ? catalog.identity : [...PERSONA_IDENTITY_OPTIONS];
+  const writingStyleOptions = catalog.writingStyle.length ? catalog.writingStyle : [...PERSONA_WRITING_STYLE_OPTIONS];
   const mergedSourceText = input.sources
     .map((source, index) => {
       const sourceLabel = source.sourceType === "file" ? "文件资料" : "文本资料";
@@ -341,8 +364,8 @@ async function analyzeAuthorPersonaSource(input: {
   ].join("\n");
   const userPrompt = [
     input.name ? `用户期望名称：${input.name}` : "用户未指定名称，请你建议一个更贴合资料的人设名称。",
-    `身份标签只能从以下选项中选 1-3 个：${PERSONA_IDENTITY_OPTIONS.join("、")}`,
-    `写作风格标签只能从以下选项中选 1-3 个：${PERSONA_WRITING_STYLE_OPTIONS.join("、")}`,
+    `身份标签只能从以下选项中选 1-3 个：${identityOptions.join("、")}`,
+    `写作风格标签只能从以下选项中选 1-3 个：${writingStyleOptions.join("、")}`,
     '返回字段：{"suggestedName":"字符串","summary":"字符串","identityTags":[""],"writingStyleTags":[""],"domainKeywords":[""],"argumentPreferences":[""],"toneConstraints":[""],"audienceHints":[""]}',
     "要求：summary 要说明这个人设最擅长写什么、常站在哪种立场、适合怎么说话；其余数组都控制在 3-6 条内。",
     `当前共有 ${input.sources.length} 份资料，请综合分析，不要只盯着其中一份。`,
@@ -360,12 +383,12 @@ async function analyzeAuthorPersonaSource(input: {
   const parsed = extractJsonObject(raw.text) as Record<string, unknown>;
   const identityTags = normalizeTags(
     Array.isArray(parsed.identityTags) ? parsed.identityTags : [],
-    PERSONA_IDENTITY_OPTIONS,
+    identityOptions,
     "身份维度",
   );
   const writingStyleTags = normalizeTags(
     Array.isArray(parsed.writingStyleTags) ? parsed.writingStyleTags : [],
-    PERSONA_WRITING_STYLE_OPTIONS,
+    writingStyleOptions,
     "写作风格",
   );
   return {

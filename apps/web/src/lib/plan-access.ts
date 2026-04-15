@@ -2,7 +2,7 @@ import { findUserById } from "./auth";
 import { getDatabase } from "./db";
 import { PLAN_LABELS, UserPlanCode } from "./domain";
 import { getActiveTemplates } from "./marketplace";
-import { getCurrentSubscriptionForUser } from "./repositories";
+import { getCurrentSubscriptionForUser, getImageAssetStorageSummary } from "./repositories";
 import {
   getDailyCoverImageUsage,
   getDailyGenerationUsage,
@@ -33,6 +33,19 @@ export function getCoverImageDailyLimit(planCode: UserPlanCode) {
 
 export function canUseCoverImageReference(planCode: UserPlanCode) {
   return planCode === "ultra";
+}
+
+const GB = 1024 * 1024 * 1024;
+const COVER_IMAGE_GENERATION_STORAGE_RESERVE_BYTES = 32 * 1024 * 1024;
+
+export function getImageAssetStorageLimit(planCode: UserPlanCode) {
+  if (planCode === "pro") return 10 * GB;
+  if (planCode === "ultra") return 50 * GB;
+  return 1 * GB;
+}
+
+export function getCoverImageGenerationStorageReserveBytes() {
+  return COVER_IMAGE_GENERATION_STORAGE_RESERVE_BYTES;
 }
 
 export function getStyleExtractDailyLimit(planCode: UserPlanCode | null) {
@@ -311,6 +324,21 @@ export async function getCoverImageQuotaStatus(userId: number) {
   };
 }
 
+export async function getImageAssetStorageQuotaStatus(userId: number) {
+  const { plan } = await getUserPlanContext(userId);
+  const storage = await getImageAssetStorageSummary(userId);
+  const limitBytes = getImageAssetStorageLimit(plan.code);
+  return {
+    usedBytes: storage.usedBytes,
+    limitBytes,
+    remainingBytes: Math.max(limitBytes - storage.usedBytes, 0),
+    assetRecordCount: storage.assetRecordCount,
+    readyAssetRecordCount: storage.readyAssetRecordCount,
+    uniqueObjectCount: storage.uniqueObjectCount,
+    reservedGenerationBytes: getCoverImageGenerationStorageReserveBytes(),
+  };
+}
+
 export async function assertCoverImageQuota(userId: number) {
   const { plan } = await getUserPlanContext(userId);
   const limit = getCoverImageDailyLimit(plan.code);
@@ -321,6 +349,24 @@ export async function assertCoverImageQuota(userId: number) {
   const current = await getDailyCoverImageUsage(userId);
   if (current >= limit) {
     throw new Error(`${PLAN_LABELS[plan.code]}套餐今日封面图额度已达上限 ${limit} 次`);
+  }
+}
+
+export async function assertImageAssetStorageAvailable(
+  userId: number,
+  options?: { reserveBytes?: number },
+) {
+  const { plan } = await getUserPlanContext(userId);
+  const quota = await getImageAssetStorageQuotaStatus(userId);
+  const reserveBytes = Math.max(Number(options?.reserveBytes || 0), 0);
+  if (quota.usedBytes >= quota.limitBytes || quota.remainingBytes < reserveBytes) {
+    const requiredText =
+      reserveBytes > 0 && quota.remainingBytes < reserveBytes
+        ? `本次生成至少预留 ${Math.ceil(reserveBytes / 1024 / 1024)} MB 空间。`
+        : "当前空间已满。";
+    throw new Error(
+      `${PLAN_LABELS[plan.code]}套餐图片资产空间不足，当前已用 ${Math.round(quota.usedBytes / 1024 / 1024)} MB / ${Math.round(quota.limitBytes / 1024 / 1024)} MB。${requiredText} 请先清理历史图片资产或升级套餐。`,
+    );
   }
 }
 

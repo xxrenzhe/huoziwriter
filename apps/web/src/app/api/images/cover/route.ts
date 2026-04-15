@@ -1,4 +1,5 @@
 import { ensureUserSession } from "@/lib/auth";
+import { syncCoverAssetToAssetFiles } from "@/lib/asset-files";
 import { appendAuditLog } from "@/lib/audit";
 import { getDatabase } from "@/lib/db";
 import { fail, ok } from "@/lib/http";
@@ -8,7 +9,10 @@ import {
   assertCoverImageAllowed,
   assertCoverImageQuota,
   assertCoverImageReferenceAllowed,
+  assertImageAssetStorageAvailable,
   consumeCoverImageQuota,
+  getCoverImageGenerationStorageReserveBytes,
+  getImageAssetStorageQuotaStatus,
 } from "@/lib/plan-access";
 import { getDocumentAuthoringStyleContext } from "@/lib/document-authoring-style-context";
 import { ensureExtendedProductSchema } from "@/lib/schema-bootstrap";
@@ -22,6 +26,9 @@ export async function POST(request: Request) {
     await ensureExtendedProductSchema();
     await assertCoverImageAllowed(session.userId);
     await assertCoverImageQuota(session.userId);
+    await assertImageAssetStorageAvailable(session.userId, {
+      reserveBytes: getCoverImageGenerationStorageReserveBytes(),
+    });
     const body = await request.json();
     const referenceImageDataUrl =
       typeof body.referenceImageDataUrl === "string" && body.referenceImageDataUrl.startsWith("data:image/")
@@ -50,7 +57,7 @@ export async function POST(request: Request) {
         variantLabel: candidate.variantLabel,
         source: candidate.imageUrl,
       });
-      await db.exec(
+      const result = await db.exec(
         `INSERT INTO cover_image_candidates (
           user_id, document_id, batch_token, variant_label, prompt, image_url,
           storage_provider, original_object_key, compressed_object_key, thumbnail_object_key, asset_manifest_json,
@@ -73,25 +80,44 @@ export async function POST(request: Request) {
           createdAt,
         ],
       );
+      await syncCoverAssetToAssetFiles({
+        assetScope: "candidate",
+        legacyAssetId: Number(result.lastInsertRowid || 0),
+        userId: session.userId,
+        documentId: body.documentId ?? null,
+        batchToken,
+        variantLabel: candidate.variantLabel,
+        imageUrl: storedAsset.imageUrl,
+        storageProvider: storedAsset.storageProvider,
+        originalObjectKey: storedAsset.originalObjectKey,
+        compressedObjectKey: storedAsset.compressedObjectKey,
+        thumbnailObjectKey: storedAsset.thumbnailObjectKey,
+        assetManifestJson: storedAsset.assetManifest,
+        createdAt,
+      });
     }
     const savedCandidates = await db.query<{
       id: number;
       variant_label: string;
       prompt: string;
       image_url: string;
+      asset_file_id: number | null;
     }>(
       body.documentId == null
-        ? `SELECT id, variant_label, prompt, image_url
-           FROM cover_image_candidates
-           WHERE user_id = ? AND document_id IS NULL AND batch_token = ?
-           ORDER BY id ASC`
-        : `SELECT id, variant_label, prompt, image_url
-           FROM cover_image_candidates
-           WHERE user_id = ? AND document_id = ? AND batch_token = ?
-           ORDER BY id ASC`,
-      body.documentId == null ? [session.userId, batchToken] : [session.userId, body.documentId, batchToken],
+        ? `SELECT cic.id, cic.variant_label, cic.prompt, cic.image_url, af.id as asset_file_id
+           FROM cover_image_candidates cic
+           LEFT JOIN asset_files af ON af.asset_scope = ? AND af.legacy_asset_id = cic.id
+           WHERE cic.user_id = ? AND cic.document_id IS NULL AND cic.batch_token = ?
+           ORDER BY cic.id ASC`
+        : `SELECT cic.id, cic.variant_label, cic.prompt, cic.image_url, af.id as asset_file_id
+           FROM cover_image_candidates cic
+           LEFT JOIN asset_files af ON af.asset_scope = ? AND af.legacy_asset_id = cic.id
+           WHERE cic.user_id = ? AND cic.document_id = ? AND cic.batch_token = ?
+           ORDER BY cic.id ASC`,
+      body.documentId == null ? ["candidate", session.userId, batchToken] : ["candidate", session.userId, body.documentId, batchToken],
     );
     const quota = await consumeCoverImageQuota(session.userId);
+    const storageQuota = await getImageAssetStorageQuotaStatus(session.userId);
     await appendAuditLog({
       userId: session.userId,
       action: "cover_image.generate",
@@ -112,12 +138,14 @@ export async function POST(request: Request) {
         variantLabel: candidate.variant_label,
         imageUrl: candidate.image_url,
         prompt: candidate.prompt,
+        assetFileId: candidate.asset_file_id,
       })),
       createdAt,
       model: candidates[0]?.model,
       providerName: candidates[0]?.providerName,
       endpoint: candidates[0]?.endpoint,
       quota,
+      storageQuota,
     });
   } catch (error) {
     return fail(error instanceof Error ? error.message : "封面图生成失败", 400);

@@ -7,9 +7,14 @@ export const marketingNav = [
 
 export const writerNav = [
   { href: "/dashboard", label: "工作台" },
+  { href: "/first-success", label: "首篇路径" },
   { href: "/capture", label: "采集" },
+  { href: "/fragments", label: "碎片素材" },
+  { href: "/knowledge", label: "主题档案" },
   { href: "/radar", label: "情绪罗盘" },
   { href: "/discover", label: "灵感集市" },
+  { href: "/assets", label: "图片资产" },
+  { href: "/connections", label: "发布连接" },
   { href: "/settings", label: "设置" },
   { href: "/sync/logs", label: "同步日志" },
   { href: "/affiliate", label: "分销" },

@@ -235,7 +235,6 @@ export function DocumentOutlineClient({
                   onClick={() => detachFragment(node.id, fragment.id)}
                   className="block w-full border border-[#eadfb9] bg-[#fdf6d7] px-3 py-2 text-left text-xs leading-6 text-stone-700"
                 >
-                  {fragment.shared ? <span className="mr-2 inline-block border border-stone-300 bg-white px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-stone-500">共享</span> : null}
                   {fragment.distilledContent}
                 </button>
               ))}
@@ -256,7 +255,6 @@ export function DocumentOutlineClient({
                   .filter((fragment) => !node.fragments.some((item) => item.id === fragment.id))
                   .map((fragment) => (
                     <option key={fragment.id} value={fragment.id}>
-                      {fragment.shared ? "[共享] " : ""}
                       {fragment.title ? `${fragment.title} · ` : ""}
                       {fragment.distilledContent.slice(0, 30)}
                     </option>
