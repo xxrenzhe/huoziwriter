@@ -21,6 +21,6 @@ export async function PATCH(request: Request, { params }: { params: { id: string
       updatedAt: updated?.updated_at,
     });
   } catch (error) {
-    return fail(error instanceof Error ? error.message : "更新主题档案状态失败", 400);
+    return fail(error instanceof Error ? error.message : "更新背景卡状态失败", 400);
   }
 }

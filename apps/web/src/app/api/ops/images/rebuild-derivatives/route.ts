@@ -56,10 +56,10 @@ export async function POST(request: Request) {
     }>(
       `SELECT *
        FROM (
-         SELECT 'cover' as asset_scope, id, user_id, document_id as article_id, NULL as batch_token, NULL as variant_label, image_url, storage_provider, original_object_key, asset_manifest_json
+         SELECT 'cover' as asset_scope, id, user_id, article_id as article_id, NULL as batch_token, NULL as variant_label, image_url, storage_provider, original_object_key, asset_manifest_json
          FROM cover_images
          UNION ALL
-         SELECT 'candidate' as asset_scope, id, user_id, document_id as article_id, batch_token, variant_label, image_url, storage_provider, original_object_key, asset_manifest_json
+         SELECT 'candidate' as asset_scope, id, user_id, article_id as article_id, batch_token, variant_label, image_url, storage_provider, original_object_key, asset_manifest_json
          FROM cover_image_candidates
        )
        ORDER BY id ASC

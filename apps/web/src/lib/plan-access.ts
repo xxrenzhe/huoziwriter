@@ -185,7 +185,7 @@ export async function assertPdfExportAllowed(userId: number) {
 export async function assertTopicSignalStartAllowed(userId: number) {
   const { plan } = await getUserPlanContext(userId);
   if (plan.code === "free") {
-    throw new Error(`${PLAN_LABELS[plan.code]}套餐仅可浏览选题雷达，不能一键落笔`);
+    throw new Error(`${PLAN_LABELS[plan.code]}套餐仅可浏览机会，不能一键落笔`);
   }
 }
 

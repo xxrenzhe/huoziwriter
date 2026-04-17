@@ -53,7 +53,7 @@ export async function syncCoverAssetToAssetFiles(input: AssetFileSyncInput) {
   if (!existing) {
     const result = await db.exec(
       `INSERT INTO asset_files (
-        user_id, document_id, asset_scope, asset_type, source_record_id, batch_token, variant_label,
+        user_id, article_id, asset_scope, asset_type, source_record_id, batch_token, variant_label,
         storage_provider, public_url, original_object_key, compressed_object_key, thumbnail_object_key,
         mime_type, byte_length, status, manifest_json, created_at, updated_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -83,7 +83,7 @@ export async function syncCoverAssetToAssetFiles(input: AssetFileSyncInput) {
 
   await db.exec(
     `UPDATE asset_files
-     SET user_id = ?, document_id = ?, asset_type = ?, batch_token = ?, variant_label = ?, storage_provider = ?,
+     SET user_id = ?, article_id = ?, asset_type = ?, batch_token = ?, variant_label = ?, storage_provider = ?,
          public_url = ?, original_object_key = ?, compressed_object_key = ?, thumbnail_object_key = ?,
          mime_type = ?, byte_length = ?, status = ?, manifest_json = ?, updated_at = ?
      WHERE asset_scope = ? AND source_record_id = ?`,
@@ -132,7 +132,7 @@ export async function backfillAssetFilesFromCoverAssets() {
     created_at: string | null;
   }>(
     `SELECT
-       id, user_id, document_id AS article_id, image_url, storage_provider, original_object_key,
+       id, user_id, article_id AS article_id, image_url, storage_provider, original_object_key,
        compressed_object_key, thumbnail_object_key, asset_manifest_json, created_at
      FROM cover_images
      ORDER BY id ASC`,
@@ -168,7 +168,7 @@ export async function backfillAssetFilesFromCoverAssets() {
     created_at: string | null;
   }>(
     `SELECT
-       id, user_id, document_id AS article_id, batch_token, variant_label, image_url, storage_provider,
+       id, user_id, article_id AS article_id, batch_token, variant_label, image_url, storage_provider,
        original_object_key, compressed_object_key, thumbnail_object_key, asset_manifest_json, created_at
      FROM cover_image_candidates
      ORDER BY id ASC`,

@@ -2,7 +2,7 @@ import { getDatabase } from "./db";
 import { ensureExtendedProductSchema } from "./schema-bootstrap";
 
 export type ArticleWorkflowStageCode =
-  | "topicRadar"
+  | "opportunity"
   | "researchBrief"
   | "audienceAnalysis"
   | "outlinePlanning"
@@ -37,7 +37,7 @@ export type ArticleWorkflow = {
 };
 
 const WORKFLOW_STAGE_CATALOG: Array<{ code: ArticleWorkflowStageCode; title: string }> = [
-  { code: "topicRadar", title: "选题雷达" },
+  { code: "opportunity", title: "机会" },
   { code: "researchBrief", title: "研究简报" },
   { code: "audienceAnalysis", title: "受众分析" },
   { code: "outlinePlanning", title: "大纲规划" },
@@ -69,6 +69,25 @@ type WorkflowRow = {
   updated_at: string;
 };
 
+function normalizeStageCode(value: unknown): ArticleWorkflowStageCode {
+  const normalized = String(value || "").trim();
+  if (
+    normalized === "opportunity"
+    || normalized === "researchBrief"
+    || normalized === "audienceAnalysis"
+    || normalized === "outlinePlanning"
+    || normalized === "deepWriting"
+    || normalized === "factCheck"
+    || normalized === "prosePolish"
+    || normalized === "coverImage"
+    || normalized === "layout"
+    || normalized === "publish"
+  ) {
+    return normalized;
+  }
+  return "opportunity";
+}
+
 function buildStages(currentStageCode: ArticleWorkflowStageCode, options?: { completedLastStage?: boolean; failedStageCode?: ArticleWorkflowStageCode | null }) {
   const currentIndex = WORKFLOW_STAGE_CATALOG.findIndex((item) => item.code === currentStageCode);
   return WORKFLOW_STAGE_CATALOG.map((stage, index) => {
@@ -89,9 +108,18 @@ function buildStages(currentStageCode: ArticleWorkflowStageCode, options?: { com
 }
 
 function normalizeStages(stages: ArticleWorkflowStage[], fallbackStageCode: ArticleWorkflowStageCode) {
-  const failedStage = stages.find((stage) => stage.status === "failed")?.code ?? null;
-  const hasCurrentStage = stages.some((stage) => stage.status === "current");
-  const currentStageWasCompleted = stages.find((stage) => stage.code === fallbackStageCode)?.status === "completed";
+  const normalizedStages = stages
+    .map((stage) => {
+      const normalizedCode = normalizeStageCode(stage.code);
+      const catalogStage = WORKFLOW_STAGE_CATALOG.find((item) => item.code === normalizedCode);
+      return catalogStage
+        ? { ...catalogStage, status: stage.status }
+        : null;
+    })
+    .filter((stage): stage is ArticleWorkflowStage => Boolean(stage));
+  const failedStage = normalizedStages.find((stage) => stage.status === "failed")?.code ?? null;
+  const hasCurrentStage = normalizedStages.some((stage) => stage.status === "current");
+  const currentStageWasCompleted = normalizedStages.find((stage) => stage.code === fallbackStageCode)?.status === "completed";
   return buildStages(fallbackStageCode, {
     failedStageCode: failedStage,
     completedLastStage: !hasCurrentStage && currentStageWasCompleted,
@@ -141,7 +169,7 @@ function parsePendingPublishIntent(value: string | ArticlePendingPublishIntent |
 async function ensureArticleAccess(articleId: number, userId?: number) {
   const db = getDatabase();
   const row = await db.queryOne<{ id: number }>(
-    userId == null ? "SELECT id FROM documents WHERE id = ?" : "SELECT id FROM documents WHERE id = ? AND user_id = ?",
+    userId == null ? "SELECT id FROM articles WHERE id = ?" : "SELECT id FROM articles WHERE id = ? AND user_id = ?",
     userId == null ? [articleId] : [articleId, userId],
   );
   if (!row) {
@@ -153,36 +181,37 @@ async function upsertWorkflow(articleId: number, currentStageCode: ArticleWorkfl
   const db = getDatabase();
   const now = new Date().toISOString();
   const existing = await db.queryOne<{ id: number }>(
-    "SELECT id FROM document_workflows WHERE document_id = ?",
+    "SELECT id FROM article_workflows WHERE article_id = ?",
     [articleId],
   );
   if (!existing) {
     await db.exec(
-      `INSERT INTO document_workflows (document_id, current_stage_code, stages_json, pending_publish_intent_json, created_at, updated_at)
+      `INSERT INTO article_workflows (article_id, current_stage_code, stages_json, pending_publish_intent_json, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?)`,
       [articleId, currentStageCode, JSON.stringify(stages), null, now, now],
     );
     return;
   }
   await db.exec(
-    `UPDATE document_workflows
+    `UPDATE article_workflows
      SET current_stage_code = ?, stages_json = ?, updated_at = ?
-     WHERE document_id = ?`,
+     WHERE article_id = ?`,
     [currentStageCode, JSON.stringify(stages), now, articleId],
   );
 }
 
-export async function ensureArticleWorkflow(articleId: number, initialStageCode: ArticleWorkflowStageCode = "topicRadar") {
+export async function ensureArticleWorkflow(articleId: number, initialStageCode: ArticleWorkflowStageCode = "opportunity") {
   await ensureExtendedProductSchema();
   const db = getDatabase();
   const existing = await db.queryOne<WorkflowRow>(
-    `SELECT id, document_id AS article_id, current_stage_code, stages_json, pending_publish_intent_json, created_at, updated_at
-     FROM document_workflows
-     WHERE document_id = ?`,
+    `SELECT id, article_id AS article_id, current_stage_code, stages_json, pending_publish_intent_json, created_at, updated_at
+     FROM article_workflows
+     WHERE article_id = ?`,
     [articleId],
   );
   if (existing) {
-    const normalizedStages = parseStages(existing.stages_json, existing.current_stage_code as ArticleWorkflowStageCode);
+    const normalizedCurrentStageCode = normalizeStageCode(existing.current_stage_code);
+    const normalizedStages = parseStages(existing.stages_json, normalizedCurrentStageCode);
     const parsedStages = Array.isArray(existing.stages_json)
       ? existing.stages_json
       : (() => {
@@ -194,11 +223,11 @@ export async function ensureArticleWorkflow(articleId: number, initialStageCode:
           }
         })();
     if (!parsedStages || !areStagesEqual(parsedStages, normalizedStages)) {
-      await upsertWorkflow(articleId, existing.current_stage_code as ArticleWorkflowStageCode, normalizedStages);
+      await upsertWorkflow(articleId, normalizedCurrentStageCode, normalizedStages);
     }
     return {
       articleId: existing.article_id,
-      currentStageCode: existing.current_stage_code as ArticleWorkflowStageCode,
+      currentStageCode: normalizedCurrentStageCode,
       stages: normalizedStages,
       pendingPublishIntent: parsePendingPublishIntent(existing.pending_publish_intent_json, existing.article_id),
       updatedAt: existing.updated_at,
@@ -208,9 +237,9 @@ export async function ensureArticleWorkflow(articleId: number, initialStageCode:
   const stages = buildStages(initialStageCode);
   await upsertWorkflow(articleId, initialStageCode, stages);
   const created = await db.queryOne<WorkflowRow>(
-    `SELECT id, document_id AS article_id, current_stage_code, stages_json, pending_publish_intent_json, created_at, updated_at
-     FROM document_workflows
-     WHERE document_id = ?`,
+    `SELECT id, article_id AS article_id, current_stage_code, stages_json, pending_publish_intent_json, created_at, updated_at
+     FROM article_workflows
+     WHERE article_id = ?`,
     [articleId],
   );
   return {
@@ -285,9 +314,9 @@ export async function setArticleWorkflowPendingPublishIntent(input: {
     reason: String(input.intent.reason || "") === "missing_connection" ? "missing_connection" : "auth_failed",
   } satisfies ArticlePendingPublishIntent;
   await db.exec(
-    `UPDATE document_workflows
+    `UPDATE article_workflows
      SET pending_publish_intent_json = ?, updated_at = ?
-     WHERE document_id = ?`,
+     WHERE article_id = ?`,
     [nextIntent, new Date().toISOString(), input.articleId],
   );
   return getArticleWorkflow(input.articleId, input.userId);
@@ -301,9 +330,9 @@ export async function clearArticleWorkflowPendingPublishIntent(input: {
   await ensureArticleWorkflow(input.articleId);
   const db = getDatabase();
   await db.exec(
-    `UPDATE document_workflows
+    `UPDATE article_workflows
      SET pending_publish_intent_json = ?, updated_at = ?
-     WHERE document_id = ?`,
+     WHERE article_id = ?`,
     [null, new Date().toISOString(), input.articleId],
   );
   return getArticleWorkflow(input.articleId, input.userId);

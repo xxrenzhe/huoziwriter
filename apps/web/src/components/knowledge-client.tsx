@@ -153,7 +153,7 @@ export function KnowledgeGovernanceClient({
 
         <aside className="border border-stone-800 bg-stone-950 p-5">
           <div className="text-xs uppercase tracking-[0.24em] text-stone-500">Revision Timeline</div>
-          <h2 className="mt-4 font-serifCn text-3xl text-stone-100">主题档案治理</h2>
+          <h2 className="mt-4 font-serifCn text-3xl text-stone-100">背景卡治理</h2>
           <p className="mt-4 text-sm leading-7 text-stone-400">
             这里优先处理冲突、过期和低置信度档案。每次重编译都保留 revision，确保结论可以回链。
           </p>

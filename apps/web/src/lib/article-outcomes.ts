@@ -258,26 +258,26 @@ export async function getCurrentSeriesPlaybook(userId: number, seriesId: number 
   if (!seriesId) {
     return null;
   }
-  const [documents, outcomeBundles, series] = await Promise.all([
+  const [articles, outcomeBundles, series] = await Promise.all([
     getArticlesByUser(userId),
     getArticleOutcomeBundlesByUser(userId),
     getSeries(userId),
   ]);
   return buildReviewSeriesPlaybooks({
-    articles: documents,
+    articles,
     outcomeBundles,
     series,
   }).find((item) => item.seriesId === seriesId) ?? null;
 }
 
 export async function getReviewData(userId: number) {
-  const [documents, outcomeBundles, playbooks, series] = await Promise.all([
+  const [articles, outcomeBundles, playbooks, series] = await Promise.all([
     getArticlesByUser(userId),
     getArticleOutcomeBundlesByUser(userId),
     getAuthorPlaybooks(userId),
     getSeries(userId),
   ]);
-  const publishedArticles = documents.filter((article) => article.status === "published");
+  const publishedArticles = articles.filter((article) => article.status === "published");
   const outcomeBundleMap = new Map(outcomeBundles.map((bundle) => [bundle.outcome?.articleId, bundle] as const));
   const hitCandidates = publishedArticles
     .map((article) => ({ article, bundle: outcomeBundleMap.get(article.id) }))
@@ -286,7 +286,7 @@ export async function getReviewData(userId: number) {
     .map((article) => ({ article, bundle: outcomeBundleMap.get(article.id) }))
     .filter((item) => item.bundle?.outcome?.hitStatus === "near_miss");
   const seriesPlaybooks = buildReviewSeriesPlaybooks({
-    articles: documents,
+    articles,
     outcomeBundles,
     series,
   });

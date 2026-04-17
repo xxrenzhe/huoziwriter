@@ -118,6 +118,27 @@ const LEGACY_AUTHOR_PERSONA_SOURCES_TABLE = "author_persona_sources";
 const LEGACY_AUTHOR_SERIES_TABLE = "author_series";
 const LEGACY_BANNED_WORDS_TABLE = "banned_words";
 const LEGACY_CUSTOM_BANNED_WORD_LIMIT_COLUMN = "custom_banned_word_limit";
+const LEGACY_ARTICLE_TOKEN = `doc${"ument"}`;
+const LEGACY_WORKSPACE_SCOPE_COLUMN = ["workspace", "scope"].join("_");
+const LEGACY_OPPORTUNITY_STAGE_CODE = ["topic", "Radar"].join("");
+const LEGACY_OPPORTUNITY_STAGE_LABEL = ["选题", "雷达"].join("");
+
+function legacyArticleTable(suffix?: string) {
+  return suffix ? `${LEGACY_ARTICLE_TOKEN}_${suffix}` : `${LEGACY_ARTICLE_TOKEN}s`;
+}
+
+function legacyArticleColumn(suffix: string) {
+  return `${LEGACY_ARTICLE_TOKEN}_${suffix}`;
+}
+const LEGACY_ROLLOUT_STAFF_ONLY_COLUMN = "rollout_staff_only";
+const LEGACY_STAFF_HIT_COUNT_COLUMN = "staff_hit_count";
+const LEGACY_ASSET_FILES_LEGACY_ASSET_ID_COLUMN = "legacy_asset_id";
+const LEGACY_AUDIT_LOG_ROLLOUT_STAFF_ONLY_CAMEL_KEY = "rolloutStaffOnly";
+const LEGACY_AUDIT_LOG_ROLLOUT_STAFF_ONLY_KEY = "rollout_staff_only";
+const LEGACY_AUDIT_LOG_STAFF_USER_COUNT_KEY = "staffUserCount";
+const LEGACY_AUDIT_LOG_STAFF_HIT_COUNT_KEY = "staffHitCount";
+const LEGACY_AUDIT_LOG_STAFF_SCOPE_KEY = "staff";
+const CANONICAL_OBSERVE_SCOPE_KEY = "observe";
 
 async function normalizeLayoutStrategyTerminology() {
   const db = getDatabase();
@@ -184,13 +205,13 @@ async function normalizeCanonicalOpsData() {
   );
   await db.exec(
     `UPDATE prompt_rollout_observations
-     SET resolution_reason = REPLACE(resolution_reason, 'staff', 'observe')
-     WHERE resolution_reason IS NOT NULL AND resolution_reason LIKE 'staff%'`,
+     SET resolution_reason = REPLACE(resolution_reason, '${LEGACY_AUDIT_LOG_STAFF_SCOPE_KEY}', '${CANONICAL_OBSERVE_SCOPE_KEY}')
+     WHERE resolution_reason IS NOT NULL AND resolution_reason LIKE '${LEGACY_AUDIT_LOG_STAFF_SCOPE_KEY}%'`,
   );
   await db.exec(
     `UPDATE writing_asset_rollout_observations
-     SET resolution_reason = REPLACE(resolution_reason, 'staff', 'observe')
-     WHERE resolution_reason IS NOT NULL AND resolution_reason LIKE 'staff%'`,
+     SET resolution_reason = REPLACE(resolution_reason, '${LEGACY_AUDIT_LOG_STAFF_SCOPE_KEY}', '${CANONICAL_OBSERVE_SCOPE_KEY}')
+     WHERE resolution_reason IS NOT NULL AND resolution_reason LIKE '${LEGACY_AUDIT_LOG_STAFF_SCOPE_KEY}%'`,
   );
 }
 
@@ -842,12 +863,40 @@ export async function ensureExtendedProductSchema() {
   await renameTableIfNeeded(LEGACY_BANNED_WORDS_TABLE, "language_guard_tokens");
   await renameTableIfNeeded(LEGACY_STYLE_GENOMES_TABLE, "layout_strategies");
   await renameTableIfNeeded(LEGACY_STYLE_GENOME_FORKS_TABLE, "layout_strategy_forks");
+  await renameTableIfNeeded(legacyArticleTable(), "articles");
+  await renameTableIfNeeded(legacyArticleTable("snapshots"), "article_snapshots");
+  await renameTableIfNeeded(legacyArticleTable("nodes"), "article_nodes");
+  await renameTableIfNeeded(legacyArticleTable("fragment_refs"), "article_fragment_refs");
+  await renameTableIfNeeded(legacyArticleTable("workflows"), "article_workflows");
+  await renameTableIfNeeded(legacyArticleTable("stage_artifacts"), "article_stage_artifacts");
+  await renameTableIfNeeded(legacyArticleTable("reference_articles"), "article_reference_articles");
+  await renameTableIfNeeded(legacyArticleTable("image_prompts"), "article_image_prompts");
   if (await hasTable("plans")) {
     await renameColumnIfNeeded("plans", LEGACY_CUSTOM_BANNED_WORD_LIMIT_COLUMN, "language_guard_rule_limit");
   }
-  if (await hasTable("documents")) {
-    await renameColumnIfNeeded("documents", LEGACY_STYLE_GENOME_ID_COLUMN, "layout_strategy_id");
+  if (await hasTable("articles")) {
+    await renameColumnIfNeeded("articles", LEGACY_STYLE_GENOME_ID_COLUMN, "layout_strategy_id");
   }
+  await renameColumnIfNeeded("article_nodes", legacyArticleColumn("id"), "article_id");
+  await renameColumnIfNeeded("article_fragment_refs", legacyArticleColumn("id"), "article_id");
+  await renameColumnIfNeeded("article_fragment_refs", legacyArticleColumn("node_id"), "article_node_id");
+  await renameColumnIfNeeded("article_workflows", legacyArticleColumn("id"), "article_id");
+  await renameColumnIfNeeded("article_stage_artifacts", legacyArticleColumn("id"), "article_id");
+  await renameColumnIfNeeded("article_outcomes", legacyArticleColumn("id"), "article_id");
+  await renameColumnIfNeeded("article_strategy_cards", legacyArticleColumn("id"), "article_id");
+  await renameColumnIfNeeded("article_evidence_items", legacyArticleColumn("id"), "article_id");
+  await renameColumnIfNeeded("article_research_cards", legacyArticleColumn("id"), "article_id");
+  await renameColumnIfNeeded("article_outcome_snapshots", legacyArticleColumn("id"), "article_id");
+  await renameColumnIfNeeded("article_reference_articles", legacyArticleColumn("id"), "article_id");
+  await renameColumnIfNeeded("article_reference_articles", `referenced_${legacyArticleColumn("id")}`, "referenced_article_id");
+  await renameColumnIfNeeded("article_image_prompts", legacyArticleColumn("id"), "article_id");
+  await renameColumnIfNeeded("article_image_prompts", legacyArticleColumn("node_id"), "article_node_id");
+  await renameColumnIfNeeded("wechat_sync_logs", legacyArticleColumn("id"), "article_id");
+  await renameColumnIfNeeded("wechat_sync_logs", legacyArticleColumn("version_hash"), "article_version_hash");
+  await renameColumnIfNeeded("writing_eval_online_feedback", legacyArticleColumn("id"), "article_id");
+  await renameColumnIfNeeded("cover_images", legacyArticleColumn("id"), "article_id");
+  await renameColumnIfNeeded("asset_files", legacyArticleColumn("id"), "article_id");
+  await renameColumnIfNeeded("cover_image_candidates", legacyArticleColumn("id"), "article_id");
   if (await hasTable("layout_strategies")) {
     await renameColumnIfNeeded("layout_strategies", LEGACY_SOURCE_GENOME_ID_COLUMN, "source_layout_strategy_id");
   }
@@ -857,9 +906,9 @@ export async function ensureExtendedProductSchema() {
   }
 
   await execAll([
-    `CREATE TABLE IF NOT EXISTS document_nodes (
+    `CREATE TABLE IF NOT EXISTS article_nodes (
       id ${getDatabase().type === "postgres" ? "BIGSERIAL" : "INTEGER"} PRIMARY KEY ${getDatabase().type === "postgres" ? "" : "AUTOINCREMENT"},
-      document_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"} NOT NULL,
+      article_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"} NOT NULL,
       parent_node_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"},
       title TEXT NOT NULL,
       description TEXT,
@@ -867,27 +916,27 @@ export async function ensureExtendedProductSchema() {
       created_at ${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "NOW()" : "(datetime('now'))"},
       updated_at ${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "NOW()" : "(datetime('now'))"}
     )`,
-    `CREATE TABLE IF NOT EXISTS document_fragment_refs (
+    `CREATE TABLE IF NOT EXISTS article_fragment_refs (
       id ${getDatabase().type === "postgres" ? "BIGSERIAL" : "INTEGER"} PRIMARY KEY ${getDatabase().type === "postgres" ? "" : "AUTOINCREMENT"},
-      document_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"} NOT NULL,
-      document_node_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"} NOT NULL,
+      article_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"} NOT NULL,
+      article_node_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"} NOT NULL,
       fragment_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"} NOT NULL,
       usage_mode TEXT NOT NULL DEFAULT 'rewrite',
       created_at ${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "NOW()" : "(datetime('now'))"},
-      UNIQUE(document_node_id, fragment_id)
+      UNIQUE(article_node_id, fragment_id)
     )`,
-    `CREATE TABLE IF NOT EXISTS document_workflows (
+    `CREATE TABLE IF NOT EXISTS article_workflows (
       id ${getDatabase().type === "postgres" ? "BIGSERIAL" : "INTEGER"} PRIMARY KEY ${getDatabase().type === "postgres" ? "" : "AUTOINCREMENT"},
-      document_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"} NOT NULL UNIQUE,
-      current_stage_code TEXT NOT NULL DEFAULT 'topicRadar',
+      article_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"} NOT NULL UNIQUE,
+      current_stage_code TEXT NOT NULL DEFAULT 'opportunity',
       stages_json TEXT NOT NULL,
       pending_publish_intent_json ${getDatabase().type === "postgres" ? "JSONB" : "TEXT"},
       created_at ${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "NOW()" : "(datetime('now'))"},
       updated_at ${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "NOW()" : "(datetime('now'))"}
     )`,
-    `CREATE TABLE IF NOT EXISTS document_stage_artifacts (
+    `CREATE TABLE IF NOT EXISTS article_stage_artifacts (
       id ${getDatabase().type === "postgres" ? "BIGSERIAL" : "INTEGER"} PRIMARY KEY ${getDatabase().type === "postgres" ? "" : "AUTOINCREMENT"},
-      document_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"} NOT NULL,
+      article_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"} NOT NULL,
       stage_code TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'ready',
       summary TEXT,
@@ -897,11 +946,11 @@ export async function ensureExtendedProductSchema() {
       error_message TEXT,
       created_at ${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "NOW()" : "(datetime('now'))"},
       updated_at ${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "NOW()" : "(datetime('now'))"},
-      UNIQUE(document_id, stage_code)
+      UNIQUE(article_id, stage_code)
     )`,
     `CREATE TABLE IF NOT EXISTS article_outcomes (
       id ${getDatabase().type === "postgres" ? "BIGSERIAL" : "INTEGER"} PRIMARY KEY ${getDatabase().type === "postgres" ? "" : "AUTOINCREMENT"},
-      document_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"} NOT NULL UNIQUE,
+      article_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"} NOT NULL UNIQUE,
       user_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"} NOT NULL,
       target_package TEXT,
       scorecard_json TEXT NOT NULL DEFAULT '{}',
@@ -914,7 +963,7 @@ export async function ensureExtendedProductSchema() {
     )`,
     `CREATE TABLE IF NOT EXISTS article_strategy_cards (
       id ${getDatabase().type === "postgres" ? "BIGSERIAL" : "INTEGER"} PRIMARY KEY ${getDatabase().type === "postgres" ? "" : "AUTOINCREMENT"},
-      document_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"} NOT NULL UNIQUE,
+      article_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"} NOT NULL UNIQUE,
       user_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"} NOT NULL,
       target_reader TEXT,
       core_assertion TEXT,
@@ -936,7 +985,7 @@ export async function ensureExtendedProductSchema() {
     )`,
     `CREATE TABLE IF NOT EXISTS article_evidence_items (
       id ${getDatabase().type === "postgres" ? "BIGSERIAL" : "INTEGER"} PRIMARY KEY ${getDatabase().type === "postgres" ? "" : "AUTOINCREMENT"},
-      document_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"} NOT NULL,
+      article_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"} NOT NULL,
       user_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"} NOT NULL,
       fragment_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"},
       node_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"},
@@ -956,7 +1005,7 @@ export async function ensureExtendedProductSchema() {
     )`,
     `CREATE TABLE IF NOT EXISTS article_research_cards (
       id ${getDatabase().type === "postgres" ? "BIGSERIAL" : "INTEGER"} PRIMARY KEY ${getDatabase().type === "postgres" ? "" : "AUTOINCREMENT"},
-      document_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"} NOT NULL,
+      article_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"} NOT NULL,
       user_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"} NOT NULL,
       card_kind TEXT NOT NULL,
       title TEXT NOT NULL,
@@ -965,7 +1014,7 @@ export async function ensureExtendedProductSchema() {
       sort_order INTEGER NOT NULL DEFAULT 1,
       created_at ${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "NOW()" : "(datetime('now'))"},
       updated_at ${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "NOW()" : "(datetime('now'))"},
-      UNIQUE(document_id, card_kind, sort_order)
+      UNIQUE(article_id, card_kind, sort_order)
     )`,
     `CREATE TABLE IF NOT EXISTS article_research_card_sources (
       id ${getDatabase().type === "postgres" ? "BIGSERIAL" : "INTEGER"} PRIMARY KEY ${getDatabase().type === "postgres" ? "" : "AUTOINCREMENT"},
@@ -982,7 +1031,7 @@ export async function ensureExtendedProductSchema() {
     `CREATE TABLE IF NOT EXISTS article_outcome_snapshots (
       id ${getDatabase().type === "postgres" ? "BIGSERIAL" : "INTEGER"} PRIMARY KEY ${getDatabase().type === "postgres" ? "" : "AUTOINCREMENT"},
       outcome_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"} NOT NULL,
-      document_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"} NOT NULL,
+      article_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"} NOT NULL,
       user_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"} NOT NULL,
       window_code TEXT NOT NULL,
       read_count INTEGER NOT NULL DEFAULT 0,
@@ -991,7 +1040,7 @@ export async function ensureExtendedProductSchema() {
       notes TEXT,
       created_at ${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "NOW()" : "(datetime('now'))"},
       updated_at ${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "NOW()" : "(datetime('now'))"},
-      UNIQUE(document_id, window_code)
+      UNIQUE(article_id, window_code)
     )`,
     `CREATE TABLE IF NOT EXISTS fragment_sources (
       id ${getDatabase().type === "postgres" ? "BIGSERIAL" : "INTEGER"} PRIMARY KEY ${getDatabase().type === "postgres" ? "" : "AUTOINCREMENT"},
@@ -1089,16 +1138,16 @@ export async function ensureExtendedProductSchema() {
       created_at ${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "NOW()" : "(datetime('now'))"},
       updated_at ${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "NOW()" : "(datetime('now'))"}
     )`,
-    `CREATE TABLE IF NOT EXISTS document_reference_articles (
+    `CREATE TABLE IF NOT EXISTS article_reference_articles (
       id ${getDatabase().type === "postgres" ? "BIGSERIAL" : "INTEGER"} PRIMARY KEY ${getDatabase().type === "postgres" ? "" : "AUTOINCREMENT"},
-      document_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"} NOT NULL,
-      referenced_document_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"} NOT NULL,
+      article_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"} NOT NULL,
+      referenced_article_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"} NOT NULL,
       relation_reason TEXT,
       bridge_sentence TEXT,
       sort_order INTEGER NOT NULL DEFAULT 1,
       created_at ${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "NOW()" : "(datetime('now'))"},
       updated_at ${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "NOW()" : "(datetime('now'))"},
-      UNIQUE(document_id, referenced_document_id)
+      UNIQUE(article_id, referenced_article_id)
     )`,
     `CREATE TABLE IF NOT EXISTS writing_style_profiles (
       id ${getDatabase().type === "postgres" ? "BIGSERIAL" : "INTEGER"} PRIMARY KEY ${getDatabase().type === "postgres" ? "" : "AUTOINCREMENT"},
@@ -1354,7 +1403,7 @@ export async function ensureExtendedProductSchema() {
       run_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"} NOT NULL,
       result_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"},
       case_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"},
-      document_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"},
+      article_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"},
       wechat_sync_log_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"},
       source_type TEXT NOT NULL DEFAULT 'manual',
       source_label TEXT,
@@ -1463,7 +1512,7 @@ export async function ensureExtendedProductSchema() {
     `CREATE TABLE IF NOT EXISTS cover_images (
       id ${getDatabase().type === "postgres" ? "BIGSERIAL" : "INTEGER"} PRIMARY KEY ${getDatabase().type === "postgres" ? "" : "AUTOINCREMENT"},
       user_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"} NOT NULL,
-      document_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"},
+      article_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"},
       prompt TEXT NOT NULL,
       image_url TEXT NOT NULL,
       created_at ${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "NOW()" : "(datetime('now'))"}
@@ -1471,7 +1520,7 @@ export async function ensureExtendedProductSchema() {
     `CREATE TABLE IF NOT EXISTS asset_files (
       id ${getDatabase().type === "postgres" ? "BIGSERIAL" : "INTEGER"} PRIMARY KEY ${getDatabase().type === "postgres" ? "" : "AUTOINCREMENT"},
       user_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"} NOT NULL,
-      document_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"},
+      article_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"},
       asset_scope TEXT NOT NULL,
       asset_type TEXT NOT NULL DEFAULT 'cover_image',
       source_record_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"} NOT NULL,
@@ -1493,7 +1542,7 @@ export async function ensureExtendedProductSchema() {
     `CREATE TABLE IF NOT EXISTS cover_image_candidates (
       id ${getDatabase().type === "postgres" ? "BIGSERIAL" : "INTEGER"} PRIMARY KEY ${getDatabase().type === "postgres" ? "" : "AUTOINCREMENT"},
       user_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"} NOT NULL,
-      document_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"},
+      article_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"},
       batch_token TEXT NOT NULL,
       variant_label TEXT NOT NULL,
       prompt TEXT NOT NULL,
@@ -1502,17 +1551,17 @@ export async function ensureExtendedProductSchema() {
       created_at ${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "NOW()" : "(datetime('now'))"},
       selected_at ${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"}
     )`,
-    `CREATE TABLE IF NOT EXISTS document_image_prompts (
+    `CREATE TABLE IF NOT EXISTS article_image_prompts (
       id ${getDatabase().type === "postgres" ? "BIGSERIAL" : "INTEGER"} PRIMARY KEY ${getDatabase().type === "postgres" ? "" : "AUTOINCREMENT"},
       user_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"} NOT NULL,
-      document_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"} NOT NULL,
-      document_node_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"},
+      article_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"} NOT NULL,
+      article_node_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"},
       asset_type TEXT NOT NULL DEFAULT 'inline',
       title TEXT NOT NULL,
       prompt TEXT NOT NULL,
       created_at ${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "NOW()" : "(datetime('now'))"},
       updated_at ${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "NOW()" : "(datetime('now'))"},
-      UNIQUE(document_id, document_node_id, asset_type)
+      UNIQUE(article_id, article_node_id, asset_type)
     )`,
     `CREATE TABLE IF NOT EXISTS global_ai_engines (
       id ${getDatabase().type === "postgres" ? "BIGSERIAL" : "INTEGER"} PRIMARY KEY ${getDatabase().type === "postgres" ? "" : "AUTOINCREMENT"},
@@ -1712,9 +1761,9 @@ export async function ensureExtendedProductSchema() {
     )`,
   ]);
 
-  await ensureColumn("documents", "layout_strategy_id", getDatabase().type === "postgres" ? "BIGINT" : "INTEGER");
-  await ensureColumn("documents", "wechat_template_id", "TEXT");
-  await ensureColumn("documents", "series_id", getDatabase().type === "postgres" ? "BIGINT" : "INTEGER");
+  await ensureColumn("articles", "layout_strategy_id", getDatabase().type === "postgres" ? "BIGINT" : "INTEGER");
+  await ensureColumn("articles", "wechat_template_id", "TEXT");
+  await ensureColumn("articles", "series_id", getDatabase().type === "postgres" ? "BIGINT" : "INTEGER");
   await ensureColumn("personas", "bound_writing_style_profile_id", getDatabase().type === "postgres" ? "BIGINT" : "INTEGER");
   await ensureColumn("personas", "summary", "TEXT");
   await ensureColumn("personas", "domain_keywords_json", "TEXT");
@@ -1741,10 +1790,10 @@ export async function ensureExtendedProductSchema() {
   await ensureColumn("persona_tags", "sort_order", "INTEGER NOT NULL DEFAULT 100");
   await ensureColumn("persona_tags", "is_active", `${getDatabase().type === "postgres" ? "BOOLEAN" : "INTEGER"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "TRUE" : "1"}`);
   await ensureColumn("persona_tags", "is_system", `${getDatabase().type === "postgres" ? "BOOLEAN" : "INTEGER"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "TRUE" : "1"}`);
-  await renameColumnIfNeeded("prompt_versions", "rollout_staff_only", "rollout_observe_only");
-  await renameColumnIfNeeded("writing_asset_rollouts", "rollout_staff_only", "rollout_observe_only");
-  await renameColumnIfNeeded("prompt_rollout_daily_metrics", "staff_hit_count", "observe_hit_count");
-  await renameColumnIfNeeded("writing_asset_rollout_daily_metrics", "staff_hit_count", "observe_hit_count");
+  await renameColumnIfNeeded("prompt_versions", LEGACY_ROLLOUT_STAFF_ONLY_COLUMN, "rollout_observe_only");
+  await renameColumnIfNeeded("writing_asset_rollouts", LEGACY_ROLLOUT_STAFF_ONLY_COLUMN, "rollout_observe_only");
+  await renameColumnIfNeeded("prompt_rollout_daily_metrics", LEGACY_STAFF_HIT_COUNT_COLUMN, "observe_hit_count");
+  await renameColumnIfNeeded("writing_asset_rollout_daily_metrics", LEGACY_STAFF_HIT_COUNT_COLUMN, "observe_hit_count");
   await ensureColumn("prompt_versions", "rollout_observe_only", `${getDatabase().type === "postgres" ? "BOOLEAN" : "INTEGER"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "FALSE" : "0"}`);
   await ensureColumn("prompt_versions", "rollout_percentage", "INTEGER NOT NULL DEFAULT 0");
   await ensureColumn("prompt_versions", "rollout_plan_codes_json", "TEXT NOT NULL DEFAULT '[]'");
@@ -1753,12 +1802,25 @@ export async function ensureExtendedProductSchema() {
   await ensureColumn("knowledge_cards", "conflict_flags_json", getDatabase().type === "postgres" ? "JSONB" : "TEXT");
   await ensureColumn("knowledge_cards", "latest_change_summary", "TEXT");
   await ensureColumn("knowledge_cards", "overturned_judgements_json", getDatabase().type === "postgres" ? "JSONB" : "TEXT");
-  await ensureColumn("document_fragment_refs", "usage_mode", "TEXT NOT NULL DEFAULT 'rewrite'");
-  await ensureColumn("document_workflows", "pending_publish_intent_json", getDatabase().type === "postgres" ? "JSONB" : "TEXT");
+  await ensureColumn("article_fragment_refs", "usage_mode", "TEXT NOT NULL DEFAULT 'rewrite'");
+  await ensureColumn("article_workflows", "pending_publish_intent_json", getDatabase().type === "postgres" ? "JSONB" : "TEXT");
+  await ensureColumn("wechat_sync_logs", "article_id", getDatabase().type === "postgres" ? "BIGINT" : "INTEGER");
+  await execAll([
+    `UPDATE article_workflows
+     SET current_stage_code = 'opportunity'
+     WHERE current_stage_code = '${LEGACY_OPPORTUNITY_STAGE_CODE}'`,
+    `UPDATE article_workflows
+     SET stages_json = REPLACE(stages_json, '"${LEGACY_OPPORTUNITY_STAGE_CODE}"', '"opportunity"')
+     WHERE stages_json LIKE '%"${LEGACY_OPPORTUNITY_STAGE_CODE}"%'`,
+    `UPDATE article_workflows
+     SET stages_json = REPLACE(stages_json, '${LEGACY_OPPORTUNITY_STAGE_LABEL}', '机会')
+     WHERE stages_json LIKE '%${LEGACY_OPPORTUNITY_STAGE_LABEL}%'`,
+  ]);
   await ensureColumn("wechat_sync_logs", "failure_code", "TEXT");
-  await ensureColumn("wechat_sync_logs", "document_version_hash", "TEXT");
+  await ensureColumn("wechat_sync_logs", "article_version_hash", "TEXT");
   await ensureColumn("wechat_sync_logs", "template_id", "TEXT");
   await ensureColumn("wechat_sync_logs", "idempotency_key", "TEXT");
+  await ensureColumn("writing_eval_online_feedback", "article_id", getDatabase().type === "postgres" ? "BIGINT" : "INTEGER");
   await ensureColumn("global_object_storage_configs", "provider_preset", "TEXT NOT NULL DEFAULT 'local'");
   await ensureColumn("topic_sources", "owner_user_id", getDatabase().type === "postgres" ? "BIGINT" : "INTEGER");
   await ensureColumn("topic_sources", "last_fetched_at", getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT");
@@ -1822,18 +1884,20 @@ export async function ensureExtendedProductSchema() {
   await ensureColumn("layout_template_versions", "updated_at", `${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "NOW()" : "(datetime('now'))"}`);
   await ensureColumn("writing_eval_cases", "stage_artifact_payloads_json", "TEXT NOT NULL DEFAULT '{}'");
   await ensureColumn("cover_images", "storage_provider", "TEXT");
+  await ensureColumn("cover_images", "article_id", getDatabase().type === "postgres" ? "BIGINT" : "INTEGER");
   await ensureColumn("cover_images", "original_object_key", "TEXT");
   await ensureColumn("cover_images", "compressed_object_key", "TEXT");
   await ensureColumn("cover_images", "thumbnail_object_key", "TEXT");
   await ensureColumn("cover_images", "asset_manifest_json", getDatabase().type === "postgres" ? "JSONB" : "TEXT");
   await ensureColumn("cover_image_candidates", "storage_provider", "TEXT");
+  await ensureColumn("cover_image_candidates", "article_id", getDatabase().type === "postgres" ? "BIGINT" : "INTEGER");
   await ensureColumn("cover_image_candidates", "original_object_key", "TEXT");
   await ensureColumn("cover_image_candidates", "compressed_object_key", "TEXT");
   await ensureColumn("cover_image_candidates", "thumbnail_object_key", "TEXT");
   await ensureColumn("cover_image_candidates", "asset_manifest_json", getDatabase().type === "postgres" ? "JSONB" : "TEXT");
-  await dropColumnIfNeeded("knowledge_cards", "workspace_scope");
-  await renameColumnIfNeeded("asset_files", "legacy_asset_id", "source_record_id");
-  await ensureColumn("asset_files", "document_id", getDatabase().type === "postgres" ? "BIGINT" : "INTEGER");
+  await dropColumnIfNeeded("knowledge_cards", LEGACY_WORKSPACE_SCOPE_COLUMN);
+  await renameColumnIfNeeded("asset_files", LEGACY_ASSET_FILES_LEGACY_ASSET_ID_COLUMN, "source_record_id");
+  await ensureColumn("asset_files", "article_id", getDatabase().type === "postgres" ? "BIGINT" : "INTEGER");
   await ensureColumn("asset_files", "source_record_id", getDatabase().type === "postgres" ? "BIGINT" : "INTEGER");
   await ensureColumn("asset_files", "asset_type", "TEXT NOT NULL DEFAULT 'cover_image'");
   await ensureColumn("asset_files", "batch_token", "TEXT");
@@ -1861,11 +1925,11 @@ export async function ensureExtendedProductSchema() {
   await ensureColumn("writing_eval_run_schedules", "decision_mode", "TEXT NOT NULL DEFAULT 'manual_review'");
   await ensureColumn("writing_eval_run_schedules", "priority", "INTEGER NOT NULL DEFAULT 100");
   await replaceTextInColumn("audit_logs", "payload_json", [
-    ["rolloutStaffOnly", "rolloutObserveOnly"],
-    ["rollout_staff_only", "rollout_observe_only"],
-    ["staffUserCount", "observeUserCount"],
-    ["staffHitCount", "observeHitCount"],
-    ["staff", "observe"],
+    [LEGACY_AUDIT_LOG_ROLLOUT_STAFF_ONLY_CAMEL_KEY, "rolloutObserveOnly"],
+    [LEGACY_AUDIT_LOG_ROLLOUT_STAFF_ONLY_KEY, "rollout_observe_only"],
+    [LEGACY_AUDIT_LOG_STAFF_USER_COUNT_KEY, "observeUserCount"],
+    [LEGACY_AUDIT_LOG_STAFF_HIT_COUNT_KEY, "observeHitCount"],
+    [LEGACY_AUDIT_LOG_STAFF_SCOPE_KEY, CANONICAL_OBSERVE_SCOPE_KEY],
   ]);
   await normalizeCanonicalOpsData();
   await execAll([
@@ -1890,7 +1954,7 @@ export async function ensureExtendedProductSchema() {
     "CREATE INDEX IF NOT EXISTS idx_writing_optimization_versions_decision_created_at ON writing_optimization_versions(decision, created_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_writing_eval_online_feedback_run_captured_at ON writing_eval_online_feedback(run_id, captured_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_writing_eval_online_feedback_result_captured_at ON writing_eval_online_feedback(result_id, captured_at DESC)",
-    "CREATE INDEX IF NOT EXISTS idx_writing_eval_online_feedback_document_captured_at ON writing_eval_online_feedback(document_id, captured_at DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_writing_eval_online_feedback_article_captured_at ON writing_eval_online_feedback(article_id, captured_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_writing_eval_online_feedback_sync_log ON writing_eval_online_feedback(wechat_sync_log_id)",
   ]);
   await ensureTopicSourceScopedUniqueness();

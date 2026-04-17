@@ -45,7 +45,7 @@ export type ArticleStageArtifact = {
 
 type ArtifactRow = {
   id: number;
-  document_id: number;
+  article_id: number;
   stage_code: ArticleArtifactStageCode;
   status: ArticleStageArtifactStatus;
   summary: string | null;
@@ -530,7 +530,7 @@ function buildFactCheckEvidenceCards(
         knowledgeTitle: matchedKnowledgeCard?.title ?? null,
         confidenceLabel:
           matchedKnowledgeCard == null
-            ? "待补主题档案"
+            ? "待补背景卡"
             : matchedKnowledgeCard.status === "conflicted"
               ? "存在冲突"
               : matchedKnowledgeCard.confidenceScore >= 0.75
@@ -571,7 +571,7 @@ function buildFactCheckEvidenceCards(
         knowledgeCardId: matchedKnowledgeCard.id,
         knowledgeTitle: matchedKnowledgeCard.title,
         confidenceLabel: "存在冲突",
-        rationale: "主题档案显示这条判断仍有冲突信息，发布前要保留反向证据视角。",
+        rationale: "背景卡显示这条判断仍有冲突信息，发布前要保留反向证据视角。",
       });
     }
 
@@ -710,7 +710,7 @@ function buildKnowledgeCardSourceReference(
   return {
     label: card.title,
     sourceType: "knowledge",
-    detail: truncateText(detailOverride || card.latestChangeSummary || card.summary || card.keyFacts[0] || "主题档案线索", 96),
+    detail: truncateText(detailOverride || card.latestChangeSummary || card.summary || card.keyFacts[0] || "背景卡线索", 96),
     sourceUrl: null,
   };
 }
@@ -786,7 +786,7 @@ function buildResearchCoverage(context: GenerationContext) {
 
   for (const card of context.knowledgeCards.slice(0, 6)) {
     const seed = [card.title, card.summary, card.latestChangeSummary, ...card.keyFacts.slice(0, 2)].filter(Boolean).join(" ");
-    const descriptor = `${card.title}：${truncateText(card.latestChangeSummary || card.summary || card.keyFacts[0] || "主题档案线索", 96)}`;
+    const descriptor = `${card.title}：${truncateText(card.latestChangeSummary || card.summary || card.keyFacts[0] || "背景卡线索", 96)}`;
     buckets.industry.push(descriptor);
     if (looksLikeComparison(seed)) {
       buckets.comparison.push(descriptor);
@@ -1107,7 +1107,7 @@ function fallbackAudienceAnalysis(context: GenerationContext) {
     contentWarnings: [
       "不要默认读者已经掌握全部背景。",
       "避免只有态度，没有时间、数据或案例支撑。",
-      sourceFacts.length ? `优先引用这些已知素材：${sourceFacts.join("；")}` : "优先回到用户已采集的素材与主题档案。",
+      sourceFacts.length ? `优先引用这些已知素材：${sourceFacts.join("；")}` : "优先回到用户已采集的素材与背景卡。",
     ],
     recommendedCallToAction: "结尾给出一个明确动作：继续观察什么、验证什么、如何利用这篇稿子做下一步表达。",
   } satisfies Record<string, unknown>;
@@ -2043,7 +2043,7 @@ function fallbackProsePolish(context: GenerationContext) {
     overallDiagnosis: longParagraph ? "段落偏长，节奏略闷，需要切分。" : "整体节奏可用，但还可以再提升开头与收尾的记忆点。",
     strengths: [
       plain.length >= 240 ? "正文已经具备一定信息密度。" : "正文简洁，方便继续扩写。",
-      context.knowledgeCards.length > 0 ? "已经有主题档案可作为事实支撑。" : "主题集中，易于继续打磨单一观点。",
+      context.knowledgeCards.length > 0 ? "已经有背景卡可作为事实支撑。" : "主题集中，易于继续打磨单一观点。",
       context.persona ? `人设方向较明确：${context.persona.name}。` : "稿件口吻还留有较大可塑空间。",
     ],
     issues: [
@@ -3098,14 +3098,14 @@ async function upsertArtifact(input: {
   const db = getDatabase();
   const now = new Date().toISOString();
   const existing = await db.queryOne<{ id: number }>(
-    "SELECT id FROM document_stage_artifacts WHERE document_id = ? AND stage_code = ?",
+    "SELECT id FROM article_stage_artifacts WHERE article_id = ? AND stage_code = ?",
     [input.articleId, input.stageCode],
   );
 
   if (!existing) {
     await db.exec(
-      `INSERT INTO document_stage_artifacts (
-        document_id, stage_code, status, summary, payload_json, model, provider, error_message, created_at, updated_at
+      `INSERT INTO article_stage_artifacts (
+        article_id, stage_code, status, summary, payload_json, model, provider, error_message, created_at, updated_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         input.articleId,
@@ -3122,9 +3122,9 @@ async function upsertArtifact(input: {
     );
   } else {
     await db.exec(
-      `UPDATE document_stage_artifacts
+      `UPDATE article_stage_artifacts
        SET status = ?, summary = ?, payload_json = ?, model = ?, provider = ?, error_message = ?, updated_at = ?
-       WHERE document_id = ? AND stage_code = ?`,
+       WHERE article_id = ? AND stage_code = ?`,
       [
         input.status,
         input.summary,
@@ -3140,7 +3140,7 @@ async function upsertArtifact(input: {
   }
 
   const saved = await db.queryOne<ArtifactRow>(
-    "SELECT * FROM document_stage_artifacts WHERE document_id = ? AND stage_code = ?",
+    "SELECT * FROM article_stage_artifacts WHERE article_id = ? AND stage_code = ?",
     [input.articleId, input.stageCode],
   );
   if (!saved) {
@@ -3340,7 +3340,7 @@ async function generateOutlinePlanning(context: GenerationContext) {
     "targetEmotionOptions 给出读者读完后的情绪目标，例如警惕、被说服、想转发、愿意行动。",
     "outlineSections.goal 必须说明这一节承担什么推进任务，而不是重复标题。",
     "outlineSections.keyPoints 必须具体到观点或信息点，避免“展开分析”“补充背景”这类空话。",
-    "outlineSections.evidenceHints 优先引用现有素材、主题档案和待补事实，不要虚构来源。",
+    "outlineSections.evidenceHints 优先引用现有素材、背景卡和待补事实，不要虚构来源。",
     "outlineSections.materialRefs 必须尽量引用 materialBundle 中的 fragmentId；截图素材只能作为原图使用，不可改写成伪原文。",
     "viewpointIntegration 必须逐条说明用户补充观点是被采纳、弱化、暂缓还是判定冲突。",
     "transition 必须说明如何从上一节自然推进到下一节。",
@@ -3369,7 +3369,7 @@ async function generateOutlinePlanning(context: GenerationContext) {
     context.supplementalViewpoints.length ? `用户补充观点：${context.supplementalViewpoints.join("；")}` : "用户暂未补充额外观点。",
     `当前正文摘要：${truncateText(stripMarkdown(context.article.markdownContent), 800) || "暂无正文，请先根据素材规划结构。"}`,
     `大纲草稿：${context.outlineNodes.map((item) => `${item.title}${item.description ? `（${item.description}）` : ""}`).join("；") || "暂无大纲草稿"}`,
-    `主题档案事实：${getSourceFacts(context, 6).join("；") || "暂无主题档案事实"}`,
+    `背景卡事实：${getSourceFacts(context, 6).join("；") || "暂无背景卡事实"}`,
     `当前可用素材包：${getMaterialBundle(context, 8).map((item) => `${item.fragmentId}. ${item.title}（${item.usageMode}/${item.sourceType}）${item.screenshotPath ? `，原图：${item.screenshotPath}` : ""}：${item.summary}`).join("；") || "暂无已挂载素材"}`,
   ].filter(Boolean).join("\n");
 
@@ -3535,7 +3535,7 @@ async function generateFactCheck(context: GenerationContext) {
     "opinion 只用于明显属于作者判断、价值评价或预测的句子，不要滥用。",
     "checks 优先覆盖最关键、最容易出错、最影响发布风险的 5-12 条表述。",
     "suggestion 必须可执行，例如补什么证据、改成什么语气、删掉哪一层因果推断。",
-    "evidenceCards 只允许使用已提供的素材、主题档案和 URL 证据，不要编造外部来源。",
+    "evidenceCards 只允许使用已提供的素材、背景卡和 URL 证据，不要编造外部来源。",
     "supportingEvidence 放支持当前判断的证据；counterEvidence 放反证、反例、争议或会削弱判断的材料。",
     "researchTag 尽量标成 timeline、competitor、userVoice、contradiction、turningPoint 之一，方便后续证据包和发布守门使用。",
     "missingEvidence 只列真正阻碍发布的缺口，例如时间、数字口径、案例出处。",
@@ -3623,8 +3623,8 @@ export async function getArticleStageArtifacts(articleId: number, userId: number
   const db = getDatabase();
   const rows = await db.query<ArtifactRow>(
     `SELECT *
-     FROM document_stage_artifacts
-     WHERE document_id = ?
+     FROM article_stage_artifacts
+     WHERE article_id = ?
      ORDER BY updated_at DESC, id DESC`,
     [articleId],
   );
@@ -3649,14 +3649,14 @@ export async function getArticleStageArtifactsByDocumentIds(input: {
   const placeholders = uniqueArticleIds.map(() => "?").join(", ");
   const rows = await getDatabase().query<ArtifactRow & { article_title: string; article_updated_at: string }>(
     `SELECT dsa.*, d.title AS article_title, d.updated_at AS article_updated_at
-     FROM document_stage_artifacts dsa
-     INNER JOIN documents d ON d.id = dsa.document_id
-     WHERE d.user_id = ? AND dsa.stage_code = ? AND dsa.document_id IN (${placeholders})
+     FROM article_stage_artifacts dsa
+     INNER JOIN articles d ON d.id = dsa.article_id
+     WHERE d.user_id = ? AND dsa.stage_code = ? AND dsa.article_id IN (${placeholders})
      ORDER BY d.updated_at DESC, d.id DESC`,
     [input.userId, input.stageCode, ...uniqueArticleIds],
   );
   return rows.map((row) => ({
-    articleId: row.document_id,
+    articleId: row.article_id,
     title: row.article_title,
     updatedAt: row.article_updated_at,
     artifact: toArtifact(row),
@@ -3668,8 +3668,8 @@ export async function getArticleStageArtifact(articleId: number, userId: number,
   await ensureArticleAccess(articleId, userId);
   const row = await getDatabase().queryOne<ArtifactRow>(
     `SELECT *
-     FROM document_stage_artifacts
-     WHERE document_id = ? AND stage_code = ?`,
+     FROM article_stage_artifacts
+     WHERE article_id = ? AND stage_code = ?`,
     [articleId, stageCode],
   );
   return row ? toArtifact(row) : null;

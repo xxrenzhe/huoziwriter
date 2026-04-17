@@ -115,12 +115,12 @@ export async function refreshKnowledgeCardAction(cardId: number) {
   const session = requireSession(await ensureUserSession());
   const existing = await getKnowledgeCardDetail(session.userId, cardId);
   if (!existing) {
-    throw new Error("主题档案不存在");
+    throw new Error("背景卡不存在");
   }
   await rebuildKnowledgeCard(cardId);
   const card = await getKnowledgeCardDetail(session.userId, cardId);
   if (!card) {
-    throw new Error("主题档案刷新失败");
+    throw new Error("背景卡刷新失败");
   }
   await appendAuditLog({
     userId: session.userId,
@@ -286,7 +286,7 @@ export async function generateCoverImageAction(input: {
     });
     const result = await db.exec(
       `INSERT INTO cover_image_candidates (
-        user_id, document_id, batch_token, variant_label, prompt, image_url,
+        user_id, article_id, batch_token, variant_label, prompt, image_url,
         storage_provider, original_object_key, compressed_object_key, thumbnail_object_key, asset_manifest_json,
         is_selected, created_at
       )
@@ -334,12 +334,12 @@ export async function generateCoverImageAction(input: {
       ? `SELECT cic.id, cic.variant_label, cic.prompt, cic.image_url, af.id as asset_file_id
          FROM cover_image_candidates cic
          LEFT JOIN asset_files af ON af.asset_scope = ? AND af.source_record_id = cic.id
-         WHERE cic.user_id = ? AND cic.document_id IS NULL AND cic.batch_token = ?
+         WHERE cic.user_id = ? AND cic.article_id IS NULL AND cic.batch_token = ?
          ORDER BY cic.id ASC`
       : `SELECT cic.id, cic.variant_label, cic.prompt, cic.image_url, af.id as asset_file_id
          FROM cover_image_candidates cic
          LEFT JOIN asset_files af ON af.asset_scope = ? AND af.source_record_id = cic.id
-         WHERE cic.user_id = ? AND cic.document_id = ? AND cic.batch_token = ?
+         WHERE cic.user_id = ? AND cic.article_id = ? AND cic.batch_token = ?
          ORDER BY cic.id ASC`,
     targetArticleId == null ? ["candidate", session.userId, batchToken] : ["candidate", session.userId, targetArticleId, batchToken],
   );
@@ -395,7 +395,7 @@ export async function selectCoverCandidateAction(candidateId: number) {
     thumbnail_object_key: string | null;
     asset_manifest_json: string | null;
   }>(
-    `SELECT id, user_id, document_id AS article_id, batch_token, variant_label, prompt, image_url,
+    `SELECT id, user_id, article_id AS article_id, batch_token, variant_label, prompt, image_url,
             storage_provider, original_object_key, compressed_object_key, thumbnail_object_key, asset_manifest_json
      FROM cover_image_candidates
      WHERE id = ? AND user_id = ?`,
@@ -408,7 +408,7 @@ export async function selectCoverCandidateAction(candidateId: number) {
   const createdAt = new Date().toISOString();
   const result = await db.exec(
     `INSERT INTO cover_images (
-      user_id, document_id, prompt, image_url, storage_provider, original_object_key, compressed_object_key, thumbnail_object_key, asset_manifest_json, created_at
+      user_id, article_id, prompt, image_url, storage_provider, original_object_key, compressed_object_key, thumbnail_object_key, asset_manifest_json, created_at
     )
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [

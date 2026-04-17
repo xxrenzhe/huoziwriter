@@ -72,7 +72,7 @@ CREATE TABLE IF NOT EXISTS prompt_versions (
   UNIQUE(prompt_id, version)
 );
 
-CREATE TABLE IF NOT EXISTS documents (
+CREATE TABLE IF NOT EXISTS articles (
   id BIGSERIAL PRIMARY KEY,
   user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   title TEXT NOT NULL,
@@ -85,9 +85,9 @@ CREATE TABLE IF NOT EXISTS documents (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS document_snapshots (
+CREATE TABLE IF NOT EXISTS article_snapshots (
   id BIGSERIAL PRIMARY KEY,
-  document_id BIGINT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+  article_id BIGINT NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
   markdown_content TEXT NOT NULL,
   html_content TEXT,
   snapshot_note TEXT,
@@ -135,7 +135,7 @@ CREATE TABLE IF NOT EXISTS wechat_connections (
 CREATE TABLE IF NOT EXISTS wechat_sync_logs (
   id BIGSERIAL PRIMARY KEY,
   user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  document_id BIGINT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+  article_id BIGINT NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
   wechat_connection_id BIGINT NOT NULL REFERENCES wechat_connections(id) ON DELETE CASCADE,
   media_id TEXT,
   status TEXT NOT NULL,
@@ -322,10 +322,10 @@ CREATE TABLE IF NOT EXISTS topic_recommendations (
   UNIQUE(user_id, recommendation_date, topic_dedup_key)
 );
 
-CREATE TABLE IF NOT EXISTS document_nodes (
+CREATE TABLE IF NOT EXISTS article_nodes (
   id BIGSERIAL PRIMARY KEY,
-  document_id BIGINT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
-  parent_node_id BIGINT REFERENCES document_nodes(id) ON DELETE SET NULL,
+  article_id BIGINT NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
+  parent_node_id BIGINT REFERENCES article_nodes(id) ON DELETE SET NULL,
   title TEXT NOT NULL,
   description TEXT,
   sort_order INTEGER NOT NULL DEFAULT 0,
@@ -333,28 +333,28 @@ CREATE TABLE IF NOT EXISTS document_nodes (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS document_fragment_refs (
+CREATE TABLE IF NOT EXISTS article_fragment_refs (
   id BIGSERIAL PRIMARY KEY,
-  document_id BIGINT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
-  document_node_id BIGINT NOT NULL REFERENCES document_nodes(id) ON DELETE CASCADE,
+  article_id BIGINT NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
+  article_node_id BIGINT NOT NULL REFERENCES article_nodes(id) ON DELETE CASCADE,
   fragment_id BIGINT NOT NULL REFERENCES fragments(id) ON DELETE CASCADE,
   usage_mode TEXT NOT NULL DEFAULT 'rewrite',
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  UNIQUE(document_node_id, fragment_id)
+  UNIQUE(article_node_id, fragment_id)
 );
 
-CREATE TABLE IF NOT EXISTS document_workflows (
+CREATE TABLE IF NOT EXISTS article_workflows (
   id BIGSERIAL PRIMARY KEY,
-  document_id BIGINT NOT NULL UNIQUE REFERENCES documents(id) ON DELETE CASCADE,
-  current_stage_code TEXT NOT NULL DEFAULT 'topicRadar',
+  article_id BIGINT NOT NULL UNIQUE REFERENCES articles(id) ON DELETE CASCADE,
+  current_stage_code TEXT NOT NULL DEFAULT 'opportunity',
   stages_json JSONB NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS document_stage_artifacts (
+CREATE TABLE IF NOT EXISTS article_stage_artifacts (
   id BIGSERIAL PRIMARY KEY,
-  document_id BIGINT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+  article_id BIGINT NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
   stage_code TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'ready',
   summary TEXT,
@@ -364,7 +364,7 @@ CREATE TABLE IF NOT EXISTS document_stage_artifacts (
   error_message TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  UNIQUE(document_id, stage_code)
+  UNIQUE(article_id, stage_code)
 );
 
 CREATE TABLE IF NOT EXISTS fragment_sources (
@@ -465,16 +465,16 @@ CREATE TABLE IF NOT EXISTS language_guard_rules (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS document_reference_articles (
+CREATE TABLE IF NOT EXISTS article_reference_articles (
   id BIGSERIAL PRIMARY KEY,
-  document_id BIGINT NOT NULL,
-  referenced_document_id BIGINT NOT NULL,
+  article_id BIGINT NOT NULL,
+  referenced_article_id BIGINT NOT NULL,
   relation_reason TEXT,
   bridge_sentence TEXT,
   sort_order INTEGER NOT NULL DEFAULT 1,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  UNIQUE(document_id, referenced_document_id)
+  UNIQUE(article_id, referenced_article_id)
 );
 
 CREATE TABLE IF NOT EXISTS writing_style_profiles (
@@ -586,7 +586,7 @@ CREATE TABLE IF NOT EXISTS layout_template_versions (
 CREATE TABLE IF NOT EXISTS cover_images (
   id BIGSERIAL PRIMARY KEY,
   user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  document_id BIGINT REFERENCES documents(id) ON DELETE SET NULL,
+  article_id BIGINT REFERENCES articles(id) ON DELETE SET NULL,
   prompt TEXT NOT NULL,
   image_url TEXT NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -595,7 +595,7 @@ CREATE TABLE IF NOT EXISTS cover_images (
 CREATE TABLE IF NOT EXISTS asset_files (
   id BIGSERIAL PRIMARY KEY,
   user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  document_id BIGINT REFERENCES documents(id) ON DELETE SET NULL,
+  article_id BIGINT REFERENCES articles(id) ON DELETE SET NULL,
   asset_scope TEXT NOT NULL,
   asset_type TEXT NOT NULL DEFAULT 'cover_image',
   source_record_id BIGINT NOT NULL,
@@ -618,7 +618,7 @@ CREATE TABLE IF NOT EXISTS asset_files (
 CREATE TABLE IF NOT EXISTS cover_image_candidates (
   id BIGSERIAL PRIMARY KEY,
   user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  document_id BIGINT REFERENCES documents(id) ON DELETE SET NULL,
+  article_id BIGINT REFERENCES articles(id) ON DELETE SET NULL,
   batch_token TEXT NOT NULL,
   variant_label TEXT NOT NULL,
   prompt TEXT NOT NULL,
@@ -628,17 +628,17 @@ CREATE TABLE IF NOT EXISTS cover_image_candidates (
   selected_at TIMESTAMPTZ
 );
 
-CREATE TABLE IF NOT EXISTS document_image_prompts (
+CREATE TABLE IF NOT EXISTS article_image_prompts (
   id BIGSERIAL PRIMARY KEY,
   user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  document_id BIGINT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
-  document_node_id BIGINT REFERENCES document_nodes(id) ON DELETE CASCADE,
+  article_id BIGINT NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
+  article_node_id BIGINT REFERENCES article_nodes(id) ON DELETE CASCADE,
   asset_type TEXT NOT NULL DEFAULT 'inline',
   title TEXT NOT NULL,
   prompt TEXT NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  UNIQUE(document_id, document_node_id, asset_type)
+  UNIQUE(article_id, article_node_id, asset_type)
 );
 
 CREATE TABLE IF NOT EXISTS global_ai_engines (
@@ -724,7 +724,6 @@ INSERT INTO ai_model_routes (scene_code, primary_model, fallback_model, descript
   ('articleWrite', 'claude-sonnet-4-6', 'claude-haiku-4-5', '正文生成与改写'),
   ('styleExtract', 'gemini-3.0-flash', 'gpt-5.4-mini', '文章写作风格提取与结构化分析'),
   ('topicSupplement', 'gemini-3.0-flash', 'gpt-5.4-mini', '选题补证信源补充与查询建议生成'),
-  ('topicSourceScout', 'gemini-3.0-flash', 'gpt-5.4-mini', '选题雷达补充信源建议与补证线索生成'),
   ('audienceProfile', 'claude-sonnet-4-6', 'claude-haiku-4-5', '受众画像分析与表达策略生成'),
   ('outlinePlan', 'claude-sonnet-4-6', 'claude-haiku-4-5', '结构化大纲规划与标题策略生成'),
   ('deepWrite', 'claude-sonnet-4-6', 'claude-haiku-4-5', '深度写作执行卡与正文生成策略'),
@@ -739,8 +738,8 @@ ON CONFLICT (scene_code) DO NOTHING;
 INSERT INTO prompt_versions (
   prompt_id, version, category, name, description, file_path, function_name, prompt_content, language, is_active, change_notes
 ) VALUES
-  ('fragment_distill', 'v1.0.0', 'capture', '碎片提纯', '将原始内容转为原子事实碎片', 'system:capture', 'fragmentDistill', '你是碎片提纯器。保留时间、地点、数据、冲突，不要写空泛总结。', 'zh-CN', TRUE, '初始化版本'),
-  ('vision_note', 'v1.0.0', 'capture', '截图视觉理解', '从截图中提取可复用的事实与上下文', 'system:capture', 'visionNote', '你是截图理解编辑。必须先看图，再提取正文、数字、图表结论、界面状态和异常信号，输出可复用的写作碎片。', 'zh-CN', TRUE, '初始化版本'),
+  ('fragment_distill', 'v1.0.0', 'evidence', '碎片提纯', '将原始内容转为原子事实碎片', 'system:evidence', 'fragmentDistill', '你是碎片提纯器。保留时间、地点、数据、冲突，不要写空泛总结。', 'zh-CN', TRUE, '初始化版本'),
+  ('vision_note', 'v1.0.0', 'evidence', '截图视觉理解', '从截图中提取可复用的事实与上下文', 'system:evidence', 'visionNote', '你是截图理解编辑。必须先看图，再提取正文、数字、图表结论、界面状态和异常信号，输出可复用的写作碎片。', 'zh-CN', TRUE, '初始化版本'),
   ('article_write', 'v1.0.0', 'writing', '正文生成', '根据碎片和大纲生成正文', 'system:writing', 'articleWrite', '你是中文专栏作者。根据节点和碎片生成短句、克制、反机器腔调的正文。', 'zh-CN', TRUE, '初始化版本'),
   ('style_extract', 'v1.0.0', 'analysis', '写作风格提取', '从网页文章中提炼写作风格画像', 'system:analysis', 'styleExtract', '你是中文文风分析师。必须基于正文内容抽取语气、句式、结构、开头结尾习惯和模仿提示，不要空泛赞美。', 'zh-CN', TRUE, '初始化版本'),
   ('topic_supplement', 'v1.0.0', 'analysis', '选题补证', '围绕选题生成补充信源、检索词与补证清单', 'system:analysis', 'topicSupplement', '你是选题补证编辑。围绕一个待写选题，优先推荐 YouTube、Reddit、X、Podcast、Spotify、主流新闻等第一手或近一手信源的补证方向，输出可直接执行的查询词、平台建议与验证清单，不要把模型猜测写成事实。', 'zh-CN', TRUE, '新增二期标准场景码 topicSupplement'),
@@ -797,7 +796,7 @@ ON CONFLICT (name) DO NOTHING;
 
 CREATE TABLE IF NOT EXISTS article_research_cards (
   id BIGSERIAL PRIMARY KEY,
-  document_id BIGINT NOT NULL,
+  article_id BIGINT NOT NULL,
   user_id BIGINT NOT NULL,
   card_kind TEXT NOT NULL,
   title TEXT NOT NULL,
@@ -806,7 +805,7 @@ CREATE TABLE IF NOT EXISTS article_research_cards (
   sort_order INTEGER NOT NULL DEFAULT 1,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  UNIQUE(document_id, card_kind, sort_order)
+  UNIQUE(article_id, card_kind, sort_order)
 );
 
 CREATE TABLE IF NOT EXISTS article_research_card_sources (

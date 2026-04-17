@@ -36,9 +36,9 @@ export async function getArticleNodes(articleId: number) {
     created_at: string;
     updated_at: string;
   }>(
-    `SELECT id, document_id AS article_id, parent_node_id, title, description, sort_order, created_at, updated_at
-     FROM document_nodes
-     WHERE document_id = ?
+    `SELECT id, article_id AS article_id, parent_node_id, title, description, sort_order, created_at, updated_at
+     FROM article_nodes
+     WHERE article_id = ?
      ORDER BY sort_order ASC, id ASC`,
     [articleId],
   );
@@ -54,10 +54,10 @@ export async function getArticleNodes(articleId: number) {
     source_url: string | null;
     screenshot_path: string | null;
   }>(
-    `SELECT r.document_node_id AS article_node_id, f.id as fragment_id, r.usage_mode, f.user_id, f.title, f.distilled_content, f.source_type, f.source_url, f.screenshot_path
-     FROM document_fragment_refs r
+    `SELECT r.article_node_id AS article_node_id, f.id as fragment_id, r.usage_mode, f.user_id, f.title, f.distilled_content, f.source_type, f.source_url, f.screenshot_path
+     FROM article_fragment_refs r
      INNER JOIN fragments f ON f.id = r.fragment_id
-     WHERE r.document_id = ?
+     WHERE r.article_id = ?
      ORDER BY r.id ASC`,
     [articleId],
   );
@@ -81,14 +81,14 @@ export async function getArticleNodes(articleId: number) {
 
 export async function ensureDefaultArticleNodes(articleId: number) {
   const db = getDatabase();
-  const count = await db.queryOne<{ count: number }>("SELECT COUNT(*) as count FROM document_nodes WHERE document_id = ?", [articleId]);
+  const count = await db.queryOne<{ count: number }>("SELECT COUNT(*) as count FROM article_nodes WHERE article_id = ?", [articleId]);
   if ((count?.count ?? 0) > 0) {
     return;
   }
 
   for (const [index, title] of DEFAULT_NODE_TITLES.entries()) {
     await db.exec(
-      `INSERT INTO document_nodes (document_id, parent_node_id, title, description, sort_order, created_at, updated_at)
+      `INSERT INTO article_nodes (article_id, parent_node_id, title, description, sort_order, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
       [articleId, null, title, null, index + 1, new Date().toISOString(), new Date().toISOString()],
     );
@@ -102,11 +102,11 @@ export async function createArticleNode(input: {
 }) {
   const db = getDatabase();
   const maxSort = await db.queryOne<{ max_sort: number | null }>(
-    "SELECT MAX(sort_order) as max_sort FROM document_nodes WHERE document_id = ?",
+    "SELECT MAX(sort_order) as max_sort FROM article_nodes WHERE article_id = ?",
     [input.articleId],
   );
   const result = await db.exec(
-    `INSERT INTO document_nodes (document_id, parent_node_id, title, description, sort_order, created_at, updated_at)
+    `INSERT INTO article_nodes (article_id, parent_node_id, title, description, sort_order, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?)`,
     [
       input.articleId,
@@ -128,8 +128,8 @@ export async function createArticleNode(input: {
     created_at: string;
     updated_at: string;
   }>(
-    `SELECT id, document_id AS article_id, parent_node_id, title, description, sort_order, created_at, updated_at
-     FROM document_nodes
+    `SELECT id, article_id AS article_id, parent_node_id, title, description, sort_order, created_at, updated_at
+     FROM article_nodes
      WHERE id = ?`,
     [result.lastInsertRowid!],
   );
@@ -145,16 +145,16 @@ export async function updateArticleNode(input: {
 }) {
   const db = getDatabase();
   const current = await db.queryOne<{ title: string; description: string | null; sort_order: number }>(
-    "SELECT title, description, sort_order FROM document_nodes WHERE id = ? AND document_id = ?",
+    "SELECT title, description, sort_order FROM article_nodes WHERE id = ? AND article_id = ?",
     [input.nodeId, input.articleId],
   );
   if (!current) {
     throw new Error("节点不存在");
   }
   await db.exec(
-    `UPDATE document_nodes
+    `UPDATE article_nodes
      SET title = ?, description = ?, sort_order = ?, updated_at = ?
-     WHERE id = ? AND document_id = ?`,
+     WHERE id = ? AND article_id = ?`,
     [
       input.title ?? current.title,
       input.description ?? current.description,
@@ -174,8 +174,8 @@ export async function reorderArticleNodes(articleId: number, nodeIds: number[]) 
 
 export async function deleteArticleNode(articleId: number, nodeId: number) {
   const db = getDatabase();
-  await db.exec("DELETE FROM document_fragment_refs WHERE document_id = ? AND document_node_id = ?", [articleId, nodeId]);
-  await db.exec("DELETE FROM document_nodes WHERE document_id = ? AND id = ?", [articleId, nodeId]);
+  await db.exec("DELETE FROM article_fragment_refs WHERE article_id = ? AND article_node_id = ?", [articleId, nodeId]);
+  await db.exec("DELETE FROM article_nodes WHERE article_id = ? AND id = ?", [articleId, nodeId]);
 }
 
 export async function attachFragmentToArticleNode(input: {
@@ -186,9 +186,9 @@ export async function attachFragmentToArticleNode(input: {
 }) {
   const db = getDatabase();
   await db.exec(
-    `INSERT INTO document_fragment_refs (document_id, document_node_id, fragment_id, usage_mode, created_at)
+    `INSERT INTO article_fragment_refs (article_id, article_node_id, fragment_id, usage_mode, created_at)
      VALUES (?, ?, ?, ?, ?)
-     ON CONFLICT(document_node_id, fragment_id) DO UPDATE SET usage_mode = excluded.usage_mode`,
+     ON CONFLICT(article_node_id, fragment_id) DO UPDATE SET usage_mode = excluded.usage_mode`,
     [input.articleId, input.nodeId, input.fragmentId, input.usageMode ?? "rewrite", new Date().toISOString()],
   );
 }
@@ -200,7 +200,7 @@ export async function detachFragmentFromArticleNode(input: {
 }) {
   const db = getDatabase();
   await db.exec(
-    "DELETE FROM document_fragment_refs WHERE document_id = ? AND document_node_id = ? AND fragment_id = ?",
+    "DELETE FROM article_fragment_refs WHERE article_id = ? AND article_node_id = ? AND fragment_id = ?",
     [input.articleId, input.nodeId, input.fragmentId],
   );
 }

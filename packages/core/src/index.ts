@@ -59,12 +59,6 @@ export const DEFAULT_MODEL_ROUTES: readonly ModelRouteDefinition[] = [
     description: "选题补证信源补充与查询建议生成",
   },
   {
-    sceneCode: "topicSourceScout",
-    primaryModel: "gemini-3.0-flash",
-    fallbackModel: "gpt-5.4-mini",
-    description: "选题雷达补充信源建议与补证线索生成",
-  },
-  {
     sceneCode: "audienceProfile",
     primaryModel: "claude-sonnet-4-6",
     fallbackModel: "claude-haiku-4-5",

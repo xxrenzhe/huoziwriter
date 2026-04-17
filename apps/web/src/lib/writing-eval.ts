@@ -1110,7 +1110,7 @@ function buildRunCode() {
 }
 
 function getWritingEvalFeedbackSelectSql() {
-  return `SELECT f.id, f.run_id, f.result_id, f.case_id, f.document_id AS article_id, f.wechat_sync_log_id, f.source_type, f.source_label,
+  return `SELECT f.id, f.run_id, f.result_id, f.case_id, f.article_id AS article_id, f.wechat_sync_log_id, f.source_type, f.source_label,
                  f.open_rate, f.read_completion_rate, f.share_rate, f.favorite_rate, f.read_count, f.like_count,
                  f.comment_count, f.notes, f.payload_json, f.created_by, f.captured_at, f.created_at, f.updated_at,
                  c.task_code, c.topic_title, d.title AS article_title, l.status AS sync_status, l.media_id,
@@ -1120,7 +1120,7 @@ function getWritingEvalFeedbackSelectSql() {
           FROM writing_eval_online_feedback f
           LEFT JOIN writing_optimization_results r ON r.id = f.result_id
           LEFT JOIN writing_eval_cases c ON c.id = COALESCE(f.case_id, r.case_id)
-          LEFT JOIN documents d ON d.id = f.document_id
+          LEFT JOIN articles d ON d.id = f.article_id
           LEFT JOIN wechat_sync_logs l ON l.id = f.wechat_sync_log_id`;
 }
 
@@ -1564,9 +1564,9 @@ async function getArticleOutcomeCalibrationItems(limit = 240) {
   await ensureExtendedProductSchema();
   const db = getDatabase();
   const outcomeRows = await db.query<ArticleOutcomeCalibrationRow>(
-    `SELECT ao.id, ao.document_id AS article_id, ao.target_package, ao.scorecard_json, ao.hit_status, ao.review_summary, ao.updated_at, d.title
+    `SELECT ao.id, ao.article_id AS article_id, ao.target_package, ao.scorecard_json, ao.hit_status, ao.review_summary, ao.updated_at, d.title
      FROM article_outcomes ao
-     LEFT JOIN documents d ON d.id = ao.document_id
+     LEFT JOIN articles d ON d.id = ao.article_id
      ORDER BY ao.updated_at DESC, ao.id DESC
      LIMIT ?`,
     [limit],
@@ -3205,14 +3205,14 @@ export async function getWritingEvalRunFeedback(runId: number) {
     ),
     db.query<WritingEvalFeedbackOptionDocumentRow>(
       `SELECT id, user_id, title, status, updated_at
-       FROM documents
+       FROM articles
        ORDER BY CASE WHEN status = 'published' THEN 0 ELSE 1 END, updated_at DESC, id DESC
        LIMIT 24`,
     ),
     db.query<WritingEvalFeedbackOptionSyncLogRow>(
-      `SELECT l.id, l.document_id AS article_id, d.title, l.status, l.media_id, l.created_at
+      `SELECT l.id, l.article_id AS article_id, d.title, l.status, l.media_id, l.created_at
        FROM wechat_sync_logs l
-       LEFT JOIN documents d ON d.id = l.document_id
+       LEFT JOIN articles d ON d.id = l.article_id
        ORDER BY CASE WHEN l.status = 'success' THEN 0 ELSE 1 END, l.id DESC
        LIMIT 24`,
     ),
@@ -3354,9 +3354,9 @@ export async function getArticleOutcomeVersionSummaries(
   const db = getDatabase();
   const [rows, snapshots] = await Promise.all([
     db.query<ArticleOutcomeCalibrationRow>(
-      `SELECT ao.id, ao.document_id AS article_id, ao.target_package, ao.scorecard_json, ao.hit_status, ao.review_summary, ao.updated_at, d.title
+      `SELECT ao.id, ao.article_id AS article_id, ao.target_package, ao.scorecard_json, ao.hit_status, ao.review_summary, ao.updated_at, d.title
        FROM article_outcomes ao
-       LEFT JOIN documents d ON d.id = ao.document_id
+       LEFT JOIN articles d ON d.id = ao.article_id
        ORDER BY ao.updated_at DESC, ao.id DESC`,
     ),
     db.query<ArticleOutcomeCalibrationSnapshotRow>(
@@ -3455,9 +3455,9 @@ async function getArticleOutcomeVersionFeedback(input: {
   const db = getDatabase();
   const [rows, snapshots] = await Promise.all([
     db.query<ArticleOutcomeCalibrationRow>(
-      `SELECT ao.id, ao.document_id AS article_id, ao.target_package, ao.scorecard_json, ao.hit_status, ao.review_summary, ao.updated_at, d.title
+      `SELECT ao.id, ao.article_id AS article_id, ao.target_package, ao.scorecard_json, ao.hit_status, ao.review_summary, ao.updated_at, d.title
        FROM article_outcomes ao
-       LEFT JOIN documents d ON d.id = ao.document_id
+       LEFT JOIN articles d ON d.id = ao.article_id
        ORDER BY ao.updated_at DESC, ao.id DESC`,
     ),
     db.query<ArticleOutcomeCalibrationSnapshotRow>(
@@ -3563,13 +3563,13 @@ export async function createWritingEvalRunFeedback(input: {
   }
 
   if (resolvedArticleId !== null) {
-    const article = await db.queryOne<{ id: number }>("SELECT id FROM documents WHERE id = ?", [resolvedArticleId]);
+    const article = await db.queryOne<{ id: number }>("SELECT id FROM articles WHERE id = ?", [resolvedArticleId]);
     if (!article) throw new Error("关联稿件不存在");
   }
 
   if (resolvedSyncLogId !== null) {
     const syncLog = await db.queryOne<{ id: number; article_id: number }>(
-      "SELECT id, document_id AS article_id FROM wechat_sync_logs WHERE id = ?",
+      "SELECT id, article_id AS article_id FROM wechat_sync_logs WHERE id = ?",
       [resolvedSyncLogId],
     );
     if (!syncLog) throw new Error("关联微信同步记录不存在");
@@ -3582,7 +3582,7 @@ export async function createWritingEvalRunFeedback(input: {
   const now = new Date().toISOString();
   const inserted = await db.exec(
     `INSERT INTO writing_eval_online_feedback (
-      run_id, result_id, case_id, document_id, wechat_sync_log_id, source_type, source_label, open_rate,
+      run_id, result_id, case_id, article_id, wechat_sync_log_id, source_type, source_label, open_rate,
       read_completion_rate, share_rate, favorite_rate, read_count, like_count, comment_count, notes, payload_json,
       created_by, captured_at, created_at, updated_at
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,

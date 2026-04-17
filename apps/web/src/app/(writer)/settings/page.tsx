@@ -249,8 +249,8 @@ export default async function SettingsPage() {
       ? {
           key: "knowledge",
           level: "warning",
-          label: `有 ${workspaceAssets.conflictedKnowledgeCardsCount} 张主题档案待处理`,
-          detail: "主题档案存在冲突时，事实核查和后续论证容易继承旧结论。",
+          label: `有 ${workspaceAssets.conflictedKnowledgeCardsCount} 张背景卡待处理`,
+          detail: "背景卡存在冲突时，事实核查和后续论证容易继承旧结论。",
           href: "/dashboard",
         }
       : null,
@@ -258,7 +258,7 @@ export default async function SettingsPage() {
       ? {
           key: "source",
           level: "warning",
-          label: "还没有自定义选题雷达信源",
+          label: "还没有自定义机会信源",
           detail: "付费套餐建议至少补 1 个自定义源，避免选题长期只依赖系统默认信源。",
           href: "#asset-center",
         }
@@ -320,7 +320,7 @@ export default async function SettingsPage() {
       metric: `${workspaceAssets.fragmentsCount + workspaceAssets.customTemplatesCount + workspaceAssets.knowledgeCardsCount}`,
       note: "素材 / 模板 / 档案",
       description:
-        `当前已沉淀素材 ${workspaceAssets.fragmentsCount} 条、主题档案 ${workspaceAssets.knowledgeCardsCount} 张、私有模板 ${workspaceAssets.customTemplatesCount} 个。所有长期资产统一回到这里管理。`,
+        `当前已沉淀素材 ${workspaceAssets.fragmentsCount} 条、背景卡 ${workspaceAssets.knowledgeCardsCount} 张、私有模板 ${workspaceAssets.customTemplatesCount} 个。所有长期资产统一回到这里管理。`,
     },
     {
       title: "发布连接",
@@ -527,7 +527,7 @@ export default async function SettingsPage() {
                       {latestCustomSource
                         ? ` 当前最近可用自定义源：${latestCustomSource.name} · ${formatSourceTypeLabel(latestCustomSource.source_type)}。`
                         : canManageSources
-                          ? " 你还没有自定义选题雷达信源。"
+                          ? " 你还没有自定义机会信源。"
                           : ""}
                     </div>
                     <div className="mt-2 text-xs text-stone-500">
@@ -544,7 +544,7 @@ export default async function SettingsPage() {
                 <div className="mt-3 text-sm leading-7 text-stone-700">稿件 {workspaceAssets.articlesCount} 篇，素材 {workspaceAssets.fragmentsCount} 条。所有后续大纲、写作和核查都从这里取材。</div>
               </article>
               <article className="border border-stone-300/40 bg-[#faf7f0] p-5">
-                <div className="text-xs uppercase tracking-[0.24em] text-stone-500">主题档案</div>
+                <div className="text-xs uppercase tracking-[0.24em] text-stone-500">背景卡</div>
                 <div className="mt-3 font-serifCn text-3xl text-ink">{workspaceAssets.knowledgeCardsCount}</div>
                 <div className="mt-3 text-sm leading-7 text-stone-700">已激活 {workspaceAssets.activeKnowledgeCardsCount} 张，待处理冲突 {workspaceAssets.conflictedKnowledgeCardsCount} 张。</div>
               </article>
@@ -564,7 +564,7 @@ export default async function SettingsPage() {
                 <div className="mt-3 text-sm leading-7 text-stone-700">封面图 {workspaceAssets.coverImagesCount} 张，文中配图提示词 {workspaceAssets.imagePromptsCount} 条。</div>
               </article>
               <article className="border border-stone-300/40 bg-[#faf7f0] p-5">
-                <div className="text-xs uppercase tracking-[0.24em] text-stone-500">选题雷达信源</div>
+                <div className="text-xs uppercase tracking-[0.24em] text-stone-500">机会信源</div>
                 <div className="mt-3 font-serifCn text-3xl text-ink">{workspaceAssets.customTopicSourcesCount}</div>
                 <div className="mt-3 text-sm leading-7 text-stone-700">自定义源 {workspaceAssets.customTopicSourcesCount} 个，系统默认源 {systemTopicSources.length} 个；付费套餐可继续扩充个人来源池。</div>
               </article>
@@ -580,7 +580,7 @@ export default async function SettingsPage() {
                 `模板资产：私有模板 ${workspaceAssets.customTemplatesCount}`,
                 `图像资产：封面 ${workspaceAssets.coverImagesCount} / 配图提示词 ${workspaceAssets.imagePromptsCount}`,
                 `素材资产：稿件 ${workspaceAssets.articlesCount} / 素材 ${workspaceAssets.fragmentsCount}`,
-                `信息资产：主题档案 ${workspaceAssets.knowledgeCardsCount} / 自定义信源 ${workspaceAssets.customTopicSourcesCount}`,
+                `信息资产：背景卡 ${workspaceAssets.knowledgeCardsCount} / 自定义信源 ${workspaceAssets.customTopicSourcesCount}`,
                 `发布资产：公众号连接 ${workspaceAssets.wechatConnectionsCount}`,
               ].map((item) => (
                 <div key={item} className="border border-stone-300/40 bg-[#fffdfa] px-4 py-3 text-sm leading-7 text-stone-700">
@@ -686,7 +686,7 @@ export default async function SettingsPage() {
             )}
             </div>
             <div id="topic-sources" className="border border-stone-300/40 bg-white p-6 shadow-ink">
-            <div className="text-xs uppercase tracking-[0.24em] text-cinnabar">选题雷达信源</div>
+            <div className="text-xs uppercase tracking-[0.24em] text-cinnabar">机会信源</div>
             <div className="mt-3 font-serifCn text-3xl text-ink">把系统源和你的个人来源池分开管理。</div>
             <div className="mt-3 text-sm leading-7 text-stone-700">
               当前可见 {topicSources.length} 个信息源，其中系统源 {systemTopicSources.length} 个、自定义源 {customTopicSources.length} 个。新的信源类型与优先级会直接影响热点排序。

@@ -19,7 +19,7 @@ function buildTopicNodeBlueprints(input: {
 }) {
   const leadEmotion = input.emotionLabels[0] || "结构变化";
   const summary = input.summary || `围绕“${input.topicTitle}”先拆事实，再拆叙事，再落回读者处境。`;
-  const knowledgeHintText = input.knowledgeHints?.length ? ` 优先参考这些主题档案：${input.knowledgeHints.join("；")}。` : "";
+  const knowledgeHintText = input.knowledgeHints?.length ? ` 优先参考这些背景卡：${input.knowledgeHints.join("；")}。` : "";
 
   return [
     {

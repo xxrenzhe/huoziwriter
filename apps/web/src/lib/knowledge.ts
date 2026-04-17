@@ -238,7 +238,7 @@ function analyzeKnowledgeConsensus(fragments: CompileFragment[]) {
     : fragmentCount >= 3
       ? ["是否还缺少相反事实来源？", "下一轮需要补充时间线和关键人信息。"]
       : ["当前证据仍偏少，需要继续补充素材。", "是否已经出现与现有判断相反的新事实？"];
-  const changeSummary = hasConflict ? `检测到潜在冲突：${conflictSignals.join("、")}，档案已转为 conflicted。` : "基于最新素材重新编译主题档案";
+  const changeSummary = hasConflict ? `检测到潜在冲突：${conflictSignals.join("、")}，档案已转为 conflicted。` : "基于最新素材重新编译背景卡";
 
   return {
     status,
@@ -400,7 +400,7 @@ export async function compileKnowledgeCardFromFragments(
 
   const existingCard = options.existingCardId ? await getKnowledgeCardRecord(userId, options.existingCardId) : null;
   const primary = fragments[0];
-  const title = options.preferredTitle || existingCard?.title || primary.title || primary.distilled_content.slice(0, 18) || "未命名主题档案";
+  const title = options.preferredTitle || existingCard?.title || primary.title || primary.distilled_content.slice(0, 18) || "未命名背景卡";
   const slug = existingCard?.slug || `${slugify(title)}-${userId}`;
   const now = new Date().toISOString();
   const summary = fragments.map((fragment) => fragment.distilled_content).join("；").slice(0, 300);
@@ -481,7 +481,7 @@ export async function compileKnowledgeCardFromFragments(
   }
 
   if (!cardId) {
-    throw new Error("主题档案写入失败");
+    throw new Error("背景卡写入失败");
   }
 
   for (const fragment of fragments) {
@@ -765,7 +765,7 @@ export async function getOpsKnowledgeCardRevisions(cardId: number) {
 export async function updateKnowledgeCardStatus(cardId: number, status: KnowledgeCardStatus) {
   await ensureExtendedProductSchema();
   if (!["draft", "active", "conflicted", "stale", "archived"].includes(status)) {
-    throw new Error("无效的主题档案状态");
+    throw new Error("无效的背景卡状态");
   }
   const db = getDatabase();
   const now = new Date().toISOString();
@@ -776,7 +776,7 @@ export async function updateKnowledgeCardStatus(cardId: number, status: Knowledg
     updated_at: string;
   }>("SELECT id, status, updated_at FROM knowledge_cards WHERE id = ?", [cardId]);
   if (!updated) {
-    throw new Error("主题档案不存在");
+    throw new Error("背景卡不存在");
   }
   return updated;
 }
@@ -790,7 +790,7 @@ export async function rebuildKnowledgeCard(cardId: number) {
     title: string;
   }>("SELECT id, user_id, title FROM knowledge_cards WHERE id = ?", [cardId]);
   if (!card) {
-    throw new Error("主题档案不存在");
+    throw new Error("背景卡不存在");
   }
 
   const sourceFragments = await db.query<{ fragment_id: number }>(

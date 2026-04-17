@@ -11,7 +11,7 @@ import { fail, ok } from "@/lib/http";
 function parseStageCode(value: unknown) {
   const stageCode = String(value || "") as ArticleWorkflowStageCode;
   if (![
-    "topicRadar",
+    "opportunity",
     "researchBrief",
     "audienceAnalysis",
     "outlinePlanning",

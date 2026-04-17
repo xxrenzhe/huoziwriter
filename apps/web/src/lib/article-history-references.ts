@@ -59,7 +59,7 @@ export async function suggestArticleHistoryReferences(input: {
   const db = getDatabase();
   const candidates = await db.query<SuggestionCandidate>(
     `SELECT id, title, markdown_content, updated_at
-     FROM documents
+     FROM articles
      WHERE user_id = ? AND status = ? AND id != ?
      ORDER BY updated_at DESC, id DESC
      LIMIT 24`,
@@ -113,10 +113,10 @@ export async function getSavedArticleHistoryReferences(articleId: number) {
     bridge_sentence: string | null;
     sort_order: number;
   }>(
-    `SELECT r.referenced_document_id AS referenced_article_id, d.title, r.relation_reason, r.bridge_sentence, r.sort_order
-     FROM document_reference_articles r
-     INNER JOIN documents d ON d.id = r.referenced_document_id
-     WHERE r.document_id = ?
+    `SELECT r.referenced_article_id AS referenced_article_id, d.title, r.relation_reason, r.bridge_sentence, r.sort_order
+     FROM article_reference_articles r
+     INNER JOIN articles d ON d.id = r.referenced_article_id
+     WHERE r.article_id = ?
      ORDER BY r.sort_order ASC, r.id ASC`,
     [articleId],
   );
@@ -140,13 +140,13 @@ export async function replaceArticleHistoryReferences(input: {
 }) {
   await ensureExtendedProductSchema();
   const db = getDatabase();
-  await db.exec("DELETE FROM document_reference_articles WHERE document_id = ?", [input.articleId]);
+  await db.exec("DELETE FROM article_reference_articles WHERE article_id = ?", [input.articleId]);
   const nextRefs = input.references.slice(0, 2);
   const now = new Date().toISOString();
   for (const [index, reference] of nextRefs.entries()) {
     await db.exec(
-      `INSERT INTO document_reference_articles (
-        document_id, referenced_document_id, relation_reason, bridge_sentence, sort_order, created_at, updated_at
+      `INSERT INTO article_reference_articles (
+        article_id, referenced_article_id, relation_reason, bridge_sentence, sort_order, created_at, updated_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
       [
         input.articleId,

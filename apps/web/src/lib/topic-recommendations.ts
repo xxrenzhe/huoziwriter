@@ -606,7 +606,7 @@ async function materializeDailyTopicRecommendationsForUser(userId: number) {
           + ((lead.overturnedJudgements?.length ?? 0) > 0 ? 12 : 0)
           + (lead.status === "conflicted" ? 10 : lead.status === "stale" ? 6 : 0);
         const observationReason = [
-          "命中已有主题档案",
+          "命中已有背景卡",
           lead.latestChangeSummary ? `最近变化：${lead.latestChangeSummary}` : null,
           lead.overturnedJudgements?.length ? `旧判断受影响：${lead.overturnedJudgements.slice(0, 2).join("；")}` : null,
           lead.status === "conflicted" ? "该主题当前存在相反信号，连续观察价值更高。" : null,

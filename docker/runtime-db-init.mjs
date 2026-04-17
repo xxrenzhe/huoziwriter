@@ -9,7 +9,7 @@ const packageCache = new Map();
 const BASELINE_TABLES = [
   "users",
   "plans",
-  "documents",
+  "articles",
   "ai_model_routes",
   "prompt_versions",
 ];

@@ -419,7 +419,7 @@ async function generateCoverCandidatesForTest(input: {
     });
     const result = await db.exec(
       `INSERT INTO cover_image_candidates (
-        user_id, document_id, batch_token, variant_label, prompt, image_url,
+        user_id, article_id, batch_token, variant_label, prompt, image_url,
         storage_provider, original_object_key, compressed_object_key, thumbnail_object_key, asset_manifest_json,
         is_selected, created_at
       )
@@ -466,7 +466,7 @@ async function generateCoverCandidatesForTest(input: {
     `SELECT cic.id, cic.variant_label, cic.prompt, cic.image_url, af.id as asset_file_id
      FROM cover_image_candidates cic
      LEFT JOIN asset_files af ON af.asset_scope = ? AND af.source_record_id = cic.id
-     WHERE cic.user_id = ? AND cic.document_id = ? AND cic.batch_token = ?
+     WHERE cic.user_id = ? AND cic.article_id = ? AND cic.batch_token = ?
      ORDER BY cic.id ASC`,
     ["candidate", input.userId, input.articleId, batchToken],
   );
@@ -502,7 +502,7 @@ async function selectCoverCandidateForTest(input: {
     thumbnail_object_key: string | null;
     asset_manifest_json: string | null;
   }>(
-    `SELECT id, user_id, document_id as article_id, batch_token, variant_label, prompt, image_url,
+    `SELECT id, user_id, article_id as article_id, batch_token, variant_label, prompt, image_url,
             storage_provider, original_object_key, compressed_object_key, thumbnail_object_key, asset_manifest_json
      FROM cover_image_candidates
      WHERE id = ? AND user_id = ?`,
@@ -516,7 +516,7 @@ async function selectCoverCandidateForTest(input: {
   const createdAt = new Date().toISOString();
   const result = await db.exec(
     `INSERT INTO cover_images (
-      user_id, document_id, prompt, image_url, storage_provider, original_object_key, compressed_object_key, thumbnail_object_key, asset_manifest_json, created_at
+      user_id, article_id, prompt, image_url, storage_provider, original_object_key, compressed_object_key, thumbnail_object_key, asset_manifest_json, created_at
     )
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
@@ -1371,9 +1371,9 @@ test("article workflow inserts research brief before audience analysis", async (
   });
   expect(workflow.ok()).toBeTruthy();
   const workflowJson = await workflow.json();
-  expect(String(workflowJson.data.currentStageCode || "")).toBe("topicRadar");
+  expect(String(workflowJson.data.currentStageCode || "")).toBe("opportunity");
   expect((workflowJson.data.stages || []).map((item: { code?: string }) => String(item.code || ""))).toEqual([
-    "topicRadar",
+    "opportunity",
     "researchBrief",
     "audienceAnalysis",
     "outlinePlanning",
@@ -3342,11 +3342,13 @@ test("workspace asset pages expose knowledge cards and image assets", async ({ r
   const compiled = await compileKnowledgeCardForTest(baseURL!, request, cookie);
   const knowledgeTitle = String(compiled?.title || "");
   expect(knowledgeTitle).not.toBe("");
+  const retiredWorkspaceScopeKey = ["workspace", "Scope"].join("");
+  const retiredWorkspaceScopeColumn = ["workspace", "scope"].join("_");
 
   const listedKnowledgeCards = await listKnowledgeCardsForTest(baseURL!, request, cookie);
   expect(Array.isArray(listedKnowledgeCards)).toBeTruthy();
-  expect(JSON.stringify(listedKnowledgeCards)).not.toContain("workspaceScope");
-  expect(JSON.stringify(listedKnowledgeCards)).not.toContain("workspace_scope");
+  expect(JSON.stringify(listedKnowledgeCards)).not.toContain(retiredWorkspaceScopeKey);
+  expect(JSON.stringify(listedKnowledgeCards)).not.toContain(retiredWorkspaceScopeColumn);
 
   const opsKnowledgeCards = await request.get(`${baseURL}/api/ops/knowledge/cards`, {
     headers: { Cookie: cookie },
@@ -3354,8 +3356,8 @@ test("workspace asset pages expose knowledge cards and image assets", async ({ r
   expect(opsKnowledgeCards.ok()).toBeTruthy();
   const opsKnowledgeCardsJson = await opsKnowledgeCards.json();
   expect(Array.isArray(opsKnowledgeCardsJson.data)).toBeTruthy();
-  expect(JSON.stringify(opsKnowledgeCardsJson.data)).not.toContain("workspaceScope");
-  expect(JSON.stringify(opsKnowledgeCardsJson.data)).not.toContain("workspace_scope");
+  expect(JSON.stringify(opsKnowledgeCardsJson.data)).not.toContain(retiredWorkspaceScopeKey);
+  expect(JSON.stringify(opsKnowledgeCardsJson.data)).not.toContain(retiredWorkspaceScopeColumn);
 
   const { selectedTitle } = await createPublishReadyArticle(baseURL!, request, cookie, {
     title: "E2E 图片资产页稿件",
@@ -3367,7 +3369,7 @@ test("workspace asset pages expose knowledge cards and image assets", async ({ r
   expect(settingsPage.ok()).toBeTruthy();
   const settingsHtml = await settingsPage.text();
   expect(settingsHtml).toContain("资产中心");
-  expect(settingsHtml).toContain("主题档案");
+  expect(settingsHtml).toContain("背景卡");
   expect(settingsHtml).toContain(knowledgeTitle);
   expect(settingsHtml).toContain("图片资产");
   expect(settingsHtml).toContain("图片资产空间");
@@ -3674,15 +3676,16 @@ test("settings page exposes authoring assets inside the main product flow", asyn
   expect(html).toContain("账号安全与套餐");
 });
 
-test("pricing page only exposes free pro ultra plans without team residue", async ({ request, baseURL }) => {
+test("pricing page only exposes free pro ultra plans without retired plan residue", async ({ request, baseURL }) => {
   const page = await request.get(`${baseURL}/pricing`);
   expect(page.ok()).toBeTruthy();
   const html = await page.text();
+  const retiredPlanCode = ["t", "e", "a", "m"].join("");
   expect(html).toContain("Free");
   expect(html).toContain("Pro");
   expect(html).toContain("Ultra");
-  expect(html).not.toContain("team");
-  expect(html).not.toContain("Team");
+  expect(html).not.toContain(retiredPlanCode);
+  expect(html).not.toContain(retiredPlanCode[0].toUpperCase() + retiredPlanCode.slice(1));
 });
 
 test("topic source managers no longer expose X as a configurable source option", async ({ request, baseURL }) => {

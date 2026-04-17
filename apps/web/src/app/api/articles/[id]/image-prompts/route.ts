@@ -52,20 +52,20 @@ export async function POST(_: Request, { params }: { params: { id: string } }) {
     });
     const existing = await db.queryOne<{ id: number }>(
       `SELECT id
-       FROM document_image_prompts
-       WHERE user_id = ? AND document_id = ? AND document_node_id = ? AND asset_type = ?`,
+       FROM article_image_prompts
+       WHERE user_id = ? AND article_id = ? AND article_node_id = ? AND asset_type = ?`,
       [session.userId, article.id, node.id, "inline"],
     );
     if (existing) {
       await db.exec(
-        `UPDATE document_image_prompts
+        `UPDATE article_image_prompts
          SET title = ?, prompt = ?, updated_at = ?
          WHERE id = ?`,
         [node.title, prompt, now, existing.id],
       );
     } else {
       await db.exec(
-        `INSERT INTO document_image_prompts (user_id, document_id, document_node_id, asset_type, title, prompt, created_at, updated_at)
+        `INSERT INTO article_image_prompts (user_id, article_id, article_node_id, asset_type, title, prompt, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         [session.userId, article.id, node.id, "inline", node.title, prompt, now, now],
       );

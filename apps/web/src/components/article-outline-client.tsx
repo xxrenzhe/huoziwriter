@@ -48,7 +48,7 @@ export function ArticleOutlineClient({
     const timer = window.setTimeout(async () => {
       setSearching(true);
       try {
-        const response = await fetch("/api/fragments/search", {
+        const response = await fetch("/api/assets/fragments/search", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ query: trimmedQuery }),

@@ -127,8 +127,8 @@ export default async function OpsOverviewPage() {
     getOpsTopicSources(),
   ]);
   const db = getDatabase();
-  const [documents, fragments, syncSuccess, knowledgeCards, auditLogs, queueRows, failedJobs, expiredTokens, invalidTokens, expiringTokens, failedSyncs, recentAuditLogs, externalFetchJobs, topicFetchFailureJobs, recentTopicSyncRuns, coverImages, coverImageCandidates, imageAssetProviders, recentImageAssetRows] = await Promise.all([
-    db.queryOne<{ count: number }>("SELECT COUNT(*) as count FROM documents"),
+  const [articles, fragments, syncSuccess, knowledgeCards, auditLogs, queueRows, failedJobs, expiredTokens, invalidTokens, expiringTokens, failedSyncs, recentAuditLogs, externalFetchJobs, topicFetchFailureJobs, recentTopicSyncRuns, coverImages, coverImageCandidates, imageAssetProviders, recentImageAssetRows] = await Promise.all([
+    db.queryOne<{ count: number }>("SELECT COUNT(*) as count FROM articles"),
     db.queryOne<{ count: number }>("SELECT COUNT(*) as count FROM fragments"),
     db.queryOne<{ count: number }>("SELECT COUNT(*) as count FROM wechat_sync_logs WHERE status = ?", ["success"]),
     db.queryOne<{ count: number }>("SELECT COUNT(*) as count FROM knowledge_cards"),
@@ -153,7 +153,7 @@ export default async function OpsOverviewPage() {
     db.query<{ id: number; failure_reason: string | null; created_at: string; title: string }>(
       `SELECT l.id, l.failure_reason, l.created_at, d.title
        FROM wechat_sync_logs l
-       INNER JOIN documents d ON d.id = l.document_id
+       INNER JOIN articles d ON d.id = l.article_id
        WHERE l.status = ?
        ORDER BY l.created_at DESC, l.id DESC
        LIMIT 6`,
@@ -227,10 +227,10 @@ export default async function OpsOverviewPage() {
     }>(
       `SELECT *
        FROM (
-         SELECT 'cover' as asset_scope, id, document_id AS article_id, NULL as variant_label, image_url, storage_provider, compressed_object_key, asset_manifest_json, created_at
+         SELECT 'cover' as asset_scope, id, article_id AS article_id, NULL as variant_label, image_url, storage_provider, compressed_object_key, asset_manifest_json, created_at
          FROM cover_images
          UNION ALL
-         SELECT 'candidate' as asset_scope, id, document_id AS article_id, variant_label, image_url, storage_provider, compressed_object_key, asset_manifest_json, created_at
+         SELECT 'candidate' as asset_scope, id, article_id AS article_id, variant_label, image_url, storage_provider, compressed_object_key, asset_manifest_json, created_at
          FROM cover_image_candidates
        )
        ORDER BY created_at DESC, id DESC
@@ -325,8 +325,8 @@ export default async function OpsOverviewPage() {
         description="当前后台已经接入用户管理、套餐结构、Prompt 版本、模型路由和微信草稿箱发布统计，默认运维账号为 huozi。"
         metrics={[
           { label: "激活用户", value: String(activeUsers), note: `总用户 ${users.length} 个，全部由后台手动创建。` },
-          { label: "写作资产", value: String((documents?.count ?? 0) + (fragments?.count ?? 0)), note: `稿件 ${(documents?.count ?? 0)} 篇，碎片 ${(fragments?.count ?? 0)} 条。` },
-          { label: "主题档案", value: String(knowledgeCards?.count ?? 0), note: "系统已沉淀的结构化主题档案数量。" },
+          { label: "写作资产", value: String((articles?.count ?? 0) + (fragments?.count ?? 0)), note: `稿件 ${(articles?.count ?? 0)} 篇，碎片 ${(fragments?.count ?? 0)} 条。` },
+          { label: "背景卡", value: String(knowledgeCards?.count ?? 0), note: "系统已沉淀的结构化背景卡数量。" },
           { label: "微信成功推送", value: String(syncSuccess?.count ?? 0), note: "这里统计真实写入公众号草稿箱成功的次数。" },
           { label: "审计事件", value: String(auditLogs?.count ?? 0), note: "配置变更、灰度切换、资产调整等关键动作都会写入审计日志。" },
           { label: "经营系列", value: String(business.seriesCount), note: `启用用户 ${business.activeUserCount} 个，已发布稿件 ${business.publishedArticleCount} 篇。` },
@@ -337,7 +337,7 @@ export default async function OpsOverviewPage() {
         ]}
         panels={[
           { title: "用户与权限", description: "默认运维账号 huozi，普通用户不开放自助注册，所有账号都走后台发放。", meta: "Users" },
-          { title: "主题档案治理", description: "冲突、过期、低置信度档案可以在后台统一重编译和调整状态。", meta: "Knowledge" },
+          { title: "背景卡治理", description: "冲突、过期、低置信度背景卡可以在后台统一重编译和调整状态。", meta: "Knowledge" },
           { title: "审计日志", description: "后台可以按动作、目标类型和操作人回看关键改动，避免把配置治理和业务动作混在口头描述里。", meta: "Audit" },
           { title: "Prompt 版本", description: `当前共 ${prompts.length} 条 Prompt 版本记录，正在生效的版本 ${activePromptVersions} 条。`, meta: "Prompts" },
           { title: "模型与路由", description: `当前维护 ${routes.length} 条模型路由，套餐结构已初始化 ${plans.length} 档。`, meta: "Ops" },

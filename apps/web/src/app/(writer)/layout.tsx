@@ -55,7 +55,7 @@ export default async function WorkspaceLayout({ children }: { children: ReactNod
           <section className="mb-8 border border-stone-300/40 bg-[#fbf7ef] p-6 shadow-ink">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
-                <div className="text-xs uppercase tracking-[0.24em] text-cinnabar">首次发布引导</div>
+                <div className="text-xs uppercase tracking-[0.24em] text-cinnabar">起步引导</div>
                 <h2 className="mt-3 font-serifCn text-3xl text-ink">先完成第一篇可发布文章，再扩展更复杂的打法。</h2>
                 <div className="mt-3 max-w-3xl text-sm leading-7 text-stone-700">
                   当前默认人设是 {defaultPersona ? `「${defaultPersona.name}」` : "未配置"}。建议按最短路径完成一次真实发布：补最小素材集，选一个热点或参考链接，生成大纲并过核查，再进微信草稿箱。
@@ -77,7 +77,7 @@ export default async function WorkspaceLayout({ children }: { children: ReactNod
               <div className="border border-stone-300 bg-white px-4 py-4 text-sm leading-7 text-stone-700">
                 <div className="text-xs uppercase tracking-[0.18em] text-stone-500">步骤 2</div>
                 <div className="mt-2 font-medium text-ink">选一个切口落笔</div>
-                <div className="mt-2">优先从选题雷达或参考链接拆题进入，不要从空白页硬写。</div>
+                <div className="mt-2">优先从系统推荐机会或参考链接拆题进入，不要从空白页硬写。</div>
                 <Link href="/dashboard" className="mt-3 inline-block border border-stone-300 bg-[#faf7f0] px-3 py-2 text-xs text-stone-700">
                   去作战台
                 </Link>

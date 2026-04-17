@@ -15,7 +15,7 @@ export const writerNav = [
 export const opsNav = [
   { href: "/ops", label: "后台总览" },
   { href: "/ops/users", label: "用户管理" },
-  { href: "/ops/knowledge", label: "主题档案" },
+  { href: "/ops/knowledge", label: "背景卡" },
   { href: "/ops/audit", label: "审计日志" },
   { href: "/ops/prompts", label: "Prompt 管理" },
   { href: "/ops/writing-eval", label: "写作评测" },

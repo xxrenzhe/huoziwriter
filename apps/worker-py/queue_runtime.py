@@ -3153,7 +3153,7 @@ def compile_knowledge_card(
         raise RuntimeError("no fragments available for knowledge compile")
 
     primary = fragments[0]
-    title = title_hint or primary["title"] or primary["distilled_content"][:18] or "未命名主题档案"
+    title = title_hint or primary["title"] or primary["distilled_content"][:18] or "未命名背景卡"
     slug = f"{slugify(title)}-{user_id}"
     summary = "；".join(str(fragment["distilled_content"]) for fragment in fragments)[:300]
     key_facts = [str(fragment["distilled_content"]) for fragment in fragments[:4]]
@@ -3261,7 +3261,7 @@ def compile_knowledge_card(
                     "relatedCardIds": related_card_ids,
                 },
             ),
-            "Worker 自动编译主题档案",
+            "Worker 自动编译背景卡",
             now_param,
         ),
     )
@@ -3973,11 +3973,11 @@ def run_scheduler_tick(connection: RuntimeConnection) -> dict[str, int]:
     )
     deleted_snapshots = connection.execute(
         """
-        DELETE FROM document_snapshots
+        DELETE FROM article_snapshots
         WHERE id IN (
           SELECT s.id
-          FROM document_snapshots s
-          INNER JOIN documents d ON d.id = s.document_id
+          FROM article_snapshots s
+          INNER JOIN articles d ON d.id = s.article_id
           INNER JOIN users u ON u.id = d.user_id
           WHERE u.plan_code = 'free' AND s.created_at < ?
         )

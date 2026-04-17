@@ -7,7 +7,6 @@ type SupportedSceneCode =
   | "articleWrite"
   | "styleExtract"
   | "topicSupplement"
-  | "topicSourceScout"
   | "audienceProfile"
   | "outlinePlan"
   | "deepWrite"

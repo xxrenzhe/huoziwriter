@@ -218,7 +218,7 @@ export async function deleteSeries(userId: number, seriesId: number) {
   }
   const db = getDatabase();
   const linkedArticles = await db.queryOne<{ count: number }>(
-    "SELECT COUNT(*) as count FROM documents WHERE user_id = ? AND series_id = ?",
+    "SELECT COUNT(*) as count FROM articles WHERE user_id = ? AND series_id = ?",
     [userId, seriesId],
   );
   if ((linkedArticles?.count ?? 0) > 0) {

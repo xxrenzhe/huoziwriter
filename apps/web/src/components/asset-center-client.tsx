@@ -136,12 +136,12 @@ export function WriterAssetCenterClient({
             : item,
         ),
       );
-      setMessage("主题档案已刷新。");
+      setMessage("背景卡已刷新。");
       startTransition(() => {
         router.refresh();
       });
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "主题档案刷新失败");
+      setMessage(error instanceof Error ? error.message : "背景卡刷新失败");
     } finally {
       setRefreshingKnowledgeId(null);
     }
@@ -158,7 +158,7 @@ export function WriterAssetCenterClient({
         <section className="border border-stone-300/40 bg-white p-5 shadow-ink">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <div className="text-xs uppercase tracking-[0.24em] text-cinnabar">碎片库</div>
+              <div className="text-xs uppercase tracking-[0.24em] text-cinnabar">素材库</div>
               <div className="mt-2 font-serifCn text-2xl text-ink">最近素材</div>
             </div>
             <div className="text-sm text-stone-500">{fragments.length} 条</div>
@@ -200,8 +200,8 @@ export function WriterAssetCenterClient({
         <section className="border border-stone-300/40 bg-white p-5 shadow-ink">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <div className="text-xs uppercase tracking-[0.24em] text-cinnabar">主题档案</div>
-              <div className="mt-2 font-serifCn text-2xl text-ink">最近档案</div>
+              <div className="text-xs uppercase tracking-[0.24em] text-cinnabar">背景卡</div>
+              <div className="mt-2 font-serifCn text-2xl text-ink">最近背景卡</div>
             </div>
             <div className="text-sm text-stone-500">{knowledgeCards.length} 张</div>
           </div>
@@ -221,7 +221,7 @@ export function WriterAssetCenterClient({
                   <div className="mt-2 text-sm leading-7 text-stone-700">{summarizeText(card.summary || card.latestChangeSummary, 72)}</div>
                   <div className="mt-3 flex flex-wrap gap-2 text-xs text-stone-500">
                     <span className="border border-stone-300 bg-white px-3 py-1">来源素材 {card.sourceFragmentCount} 条</span>
-                    <span className="border border-stone-300 bg-white px-3 py-1">{card.shared ? "共享档案" : "个人档案"}</span>
+                    <span className="border border-stone-300 bg-white px-3 py-1">{card.shared ? "共享背景卡" : "个人背景卡"}</span>
                     {card.lastCompiledAt ? (
                       <span className="border border-stone-300 bg-white px-3 py-1">
                         最近编译 {new Date(card.lastCompiledAt).toLocaleString("zh-CN")}
@@ -244,7 +244,7 @@ export function WriterAssetCenterClient({
                       disabled={refreshingKnowledgeId === card.id}
                       className="border border-stone-300 bg-white px-3 py-2 text-xs text-stone-700 disabled:opacity-60"
                     >
-                      {refreshingKnowledgeId === card.id ? "刷新中..." : "刷新档案"}
+                      {refreshingKnowledgeId === card.id ? "刷新中..." : "刷新背景卡"}
                     </button>
                     <Link href="/articles" className="border border-stone-300 bg-white px-3 py-2 text-xs text-stone-700">
                       去稿件区调用
@@ -254,7 +254,7 @@ export function WriterAssetCenterClient({
               ))
             ) : (
               <div className="border border-dashed border-stone-300 bg-[#fffdfa] px-4 py-4 text-sm leading-7 text-stone-600">
-                当前还没有主题档案。系统在稿件写作和补证时命中相关素材后，会逐步在这里沉淀。
+                当前还没有背景卡。系统在稿件写作和补证时命中相关素材后，会逐步在这里沉淀。
               </div>
             )}
           </div>

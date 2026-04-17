@@ -330,7 +330,7 @@ export async function getActiveTemplates(userId?: number) {
       last_used_at: string | null;
     }>(
       `SELECT wechat_template_id, COUNT(*) as usage_count, MAX(updated_at) as last_used_at
-       FROM documents
+       FROM articles
        WHERE user_id = ? AND wechat_template_id IS NOT NULL
        GROUP BY wechat_template_id`,
       [userId],

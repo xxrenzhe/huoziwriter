@@ -832,7 +832,7 @@ type PendingPublishIntent = {
 type ExternalFetchIssueRecord = {
   id: string;
   articleId: number | null;
-  context: "capture-url" | "fact-check-evidence";
+  context: "fact-check-evidence";
   title: string | null;
   url: string;
   degradedReason: string;
@@ -843,7 +843,6 @@ type ExternalFetchIssueRecord = {
 };
 
 const PENDING_PUBLISH_INTENT_STORAGE_KEY = "huoziwriter.pendingPublishIntent";
-const CAPTURE_FETCH_ISSUES_STORAGE_KEY = "huoziwriter.captureFetchIssues";
 const FACT_CHECK_FETCH_ISSUES_STORAGE_KEY_PREFIX = "huoziwriter.factCheckFetchIssues";
 const OUTCOME_WINDOWS: Array<{ code: "24h" | "72h" | "7d"; label: string }> = [
   { code: "24h", label: "24 小时" },
@@ -1413,8 +1412,8 @@ const ARTICLE_MAIN_STEPS: ArticleMainStepDefinition[] = [
   {
     code: "opportunity",
     title: "机会",
-    primaryStageCode: "topicRadar",
-    stageCodes: ["topicRadar"],
+    primaryStageCode: "opportunity",
+    stageCodes: ["opportunity"],
     supportLabel: "选题切口",
   },
   {
@@ -1498,7 +1497,7 @@ function formatResearchSourceTraceLabel(value: string) {
   if (value === "comparison") return "同类源";
   if (value === "userVoice") return "用户源";
   if (value === "timeline") return "时间源";
-  if (value === "knowledge") return "主题档案";
+  if (value === "knowledge") return "背景卡";
   if (value === "history") return "历史文章";
   if (value === "url") return "链接源";
   if (value === "screenshot") return "截图源";
@@ -2291,7 +2290,7 @@ export function ArticleEditorClient({
     return [
       {
         stepCode: "opportunity",
-        stageCode: "topicRadar",
+        stageCode: "opportunity",
         title: "机会",
         status: !topicReady ? "blocked" : "ready",
         detail: !topicReady
@@ -4126,9 +4125,9 @@ export function ArticleEditorClient({
       );
       setExpandedKnowledgeCardId(cardId);
       setHighlightedKnowledgeCardId(cardId);
-      setMessage("主题档案已刷新");
+      setMessage("背景卡已刷新");
     } catch {
-      setMessage("主题档案刷新失败");
+      setMessage("背景卡刷新失败");
     } finally {
       setRefreshingKnowledgeId(null);
     }
@@ -4229,8 +4228,8 @@ export function ArticleEditorClient({
       }
       setMessage(
         json.data?.degradedReason
-          ? `补证链接已入稿并刷新相关主题档案，但抓取存在降级：${json.data.degradedReason}`
-          : "补证链接已入稿，事实核查与相关主题档案已刷新。",
+          ? `补证链接已入稿并刷新相关背景卡，但抓取存在降级：${json.data.degradedReason}`
+          : "补证链接已入稿，事实核查与相关背景卡已刷新。",
       );
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "补证链接抓取失败");
@@ -6179,7 +6178,9 @@ export function ArticleEditorClient({
                       ) : null}
                       <div className="mt-3 space-y-1 text-xs leading-6 text-stone-500">
                         {String(item.recommendedStateVariantLabel || "").trim() ? <div>默认状态：{String(item.recommendedStateVariantLabel)}</div> : null}
+                        {String(item.openingPatternLabel || "").trim() ? <div>开头模式：{String(item.openingPatternLabel)}</div> : null}
                         {String(item.syntaxPatternLabel || "").trim() ? <div>句法模式：{String(item.syntaxPatternLabel)}</div> : null}
+                        {String(item.endingPatternLabel || "").trim() ? <div>结尾模式：{String(item.endingPatternLabel)}</div> : null}
                         {String(item.progressiveRevealLabel || "").trim() ? <div>节奏插件：{String(item.progressiveRevealLabel)}</div> : null}
                         {getDeepWritingHistorySignalSummary(getPayloadRecord(item, "historySignal")) ? (
                           <div>历史验证：{getDeepWritingHistorySignalSummary(getPayloadRecord(item, "historySignal"))}</div>
@@ -7221,9 +7222,9 @@ export function ArticleEditorClient({
                       ))}
                     </div>
                     <div className="border border-stone-300 bg-white px-4 py-4">
-                      <div className="text-xs uppercase tracking-[0.18em] text-stone-500">主题档案摘要侧栏</div>
+                      <div className="text-xs uppercase tracking-[0.18em] text-stone-500">背景卡摘要侧栏</div>
                       <div className="mt-2 text-sm leading-7 text-stone-700">
-                        大纲阶段优先参考当前命中的主题档案，先判断这次新增变量修正了什么旧结论，再决定章节顺序和证据挂载。
+                        大纲阶段优先参考当前命中的背景卡，先判断这次新增变量修正了什么旧结论，再决定章节顺序和证据挂载。
                       </div>
                       {knowledgeCardItems.length > 0 ? (
                         <div className="mt-3 space-y-2 text-xs leading-6 text-stone-500">
@@ -7235,7 +7236,7 @@ export function ArticleEditorClient({
                           ))}
                         </div>
                       ) : (
-                        <div className="mt-3 text-xs leading-6 text-stone-500">当前还没有命中的主题档案，先补素材后再刷新。</div>
+                        <div className="mt-3 text-xs leading-6 text-stone-500">当前还没有命中的背景卡，先补素材后再刷新。</div>
                       )}
                     </div>
                   </div>
@@ -7948,7 +7949,7 @@ export function ArticleEditorClient({
                                                     }}
                                                     className="border border-stone-300 bg-white px-3 py-2 text-stone-700"
                                                   >
-                                                    主题档案回链 · {String(item.knowledgeTitle)}
+                                                    背景卡回链 · {String(item.knowledgeTitle)}
                                                   </button>
                                                 ) : null}
                                               </div>
@@ -8498,14 +8499,14 @@ export function ArticleEditorClient({
         <div className="border border-stone-300/40 bg-[#faf7f0] p-5">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <div className="text-xs uppercase tracking-[0.24em] text-stone-500">相关主题档案</div>
-              <div className="mt-2 text-sm leading-7 text-stone-600">优先显示与当前稿件标题、正文和已挂载素材最相关的主题档案，减少重复总结。</div>
+              <div className="text-xs uppercase tracking-[0.24em] text-stone-500">相关背景卡</div>
+              <div className="mt-2 text-sm leading-7 text-stone-600">优先显示与当前稿件标题、正文和已挂载素材最相关的背景卡，减少重复总结。</div>
             </div>
             <span className="border border-stone-300 bg-white px-3 py-1 text-xs text-stone-600">{knowledgeCardItems.length} 张</span>
           </div>
           {knowledgeCardItems.length === 0 ? (
             <div className="mt-4 border border-dashed border-stone-300 bg-white px-4 py-4 text-sm leading-7 text-stone-600">
-              当前稿件还没有命中可引用的主题档案。继续挂载素材或更新主题档案后，这里会优先出现可复用摘要与证据。
+              当前稿件还没有命中可引用的背景卡。继续挂载素材或更新背景卡后，这里会优先出现可复用摘要与证据。
             </div>
           ) : (
             <div className="mt-4 space-y-3">
@@ -8533,7 +8534,7 @@ export function ArticleEditorClient({
                             disabled={refreshingKnowledgeId === card.id}
                             className="border border-cinnabar px-3 py-2 text-xs text-cinnabar disabled:opacity-60"
                           >
-                            {refreshingKnowledgeId === card.id ? "刷新中..." : "刷新档案"}
+                            {refreshingKnowledgeId === card.id ? "刷新中..." : "刷新背景卡"}
                           </button>
                         ) : null}
                         <button

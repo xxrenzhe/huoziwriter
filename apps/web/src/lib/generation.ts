@@ -454,7 +454,7 @@ function buildKnowledgeGuide(knowledgeCards: KnowledgeCardContext[] = []) {
   }
 
   return [
-    "相关主题档案：",
+    "相关背景卡：",
     ...knowledgeCards.map((card, index) =>
       [
         `${index + 1}. ${card.title}（状态：${card.status}，置信度：${Math.round(card.confidenceScore * 100)}%${card.matchedFragmentCount ? `，命中挂载素材 ${card.matchedFragmentCount} 条` : ""}）`,

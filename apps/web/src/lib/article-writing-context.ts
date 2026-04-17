@@ -125,7 +125,7 @@ function buildSeriesInsight(input: {
       ...input.knowledgeCards.flatMap((card) => card.overturnedJudgements),
       ...input.knowledgeCards
         .filter((card) => card.status === "conflicted" || card.status === "stale")
-        .map((card) => `主题档案「${card.title}」当前状态为 ${card.status === "conflicted" ? "冲突" : "待刷新"}，写作时不要直接沿用旧结论。`),
+        .map((card) => `背景卡「${card.title}」当前状态为 ${card.status === "conflicted" ? "冲突" : "待刷新"}，写作时不要直接沿用旧结论。`),
     ],
     4,
   );

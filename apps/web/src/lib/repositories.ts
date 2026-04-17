@@ -31,10 +31,10 @@ const DEFAULT_PROMPT_SEEDS = [
   {
     promptId: "fragment_distill",
     version: "v1.0.0",
-    category: "capture",
+    category: "evidence",
     name: "碎片提纯",
     description: "将原始内容转为原子事实碎片",
-    filePath: "system:capture",
+    filePath: "system:evidence",
     functionName: "fragmentDistill",
     promptContent: "你是碎片提纯器。保留时间、地点、数据、冲突，不要写空泛总结。",
     language: "zh-CN",
@@ -43,10 +43,10 @@ const DEFAULT_PROMPT_SEEDS = [
   {
     promptId: "vision_note",
     version: "v1.0.0",
-    category: "capture",
+    category: "evidence",
     name: "截图视觉理解",
     description: "从截图中提取可复用的事实与上下文",
-    filePath: "system:capture",
+    filePath: "system:evidence",
     functionName: "visionNote",
     promptContent: "你是截图理解编辑。必须先看图，再提取正文、数字、图表结论、界面状态和异常信号，输出可复用的写作碎片。",
     language: "zh-CN",
@@ -75,18 +75,6 @@ const DEFAULT_PROMPT_SEEDS = [
     promptContent: "你是中文文风分析师。必须基于正文内容抽取语气、句式、结构、开头结尾习惯和模仿提示，不要空泛赞美。",
     language: "zh-CN",
     changeNotes: "初始化版本",
-  },
-  {
-    promptId: "topic_signal_scout",
-    version: "v1.1.0",
-    category: "analysis",
-    name: "选题补充信源",
-    description: "围绕选题生成第一手补充信源与补证建议",
-    filePath: "system:analysis",
-    functionName: "topicSourceScout",
-    promptContent: "你是选题研究编辑。围绕一个待写选题，优先推荐 YouTube、Reddit、Podcast、Spotify、官方 Blog / Newsroom、RSS / Feed、主流新闻等第一手或近一手信源的补证方向，只输出可执行的搜集建议，不要把模型猜测写成事实。",
-    language: "zh-CN",
-    changeNotes: "移除 X 作为 P0 常规补证来源，补充官方 Blog / Newsroom 与 RSS / Feed 优先级",
   },
   {
     promptId: "topic_supplement",
@@ -241,27 +229,6 @@ export async function ensureBootstrapData() {
   await ensureDefaultTopics();
 
   const db = getDatabase();
-  // Legacy upgrade shim: collapse deprecated `team` records into `ultra` on old databases.
-  await db.exec("UPDATE users SET plan_code = ? WHERE plan_code = ?", ["ultra", "team"]);
-  await db.exec("UPDATE subscriptions SET plan_code = ? WHERE plan_code = ?", ["ultra", "team"]);
-  await db.exec("DELETE FROM plans WHERE code = ?", ["team"]);
-  await db.exec(
-    `UPDATE ai_model_routes
-     SET scene_code = ?
-     WHERE scene_code = ?
-       AND NOT EXISTS (SELECT 1 FROM ai_model_routes WHERE scene_code = ?)`,
-    ["articleWrite", "documentWrite", "articleWrite"],
-  );
-  await db.exec("DELETE FROM ai_model_routes WHERE scene_code = ?", ["documentWrite"]);
-  await db.exec(
-    `UPDATE ai_model_routes
-     SET scene_code = ?
-     WHERE scene_code = ?
-       AND NOT EXISTS (SELECT 1 FROM ai_model_routes WHERE scene_code = ?)`,
-    ["languageGuardAudit", "bannedWordAudit", "languageGuardAudit"],
-  );
-  await db.exec("DELETE FROM ai_model_routes WHERE scene_code = ?", ["bannedWordAudit"]);
-  await db.exec("DELETE FROM ai_model_routes WHERE scene_code = ?", ["coverImage"]);
   for (const route of DEFAULT_MODEL_ROUTES) {
     const exists = await db.queryOne<{ id: number; primary_model: string; fallback_model: string | null; description: string | null }>(
       "SELECT id, primary_model, fallback_model, description FROM ai_model_routes WHERE scene_code = ?",
@@ -308,68 +275,6 @@ export async function ensureBootstrapData() {
      WHERE scene_code = ? AND (primary_model = ? OR fallback_model = ?)`,
     ["gemini-3.0-flash-lite", "gemini-3.0-flash", new Date().toISOString(), "fragmentDistill", "gemini-2.5-flash-lite", "gemini-2.5-flash"],
   );
-
-  await db.exec(
-    `UPDATE prompt_versions
-     SET function_name = ?, updated_at = ?
-     WHERE prompt_id IN (?, ?) AND function_name = ?`,
-    ["articleWrite", new Date().toISOString(), "document_write", "article_write", "documentWrite"],
-  );
-  await db.exec(
-    `UPDATE prompt_versions
-     SET function_name = ?, updated_at = ?
-     WHERE prompt_id IN (?, ?) AND function_name = ?`,
-    ["languageGuardAudit", new Date().toISOString(), "banned_word_audit", "language_guard_audit", "bannedWordAudit"],
-  );
-  await db.exec(
-    `UPDATE prompt_versions
-     SET prompt_id = ?, updated_at = ?
-     WHERE prompt_id = ?
-       AND NOT EXISTS (
-         SELECT 1 FROM prompt_versions migrated
-         WHERE migrated.prompt_id = ?
-           AND migrated.version = prompt_versions.version
-       )`,
-    ["article_write", new Date().toISOString(), "document_write", "article_write"],
-  );
-  await db.exec("DELETE FROM prompt_versions WHERE prompt_id = ?", ["document_write"]);
-  await db.exec(
-    `UPDATE prompt_versions
-     SET prompt_id = ?, updated_at = ?
-     WHERE prompt_id = ?
-       AND NOT EXISTS (
-         SELECT 1 FROM prompt_versions migrated
-         WHERE migrated.prompt_id = ?
-           AND migrated.version = prompt_versions.version
-       )`,
-    ["language_guard_audit", new Date().toISOString(), "banned_word_audit", "language_guard_audit"],
-  );
-  await db.exec("DELETE FROM prompt_versions WHERE prompt_id = ?", ["banned_word_audit"]);
-  await db.exec(
-    `UPDATE prompt_versions
-     SET prompt_id = ?, updated_at = ?
-     WHERE prompt_id = ?
-       AND NOT EXISTS (
-         SELECT 1 FROM prompt_versions migrated
-         WHERE migrated.prompt_id = ?
-           AND migrated.version = prompt_versions.version
-       )`,
-    ["writing_style_analysis", new Date().toISOString(), "style_extract", "writing_style_analysis"],
-  );
-  await db.exec("DELETE FROM prompt_versions WHERE prompt_id = ?", ["style_extract"]);
-  await db.exec(
-    `UPDATE prompt_versions
-     SET prompt_id = ?, updated_at = ?
-     WHERE prompt_id = ?
-       AND NOT EXISTS (
-         SELECT 1 FROM prompt_versions migrated
-         WHERE migrated.prompt_id = ?
-           AND migrated.version = prompt_versions.version
-       )`,
-    ["topic_signal_scout", new Date().toISOString(), "topic_source_scout", "topic_signal_scout"],
-  );
-  await db.exec("DELETE FROM prompt_versions WHERE prompt_id = ?", ["topic_source_scout"]);
-
   for (const prompt of DEFAULT_PROMPT_SEEDS) {
     const exists = await db.queryOne<{ id: number }>(
       "SELECT id FROM prompt_versions WHERE prompt_id = ? AND version = ?",
@@ -435,7 +340,7 @@ export async function getLatestArticleCoverImage(userId: number, articleId: numb
   }>(
     `SELECT id, prompt, image_url, created_at
      FROM cover_images
-     WHERE user_id = ? AND document_id = ?
+     WHERE user_id = ? AND article_id = ?
      ORDER BY id DESC
      LIMIT 1`,
     [userId, articleId],
@@ -447,7 +352,7 @@ export async function getLatestArticleCoverImageCandidates(userId: number, artic
   const latestBatch = await db.queryOne<{ batch_token: string }>(
     `SELECT batch_token
      FROM cover_image_candidates
-     WHERE user_id = ? AND document_id = ?
+     WHERE user_id = ? AND article_id = ?
      ORDER BY id DESC
      LIMIT 1`,
     [userId, articleId],
@@ -476,7 +381,7 @@ export async function getLatestArticleCoverImageCandidates(userId: number, artic
   }>(
     `SELECT id, batch_token, variant_label, prompt, image_url, is_selected, created_at, selected_at
      FROM cover_image_candidates
-     WHERE user_id = ? AND document_id = ? AND batch_token = ?
+     WHERE user_id = ? AND article_id = ? AND batch_token = ?
      ORDER BY id ASC`,
     [userId, articleId, latestBatch.batch_token],
   );
@@ -493,10 +398,10 @@ export async function getArticleImagePrompts(userId: number, articleId: number) 
     created_at: string;
     updated_at: string;
   }>(
-    `SELECT id, document_node_id AS article_node_id, asset_type, title, prompt, created_at, updated_at
-     FROM document_image_prompts
-     WHERE user_id = ? AND document_id = ?
-     ORDER BY COALESCE(document_node_id, 0) ASC, id ASC`,
+    `SELECT id, article_node_id AS article_node_id, asset_type, title, prompt, created_at, updated_at
+     FROM article_image_prompts
+     WHERE user_id = ? AND article_id = ?
+     ORDER BY COALESCE(article_node_id, 0) ASC, id ASC`,
     [userId, articleId],
   );
 }
@@ -533,11 +438,11 @@ export async function getUsers() {
 
 export async function getOpsBusinessOverview() {
   const db = getDatabase();
-  const [users, activeUsers, documents, publishedDocuments, fragments, logs, series] = await Promise.all([
+  const [users, activeUsers, articles, publishedArticles, fragments, logs, series] = await Promise.all([
     db.queryOne<{ count: number }>("SELECT COUNT(*) as count FROM users"),
     db.queryOne<{ count: number }>("SELECT COUNT(*) as count FROM users WHERE is_active = ?", [true]),
-    db.queryOne<{ count: number }>("SELECT COUNT(*) as count FROM documents"),
-    db.queryOne<{ count: number }>("SELECT COUNT(*) as count FROM documents WHERE status = ?", ["published"]),
+    db.queryOne<{ count: number }>("SELECT COUNT(*) as count FROM articles"),
+    db.queryOne<{ count: number }>("SELECT COUNT(*) as count FROM articles WHERE status = ?", ["published"]),
     db.queryOne<{ count: number }>("SELECT COUNT(*) as count FROM fragments"),
     db.queryOne<{ count: number }>("SELECT COUNT(*) as count FROM wechat_sync_logs WHERE status = ?", ["success"]),
     db.queryOne<{ count: number }>("SELECT COUNT(*) as count FROM series"),
@@ -546,8 +451,8 @@ export async function getOpsBusinessOverview() {
   return {
     userCount: users?.count ?? 0,
     activeUserCount: activeUsers?.count ?? 0,
-    articleCount: documents?.count ?? 0,
-    publishedArticleCount: publishedDocuments?.count ?? 0,
+    articleCount: articles?.count ?? 0,
+    publishedArticleCount: publishedArticles?.count ?? 0,
     fragmentCount: fragments?.count ?? 0,
     successSyncCount: logs?.count ?? 0,
     seriesCount: series?.count ?? 0,
@@ -604,7 +509,7 @@ export async function getArticlesByUser(userId: number) {
     wechat_template_id: string | null;
     updated_at: string;
     created_at: string;
-  }>("SELECT * FROM documents WHERE user_id = ? ORDER BY updated_at DESC, id DESC", [userId]);
+  }>("SELECT * FROM articles WHERE user_id = ? ORDER BY updated_at DESC, id DESC", [userId]);
   return articles.map((article) => ({
     ...article,
     status: normalizeArticleStatus(article.status),
@@ -627,7 +532,7 @@ export async function getArticleById(articleId: number, userId?: number) {
       wechat_template_id: string | null;
       created_at: string;
       updated_at: string;
-    }>("SELECT * FROM documents WHERE id = ? AND user_id = ?", [articleId, userId]);
+    }>("SELECT * FROM articles WHERE id = ? AND user_id = ?", [articleId, userId]);
     return article
       ? {
           ...article,
@@ -647,7 +552,7 @@ export async function getArticleById(articleId: number, userId?: number) {
       wechat_template_id: string | null;
       created_at: string;
       updated_at: string;
-  }>("SELECT * FROM documents WHERE id = ?", [articleId]);
+  }>("SELECT * FROM articles WHERE id = ?", [articleId]);
   return article
     ? {
         ...article,
@@ -663,12 +568,12 @@ export async function createArticle(userId: number, title: string, seriesId?: nu
   const html = await renderMarkdownToHtml("", { title });
   const resolvedSeriesId = await resolveArticleSeriesId(userId, seriesId);
   const result = await db.exec(
-    `INSERT INTO documents (user_id, title, markdown_content, html_content, status, series_id, created_at, updated_at)
+    `INSERT INTO articles (user_id, title, markdown_content, html_content, status, series_id, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     [userId, title, "", html, "draft", resolvedSeriesId, now, now],
   );
   await ensureDefaultArticleNodes(result.lastInsertRowid!);
-  await ensureArticleWorkflow(result.lastInsertRowid!, "topicRadar");
+  await ensureArticleWorkflow(result.lastInsertRowid!, "opportunity");
   await appendAuditLog({
     userId,
     action: "article.create",
@@ -706,7 +611,7 @@ export async function saveArticle(input: {
   const now = new Date().toISOString();
   const db = getDatabase();
   await db.exec(
-    `UPDATE documents
+    `UPDATE articles
      SET title = ?, markdown_content = ?, html_content = ?, status = ?, series_id = ?, layout_strategy_id = ?, wechat_template_id = ?, updated_at = ?
      WHERE id = ? AND user_id = ?`,
     [title, markdownContent, htmlContent, status, seriesId, null, wechatTemplateId, now, input.articleId, input.userId],
@@ -728,7 +633,7 @@ export async function createArticleSnapshot(articleId: number, note?: string) {
     throw new Error("稿件不存在");
   }
   const result = await db.exec(
-    `INSERT INTO document_snapshots (document_id, markdown_content, html_content, snapshot_note, created_at)
+    `INSERT INTO article_snapshots (article_id, markdown_content, html_content, snapshot_note, created_at)
      VALUES (?, ?, ?, ?, ?)`,
     [articleId, article.markdown_content, article.html_content, note ?? null, new Date().toISOString()],
   );
@@ -738,7 +643,7 @@ export async function createArticleSnapshot(articleId: number, note?: string) {
     html_content: string | null;
     snapshot_note: string | null;
     created_at: string;
-  }>("SELECT * FROM document_snapshots WHERE id = ?", [result.lastInsertRowid!]);
+  }>("SELECT * FROM article_snapshots WHERE id = ?", [result.lastInsertRowid!]);
 }
 
 export async function getArticleSnapshots(articleId: number, options?: { retentionDays?: number | null }) {
@@ -756,8 +661,8 @@ export async function getArticleSnapshots(articleId: number, options?: { retenti
     created_at: string;
   }>(
     cutoff
-      ? "SELECT * FROM document_snapshots WHERE document_id = ? AND created_at >= ? ORDER BY id DESC"
-      : "SELECT * FROM document_snapshots WHERE document_id = ? ORDER BY id DESC",
+      ? "SELECT * FROM article_snapshots WHERE article_id = ? AND created_at >= ? ORDER BY id DESC"
+      : "SELECT * FROM article_snapshots WHERE article_id = ? ORDER BY id DESC",
     cutoff ? [articleId, cutoff] : [articleId],
   );
 }
@@ -767,7 +672,7 @@ export async function restoreArticleSnapshot(articleId: number, snapshotId: numb
   const snapshot = await db.queryOne<{
     markdown_content: string;
     html_content: string | null;
-  }>("SELECT markdown_content, html_content FROM document_snapshots WHERE id = ? AND document_id = ?", [
+  }>("SELECT markdown_content, html_content FROM article_snapshots WHERE id = ? AND article_id = ?", [
     snapshotId,
     articleId,
   ]);
@@ -827,7 +732,7 @@ export async function getAssetFilesByUser(userId: number) {
   }>(
     `SELECT
        af.id,
-       af.document_id AS article_id,
+       af.article_id AS article_id,
        d.title AS article_title,
        af.asset_scope,
        af.asset_type,
@@ -845,7 +750,7 @@ export async function getAssetFilesByUser(userId: number) {
        af.created_at,
        af.updated_at
      FROM asset_files af
-     LEFT JOIN documents d ON d.id = af.document_id
+     LEFT JOIN articles d ON d.id = af.article_id
      WHERE af.user_id = ?
      ORDER BY af.updated_at DESC, af.id DESC`,
     [userId],
@@ -1982,7 +1887,7 @@ export async function createWechatSyncLog(input: {
   const db = getDatabase();
   await db.exec(
     `INSERT INTO wechat_sync_logs (
-      user_id, document_id, wechat_connection_id, media_id, status, request_summary, response_summary, failure_reason, failure_code, retry_count, document_version_hash, template_id, idempotency_key, created_at, updated_at
+      user_id, article_id, wechat_connection_id, media_id, status, request_summary, response_summary, failure_reason, failure_code, retry_count, article_version_hash, template_id, idempotency_key, created_at, updated_at
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       input.userId,
@@ -2026,7 +1931,7 @@ export async function getWechatSyncLogs(userId: number) {
   }>(
     `SELECT
        l.id,
-       l.document_id AS article_id,
+       l.article_id AS article_id,
        d.title,
        c.account_name as connection_name,
        l.media_id,
@@ -2036,12 +1941,12 @@ export async function getWechatSyncLogs(userId: number) {
        l.failure_reason,
        l.failure_code,
        l.retry_count,
-       l.document_version_hash AS article_version_hash,
+       l.article_version_hash AS article_version_hash,
        l.template_id,
        l.idempotency_key,
        l.created_at
      FROM wechat_sync_logs l
-     INNER JOIN documents d ON d.id = l.document_id
+     INNER JOIN articles d ON d.id = l.article_id
      LEFT JOIN wechat_connections c ON c.id = l.wechat_connection_id
      WHERE l.user_id = ?
      ORDER BY l.id DESC`,
@@ -2074,14 +1979,14 @@ export async function getLatestWechatSyncLogForArticle(input: {
 }) {
   await ensureExtendedProductSchema();
   const db = getDatabase();
-  const clauses = ["user_id = ?", "document_id = ?"];
+  const clauses = ["user_id = ?", "article_id = ?"];
   const params: unknown[] = [input.userId, input.articleId];
   if (input.wechatConnectionId != null) {
     clauses.push("wechat_connection_id = ?");
     params.push(input.wechatConnectionId);
   }
   if (input.articleVersionHash) {
-    clauses.push("document_version_hash = ?");
+    clauses.push("article_version_hash = ?");
     params.push(input.articleVersionHash);
   }
   return db.queryOne<{
@@ -2091,12 +1996,12 @@ export async function getLatestWechatSyncLogForArticle(input: {
     failure_reason: string | null;
     failure_code: string | null;
     retry_count: number;
-    document_version_hash: string | null;
+    article_version_hash: string | null;
     template_id: string | null;
     idempotency_key: string | null;
     created_at: string;
   }>(
-    `SELECT id, media_id, status, failure_reason, failure_code, retry_count, document_version_hash, template_id, idempotency_key, created_at
+    `SELECT id, media_id, status, failure_reason, failure_code, retry_count, article_version_hash, template_id, idempotency_key, created_at
      FROM wechat_sync_logs
      WHERE ${clauses.join(" AND ")}
      ORDER BY id DESC
@@ -2121,9 +2026,9 @@ export async function getArticleOutcome(articleId: number, userId: number) {
     created_at: string;
     updated_at: string;
   }>(
-    `SELECT id, document_id AS article_id, user_id, target_package, scorecard_json, hit_status, review_summary, next_action, playbook_tags_json, created_at, updated_at
+    `SELECT id, article_id AS article_id, user_id, target_package, scorecard_json, hit_status, review_summary, next_action, playbook_tags_json, created_at, updated_at
      FROM article_outcomes
-     WHERE document_id = ? AND user_id = ?
+     WHERE article_id = ? AND user_id = ?
      LIMIT 1`,
     [articleId, userId],
   );
@@ -2155,11 +2060,11 @@ export async function getArticleStrategyCard(articleId: number, userId: number) 
     created_at: string;
     updated_at: string;
   }>(
-    `SELECT id, document_id AS article_id, user_id, target_reader, core_assertion, why_now, research_hypothesis, market_position_insight, historical_turning_point, target_package, publish_window, ending_action,
+    `SELECT id, article_id AS article_id, user_id, target_reader, core_assertion, why_now, research_hypothesis, market_position_insight, historical_turning_point, target_package, publish_window, ending_action,
             first_hand_observation, felt_moment, why_this_hit_me, real_scene_or_dialogue, want_to_complain, non_delegable_truth,
             created_at, updated_at
      FROM article_strategy_cards
-     WHERE document_id = ? AND user_id = ?`,
+     WHERE article_id = ? AND user_id = ?`,
     [articleId, userId],
   );
   return row ? mapArticleStrategyCard(row) : null;
@@ -2188,9 +2093,9 @@ export async function getArticleEvidenceItems(articleId: number, userId: number)
     created_at: string;
     updated_at: string;
   }>(
-    `SELECT id, document_id AS article_id, user_id, fragment_id, node_id, claim, title, excerpt, source_type, source_url, screenshot_path, usage_mode, rationale, research_tag, evidence_role, sort_order, created_at, updated_at
+    `SELECT id, article_id AS article_id, user_id, fragment_id, node_id, claim, title, excerpt, source_type, source_url, screenshot_path, usage_mode, rationale, research_tag, evidence_role, sort_order, created_at, updated_at
      FROM article_evidence_items
-     WHERE document_id = ? AND user_id = ?
+     WHERE article_id = ? AND user_id = ?
      ORDER BY sort_order ASC, id ASC`,
     [articleId, userId],
   );
@@ -2213,9 +2118,9 @@ export async function getArticleResearchCards(articleId: number, userId: number)
       created_at: string;
       updated_at: string;
     }>(
-      `SELECT id, document_id AS article_id, user_id, card_kind, title, summary, payload_json, sort_order, created_at, updated_at
+      `SELECT id, article_id AS article_id, user_id, card_kind, title, summary, payload_json, sort_order, created_at, updated_at
        FROM article_research_cards
-       WHERE document_id = ? AND user_id = ?
+       WHERE article_id = ? AND user_id = ?
        ORDER BY CASE card_kind
          WHEN 'timeline' THEN 1
          WHEN 'comparison' THEN 2
@@ -2238,7 +2143,7 @@ export async function getArticleResearchCards(articleId: number, userId: number)
       `SELECT src.id, src.research_card_id, src.label, src.source_type, src.detail, src.source_url, src.sort_order, src.created_at, src.updated_at
        FROM article_research_card_sources src
        INNER JOIN article_research_cards card ON card.id = src.research_card_id
-       WHERE card.document_id = ? AND card.user_id = ?
+       WHERE card.article_id = ? AND card.user_id = ?
        ORDER BY src.sort_order ASC, src.id ASC`,
       [articleId, userId],
     ),
@@ -2265,7 +2170,7 @@ async function ensureArticleStrategyCardId(input: {
   const now = new Date().toISOString();
   const result = await db.exec(
     `INSERT INTO article_strategy_cards (
-      document_id, user_id, created_at, updated_at
+      article_id, user_id, created_at, updated_at
     ) VALUES (?, ?, ?, ?)`,
     [input.articleId, input.userId, now, now],
   );
@@ -2305,7 +2210,7 @@ export async function upsertArticleStrategyCard(input: {
          target_package = ?, publish_window = ?, ending_action = ?,
          first_hand_observation = ?, felt_moment = ?, why_this_hit_me = ?, real_scene_or_dialogue = ?, want_to_complain = ?, non_delegable_truth = ?,
          updated_at = ?
-     WHERE id = ? AND document_id = ? AND user_id = ?`,
+     WHERE id = ? AND article_id = ? AND user_id = ?`,
     [
       input.targetReader !== undefined ? input.targetReader : current?.targetReader ?? null,
       input.coreAssertion !== undefined ? input.coreAssertion : current?.coreAssertion ?? null,
@@ -2352,11 +2257,11 @@ export async function replaceArticleEvidenceItems(input: {
   await ensureExtendedProductSchema();
   const db = getDatabase();
   const now = new Date().toISOString();
-  await db.exec("DELETE FROM article_evidence_items WHERE document_id = ? AND user_id = ?", [input.articleId, input.userId]);
+  await db.exec("DELETE FROM article_evidence_items WHERE article_id = ? AND user_id = ?", [input.articleId, input.userId]);
   for (const [index, item] of input.items.entries()) {
     await db.exec(
       `INSERT INTO article_evidence_items (
-        document_id, user_id, fragment_id, node_id, claim, title, excerpt, source_type, source_url, screenshot_path, usage_mode, rationale, research_tag, evidence_role, sort_order, created_at, updated_at
+        article_id, user_id, fragment_id, node_id, claim, title, excerpt, source_type, source_url, screenshot_path, usage_mode, rationale, research_tag, evidence_role, sort_order, created_at, updated_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         input.articleId,
@@ -2406,11 +2311,11 @@ export async function replaceArticleResearchCards(input: {
   await db.exec(
     `DELETE FROM article_research_card_sources
      WHERE research_card_id IN (
-       SELECT id FROM article_research_cards WHERE document_id = ? AND user_id = ?
+       SELECT id FROM article_research_cards WHERE article_id = ? AND user_id = ?
      )`,
     [input.articleId, input.userId],
   );
-  await db.exec("DELETE FROM article_research_cards WHERE document_id = ? AND user_id = ?", [input.articleId, input.userId]);
+  await db.exec("DELETE FROM article_research_cards WHERE article_id = ? AND user_id = ?", [input.articleId, input.userId]);
   for (const [cardIndex, card] of input.cards.entries()) {
     const cardKind = normalizeArticleResearchCardKind(card.cardKind);
     const title = String(card.title || "").trim();
@@ -2421,7 +2326,7 @@ export async function replaceArticleResearchCards(input: {
     const sortOrder = Number(card.sortOrder || 0) > 0 ? Number(card.sortOrder) : cardIndex + 1;
     await db.exec(
       `INSERT INTO article_research_cards (
-        document_id, user_id, card_kind, title, summary, payload_json, sort_order, created_at, updated_at
+        article_id, user_id, card_kind, title, summary, payload_json, sort_order, created_at, updated_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         input.articleId,
@@ -2438,7 +2343,7 @@ export async function replaceArticleResearchCards(input: {
     const savedCard = await db.queryOne<{ id: number }>(
       `SELECT id
        FROM article_research_cards
-       WHERE document_id = ? AND user_id = ? AND card_kind = ? AND sort_order = ?`,
+       WHERE article_id = ? AND user_id = ? AND card_kind = ? AND sort_order = ?`,
       [input.articleId, input.userId, cardKind, sortOrder],
     );
     if (!savedCard) {
@@ -2488,9 +2393,9 @@ export async function getArticleOutcomeSnapshots(articleId: number, userId: numb
     created_at: string;
     updated_at: string;
   }>(
-    `SELECT id, outcome_id, document_id AS article_id, user_id, window_code, read_count, share_count, like_count, notes, writing_state_feedback_json, created_at, updated_at
+    `SELECT id, outcome_id, article_id AS article_id, user_id, window_code, read_count, share_count, like_count, notes, writing_state_feedback_json, created_at, updated_at
      FROM article_outcome_snapshots
-     WHERE document_id = ? AND user_id = ?
+     WHERE article_id = ? AND user_id = ?
      ORDER BY CASE window_code WHEN '24h' THEN 1 WHEN '72h' THEN 2 WHEN '7d' THEN 3 ELSE 4 END, id ASC`,
     [articleId, userId],
   );
@@ -2521,13 +2426,13 @@ async function ensureArticleOutcomeId(input: {
   const db = getDatabase();
   const now = new Date().toISOString();
   await db.exec(
-    `INSERT INTO article_outcomes (document_id, user_id, scorecard_json, hit_status, playbook_tags_json, created_at, updated_at)
+    `INSERT INTO article_outcomes (article_id, user_id, scorecard_json, hit_status, playbook_tags_json, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?)
-     ON CONFLICT(document_id) DO NOTHING`,
+     ON CONFLICT(article_id) DO NOTHING`,
     [input.articleId, input.userId, JSON.stringify({}), "pending", JSON.stringify([]), now, now],
   );
   const outcome = await db.queryOne<{ id: number }>(
-    "SELECT id FROM article_outcomes WHERE document_id = ? AND user_id = ?",
+    "SELECT id FROM article_outcomes WHERE article_id = ? AND user_id = ?",
     [input.articleId, input.userId],
   );
   if (!outcome) {
@@ -2590,9 +2495,9 @@ export async function upsertArticleOutcomeSnapshot(input: {
   const now = new Date().toISOString();
   await db.exec(
     `INSERT INTO article_outcome_snapshots (
-      outcome_id, document_id, user_id, window_code, read_count, share_count, like_count, notes, writing_state_feedback_json, created_at, updated_at
+      outcome_id, article_id, user_id, window_code, read_count, share_count, like_count, notes, writing_state_feedback_json, created_at, updated_at
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(document_id, window_code) DO UPDATE SET
+    ON CONFLICT(article_id, window_code) DO UPDATE SET
       outcome_id = excluded.outcome_id,
       user_id = excluded.user_id,
       read_count = excluded.read_count,
@@ -2629,9 +2534,9 @@ export async function upsertArticleOutcomeSnapshot(input: {
     created_at: string;
     updated_at: string;
   }>(
-    `SELECT id, outcome_id, document_id AS article_id, user_id, window_code, read_count, share_count, like_count, notes, writing_state_feedback_json, created_at, updated_at
+    `SELECT id, outcome_id, article_id AS article_id, user_id, window_code, read_count, share_count, like_count, notes, writing_state_feedback_json, created_at, updated_at
      FROM article_outcome_snapshots
-     WHERE document_id = ? AND user_id = ? AND window_code = ?
+     WHERE article_id = ? AND user_id = ? AND window_code = ?
      LIMIT 1`,
     [input.articleId, input.userId, input.windowCode],
   );
@@ -2657,7 +2562,7 @@ export async function getArticleOutcomeBundlesByUser(userId: number) {
     created_at: string;
     updated_at: string;
   }>(
-    `SELECT id, document_id AS article_id, user_id, target_package, scorecard_json, hit_status, review_summary, next_action, playbook_tags_json, created_at, updated_at
+    `SELECT id, article_id AS article_id, user_id, target_package, scorecard_json, hit_status, review_summary, next_action, playbook_tags_json, created_at, updated_at
      FROM article_outcomes
      WHERE user_id = ?
      ORDER BY updated_at DESC, id DESC`,
@@ -2677,7 +2582,7 @@ export async function getArticleOutcomeBundlesByUser(userId: number) {
     created_at: string;
     updated_at: string;
   }>(
-    `SELECT id, outcome_id, document_id AS article_id, user_id, window_code, read_count, share_count, like_count, notes, writing_state_feedback_json, created_at, updated_at
+    `SELECT id, outcome_id, article_id AS article_id, user_id, window_code, read_count, share_count, like_count, notes, writing_state_feedback_json, created_at, updated_at
      FROM article_outcome_snapshots
      WHERE user_id = ?
      ORDER BY updated_at DESC, id DESC`,
@@ -2718,9 +2623,9 @@ export async function getAuthorPlaybooks(userId: number, limit = 6): Promise<Aut
     playbook_tags_json: string | string[] | null;
     updated_at: string;
   }>(
-    `SELECT ao.document_id AS article_id, d.title, ao.target_package, ao.hit_status, ao.playbook_tags_json, ao.updated_at
+    `SELECT ao.article_id AS article_id, d.title, ao.target_package, ao.hit_status, ao.playbook_tags_json, ao.updated_at
      FROM article_outcomes ao
-     INNER JOIN documents d ON d.id = ao.document_id
+     INNER JOIN articles d ON d.id = ao.article_id
      WHERE ao.user_id = ?
      ORDER BY ao.updated_at DESC, ao.id DESC`,
     [userId],
@@ -2829,7 +2734,7 @@ export async function getUserWorkspaceAssetSummary(userId: number) {
   await ensureExtendedProductSchema();
   const db = getDatabase();
   const [
-    documents,
+    articles,
     fragments,
     personas,
     series,
@@ -2845,7 +2750,7 @@ export async function getUserWorkspaceAssetSummary(userId: number) {
     customTopicSources,
     wechatConnections,
   ] = await Promise.all([
-    db.queryOne<{ count: number }>("SELECT COUNT(*) as count FROM documents WHERE user_id = ?", [userId]),
+    db.queryOne<{ count: number }>("SELECT COUNT(*) as count FROM articles WHERE user_id = ?", [userId]),
     db.queryOne<{ count: number }>("SELECT COUNT(*) as count FROM fragments WHERE user_id = ?", [userId]),
     db.queryOne<{ count: number }>("SELECT COUNT(*) as count FROM personas WHERE user_id = ?", [userId]),
     db.queryOne<{ count: number }>("SELECT COUNT(*) as count FROM series WHERE user_id = ?", [userId]),
@@ -2857,13 +2762,13 @@ export async function getUserWorkspaceAssetSummary(userId: number) {
     db.queryOne<{ count: number }>("SELECT COUNT(*) as count FROM layout_strategies WHERE owner_user_id = ? AND is_public = ?", [userId, true]),
     db.queryOne<{ count: number }>("SELECT COUNT(*) as count FROM layout_templates WHERE owner_user_id = ?", [userId]),
     db.queryOne<{ count: number }>("SELECT COUNT(*) as count FROM cover_images WHERE user_id = ?", [userId]),
-    db.queryOne<{ count: number }>("SELECT COUNT(*) as count FROM document_image_prompts WHERE user_id = ?", [userId]),
+    db.queryOne<{ count: number }>("SELECT COUNT(*) as count FROM article_image_prompts WHERE user_id = ?", [userId]),
     db.queryOne<{ count: number }>("SELECT COUNT(*) as count FROM topic_sources WHERE owner_user_id = ?", [userId]),
     db.queryOne<{ count: number }>("SELECT COUNT(*) as count FROM wechat_connections WHERE user_id = ?", [userId]),
   ]);
 
   return {
-    articlesCount: documents?.count ?? 0,
+    articlesCount: articles?.count ?? 0,
     fragmentsCount: fragments?.count ?? 0,
     personasCount: personas?.count ?? 0,
     seriesCount: series?.count ?? 0,
