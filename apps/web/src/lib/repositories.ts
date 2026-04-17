@@ -1,19 +1,20 @@
 import { getDatabase } from "./db";
 import { DEFAULT_MODEL_ROUTES } from "./domain";
 import { renderMarkdownToHtml } from "./rendering";
-import { getActiveTemplateById } from "./marketplace";
+import { getActiveTemplateById } from "./layout-templates";
 import { resolveTemplateRenderConfig } from "./template-rendering";
 import { ensureDefaultTopics } from "./topic-signals";
 import { clearPromptCache } from "./prompt-loader";
 import { ensureUsageCounterSchema } from "./usage";
 import { ensureDefaultArticleNodes } from "./article-outline";
 import { ensureArticleWorkflow } from "./article-workflows";
-import { ensureMarketplaceSeeds, ensureExtendedProductSchema } from "./schema-bootstrap";
+import { ensureTemplateLibrarySeeds, ensureExtendedProductSchema } from "./schema-bootstrap";
 import { appendAuditLog } from "./audit";
 import { getUserAccessScope } from "./access-scope";
 import { buildSemanticEmbedding, parseSemanticEmbedding, scoreSemanticMatch } from "./semantic-search";
 import { normalizeArticleStatus, toStoredArticleStatus } from "./article-status-label";
 import { resolveArticleSeriesId } from "./series";
+import { resolvePlanFeatureSnapshot, type PlanFeatureSourceRecord } from "./plan-entitlements";
 
 const DEFAULT_PROMPT_SEEDS = [
   {
@@ -225,7 +226,7 @@ const DEFAULT_PROMPT_SEEDS = [
 export async function ensureBootstrapData() {
   await ensureUsageCounterSchema();
   await ensureExtendedProductSchema();
-  await ensureMarketplaceSeeds();
+  await ensureTemplateLibrarySeeds();
   await ensureDefaultTopics();
 
   const db = getDatabase();
@@ -310,24 +311,35 @@ export async function ensureBootstrapData() {
 
 export async function getPlans() {
   const db = getDatabase();
-  return db.query<{
-    code: string;
-    name: string;
-    price_cny: number;
-    daily_generation_limit: number | null;
-    fragment_limit: number | null;
-    languageGuardRuleLimit: number | null;
-    max_wechat_connections: number | null;
-    can_generate_cover_image: number | boolean;
-    can_export_pdf: number | boolean;
-    is_public: number | boolean;
-  }>(
+  return db.query<PlanFeatureSourceRecord>(
     `SELECT code, name, price_cny, daily_generation_limit, fragment_limit,
             language_guard_rule_limit AS "languageGuardRuleLimit",
-            max_wechat_connections, can_generate_cover_image, can_export_pdf, is_public
+            max_wechat_connections, can_generate_cover_image, can_export_pdf
      FROM plans
      ORDER BY price_cny ASC, id ASC`,
   );
+}
+
+export async function getPlanByCode(code: string) {
+  const db = getDatabase();
+  return db.queryOne<PlanFeatureSourceRecord>(
+    `SELECT code, name, price_cny, daily_generation_limit, fragment_limit,
+            language_guard_rule_limit AS "languageGuardRuleLimit",
+            max_wechat_connections, can_generate_cover_image, can_export_pdf
+     FROM plans
+     WHERE code = ?`,
+    [code],
+  );
+}
+
+export async function getResolvedPlans() {
+  const plans = await getPlans();
+  return plans.map((plan) => resolvePlanFeatureSnapshot(plan));
+}
+
+export async function getResolvedPlanByCode(code: string) {
+  const plan = await getPlanByCode(code);
+  return plan ? resolvePlanFeatureSnapshot(plan) : null;
 }
 
 export async function getLatestArticleCoverImage(userId: number, articleId: number) {
@@ -436,7 +448,7 @@ export async function getUsers() {
   );
 }
 
-export async function getOpsBusinessOverview() {
+export async function getAdminBusinessOverview() {
   const db = getDatabase();
   const [users, activeUsers, articles, publishedArticles, fragments, logs, series] = await Promise.all([
     db.queryOne<{ count: number }>("SELECT COUNT(*) as count FROM users"),
@@ -459,7 +471,7 @@ export async function getOpsBusinessOverview() {
   };
 }
 
-export async function getOpsSubscriptions() {
+export async function getAdminSubscriptions() {
   const db = getDatabase();
   return db.query<{
     id: number | null;
@@ -2743,7 +2755,6 @@ export async function getUserWorkspaceAssetSummary(userId: number) {
     activeKnowledgeCards,
     conflictedKnowledgeCards,
     ownedLayoutStrategies,
-    publishedLayoutStrategies,
     customTemplates,
     coverImages,
     imagePrompts,
@@ -2759,7 +2770,6 @@ export async function getUserWorkspaceAssetSummary(userId: number) {
     db.queryOne<{ count: number }>("SELECT COUNT(*) as count FROM knowledge_cards WHERE user_id = ? AND status = ?", [userId, "active"]),
     db.queryOne<{ count: number }>("SELECT COUNT(*) as count FROM knowledge_cards WHERE user_id = ? AND status = ?", [userId, "conflicted"]),
     db.queryOne<{ count: number }>("SELECT COUNT(*) as count FROM layout_strategies WHERE owner_user_id = ?", [userId]),
-    db.queryOne<{ count: number }>("SELECT COUNT(*) as count FROM layout_strategies WHERE owner_user_id = ? AND is_public = ?", [userId, true]),
     db.queryOne<{ count: number }>("SELECT COUNT(*) as count FROM layout_templates WHERE owner_user_id = ?", [userId]),
     db.queryOne<{ count: number }>("SELECT COUNT(*) as count FROM cover_images WHERE user_id = ?", [userId]),
     db.queryOne<{ count: number }>("SELECT COUNT(*) as count FROM article_image_prompts WHERE user_id = ?", [userId]),
@@ -2777,7 +2787,6 @@ export async function getUserWorkspaceAssetSummary(userId: number) {
     activeKnowledgeCardsCount: activeKnowledgeCards?.count ?? 0,
     conflictedKnowledgeCardsCount: conflictedKnowledgeCards?.count ?? 0,
     ownedLayoutStrategiesCount: ownedLayoutStrategies?.count ?? 0,
-    publishedLayoutStrategiesCount: publishedLayoutStrategies?.count ?? 0,
     customTemplatesCount: customTemplates?.count ?? 0,
     coverImagesCount: coverImages?.count ?? 0,
     imagePromptsCount: imagePrompts?.count ?? 0,

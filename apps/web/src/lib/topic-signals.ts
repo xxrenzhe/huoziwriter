@@ -1080,7 +1080,7 @@ export async function syncTopicSignals(options?: { userId?: number; limitPerSour
   };
 }
 
-export async function runOpsTopicSync(options?: { limitPerSource?: number }) {
+export async function runAdminTopicSync(options?: { limitPerSource?: number }) {
   await ensureExtendedProductSchema();
   const sources = await getTopicSources();
   const run = await createManualTopicSyncRun("手动触发热点同步", sources.length);
@@ -1091,7 +1091,7 @@ export async function runOpsTopicSync(options?: { limitPerSource?: number }) {
     runId: run.id,
     syncWindowStart: run.sync_window_start,
     syncWindowLabel: run.sync_window_label,
-    triggerKind: "ops_manual",
+    triggerKind: "admin_manual",
   });
   await finalizeTopicSyncRun({
     runId: run.id,
@@ -1186,7 +1186,7 @@ export async function runScheduledTopicSync(options?: {
   };
 }
 
-export async function runOpsTopicSourceSync(input: { sourceId: number; limitPerSource?: number }) {
+export async function runAdminTopicSourceSync(input: { sourceId: number; limitPerSource?: number }) {
   await ensureExtendedProductSchema();
   const db = getDatabase();
   const source = await db.queryOne<TopicSourceRow>(
@@ -1209,7 +1209,7 @@ export async function runOpsTopicSourceSync(input: { sourceId: number; limitPerS
     runId: run.id,
     syncWindowStart: run.sync_window_start,
     syncWindowLabel: run.sync_window_label,
-    triggerKind: "ops_source_sync",
+    triggerKind: "admin_source_sync",
   });
   await finalizeTopicSyncRun({
     runId: run.id,
@@ -1230,7 +1230,7 @@ export async function runOpsTopicSourceSync(input: { sourceId: number; limitPerS
   };
 }
 
-export async function retryOpsTopicSyncRun(input: { runId: number; limitPerSource?: number }) {
+export async function retryAdminTopicSyncRun(input: { runId: number; limitPerSource?: number }) {
   await ensureExtendedProductSchema();
   const run = await getTopicSyncRunById(input.runId);
   if (!run) {
@@ -1266,7 +1266,7 @@ export async function retryOpsTopicSyncRun(input: { runId: number; limitPerSourc
     runId: retryRun.id,
     syncWindowStart: retryRun.sync_window_start,
     syncWindowLabel: retryRun.sync_window_label,
-    triggerKind: "ops_retry",
+    triggerKind: "admin_retry",
   });
   await finalizeTopicSyncRun({
     runId: retryRun.id,
@@ -1395,7 +1395,7 @@ export async function updateTopicSource(input: {
   await syncTopicSignals({ userId: input.userId, limitPerSource: 4 });
 }
 
-export async function getOpsTopicSources() {
+export async function getAdminTopicSources() {
   const db = getDatabase();
   return db.query<{
     id: number;
@@ -1445,7 +1445,7 @@ export async function getOpsTopicSources() {
   );
 }
 
-export async function createOpsTopicSource(input: { name: string; homepageUrl: string; sourceType?: string; priority?: number | string | null }) {
+export async function createAdminTopicSource(input: { name: string; homepageUrl: string; sourceType?: string; priority?: number | string | null }) {
   const db = getDatabase();
   const now = new Date().toISOString();
   const normalizedName = input.name.trim();
@@ -1480,7 +1480,7 @@ export async function createOpsTopicSource(input: { name: string; homepageUrl: s
   }
 }
 
-export async function updateOpsTopicSource(input: {
+export async function updateAdminTopicSource(input: {
   sourceId: number;
   isActive?: boolean;
   sourceType?: string | null;

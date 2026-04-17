@@ -1,30 +1,21 @@
 import { ensureUserSession } from "@/lib/auth";
 import {
-  completeArticleWorkflowStage,
-  ArticleWorkflowStageCode,
-  failArticleWorkflowStage,
+  ArticleWorkflowMainStepCode,
+  buildArticlePublicWorkflow,
   getArticleWorkflow,
+  mapArticleMainStepToStageCode,
   setArticleWorkflowCurrentStage,
 } from "@/lib/article-workflows";
 import { fail, ok } from "@/lib/http";
+import { isArticleMainStepCode } from "@/lib/article-workflow-registry";
+import { getArticleById } from "@/lib/repositories";
 
-function parseStageCode(value: unknown) {
-  const stageCode = String(value || "") as ArticleWorkflowStageCode;
-  if (![
-    "opportunity",
-    "researchBrief",
-    "audienceAnalysis",
-    "outlinePlanning",
-    "deepWriting",
-    "factCheck",
-    "prosePolish",
-    "coverImage",
-    "layout",
-    "publish",
-  ].includes(stageCode)) {
+function parseStepCode(value: unknown) {
+  const stepCode = String(value || "").trim();
+  if (!isArticleMainStepCode(stepCode)) {
     throw new Error("无效的稿件步骤");
   }
-  return stageCode;
+  return stepCode;
 }
 
 export async function GET(_: Request, { params }: { params: { id: string } }) {
@@ -33,7 +24,14 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
     return fail("未登录", 401);
   }
   try {
-    return ok(await getArticleWorkflow(Number(params.id), session.userId));
+    const [article, workflow] = await Promise.all([
+      getArticleById(Number(params.id), session.userId),
+      getArticleWorkflow(Number(params.id), session.userId),
+    ]);
+    if (!article) {
+      return fail("稿件不存在", 404);
+    }
+    return ok(buildArticlePublicWorkflow(workflow, { articleStatus: article.status }));
   } catch (error) {
     return fail(error instanceof Error ? error.message : "读取稿件步骤失败", 400);
   }
@@ -46,15 +44,17 @@ export async function PATCH(request: Request, { params }: { params: { id: string
   }
   try {
     const body = await request.json();
-    const stageCode = parseStageCode(body.stageCode);
-    const action = String(body.action || "set");
-    const workflow =
-      action === "complete"
-        ? await completeArticleWorkflowStage({ articleId: Number(params.id), userId: session.userId, stageCode })
-        : action === "fail"
-          ? await failArticleWorkflowStage({ articleId: Number(params.id), userId: session.userId, stageCode })
-          : await setArticleWorkflowCurrentStage({ articleId: Number(params.id), userId: session.userId, stageCode });
-    return ok(workflow);
+    const stepCode = parseStepCode(body.stepCode);
+    const article = await getArticleById(Number(params.id), session.userId);
+    if (!article) {
+      return fail("稿件不存在", 404);
+    }
+    const workflow = await setArticleWorkflowCurrentStage({
+      articleId: Number(params.id),
+      userId: session.userId,
+      stageCode: mapArticleMainStepToStageCode(stepCode),
+    });
+    return ok(buildArticlePublicWorkflow(workflow, { articleStatus: article.status }));
   } catch (error) {
     return fail(error instanceof Error ? error.message : "更新稿件步骤失败", 400);
   }

@@ -3,6 +3,7 @@ import { getDatabase } from "./db";
 import { derivePersonaName, PERSONA_IDENTITY_OPTIONS, PERSONA_WRITING_STYLE_OPTIONS } from "./persona-catalog";
 import { getPersonaTagCatalog, getPersonaTagOptionValues } from "./persona-tags";
 import { getUserPlanContext } from "./plan-access";
+import { getPlanEntitlementDefinition } from "./plan-entitlements";
 import { ensureExtendedProductSchema } from "./schema-bootstrap";
 import { getWritingStyleProfileById } from "./writing-style-profiles";
 
@@ -86,14 +87,12 @@ function normalizeOptionalStringList(value: unknown, limit = 6) {
 }
 
 export function getPersonaLimit(planCode: "free" | "pro" | "ultra") {
-  if (planCode === "pro") return 3;
-  if (planCode === "ultra") return 10;
-  return 1;
+  return getPlanEntitlementDefinition(planCode)?.personaLimit ?? 1;
 }
 
 export async function getPersonaLimitForUser(userId: number) {
-  const { effectivePlanCode } = await getUserPlanContext(userId);
-  return getPersonaLimit(effectivePlanCode);
+  const { planSnapshot } = await getUserPlanContext(userId);
+  return planSnapshot.personaLimit;
 }
 
 export async function getPersonas(userId: number) {

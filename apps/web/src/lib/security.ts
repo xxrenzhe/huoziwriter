@@ -8,7 +8,7 @@ const AUTH_COOKIE_NAME = "huoziwriter_session";
 export type SessionPayload = {
   userId: number;
   username: string;
-  role: "ops" | "user";
+  role: "admin" | "user";
 };
 
 export function getAuthCookieName() {

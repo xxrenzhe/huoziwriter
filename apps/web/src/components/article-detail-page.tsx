@@ -8,17 +8,9 @@ import { getArticleAuthoringStyleContext } from "@/lib/article-authoring-style-c
 import { getArticleWritingContext } from "@/lib/article-writing-context";
 import { getRelevantKnowledgeCardsForArticle } from "@/lib/knowledge";
 import { getLanguageGuardRules } from "@/lib/language-guard";
-import { getActiveTemplates } from "@/lib/marketplace";
+import { getActiveTemplates } from "@/lib/layout-templates";
 import { requireWriterSession } from "@/lib/page-auth";
-import {
-  canUseCoverImageReference,
-  canUseHistoryReferences,
-  getCoverImageQuotaStatus,
-  getImageAssetStorageQuotaStatus,
-  getSnapshotRetentionDays,
-  getTemplateAccessLimit,
-  getUserPlanContext,
-} from "@/lib/plan-access";
+import { getCoverImageQuotaStatus, getImageAssetStorageQuotaStatus, getUserPlanContext } from "@/lib/plan-access";
 import { hasPersona } from "@/lib/personas";
 import {
   getArticleEvidenceItems,
@@ -47,14 +39,12 @@ export async function ArticleDetailPage({
   }
 
   const articleId = Number(params.articleId);
-  const snapshotRetentionDays = await getSnapshotRetentionDays(session.userId);
-  const [articleOutcomeData, recentArticles, fragments, languageGuardRules, connections, snapshots, planContext, coverImage, coverImageCandidates, imagePrompts, templates, syncLogs, strategyCard, evidenceItems, coverImageQuota, imageAssetQuota, authoringContext, series] = await Promise.all([
+  const [articleOutcomeData, recentArticles, fragments, languageGuardRules, connections, planContext, coverImage, coverImageCandidates, imagePrompts, templates, syncLogs, strategyCard, evidenceItems, coverImageQuota, imageAssetQuota, authoringContext, series] = await Promise.all([
     getArticleOutcomeData(articleId, session.userId),
     getArticlesByUser(session.userId),
     getFragmentsByUser(session.userId),
     getLanguageGuardRules(session.userId),
     getWechatConnections(session.userId),
-    getArticleSnapshots(articleId, { retentionDays: snapshotRetentionDays }),
     getUserPlanContext(session.userId),
     getLatestArticleCoverImage(session.userId, articleId),
     getLatestArticleCoverImageCandidates(session.userId, articleId),
@@ -73,6 +63,7 @@ export async function ArticleDetailPage({
     return <div className="border border-stone-300/40 bg-white p-6">稿件不存在。</div>;
   }
   const { article, nodes, workflow, stageArtifacts, outcomeBundle: initialOutcomeBundle } = articleOutcomeData;
+  const snapshots = await getArticleSnapshots(articleId, { retentionDays: planContext.planSnapshot.snapshotRetentionDays });
 
   const [relevantKnowledgeCards, writingContext, currentSeriesPlaybook] = await Promise.all([
     getRelevantKnowledgeCardsForArticle(session.userId, {
@@ -90,7 +81,8 @@ export async function ArticleDetailPage({
     getCurrentSeriesPlaybook(session.userId, article.series_id),
   ]);
   const currentPlan = planContext.plan;
-  const templateLimit = getTemplateAccessLimit(currentPlan.code as "free" | "pro" | "ultra");
+  const planSnapshot = planContext.planSnapshot;
+  const templateLimit = planSnapshot.templateAccessLimit;
   const accessibleTemplates = [
     ...templates.filter((template) => template.ownerUserId == null).slice(0, templateLimit),
     ...templates.filter((template) => template.ownerUserId === session.userId),
@@ -232,11 +224,11 @@ export async function ArticleDetailPage({
       workflow={workflow}
       stageArtifacts={stageArtifacts}
       knowledgeCards={relevantKnowledgeCards}
-      canExportPdf={Boolean(currentPlan?.can_export_pdf)}
-      canGenerateCoverImage={Boolean(currentPlan?.can_generate_cover_image)}
-      canUseCoverImageReference={canUseCoverImageReference(currentPlan.code as "free" | "pro" | "ultra")}
-      canUseHistoryReferences={canUseHistoryReferences(planContext.effectivePlanCode)}
-      canPublishToWechat={(currentPlan.max_wechat_connections ?? 0) > 0}
+      canExportPdf={planSnapshot.canExportPdf}
+      canGenerateCoverImage={planSnapshot.canGenerateCoverImage}
+      canUseCoverImageReference={planSnapshot.canUseCoverImageReference}
+      canUseHistoryReferences={planSnapshot.canUseHistoryReferences}
+      canPublishToWechat={planSnapshot.canPublishToWechat}
       planName={currentPlan.name}
       authoringContext={authoringContext}
       seriesInsight={writingContext.seriesInsight ?? null}

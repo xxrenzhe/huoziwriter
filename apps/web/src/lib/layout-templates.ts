@@ -1,4 +1,6 @@
+import { STYLE_TEMPLATE_LIBRARY } from "./catalog";
 import { getDatabase } from "./db";
+import { ensureExtendedProductSchema } from "./schema-bootstrap";
 
 type LayoutTemplateSyncInput = {
   templateId: string;
@@ -11,6 +13,17 @@ type LayoutTemplateSyncInput = {
   config: Record<string, unknown>;
   isActive?: boolean;
 };
+
+function parseJson<T>(value: string | null, fallback: T) {
+  if (!value) {
+    return fallback;
+  }
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return fallback;
+  }
+}
 
 function inferSchemaVersion(config: Record<string, unknown>) {
   const raw = String(config.schemaVersion || "").trim();
@@ -130,4 +143,101 @@ export async function backfillLayoutTemplatesFromTemplateVersions() {
       isActive: Boolean(row.is_active),
     });
   }
+}
+
+export async function getActiveTemplates(userId?: number) {
+  await ensureExtendedProductSchema();
+  const db = getDatabase();
+  const rows = await db.query<{
+    template_id: string;
+    version: string;
+    name: string;
+    description: string | null;
+    owner_user_id: number | null;
+    source_url: string | null;
+    meta: string | null;
+    config_json: string;
+  }>(
+    userId
+      ? `SELECT
+           lt.template_id,
+           ltv.version,
+           lt.name,
+           lt.description,
+           lt.owner_user_id,
+           lt.source_url,
+           lt.meta,
+           ltv.config_json
+         FROM layout_templates lt
+         JOIN layout_template_versions ltv ON ltv.template_id = lt.template_id
+         WHERE lt.is_active = ? AND ltv.is_active = ? AND (lt.owner_user_id IS NULL OR lt.owner_user_id = ?)
+         ORDER BY CASE WHEN lt.owner_user_id IS NULL THEN 0 ELSE 1 END, lt.id ASC, ltv.id ASC`
+      : `SELECT
+           lt.template_id,
+           ltv.version,
+           lt.name,
+           lt.description,
+           lt.owner_user_id,
+           lt.source_url,
+           lt.meta,
+           ltv.config_json
+         FROM layout_templates lt
+         JOIN layout_template_versions ltv ON ltv.template_id = lt.template_id
+         WHERE lt.is_active = ? AND ltv.is_active = ? AND lt.owner_user_id IS NULL
+         ORDER BY lt.id ASC, ltv.id ASC`,
+    userId ? [true, true, userId] : [true, true],
+  );
+
+  const privateTemplateUsage = new Map<string, { usageCount: number; lastUsedAt: string | null }>();
+  if (userId) {
+    const usageRows = await db.query<{
+      wechat_template_id: string;
+      usage_count: number;
+      last_used_at: string | null;
+    }>(
+      `SELECT wechat_template_id, COUNT(*) as usage_count, MAX(updated_at) as last_used_at
+       FROM articles
+       WHERE user_id = ? AND wechat_template_id IS NOT NULL
+       GROUP BY wechat_template_id`,
+      [userId],
+    );
+    for (const row of usageRows) {
+      privateTemplateUsage.set(row.wechat_template_id, {
+        usageCount: Number(row.usage_count || 0),
+        lastUsedAt: row.last_used_at,
+      });
+    }
+  }
+
+  if (rows.length > 0) {
+    return rows.map((row) => ({
+      ...(row.owner_user_id != null ? privateTemplateUsage.get(row.template_id) ?? { usageCount: 0, lastUsedAt: null } : { usageCount: 0, lastUsedAt: null }),
+      id: row.template_id,
+      version: row.version,
+      name: row.name,
+      description: row.description,
+      meta: row.meta ?? STYLE_TEMPLATE_LIBRARY.find((item) => item.id === row.template_id)?.meta ?? "模板",
+      ownerUserId: row.owner_user_id,
+      sourceUrl: row.source_url,
+      config: parseJson<Record<string, unknown>>(row.config_json, {}),
+    }));
+  }
+
+  return STYLE_TEMPLATE_LIBRARY.map((template) => ({
+    usageCount: 0,
+    lastUsedAt: null,
+    id: template.id,
+    version: "v1.0.0",
+    name: template.name,
+    description: template.description,
+    meta: template.meta,
+    ownerUserId: null,
+    sourceUrl: null,
+    config: template.config,
+  }));
+}
+
+export async function getActiveTemplateById(templateId: string, userId?: number) {
+  const templates = await getActiveTemplates(userId);
+  return templates.find((template) => template.id === templateId) ?? null;
 }

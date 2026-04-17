@@ -6,11 +6,16 @@ import { getDatabase } from "./db";
 import { getArticleAuthoringStyleContext } from "./article-authoring-style-context";
 import { getSavedArticleHistoryReferences } from "./article-history-references";
 import { supplementArticleResearchSources } from "./article-research-supplement";
+import {
+  ARTICLE_ARTIFACT_STAGE_TITLES,
+  isArticleArtifactStageCode,
+  type ArticleArtifactStageCode,
+  type ArticleWorkflowStageCode,
+} from "./article-workflow-registry";
 import { resolveArticleApplyCommandTemplate, resolveArticleLayoutStrategy } from "./article-rollout";
 import { getArticleWritingContext } from "./article-writing-context";
-import type { ArticleWorkflowStageCode } from "./article-workflows";
 import { collectLanguageGuardHits, getLanguageGuardRules, getLanguageGuardTokenBlacklist, type LanguageGuardRule } from "./language-guard";
-import { canUseHistoryReferences, getUserPlanContext } from "./plan-access";
+import { getUserPlanContext } from "./plan-access";
 import { loadPromptWithMeta } from "./prompt-loader";
 import { getArticleById, getArticleOutcomeBundlesByUser, getArticlesByUser, replaceArticleResearchCards } from "./repositories";
 import { ensureExtendedProductSchema } from "./schema-bootstrap";
@@ -19,14 +24,6 @@ import { WRITING_EVAL_APPLY_COMMAND_TEMPLATES } from "./writing-eval-assets";
 import { getActiveWritingEvalScoringProfile } from "./writing-eval";
 import { buildWritingDiversityReport } from "./writing-diversity";
 import { buildWritingStateKernel, type ArticlePrototypeCode, type WritingStateVariantCode } from "./writing-state";
-
-export type ArticleArtifactStageCode =
-  | "researchBrief"
-  | "audienceAnalysis"
-  | "outlinePlanning"
-  | "deepWriting"
-  | "factCheck"
-  | "prosePolish";
 
 export type ArticleStageArtifactStatus = "ready" | "failed";
 
@@ -59,7 +56,7 @@ type ArtifactRow = {
 
 type GenerationContext = {
   userId: number;
-  userRole: "ops" | "user";
+  userRole: "admin" | "user";
   planCode: string;
   article: {
     id: number;
@@ -252,17 +249,6 @@ type DeepWritingOutcomeSignal = {
 };
 
 type DeepWritingOutcomeBucket = Omit<DeepWritingOutcomeSignal, "rankingAdjustment" | "reason">;
-
-const STAGE_TITLES: Record<ArticleArtifactStageCode, string> = {
-  researchBrief: "研究简报",
-  audienceAnalysis: "受众分析",
-  outlinePlanning: "大纲规划",
-  deepWriting: "深度写作",
-  factCheck: "事实核查",
-  prosePolish: "文笔润色",
-};
-
-const SUPPORTED_STAGE_CODES = Object.keys(STAGE_TITLES) as ArticleArtifactStageCode[];
 
 function parsePayload(value: string | Record<string, unknown> | null) {
   if (!value) return null;
@@ -2862,7 +2848,7 @@ function getOutlineSelection(payload: Record<string, unknown> | null | undefined
 function toArtifact(row: ArtifactRow) {
   return {
     stageCode: row.stage_code,
-    title: STAGE_TITLES[row.stage_code],
+    title: ARTICLE_ARTIFACT_STAGE_TITLES[row.stage_code],
     status: row.status,
     summary: row.summary,
     payload: parsePayload(row.payload_json),
@@ -2992,7 +2978,7 @@ async function buildGenerationContext(articleId: number, userId: number): Promis
     planCode: planContext.effectivePlanCode,
   });
   const supplementalViewpoints = uniqueStrings(outlineArtifact?.payload?.supplementalViewpoints, 3);
-  const canUseSavedHistoryReferences = canUseHistoryReferences(planContext.effectivePlanCode);
+  const canUseSavedHistoryReferences = planContext.planSnapshot.canUseHistoryReferences;
   const recentArticleItems = recentArticles
     .filter((item) => item.id !== article.id)
     .slice(0, 5)
@@ -3614,7 +3600,7 @@ async function generateProsePolish(context: GenerationContext) {
 }
 
 export function isSupportedArticleArtifactStage(stageCode: string): stageCode is ArticleArtifactStageCode {
-  return SUPPORTED_STAGE_CODES.includes(stageCode as ArticleArtifactStageCode);
+  return isArticleArtifactStageCode(stageCode);
 }
 
 export async function getArticleStageArtifacts(articleId: number, userId: number) {

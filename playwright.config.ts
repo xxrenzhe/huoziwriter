@@ -2,6 +2,7 @@ import path from "node:path";
 import { defineConfig } from "@playwright/test";
 
 const databasePath = path.resolve(process.cwd(), "apps/web/data/e2e-huoziwriter.db");
+const e2eAdminPassword = process.env.DEFAULT_ADMIN_PASSWORD || "E2E#Admin42";
 
 export default defineConfig({
   testDir: "./tests/e2e",
@@ -22,7 +23,7 @@ export default defineConfig({
       HOSTNAME: "127.0.0.1",
       NEXT_DIST_DIR: ".next-e2e",
       DATABASE_PATH: databasePath,
-      DEFAULT_OPS_PASSWORD: process.env.DEFAULT_OPS_PASSWORD || "REDACTED_ADMIN_PASSWORD",
+      DEFAULT_ADMIN_PASSWORD: e2eAdminPassword,
     },
   },
 });

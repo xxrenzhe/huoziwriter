@@ -16,7 +16,7 @@ async function main() {
   }
 
   const schema = `verify_${Date.now().toString(36)}`;
-  const opsPassword = "Smoke#PgHuozi42";
+  const adminPassword = "Smoke#PgHuozi42";
   const client = postgres(databaseUrl, {
     max: 1,
     idle_timeout: 5,
@@ -31,7 +31,7 @@ async function main() {
         env: {
           ...process.env,
           DATABASE_SCHEMA: schema,
-          DEFAULT_OPS_PASSWORD: opsPassword,
+          DEFAULT_ADMIN_PASSWORD: adminPassword,
         },
         stdio: "pipe",
       },
@@ -40,11 +40,12 @@ async function main() {
     const [user] = await client.unsafe(
       `SELECT username, role, plan_code
        FROM ${escapedIdentifier(schema)}.users
-       WHERE username = 'huozi'
+       WHERE username = $1
        LIMIT 1`,
+      ["huozi"],
     );
-    if (!user || user.role !== "ops" || user.plan_code !== "ultra") {
-      throw new Error("postgres ops bootstrap verification failed");
+    if (!user || user.role !== defaultAdminConfig.role || user.plan_code !== defaultAdminConfig.planCode) {
+      throw new Error("postgres admin bootstrap verification failed");
     }
 
     const [migration] = await client.unsafe(

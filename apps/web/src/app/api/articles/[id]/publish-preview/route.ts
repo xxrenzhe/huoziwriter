@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { ensureUserSession } from "@/lib/auth";
 import { fail, ok } from "@/lib/http";
-import { getActiveTemplateById } from "@/lib/marketplace";
+import { getActiveTemplateById } from "@/lib/layout-templates";
 import { assertWechatTemplateAllowed } from "@/lib/plan-access";
 import { evaluateArticlePublishGuard } from "@/lib/publish-guard";
 import { getArticleById } from "@/lib/repositories";

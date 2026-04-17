@@ -2,6 +2,7 @@ import { getDatabase } from "./db";
 import { getKnowledgeCards } from "./knowledge";
 import { matchTopicToKnowledgeCards } from "./knowledge-match";
 import { getUserPlanContext } from "./plan-access";
+import { getPlanEntitlementDefinition } from "./plan-entitlements";
 import { getPersonas } from "./personas";
 import { ensureExtendedProductSchema } from "./schema-bootstrap";
 import { getVisibleTopicEvents } from "./topic-signals";
@@ -189,9 +190,7 @@ function getDaysAgoRecommendationDate(days: number) {
 }
 
 export function getTopicSignalVisibleLimit(planCode: "free" | "pro" | "ultra") {
-  if (planCode === "pro") return 5;
-  if (planCode === "ultra") return DAILY_RECOMMENDATION_LIMIT;
-  return 1;
+  return getPlanEntitlementDefinition(planCode)?.topicSignalVisibleLimit ?? 1;
 }
 
 function scoreTopicForPersona(topic: RawTopicItem, persona: PersonaLite) {
@@ -694,5 +693,5 @@ export async function getVisibleTopicRecommendationsForUser(userId: number) {
     })
     .sort((left, right) => right.priorityScore - left.priorityScore || right.relevanceScore - left.relevanceScore || right.id - left.id);
 
-  return boosted.slice(0, getTopicSignalVisibleLimit(planContext.effectivePlanCode));
+  return boosted.slice(0, planContext.planSnapshot.topicSignalVisibleLimit);
 }

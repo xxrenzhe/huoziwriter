@@ -12,6 +12,17 @@ type DbAuditLogRow = {
   created_at: string;
 };
 
+export type AdminAuditLogItem = {
+  id: number;
+  userId: number | null;
+  username: string | null;
+  action: string;
+  targetType: string;
+  targetId: string | null;
+  payload: Record<string, unknown> | null;
+  createdAt: string;
+};
+
 function parsePayload(value: string | Record<string, unknown> | null) {
   if (!value) {
     return null;
@@ -48,7 +59,7 @@ export async function appendAuditLog(input: {
   );
 }
 
-export async function getOpsAuditLogs(input: {
+export async function getAdminAuditLogs(input: {
   query?: string;
   action?: string;
   targetType?: string;
@@ -105,10 +116,35 @@ export async function getOpsAuditLogs(input: {
     targetId: row.target_id,
     payload: parsePayload(row.payload_json),
     createdAt: row.created_at,
-  }));
+  })) satisfies AdminAuditLogItem[];
 }
 
-export async function getOpsAuditFilterOptions() {
+export async function getWritingEvalRolloutAuditLogs(limit = 180) {
+  const [rolloutAuditLogs, promptRolloutAuditLogs] = await Promise.all([
+    getAdminAuditLogs({
+      action: "writing_asset_rollout_auto_manage",
+      targetType: "writing_asset_rollout",
+      limit,
+    }),
+    getAdminAuditLogs({
+      action: "prompt_rollout_auto_manage",
+      targetType: "prompt_version",
+      limit,
+    }),
+  ]);
+
+  const combinedRolloutAuditLogs = [...promptRolloutAuditLogs, ...rolloutAuditLogs].sort(
+    (left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime(),
+  );
+
+  return {
+    rolloutAuditLogs,
+    promptRolloutAuditLogs,
+    combinedRolloutAuditLogs,
+  };
+}
+
+export async function getAdminAuditFilterOptions() {
   await ensureExtendedProductSchema();
   const db = getDatabase();
   const [actions, targetTypes] = await Promise.all([

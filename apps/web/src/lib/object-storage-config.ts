@@ -313,7 +313,7 @@ export async function upsertGlobalObjectStorageConfig(input: {
 
   await appendAuditLog({
     userId: input.operatorUserId,
-    action: "ops.object_storage.update",
+    action: "admin.object_storage.update",
     targetType: "global_object_storage",
     targetId: IMAGE_OBJECT_STORAGE_CODE,
     payload: {

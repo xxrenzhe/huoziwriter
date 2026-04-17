@@ -7,7 +7,7 @@ import { resolveArticleApplyCommandTemplate, resolveArticleLayoutStrategy } from
 import { getArticleWritingContext } from "@/lib/article-writing-context";
 import { buildGeneratedOpeningPreview } from "@/lib/generation";
 import { fail, ok } from "@/lib/http";
-import { canUseHistoryReferences, getUserPlanContext } from "@/lib/plan-access";
+import { getUserPlanContext } from "@/lib/plan-access";
 import { getArticleById } from "@/lib/repositories";
 import { getLanguageGuardRules, getLanguageGuardTokenBlacklist } from "@/lib/language-guard";
 import { getActiveWritingEvalScoringProfile } from "@/lib/writing-eval";
@@ -106,7 +106,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
       return fail("请先生成写作执行卡", 409);
     }
 
-    const usableHistoryReferences = canUseHistoryReferences(planContext.effectivePlanCode) ? historyReferences : [];
+    const usableHistoryReferences = planContext.planSnapshot.canUseHistoryReferences ? historyReferences : [];
     const [layoutStrategy, applyCommandTemplate] = await Promise.all([
       resolveArticleLayoutStrategy({
         userId: session.userId,

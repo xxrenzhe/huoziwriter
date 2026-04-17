@@ -15,12 +15,13 @@ import { encryptWechatConnection } from "../../apps/web/src/lib/wechat";
 import { getArticleAuthoringStyleContext } from "../../apps/web/src/lib/article-authoring-style-context";
 
 process.env.DATABASE_PATH ||= path.resolve(process.cwd(), "apps/web/data/e2e-huoziwriter.db");
+const E2E_ADMIN_PASSWORD = process.env.DEFAULT_ADMIN_PASSWORD || "E2E#Admin42";
 
-async function loginAsOps(baseURL: string, request: import("@playwright/test").APIRequestContext) {
+async function loginAsAdmin(baseURL: string, request: import("@playwright/test").APIRequestContext) {
   const response = await request.post(`${baseURL}/api/auth/login`, {
     data: {
       username: "huozi",
-      password: "REDACTED_ADMIN_PASSWORD",
+      password: E2E_ADMIN_PASSWORD,
     },
   });
   expect(response.ok()).toBeTruthy();
@@ -143,13 +144,13 @@ async function listKnowledgeCardsForTest(
   }));
 }
 
-async function createE2EUser(baseURL: string, request: import("@playwright/test").APIRequestContext, opsCookie: string, input?: {
+async function createE2EUser(baseURL: string, request: import("@playwright/test").APIRequestContext, adminCookie: string, input?: {
   planCode?: "free" | "pro" | "ultra";
 }) {
   const username = `e2e_user_${Date.now()}`;
-  const password = "REDACTED_ADMIN_PASSWORD";
-  const response = await request.post(`${baseURL}/api/ops/users`, {
-    headers: { Cookie: opsCookie },
+  const password = E2E_ADMIN_PASSWORD;
+  const response = await request.post(`${baseURL}/api/admin/users`, {
+    headers: { Cookie: adminCookie },
     data: {
       username,
       password,
@@ -330,7 +331,7 @@ async function createArticleForTest(
 }
 
 async function ensureMockImageEngine(baseURL: string, request: import("@playwright/test").APIRequestContext, cookie: string) {
-  const response = await request.put(`${baseURL}/api/ops/image-engine`, {
+  const response = await request.put(`${baseURL}/api/admin/image-engine`, {
     headers: { Cookie: cookie },
     data: {
       baseUrl: `${baseURL}/api/tools/mock-image-engine`,
@@ -963,7 +964,7 @@ async function getFirstOfficialTemplateId(baseURL: string, request: import("@pla
 }
 
 test("warroom endpoint stays stable after login", async ({ request, baseURL }) => {
-  const cookie = await loginAsOps(baseURL!, request);
+  const cookie = await loginAsAdmin(baseURL!, request);
 
   const me = await request.get(`${baseURL}/api/auth/me`, {
     headers: { Cookie: cookie },
@@ -1006,10 +1007,10 @@ test("warroom endpoint stays stable after login", async ({ request, baseURL }) =
 });
 
 test("topic radar visible count follows free pro ultra plan gates", async ({ request, baseURL }) => {
-  const opsCookie = await loginAsOps(baseURL!, request);
-  const freeUser = await createE2EUser(baseURL!, request, opsCookie, { planCode: "free" });
-  const proUser = await createE2EUser(baseURL!, request, opsCookie, { planCode: "pro" });
-  const ultraUser = await createE2EUser(baseURL!, request, opsCookie, { planCode: "ultra" });
+  const adminCookie = await loginAsAdmin(baseURL!, request);
+  const freeUser = await createE2EUser(baseURL!, request, adminCookie, { planCode: "free" });
+  const proUser = await createE2EUser(baseURL!, request, adminCookie, { planCode: "pro" });
+  const ultraUser = await createE2EUser(baseURL!, request, adminCookie, { planCode: "ultra" });
   const freeCookie = await loginWithPassword(baseURL!, request, {
     username: freeUser.username,
     password: freeUser.password,
@@ -1054,8 +1055,8 @@ test("topic radar visible count follows free pro ultra plan gates", async ({ req
 });
 
 test("first entry blocks core writer flow until persona is configured", async ({ request, baseURL }) => {
-  const opsCookie = await loginAsOps(baseURL!, request);
-  const user = await createE2EUser(baseURL!, request, opsCookie, { planCode: "free" });
+  const adminCookie = await loginAsAdmin(baseURL!, request);
+  const user = await createE2EUser(baseURL!, request, adminCookie, { planCode: "free" });
   const userCookie = await loginWithPassword(baseURL!, request, {
     username: user.username,
     password: user.password,
@@ -1091,8 +1092,8 @@ test("first entry blocks core writer flow until persona is configured", async ({
 });
 
 test("writer shell keeps four primary entries", async ({ request, baseURL }) => {
-  const opsCookie = await loginAsOps(baseURL!, request);
-  const user = await createE2EUser(baseURL!, request, opsCookie, { planCode: "free" });
+  const adminCookie = await loginAsAdmin(baseURL!, request);
+  const user = await createE2EUser(baseURL!, request, adminCookie, { planCode: "free" });
   const userCookie = await loginWithPassword(baseURL!, request, {
     username: user.username,
     password: user.password,
@@ -1111,7 +1112,7 @@ test("writer shell keeps four primary entries", async ({ request, baseURL }) => 
 });
 
 test("writer core flow supports capture, generate, template extract and export", async ({ request, baseURL }) => {
-  const cookie = await loginAsOps(baseURL!, request);
+  const cookie = await loginAsAdmin(baseURL!, request);
   await ensurePersona(baseURL!, request, cookie);
 
   const { articleId } = await createArticleForTest(baseURL!, request, cookie, {
@@ -1186,7 +1187,7 @@ test("writer core flow supports capture, generate, template extract and export",
 });
 
 test("writer workflow supports stage artifacts from audience to deep writing", async ({ request, baseURL }) => {
-  const cookie = await loginAsOps(baseURL!, request);
+  const cookie = await loginAsAdmin(baseURL!, request);
   const persona = await ensurePersona(baseURL!, request, cookie);
   expect(persona).toBeTruthy();
 
@@ -1291,7 +1292,7 @@ test("writer workflow supports stage artifacts from audience to deep writing", a
 });
 
 test("deep writing exposes comparison cards and opening preview respects prototype and state overrides", async ({ request, baseURL }) => {
-  const cookie = await loginAsOps(baseURL!, request);
+  const cookie = await loginAsAdmin(baseURL!, request);
   const { articleId, deepWritingJson } = await createDeepWritingReadyArticle(baseURL!, request, cookie, {
     title: "E2E 原型状态对比与预览",
   });
@@ -1359,7 +1360,7 @@ test("deep writing exposes comparison cards and opening preview respects prototy
 });
 
 test("article workflow inserts research brief before audience analysis", async ({ request, baseURL }) => {
-  const cookie = await loginAsOps(baseURL!, request);
+  const cookie = await loginAsAdmin(baseURL!, request);
   await ensurePersona(baseURL!, request, cookie);
 
   const { articleId } = await createArticleForTest(baseURL!, request, cookie, {
@@ -1414,7 +1415,7 @@ test("article workflow inserts research brief before audience analysis", async (
 });
 
 test("research brief can generate hv-analysis style research scaffolding and feed strategy suggestions", async ({ request, baseURL }) => {
-  const cookie = await loginAsOps(baseURL!, request);
+  const cookie = await loginAsAdmin(baseURL!, request);
   await ensurePersona(baseURL!, request, cookie);
 
   const { articleId } = await createArticleForTest(baseURL!, request, cookie, {
@@ -1494,7 +1495,7 @@ test("research brief can generate hv-analysis style research scaffolding and fee
 
 test("research brief can auto-supplement external web sources before generation", async ({ request, baseURL }) => {
   test.skip(!process.env.RESEARCH_SOURCE_SEARCH_ENDPOINT, "需要显式配置 research search endpoint");
-  const cookie = await loginAsOps(baseURL!, request);
+  const cookie = await loginAsAdmin(baseURL!, request);
   await ensurePersona(baseURL!, request, cookie);
 
   const { articleId } = await createArticleForTest(baseURL!, request, cookie, {
@@ -1531,7 +1532,7 @@ test("research brief can auto-supplement external web sources before generation"
 });
 
 test("research workspace writeback persists strategy card and evidence package", async ({ request, baseURL }) => {
-  const cookie = await loginAsOps(baseURL!, request);
+  const cookie = await loginAsAdmin(baseURL!, request);
   await ensurePersona(baseURL!, request, cookie);
 
   const { articleId } = await createArticleForTest(baseURL!, request, cookie, {
@@ -1670,7 +1671,7 @@ test("research workspace writeback persists strategy card and evidence package",
 });
 
 test("research apply endpoints reject empty writeback payloads", async ({ request, baseURL }) => {
-  const cookie = await loginAsOps(baseURL!, request);
+  const cookie = await loginAsAdmin(baseURL!, request);
   await ensurePersona(baseURL!, request, cookie);
 
   const { articleId } = await createArticleForTest(baseURL!, request, cookie, {
@@ -1695,7 +1696,7 @@ test("research apply endpoints reject empty writeback payloads", async ({ reques
 });
 
 test("research apply endpoints stay idempotent across repeated writes", async ({ request, baseURL }) => {
-  const cookie = await loginAsOps(baseURL!, request);
+  const cookie = await loginAsAdmin(baseURL!, request);
   await ensurePersona(baseURL!, request, cookie);
 
   const { articleId } = await createArticleForTest(baseURL!, request, cookie, {
@@ -1842,7 +1843,7 @@ test("research apply endpoints stay idempotent across repeated writes", async ({
 });
 
 test("research brief persistence syncs first-class research cards endpoint", async ({ request, baseURL }) => {
-  const cookie = await loginAsOps(baseURL!, request);
+  const cookie = await loginAsAdmin(baseURL!, request);
   await ensurePersona(baseURL!, request, cookie);
 
   const { articleId } = await createArticleForTest(baseURL!, request, cookie, {
@@ -1975,7 +1976,7 @@ test("research brief persistence syncs first-class research cards endpoint", asy
 });
 
 test("outline planning emits research backbone anchors from research brief", async ({ request, baseURL }) => {
-  const cookie = await loginAsOps(baseURL!, request);
+  const cookie = await loginAsAdmin(baseURL!, request);
   await ensurePersona(baseURL!, request, cookie);
 
   const { articleId } = await createArticleForTest(baseURL!, request, cookie, {
@@ -2039,7 +2040,7 @@ test("outline planning emits research backbone anchors from research brief", asy
 });
 
 test("deep writing execution card exposes research focus and lens from research brief", async ({ request, baseURL }) => {
-  const cookie = await loginAsOps(baseURL!, request);
+  const cookie = await loginAsAdmin(baseURL!, request);
   await ensurePersona(baseURL!, request, cookie);
 
   const { articleId } = await createArticleForTest(baseURL!, request, cookie, {
@@ -2116,7 +2117,7 @@ test("deep writing execution card exposes research focus and lens from research 
 });
 
 test("deep writing prioritizes persisted strategy research fields over research brief defaults", async ({ request, baseURL }) => {
-  const cookie = await loginAsOps(baseURL!, request);
+  const cookie = await loginAsAdmin(baseURL!, request);
   await ensurePersona(baseURL!, request, cookie);
 
   const { articleId } = await createArticleForTest(baseURL!, request, cookie, {
@@ -2209,8 +2210,8 @@ test("deep writing prioritizes persisted strategy research fields over research 
 });
 
 test("deep writing applies bound writing style profile signals into state kernel", async ({ request, baseURL }) => {
-  const opsCookie = await loginAsOps(baseURL!, request);
-  const user = await createE2EUser(baseURL!, request, opsCookie, {
+  const adminCookie = await loginAsAdmin(baseURL!, request);
+  const user = await createE2EUser(baseURL!, request, adminCookie, {
     planCode: "ultra",
   });
   const cookie = await loginWithPassword(baseURL!, request, {
@@ -2294,7 +2295,7 @@ test("deep writing applies bound writing style profile signals into state kernel
 });
 
 test("fact check absorbs research support review from research brief", async ({ request, baseURL }) => {
-  const cookie = await loginAsOps(baseURL!, request);
+  const cookie = await loginAsAdmin(baseURL!, request);
   await ensurePersona(baseURL!, request, cookie);
 
   const { articleId } = await createArticleForTest(baseURL!, request, cookie, {
@@ -2402,7 +2403,7 @@ test("fact check absorbs research support review from research brief", async ({ 
 });
 
 test("generate route prioritizes research brief anchors when composing正文", async ({ request, baseURL }) => {
-  const cookie = await loginAsOps(baseURL!, request);
+  const cookie = await loginAsAdmin(baseURL!, request);
   await ensurePersona(baseURL!, request, cookie);
 
   const { articleId } = await createArticleForTest(baseURL!, request, cookie, {
@@ -2470,7 +2471,7 @@ test("generate route prioritizes research brief anchors when composing正文", a
 });
 
 test("generate routes block正文 generation when research source coverage is still blocked", async ({ request, baseURL }) => {
-  const cookie = await loginAsOps(baseURL!, request);
+  const cookie = await loginAsAdmin(baseURL!, request);
   await ensurePersona(baseURL!, request, cookie);
 
   const { articleId } = await createArticleForTest(baseURL!, request, cookie, {
@@ -2538,7 +2539,7 @@ test("generate routes block正文 generation when research source coverage is st
 });
 
 test("publish guard warns on one-sided evidence and clears after counter evidence is saved", async ({ request, baseURL }) => {
-  const cookie = await loginAsOps(baseURL!, request);
+  const cookie = await loginAsAdmin(baseURL!, request);
   await ensurePersona(baseURL!, request, cookie);
 
   const { articleId } = await createPublishReadyArticle(baseURL!, request, cookie, {
@@ -2638,7 +2639,7 @@ test("publish guard warns on one-sided evidence and clears after counter evidenc
 });
 
 test("research evidence apply endpoint can clear counter evidence guard warning", async ({ request, baseURL }) => {
-  const cookie = await loginAsOps(baseURL!, request);
+  const cookie = await loginAsAdmin(baseURL!, request);
   await ensurePersona(baseURL!, request, cookie);
 
   const { articleId } = await createPublishReadyArticle(baseURL!, request, cookie, {
@@ -2742,7 +2743,7 @@ test("research evidence apply endpoint can clear counter evidence guard warning"
 });
 
 test("publish guard style consistency layer reacts to prose breathing and callback fixes", async ({ request, baseURL }) => {
-  const cookie = await loginAsOps(baseURL!, request);
+  const cookie = await loginAsAdmin(baseURL!, request);
   await ensurePersona(baseURL!, request, cookie);
 
   const { articleId, selectedTitle } = await createPublishReadyArticle(baseURL!, request, cookie, {
@@ -2821,7 +2822,7 @@ test("publish guard style consistency layer reacts to prose breathing and callba
 });
 
 test("publish guard humanity layer and human signal check react to saved human only signals", async ({ request, baseURL }) => {
-  const cookie = await loginAsOps(baseURL!, request);
+  const cookie = await loginAsAdmin(baseURL!, request);
   const { articleId } = await createDeepWritingReadyArticle(baseURL!, request, cookie, {
     title: "E2E 活人感守卫",
   });
@@ -2893,7 +2894,7 @@ test("publish guard humanity layer and human signal check react to saved human o
 });
 
 test("publish guard aggregates research hollow risk and clears after insight and counter evidence are added", async ({ request, baseURL }) => {
-  const cookie = await loginAsOps(baseURL!, request);
+  const cookie = await loginAsAdmin(baseURL!, request);
   await ensurePersona(baseURL!, request, cookie);
 
   const { articleId } = await createPublishReadyArticle(baseURL!, request, cookie, {
@@ -3049,7 +3050,7 @@ test("publish guard aggregates research hollow risk and clears after insight and
 });
 
 test("writer workflow can apply fact check and prose polish artifacts back to article draft", async ({ request, baseURL }) => {
-  const cookie = await loginAsOps(baseURL!, request);
+  const cookie = await loginAsAdmin(baseURL!, request);
   await ensurePersona(baseURL!, request, cookie);
 
   const { articleId } = await createArticleForTest(baseURL!, request, cookie, {
@@ -3228,7 +3229,7 @@ test("writer workflow can apply fact check and prose polish artifacts back to ar
 });
 
 test("research brief apply prefers persisted strategy research fields", async ({ request, baseURL }) => {
-  const cookie = await loginAsOps(baseURL!, request);
+  const cookie = await loginAsAdmin(baseURL!, request);
   await ensurePersona(baseURL!, request, cookie);
 
   const { articleId } = await createArticleForTest(baseURL!, request, cookie, {
@@ -3306,7 +3307,7 @@ test("research brief apply prefers persisted strategy research fields", async ({
 });
 
 test("settings page exposes workspace asset center summary", async ({ request, baseURL }) => {
-  const cookie = await loginAsOps(baseURL!, request);
+  const cookie = await loginAsAdmin(baseURL!, request);
   await ensurePersona(baseURL!, request, cookie);
 
   const response = await request.get(`${baseURL}/settings`, {
@@ -3323,7 +3324,7 @@ test("settings page exposes workspace asset center summary", async ({ request, b
 });
 
 test("workspace asset pages expose knowledge cards and image assets", async ({ request, baseURL }) => {
-  const cookie = await loginAsOps(baseURL!, request);
+  const cookie = await loginAsAdmin(baseURL!, request);
   await ensurePersona(baseURL!, request, cookie);
   await ensureMockImageEngine(baseURL!, request, cookie);
 
@@ -3350,14 +3351,14 @@ test("workspace asset pages expose knowledge cards and image assets", async ({ r
   expect(JSON.stringify(listedKnowledgeCards)).not.toContain(retiredWorkspaceScopeKey);
   expect(JSON.stringify(listedKnowledgeCards)).not.toContain(retiredWorkspaceScopeColumn);
 
-  const opsKnowledgeCards = await request.get(`${baseURL}/api/ops/knowledge/cards`, {
+  const adminKnowledgeCards = await request.get(`${baseURL}/api/admin/knowledge/cards`, {
     headers: { Cookie: cookie },
   });
-  expect(opsKnowledgeCards.ok()).toBeTruthy();
-  const opsKnowledgeCardsJson = await opsKnowledgeCards.json();
-  expect(Array.isArray(opsKnowledgeCardsJson.data)).toBeTruthy();
-  expect(JSON.stringify(opsKnowledgeCardsJson.data)).not.toContain(retiredWorkspaceScopeKey);
-  expect(JSON.stringify(opsKnowledgeCardsJson.data)).not.toContain(retiredWorkspaceScopeColumn);
+  expect(adminKnowledgeCards.ok()).toBeTruthy();
+  const adminKnowledgeCardsJson = await adminKnowledgeCards.json();
+  expect(Array.isArray(adminKnowledgeCardsJson.data)).toBeTruthy();
+  expect(JSON.stringify(adminKnowledgeCardsJson.data)).not.toContain(retiredWorkspaceScopeKey);
+  expect(JSON.stringify(adminKnowledgeCardsJson.data)).not.toContain(retiredWorkspaceScopeColumn);
 
   const { selectedTitle } = await createPublishReadyArticle(baseURL!, request, cookie, {
     title: "E2E 图片资产页稿件",
@@ -3379,7 +3380,7 @@ test("workspace asset pages expose knowledge cards and image assets", async ({ r
 });
 
 test("settings page exposes personal asset and connection entries", async ({ request, baseURL }) => {
-  const cookie = await loginAsOps(baseURL!, request);
+  const cookie = await loginAsAdmin(baseURL!, request);
   await ensurePersona(baseURL!, request, cookie);
   const connection = await ensureMockWechatConnection(baseURL!, request, cookie);
 
@@ -3458,11 +3459,11 @@ test("service scheduler topic sync route supports compensation retry windows", a
   expect(String(json0645.data.syncWindowStart)).toContain("T06:45:00+08:00");
 });
 
-test("ops topic source sync records failures and supports retry window", async ({ request, baseURL }) => {
-  const cookie = await loginAsOps(baseURL!, request);
+test("admin topic source sync records failures and supports retry window", async ({ request, baseURL }) => {
+  const cookie = await loginAsAdmin(baseURL!, request);
   const sourceName = `E2E 失败信源 ${Date.now()}`;
 
-  const created = await request.post(`${baseURL}/api/ops/topic-sources`, {
+  const created = await request.post(`${baseURL}/api/admin/topic-sources`, {
     headers: { Cookie: cookie },
     data: {
       name: sourceName,
@@ -3473,7 +3474,7 @@ test("ops topic source sync records failures and supports retry window", async (
   });
   expect(created.ok()).toBeTruthy();
 
-  const listed = await request.get(`${baseURL}/api/ops/topic-sources`, {
+  const listed = await request.get(`${baseURL}/api/admin/topic-sources`, {
     headers: { Cookie: cookie },
   });
   expect(listed.ok()).toBeTruthy();
@@ -3481,7 +3482,7 @@ test("ops topic source sync records failures and supports retry window", async (
   const source = (Array.isArray(listedJson.data) ? listedJson.data : []).find((item: { name?: string }) => item.name === sourceName);
   expect(source).toBeTruthy();
 
-  const synced = await request.post(`${baseURL}/api/ops/topic-sources/${source.id}/sync`, {
+  const synced = await request.post(`${baseURL}/api/admin/topic-sources/${source.id}/sync`, {
     headers: { Cookie: cookie },
     data: {
       limitPerSource: 1,
@@ -3493,7 +3494,7 @@ test("ops topic source sync records failures and supports retry window", async (
   expect(Number(syncedJson.data.failedSourceCount || 0)).toBe(1);
   expect(Number(syncedJson.data.runId || 0)).toBeGreaterThan(0);
 
-  const listedAfterFailure = await request.get(`${baseURL}/api/ops/topic-sources`, {
+  const listedAfterFailure = await request.get(`${baseURL}/api/admin/topic-sources`, {
     headers: { Cookie: cookie },
   });
   expect(listedAfterFailure.ok()).toBeTruthy();
@@ -3510,7 +3511,7 @@ test("ops topic source sync records failures and supports retry window", async (
   expect(String(failedSource.degradedReason || "")).not.toBe("");
   expect(failedSource.nextRetryAt).toBeTruthy();
 
-  const retried = await request.post(`${baseURL}/api/ops/topic-sync/${syncedJson.data.runId}/retry`, {
+  const retried = await request.post(`${baseURL}/api/admin/topic-sync/${syncedJson.data.runId}/retry`, {
     headers: { Cookie: cookie },
     data: {
       limitPerSource: 1,
@@ -3522,10 +3523,10 @@ test("ops topic source sync records failures and supports retry window", async (
   expect(Number(retriedJson.data.failedSourceCount || 0)).toBeGreaterThanOrEqual(1);
 });
 
-test("ops seeded topic sources cover first-wave source types", async ({ request, baseURL }) => {
-  const cookie = await loginAsOps(baseURL!, request);
+test("admin seeded topic sources cover first-wave source types", async ({ request, baseURL }) => {
+  const cookie = await loginAsAdmin(baseURL!, request);
 
-  const listed = await request.get(`${baseURL}/api/ops/topic-sources`, {
+  const listed = await request.get(`${baseURL}/api/admin/topic-sources`, {
     headers: { Cookie: cookie },
   });
   expect(listed.ok()).toBeTruthy();
@@ -3547,10 +3548,10 @@ test("ops seeded topic sources cover first-wave source types", async ({ request,
   expect(sourceTypes.has("news")).toBeTruthy();
 });
 
-test("ops object storage presets can be saved and tested", async ({ request, baseURL }) => {
-  const cookie = await loginAsOps(baseURL!, request);
+test("admin object storage presets can be saved and tested", async ({ request, baseURL }) => {
+  const cookie = await loginAsAdmin(baseURL!, request);
 
-  const saved = await request.put(`${baseURL}/api/ops/object-storage`, {
+  const saved = await request.put(`${baseURL}/api/admin/object-storage`, {
     headers: { Cookie: cookie },
     data: {
       providerName: "s3-compatible",
@@ -3571,7 +3572,7 @@ test("ops object storage presets can be saved and tested", async ({ request, bas
   expect(String(savedJson.data.providerName || "")).toBe("s3-compatible");
   expect(String(savedJson.data.effectiveProvider || "")).toBe("local");
 
-  const loaded = await request.get(`${baseURL}/api/ops/object-storage`, {
+  const loaded = await request.get(`${baseURL}/api/admin/object-storage`, {
     headers: { Cookie: cookie },
   });
   expect(loaded.ok()).toBeTruthy();
@@ -3579,7 +3580,7 @@ test("ops object storage presets can be saved and tested", async ({ request, bas
   expect(String(loadedJson.data.providerPreset || "")).toBe("cloudflare-r2");
   expect(String(loadedJson.data.region || "")).toBe("auto");
 
-  const savedAws = await request.put(`${baseURL}/api/ops/object-storage`, {
+  const savedAws = await request.put(`${baseURL}/api/admin/object-storage`, {
     headers: { Cookie: cookie },
     data: {
       providerName: "s3-compatible",
@@ -3599,7 +3600,7 @@ test("ops object storage presets can be saved and tested", async ({ request, bas
   expect(String(savedAwsJson.data.providerPreset || "")).toBe("aws-s3");
   expect(String(savedAwsJson.data.region || "")).toBe("us-east-1");
 
-  const loadedAws = await request.get(`${baseURL}/api/ops/object-storage`, {
+  const loadedAws = await request.get(`${baseURL}/api/admin/object-storage`, {
     headers: { Cookie: cookie },
   });
   expect(loadedAws.ok()).toBeTruthy();
@@ -3607,7 +3608,7 @@ test("ops object storage presets can be saved and tested", async ({ request, bas
   expect(String(loadedAwsJson.data.providerPreset || "")).toBe("aws-s3");
   expect(String(loadedAwsJson.data.region || "")).toBe("us-east-1");
 
-  const tested = await request.post(`${baseURL}/api/ops/object-storage/test`, {
+  const tested = await request.post(`${baseURL}/api/admin/object-storage/test`, {
     headers: { Cookie: cookie },
     data: {
       providerName: "local",
@@ -3621,7 +3622,7 @@ test("ops object storage presets can be saved and tested", async ({ request, bas
 });
 
 test("cover image workflow returns two candidates and can select one into article assets", async ({ request, baseURL }) => {
-  const cookie = await loginAsOps(baseURL!, request);
+  const cookie = await loginAsAdmin(baseURL!, request);
   await ensurePersona(baseURL!, request, cookie);
   await ensureMockImageEngine(baseURL!, request, cookie);
 
@@ -3662,7 +3663,7 @@ test("cover image workflow returns two candidates and can select one into articl
 });
 
 test("settings page exposes authoring assets inside the main product flow", async ({ request, baseURL }) => {
-  const cookie = await loginAsOps(baseURL!, request);
+  const cookie = await loginAsAdmin(baseURL!, request);
   await ensurePersona(baseURL!, request, cookie);
 
   const page = await request.get(`${baseURL}/settings`, {
@@ -3689,7 +3690,7 @@ test("pricing page only exposes free pro ultra plans without retired plan residu
 });
 
 test("topic source managers no longer expose X as a configurable source option", async ({ request, baseURL }) => {
-  const cookie = await loginAsOps(baseURL!, request);
+  const cookie = await loginAsAdmin(baseURL!, request);
   await ensurePersona(baseURL!, request, cookie);
 
   const radarPage = await request.get(`${baseURL}/dashboard`, {
@@ -3699,16 +3700,16 @@ test("topic source managers no longer expose X as a configurable source option",
   const radarHtml = await radarPage.text();
   expect(radarHtml).not.toContain('<option value="x">X</option>');
 
-  const opsPage = await request.get(`${baseURL}/ops`, {
+  const adminPage = await request.get(`${baseURL}/admin`, {
     headers: { Cookie: cookie },
   });
-  expect(opsPage.ok()).toBeTruthy();
-  const opsHtml = await opsPage.text();
-  expect(opsHtml).not.toContain('<option value="x">X</option>');
+  expect(adminPage.ok()).toBeTruthy();
+  const adminHtml = await adminPage.text();
+  expect(adminHtml).not.toContain('<option value="x">X</option>');
 });
 
 test("wechat publish route can publish to mock draft box when publish guard passes", async ({ request, baseURL }) => {
-  const cookie = await loginAsOps(baseURL!, request);
+  const cookie = await loginAsAdmin(baseURL!, request);
   await ensurePersona(baseURL!, request, cookie);
   await ensureMockImageEngine(baseURL!, request, cookie);
   const connection = await ensureMockWechatConnection(baseURL!, request, cookie);
@@ -3747,7 +3748,7 @@ test("wechat publish route can publish to mock draft box when publish guard pass
 });
 
 test("articles scorecard, outcomes and playbooks expose result model data", async ({ request, baseURL }) => {
-  const cookie = await loginAsOps(baseURL!, request);
+  const cookie = await loginAsAdmin(baseURL!, request);
   await ensurePersona(baseURL!, request, cookie);
   const { articleId } = await createPublishReadyArticle(baseURL!, request, cookie, {
     title: "E2E 结果模型稿件",
@@ -3814,9 +3815,9 @@ test("articles scorecard, outcomes and playbooks expose result model data", asyn
 });
 
 test("wechat publish can resume after adding missing connection", async ({ request, baseURL }) => {
-  const opsCookie = await loginAsOps(baseURL!, request);
-  await ensureMockImageEngine(baseURL!, request, opsCookie);
-  const user = await createE2EUser(baseURL!, request, opsCookie, {
+  const adminCookie = await loginAsAdmin(baseURL!, request);
+  await ensureMockImageEngine(baseURL!, request, adminCookie);
+  const user = await createE2EUser(baseURL!, request, adminCookie, {
     planCode: "ultra",
   });
   const cookie = await loginWithPassword(baseURL!, request, {
@@ -3880,7 +3881,7 @@ test("wechat publish can resume after adding missing connection", async ({ reque
 });
 
 test("publish intent can be persisted and cleared through workflow state", async ({ request, baseURL }) => {
-  const cookie = await loginAsOps(baseURL!, request);
+  const cookie = await loginAsAdmin(baseURL!, request);
   const { articleId } = await createArticleForTest(baseURL!, request, cookie, {
     title: "E2E 待恢复发布意图",
   });
@@ -3915,7 +3916,7 @@ test("publish intent can be persisted and cleared through workflow state", async
 });
 
 test("wechat publish without connection persists missing-connection intent", async ({ request, baseURL }) => {
-  const cookie = await loginAsOps(baseURL!, request);
+  const cookie = await loginAsAdmin(baseURL!, request);
   await ensurePersona(baseURL!, request, cookie);
 
   const { articleId } = await createArticleForTest(baseURL!, request, cookie, {

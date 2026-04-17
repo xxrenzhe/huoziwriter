@@ -4,33 +4,38 @@ import { getSeriesById } from "./series";
 import { getWritingStyleProfileById } from "./writing-style-profiles";
 
 export async function getArticleAuthoringStyleContext(userId: number, articleId?: number) {
-  const fallbackPersona = await assertPersonaReady(userId);
-  let persona = fallbackPersona;
+  const defaultPersona = await assertPersonaReady(userId);
+  let persona = defaultPersona;
   if (articleId) {
     const article = await getArticleById(articleId, userId);
-    if (article?.series_id) {
-      const series = await getSeriesById(userId, article.series_id);
-      if (series) {
-        persona = {
-          id: series.personaId,
-          userId,
-          name: series.personaName,
-          summary: series.personaSummary,
-          identityTags: series.identityTags,
-          writingStyleTags: series.writingStyleTags,
-          domainKeywords: series.domainKeywords,
-          argumentPreferences: series.argumentPreferences,
-          toneConstraints: series.toneConstraints,
-          audienceHints: series.audienceHints,
-          sourceMode: series.sourceMode,
-          boundWritingStyleProfileId: series.boundWritingStyleProfileId,
-          boundWritingStyleProfileName: series.boundWritingStyleProfileName,
-          isDefault: false,
-          createdAt: series.createdAt,
-          updatedAt: series.updatedAt,
-        };
-      }
+    if (!article) {
+      throw new Error("稿件不存在");
     }
+    if (!article.series_id) {
+      throw new Error("当前稿件未绑定系列，无法解析写作身份");
+    }
+    const series = await getSeriesById(userId, article.series_id);
+    if (!series) {
+      throw new Error("稿件绑定系列不存在");
+    }
+    persona = {
+      id: series.personaId,
+      userId,
+      name: series.personaName,
+      summary: series.personaSummary,
+      identityTags: series.identityTags,
+      writingStyleTags: series.writingStyleTags,
+      domainKeywords: series.domainKeywords,
+      argumentPreferences: series.argumentPreferences,
+      toneConstraints: series.toneConstraints,
+      audienceHints: series.audienceHints,
+      sourceMode: series.sourceMode,
+      boundWritingStyleProfileId: series.boundWritingStyleProfileId,
+      boundWritingStyleProfileName: series.boundWritingStyleProfileName,
+      isDefault: false,
+      createdAt: series.createdAt,
+      updatedAt: series.updatedAt,
+    };
   }
   const writingStyleProfile = persona?.boundWritingStyleProfileId
     ? await getWritingStyleProfileById(userId, persona.boundWritingStyleProfileId)

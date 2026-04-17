@@ -41,6 +41,7 @@ COPY --from=builder /app/apps/worker-py ./apps/worker-py
 COPY --from=builder /app/docker ./docker
 COPY --from=builder /app/migrations ./migrations
 COPY --from=builder /app/pg_migrations ./pg_migrations
+COPY --from=builder /app/packages/core/src ./packages/core/src
 COPY --from=builder /app/.env.example ./.env.example
 
 RUN pip3 install --break-system-packages --no-cache-dir -r /app/apps/worker-py/requirements.txt

@@ -5,7 +5,7 @@ import { writerNav } from "@/config/navigation";
 import { isPublishedArticleStatus } from "@/lib/article-status-label";
 import { requireWriterSession } from "@/lib/page-auth";
 import { getUserPlanContext } from "@/lib/plan-access";
-import { getPersonaCatalog, getPersonaLimitForUser, getPersonas } from "@/lib/personas";
+import { getPersonaCatalog, getPersonas } from "@/lib/personas";
 import { getDailyGenerationUsage } from "@/lib/usage";
 import { getArticlesByUser, getFragmentsByUser } from "@/lib/repositories";
 import { getWritingStyleProfiles } from "@/lib/writing-style-profiles";
@@ -13,16 +13,17 @@ import { WorkspaceShell } from "@/components/site-shells";
 
 export default async function WorkspaceLayout({ children }: { children: ReactNode }) {
   const { session } = await requireWriterSession();
-  const [{ plan }, dailyGenerationUsage, articles, fragments, personas, personaLimit, personaCatalog, writingStyleProfiles] = await Promise.all([
+  const [planContext, dailyGenerationUsage, articles, fragments, personas, personaCatalog, writingStyleProfiles] = await Promise.all([
     getUserPlanContext(session.userId),
     getDailyGenerationUsage(session.userId),
     getArticlesByUser(session.userId),
     getFragmentsByUser(session.userId),
     getPersonas(session.userId),
-    getPersonaLimitForUser(session.userId),
     getPersonaCatalog(),
     getWritingStyleProfiles(session.userId),
   ]);
+  const { plan, planSnapshot } = planContext;
+  const personaLimit = planSnapshot.personaLimit;
   const draftCount = articles.filter((article) => !isPublishedArticleStatus(article.status)).length;
   const publishedCount = articles.filter((article) => isPublishedArticleStatus(article.status)).length;
   const fragmentCount = fragments.length;
@@ -30,7 +31,6 @@ export default async function WorkspaceLayout({ children }: { children: ReactNod
   const defaultPersona = personas.find((persona) => persona.isDefault) ?? personas[0] ?? null;
   const personaReady = personas.length > 0;
   const showFirstSuccessGuide = personas.length > 0 && publishedCount === 0;
-
   const statusHeadline =
     latestArticle
       ? `当前最需要推进的是《${latestArticle.title}》。`
@@ -47,7 +47,7 @@ export default async function WorkspaceLayout({ children }: { children: ReactNod
         items={writerNav}
         currentPlanName={plan.name}
         currentUsage={dailyGenerationUsage}
-        usageLimit={plan.daily_generation_limit ?? null}
+        usageLimit={planSnapshot.dailyGenerationLimit}
         statusHeadline={statusHeadline}
         statusDetail={statusDetail}
       >
@@ -127,7 +127,7 @@ export default async function WorkspaceLayout({ children }: { children: ReactNod
         initialPersonas={personas}
         maxCount={personaLimit}
         currentPlanName={plan.name}
-        canAnalyzeFromSources={plan.code !== "free"}
+        canAnalyzeFromSources={planSnapshot.canAnalyzePersonaFromSources}
         availableWritingStyles={writingStyleProfiles.map((profile) => ({ id: profile.id, name: profile.name }))}
         tagCatalog={personaCatalog}
         mandatory

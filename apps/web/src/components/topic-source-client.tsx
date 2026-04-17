@@ -44,7 +44,6 @@ export function TopicSourceManagerClient({
   function formatSourceTypeLabel(value: string) {
     if (value === "youtube") return "YouTube";
     if (value === "reddit") return "Reddit";
-    if (value === "x") return "X";
     if (value === "podcast") return "Podcast";
     if (value === "spotify") return "Spotify";
     if (value === "rss") return "RSS";

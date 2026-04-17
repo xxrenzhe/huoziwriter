@@ -194,7 +194,7 @@ export async function upsertGlobalCoverImageEngine(input: {
 
   await appendAuditLog({
     userId: input.operatorUserId,
-    action: "ops.cover_image_engine.update",
+    action: "admin.cover_image_engine.update",
     targetType: "global_ai_engine",
     targetId: COVER_IMAGE_ENGINE_CODE,
     payload: { baseUrl: normalizedBaseUrl, model, isEnabled: input.isEnabled ?? true },

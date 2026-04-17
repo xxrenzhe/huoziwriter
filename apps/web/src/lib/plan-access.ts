@@ -1,8 +1,9 @@
 import { findUserById } from "./auth";
 import { getDatabase } from "./db";
 import { PLAN_LABELS, UserPlanCode } from "./domain";
-import { getActiveTemplates } from "./marketplace";
-import { getCurrentSubscriptionForUser, getImageAssetStorageSummary } from "./repositories";
+import { getActiveTemplates } from "./layout-templates";
+import { getPlanEntitlementDefinition, resolvePlanFeatureSnapshot } from "./plan-entitlements";
+import { getCurrentSubscriptionForUser, getImageAssetStorageSummary, getPlanByCode } from "./repositories";
 import {
   getDailyCoverImageUsage,
   getDailyGenerationUsage,
@@ -11,35 +12,18 @@ import {
   incrementDailyGenerationUsage,
 } from "./usage";
 
-type PlanRecord = {
-  code: UserPlanCode;
-  name: string;
-  price_cny: number | null;
-  daily_generation_limit: number | null;
-  fragment_limit: number | null;
-  languageGuardRuleLimit: number | null;
-  max_wechat_connections: number | null;
-  can_generate_cover_image: number | boolean;
-  can_export_pdf: number | boolean;
-};
-
 export function getCoverImageDailyLimit(planCode: UserPlanCode) {
-  if (planCode === "pro") return 10;
-  if (planCode === "ultra") return 100;
-  return 0;
+  return getPlanEntitlementDefinition(planCode)?.coverImageDailyLimit ?? 0;
 }
 
 export function canUseCoverImageReference(planCode: UserPlanCode) {
-  return planCode === "ultra";
+  return getPlanEntitlementDefinition(planCode)?.canUseCoverImageReference ?? false;
 }
 
-const GB = 1024 * 1024 * 1024;
 const COVER_IMAGE_GENERATION_STORAGE_RESERVE_BYTES = 32 * 1024 * 1024;
 
 export function getImageAssetStorageLimit(planCode: UserPlanCode) {
-  if (planCode === "pro") return 10 * GB;
-  if (planCode === "ultra") return 50 * GB;
-  return 1 * GB;
+  return getPlanEntitlementDefinition(planCode)?.imageAssetStorageLimitBytes ?? 0;
 }
 
 export function getCoverImageGenerationStorageReserveBytes() {
@@ -47,41 +31,43 @@ export function getCoverImageGenerationStorageReserveBytes() {
 }
 
 export function getWritingStyleAnalysisDailyLimit(planCode: UserPlanCode | null) {
-  if (planCode === "free") return 3;
-  if (planCode === "pro") return 20;
-  if (planCode === "ultra") return 100;
-  return 1;
+  return getPlanEntitlementDefinition(planCode)?.writingStyleAnalysisDailyLimit ?? 1;
 }
 
 export function getWritingStyleProfileLimit(planCode: UserPlanCode) {
-  if (planCode === "pro") return 20;
-  if (planCode === "ultra") return 100;
-  return 0;
+  return getPlanEntitlementDefinition(planCode)?.writingStyleProfileLimit ?? 0;
 }
 
 export function getCustomTopicSourceLimit(planCode: UserPlanCode) {
-  if (planCode === "pro") return 5;
-  if (planCode === "ultra") return 20;
-  return 0;
+  return getPlanEntitlementDefinition(planCode)?.customTopicSourceLimit ?? 0;
 }
 
 export function canUseHistoryReferences(planCode: UserPlanCode) {
-  return planCode === "pro" || planCode === "ultra";
+  return getPlanEntitlementDefinition(planCode)?.canUseHistoryReferences ?? false;
 }
 
 export function getTemplateAccessLimit(planCode: UserPlanCode) {
-  if (planCode === "free") return 3;
-  return 99;
+  return getPlanEntitlementDefinition(planCode)?.templateAccessLimit ?? 0;
 }
 
 export function getCustomTemplateLimit(planCode: UserPlanCode) {
-  if (planCode === "pro") return 20;
-  if (planCode === "ultra") return 100;
-  return 0;
+  return getPlanEntitlementDefinition(planCode)?.customTemplateLimit ?? 0;
 }
 
 export function canExtractPrivateTemplate(planCode: UserPlanCode) {
-  return planCode === "pro" || planCode === "ultra";
+  return getPlanEntitlementDefinition(planCode)?.canExtractPrivateTemplate ?? false;
+}
+
+export function canStartTopicSignal(planCode: UserPlanCode) {
+  return getPlanEntitlementDefinition(planCode)?.canStartTopicSignal ?? false;
+}
+
+export function canManageTopicSources(planCode: UserPlanCode) {
+  return getPlanEntitlementDefinition(planCode)?.canManageTopicSources ?? false;
+}
+
+export function canAnalyzePersonaFromSources(planCode: UserPlanCode) {
+  return getPlanEntitlementDefinition(planCode)?.canAnalyzePersonaFromSources ?? false;
 }
 
 export async function getUserPlanContext(userId: number) {
@@ -98,25 +84,28 @@ export async function getUserPlanContext(userId: number) {
         ? (subscription.plan_code as UserPlanCode)
         : "free";
 
-  const db = getDatabase();
-  const plan = await db.queryOne<PlanRecord>(
-    `SELECT code, name, price_cny, daily_generation_limit, fragment_limit,
-            language_guard_rule_limit AS "languageGuardRuleLimit", max_wechat_connections,
-            can_generate_cover_image, can_export_pdf
-     FROM plans WHERE code = ?`,
-    [effectivePlanCode],
-  );
+  const plan = await getPlanByCode(effectivePlanCode);
 
   if (!plan) {
     throw new Error("套餐不存在");
   }
 
-  return { user, plan, effectivePlanCode, subscriptionStatus: subscription?.status ?? null };
+  const typedPlan = { ...plan, code: effectivePlanCode };
+  const planSnapshot = resolvePlanFeatureSnapshot(typedPlan);
+
+  return {
+    user,
+    plan: typedPlan,
+    planSnapshot,
+    effectivePlanCode,
+    entitlements: planSnapshot.entitlements,
+    subscriptionStatus: subscription?.status ?? null,
+  };
 }
 
 export async function assertLanguageGuardRuleQuota(userId: number) {
-  const { plan } = await getUserPlanContext(userId);
-  if (plan.languageGuardRuleLimit == null) {
+  const { plan, planSnapshot } = await getUserPlanContext(userId);
+  if (planSnapshot.languageGuardRuleLimit == null) {
     return;
   }
 
@@ -126,35 +115,35 @@ export async function assertLanguageGuardRuleQuota(userId: number) {
     db.queryOne<{ count: number }>("SELECT COUNT(*) as count FROM language_guard_rules WHERE user_id = ?", [userId]),
   ]);
   const total = (tokenRuleCount?.count ?? 0) + (guardRuleCount?.count ?? 0);
-  if (total >= plan.languageGuardRuleLimit) {
-    throw new Error(`${PLAN_LABELS[plan.code]}套餐最多只能配置 ${plan.languageGuardRuleLimit} 个自定义语言守卫规则`);
+  if (total >= planSnapshot.languageGuardRuleLimit) {
+    throw new Error(`${PLAN_LABELS[plan.code]}套餐最多只能配置 ${planSnapshot.languageGuardRuleLimit} 个自定义语言守卫规则`);
   }
 }
 
 export async function assertFragmentQuota(userId: number) {
-  const { plan } = await getUserPlanContext(userId);
-  if (plan.fragment_limit == null) {
+  const { plan, planSnapshot } = await getUserPlanContext(userId);
+  if (planSnapshot.fragmentLimit == null) {
     return;
   }
 
   const db = getDatabase();
   const count = await db.queryOne<{ count: number }>("SELECT COUNT(*) as count FROM fragments WHERE user_id = ?", [userId]);
-  if ((count?.count ?? 0) >= plan.fragment_limit) {
-    throw new Error(`${PLAN_LABELS[plan.code]}套餐最多只能保存 ${plan.fragment_limit} 条素材`);
+  if ((count?.count ?? 0) >= planSnapshot.fragmentLimit) {
+    throw new Error(`${PLAN_LABELS[plan.code]}套餐最多只能保存 ${planSnapshot.fragmentLimit} 条素材`);
   }
 }
 
 export async function getSnapshotRetentionDays(userId: number) {
-  const { plan } = await getUserPlanContext(userId);
-  return plan.code === "free" ? 3 : null;
+  const { planSnapshot } = await getUserPlanContext(userId);
+  return planSnapshot.snapshotRetentionDays;
 }
 
 export async function assertWechatConnectionQuota(userId: number) {
-  const { plan } = await getUserPlanContext(userId);
-  if ((plan.max_wechat_connections ?? 0) <= 0) {
+  const { plan, planSnapshot } = await getUserPlanContext(userId);
+  if (!planSnapshot.canPublishToWechat) {
     throw new Error(`${PLAN_LABELS[plan.code]}套餐不支持绑定微信公众号`);
   }
-  if (plan.max_wechat_connections == null) {
+  if (planSnapshot.maxWechatConnections == null) {
     return;
   }
 
@@ -163,42 +152,42 @@ export async function assertWechatConnectionQuota(userId: number) {
     "SELECT COUNT(*) as count FROM wechat_connections WHERE user_id = ? AND status != ?",
     [userId, "disabled"],
   );
-  if ((count?.count ?? 0) >= plan.max_wechat_connections) {
-    throw new Error(`${PLAN_LABELS[plan.code]}套餐最多可绑定 ${plan.max_wechat_connections} 个公众号`);
+  if ((count?.count ?? 0) >= planSnapshot.maxWechatConnections) {
+    throw new Error(`${PLAN_LABELS[plan.code]}套餐最多可绑定 ${planSnapshot.maxWechatConnections} 个公众号`);
   }
 }
 
 export async function assertWechatPublishAllowed(userId: number) {
-  const { plan } = await getUserPlanContext(userId);
-  if ((plan.max_wechat_connections ?? 0) <= 0) {
+  const { plan, planSnapshot } = await getUserPlanContext(userId);
+  if (!planSnapshot.canPublishToWechat) {
     throw new Error(`${PLAN_LABELS[plan.code]}套餐不支持微信草稿箱推送`);
   }
 }
 
 export async function assertPdfExportAllowed(userId: number) {
-  const { plan } = await getUserPlanContext(userId);
-  if (!plan.can_export_pdf) {
+  const { plan, planSnapshot } = await getUserPlanContext(userId);
+  if (!planSnapshot.canExportPdf) {
     throw new Error(`${PLAN_LABELS[plan.code]}套餐暂不支持 PDF 导出`);
   }
 }
 
 export async function assertTopicSignalStartAllowed(userId: number) {
-  const { plan } = await getUserPlanContext(userId);
-  if (plan.code === "free") {
+  const { plan, planSnapshot } = await getUserPlanContext(userId);
+  if (!planSnapshot.canStartTopicSignal) {
     throw new Error(`${PLAN_LABELS[plan.code]}套餐仅可浏览机会，不能一键落笔`);
   }
 }
 
 export async function assertTopicSourceManageAllowed(userId: number) {
-  const { plan } = await getUserPlanContext(userId);
-  if (!["pro", "ultra"].includes(plan.code)) {
+  const { plan, planSnapshot } = await getUserPlanContext(userId);
+  if (!planSnapshot.canManageTopicSources) {
     throw new Error(`${PLAN_LABELS[plan.code]}套餐暂不支持自定义信息源`);
   }
 }
 
 export async function assertTopicSourceQuota(userId: number) {
-  const { plan } = await getUserPlanContext(userId);
-  const limit = getCustomTopicSourceLimit(plan.code);
+  const { plan, planSnapshot } = await getUserPlanContext(userId);
+  const limit = planSnapshot.customTopicSourceLimit;
   if (limit <= 0) {
     throw new Error(`${PLAN_LABELS[plan.code]}套餐暂不支持自定义信息源`);
   }
@@ -214,15 +203,15 @@ export async function assertTopicSourceQuota(userId: number) {
 }
 
 export async function assertTemplateExtractAllowed(userId: number) {
-  const { plan } = await getUserPlanContext(userId);
-  if (!canExtractPrivateTemplate(plan.code)) {
+  const { plan, planSnapshot } = await getUserPlanContext(userId);
+  if (!planSnapshot.canExtractPrivateTemplate) {
     throw new Error(`${PLAN_LABELS[plan.code]}套餐当前仅可浏览官方模板，不支持从 URL 提取模板并沉淀到个人空间。请先升级到 Pro 或更高套餐。`);
   }
 }
 
 export async function assertCustomTemplateQuota(userId: number) {
-  const { plan } = await getUserPlanContext(userId);
-  const limit = getCustomTemplateLimit(plan.code);
+  const { plan, planSnapshot } = await getUserPlanContext(userId);
+  const limit = planSnapshot.customTemplateLimit;
   if (limit <= 0) {
     throw new Error(`${PLAN_LABELS[plan.code]}套餐暂不支持私有模板资产`);
   }
@@ -242,8 +231,8 @@ export async function assertWechatTemplateAllowed(userId: number, templateId: st
     return;
   }
 
-  const { plan } = await getUserPlanContext(userId);
-  const limit = getTemplateAccessLimit(plan.code);
+  const { plan, planSnapshot } = await getUserPlanContext(userId);
+  const limit = planSnapshot.templateAccessLimit;
   const templates = await getActiveTemplates(userId);
   const selectedTemplate = templates.find((template) => template.id === templateId);
   if (selectedTemplate?.ownerUserId === userId) {
@@ -257,43 +246,43 @@ export async function assertWechatTemplateAllowed(userId: number, templateId: st
 }
 
 export async function assertWritingStyleProfileSaveAllowed(userId: number) {
-  const { plan } = await getUserPlanContext(userId);
-  if (getWritingStyleProfileLimit(plan.code) <= 0) {
+  const { plan, planSnapshot } = await getUserPlanContext(userId);
+  if (planSnapshot.writingStyleProfileLimit <= 0) {
     throw new Error(`${PLAN_LABELS[plan.code]}套餐暂不支持保存写作风格资产`);
   }
 }
 
 export async function assertPersonaSourceAnalysisAllowed(userId: number) {
-  const { plan } = await getUserPlanContext(userId);
-  if (!["pro", "ultra"].includes(plan.code)) {
+  const { plan, planSnapshot } = await getUserPlanContext(userId);
+  if (!planSnapshot.canAnalyzePersonaFromSources) {
     throw new Error(`${PLAN_LABELS[plan.code]}套餐暂不支持基于资料分析生成作者人设`);
   }
 }
 
 export async function assertHistoryReferenceAllowed(userId: number) {
-  const { plan } = await getUserPlanContext(userId);
-  if (!canUseHistoryReferences(plan.code)) {
+  const { plan, planSnapshot } = await getUserPlanContext(userId);
+  if (!planSnapshot.canUseHistoryReferences) {
     throw new Error(`${PLAN_LABELS[plan.code]}套餐暂不支持历史文章自然引用`);
   }
 }
 
 export async function assertCoverImageAllowed(userId: number) {
-  const { plan } = await getUserPlanContext(userId);
-  if (!plan.can_generate_cover_image) {
+  const { plan, planSnapshot } = await getUserPlanContext(userId);
+  if (!planSnapshot.canGenerateCoverImage) {
     throw new Error(`${PLAN_LABELS[plan.code]}套餐仅提供文本配图建议，不支持真实封面图生成`);
   }
 }
 
 export async function assertCoverImageReferenceAllowed(userId: number) {
-  const { plan } = await getUserPlanContext(userId);
-  if (!canUseCoverImageReference(plan.code)) {
+  const { plan, planSnapshot } = await getUserPlanContext(userId);
+  if (!planSnapshot.canUseCoverImageReference) {
     throw new Error(`${PLAN_LABELS[plan.code]}套餐暂不支持参考图垫图。升级到藏锋后，才可上传参考图做 Image-to-Image 封面生成。`);
   }
 }
 
 export async function getCoverImageQuotaStatus(userId: number) {
-  const { plan } = await getUserPlanContext(userId);
-  const limit = getCoverImageDailyLimit(plan.code);
+  const { planSnapshot } = await getUserPlanContext(userId);
+  const limit = planSnapshot.coverImageDailyLimit;
   const used = await getDailyCoverImageUsage(userId);
   return {
     used,
@@ -303,9 +292,9 @@ export async function getCoverImageQuotaStatus(userId: number) {
 }
 
 export async function getImageAssetStorageQuotaStatus(userId: number) {
-  const { plan } = await getUserPlanContext(userId);
+  const { planSnapshot } = await getUserPlanContext(userId);
   const storage = await getImageAssetStorageSummary(userId);
-  const limitBytes = getImageAssetStorageLimit(plan.code);
+  const limitBytes = planSnapshot.imageAssetStorageLimitBytes ?? 0;
   return {
     usedBytes: storage.usedBytes,
     limitBytes,
@@ -318,8 +307,8 @@ export async function getImageAssetStorageQuotaStatus(userId: number) {
 }
 
 export async function assertCoverImageQuota(userId: number) {
-  const { plan } = await getUserPlanContext(userId);
-  const limit = getCoverImageDailyLimit(plan.code);
+  const { plan, planSnapshot } = await getUserPlanContext(userId);
+  const limit = planSnapshot.coverImageDailyLimit;
   if (limit <= 0) {
     return;
   }
@@ -349,8 +338,8 @@ export async function assertImageAssetStorageAvailable(
 }
 
 export async function consumeCoverImageQuota(userId: number) {
-  const { plan } = await getUserPlanContext(userId);
-  const limit = getCoverImageDailyLimit(plan.code);
+  const { plan, planSnapshot } = await getUserPlanContext(userId);
+  const limit = planSnapshot.coverImageDailyLimit;
   if (limit <= 0) {
     return {
       used: await getDailyCoverImageUsage(userId),
@@ -373,23 +362,23 @@ export async function consumeCoverImageQuota(userId: number) {
 }
 
 export async function consumeDailyGenerationQuota(userId: number) {
-  const { plan } = await getUserPlanContext(userId);
-  if (plan.daily_generation_limit == null) {
+  const { plan, planSnapshot } = await getUserPlanContext(userId);
+  if (planSnapshot.dailyGenerationLimit == null) {
     await incrementDailyGenerationUsage(userId);
     return;
   }
 
   const current = await getDailyGenerationUsage(userId);
-  if (current >= plan.daily_generation_limit) {
-    throw new Error(`${PLAN_LABELS[plan.code]}套餐今日生成次数已达上限 ${plan.daily_generation_limit} 次`);
+  if (current >= planSnapshot.dailyGenerationLimit) {
+    throw new Error(`${PLAN_LABELS[plan.code]}套餐今日生成次数已达上限 ${planSnapshot.dailyGenerationLimit} 次`);
   }
 
   await incrementDailyGenerationUsage(userId);
 }
 
 export async function getWritingStyleAnalysisQuotaStatus(userId: number) {
-  const { plan } = await getUserPlanContext(userId);
-  const limit = getWritingStyleAnalysisDailyLimit(plan.code);
+  const { planSnapshot } = await getUserPlanContext(userId);
+  const limit = planSnapshot.writingStyleAnalysisDailyLimit;
   const used = await getDailyWritingStyleAnalysisUsage(userId);
   return {
     used,

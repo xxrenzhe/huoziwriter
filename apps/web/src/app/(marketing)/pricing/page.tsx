@@ -1,63 +1,37 @@
 import Link from "next/link";
 import { PricingMatrix } from "@/components/marketing-views";
-import {
-  canUseCoverImageReference,
-  getCoverImageDailyLimit,
-  getCustomTemplateLimit,
-  getCustomTopicSourceLimit,
-  getWritingStyleAnalysisDailyLimit,
-  getTemplateAccessLimit,
-  getWritingStyleProfileLimit,
-} from "@/lib/plan-access";
-import { getPersonaLimit } from "@/lib/personas";
-import { getPlans } from "@/lib/repositories";
-import { getTopicSignalVisibleLimit } from "@/lib/topic-recommendations";
+import { isStandardPlanCode } from "@/lib/plan-entitlements";
+import type { ResolvedPlanFeatureSnapshot } from "@/lib/plan-entitlements";
+import { getPlanMarketingTagline, getPlanSortOrder } from "@/lib/plan-labels";
+import { getResolvedPlans } from "@/lib/repositories";
 
-type PublicPlanCode = "free" | "pro" | "ultra";
-
-function planFeatures(plan: {
-  code: PublicPlanCode;
-  daily_generation_limit: number | null;
-  fragment_limit: number | null;
-  languageGuardRuleLimit: number | null;
-  max_wechat_connections: number | null;
-  can_generate_cover_image: number | boolean;
-  can_export_pdf: number | boolean;
-}) {
-  const topicVisibleLimit = getTopicSignalVisibleLimit(plan.code);
-  const customTopicSourceLimit = getCustomTopicSourceLimit(plan.code);
-  const customTemplateLimit = getCustomTemplateLimit(plan.code);
-  const writingStyleProfileLimit = getWritingStyleProfileLimit(plan.code);
-  const templateAccessLimit = getTemplateAccessLimit(plan.code);
-  const writingStyleAnalysisDailyLimit = getWritingStyleAnalysisDailyLimit(plan.code);
-  const personaLimit = getPersonaLimit(plan.code);
+function planFeatures(snapshot: ResolvedPlanFeatureSnapshot) {
   const features = [
-    `${personaLimit} 个作者人设`,
-    `情绪罗盘 Top${topicVisibleLimit} 可见`,
-    customTopicSourceLimit > 0 ? `自定义信源 ${customTopicSourceLimit} 个` : "只读系统默认信源",
-    writingStyleProfileLimit > 0 ? `写作风格资产 ${writingStyleProfileLimit} 个` : "文风分析可用，不支持保存资产",
-    `排版模板最多 ${templateAccessLimit} 个`,
-    customTemplateLimit > 0 ? `私有模板资产 ${customTemplateLimit} 个` : "不支持私有模板提取",
-    `文风提取 ${writingStyleAnalysisDailyLimit} 次/日`,
-    plan.fragment_limit == null ? "无限素材容量" : `${plan.fragment_limit} 条素材上限`,
-    plan.daily_generation_limit == null ? "生成次数不限" : `每日 ${plan.daily_generation_limit} 次生成`,
-    plan.max_wechat_connections == null
+    `${snapshot.personaLimit} 个作者人设`,
+    `情绪罗盘 Top${snapshot.topicSignalVisibleLimit} 可见`,
+    snapshot.customTopicSourceLimit > 0 ? `自定义信源 ${snapshot.customTopicSourceLimit} 个` : "只读系统默认信源",
+    snapshot.writingStyleProfileLimit > 0 ? `写作风格资产 ${snapshot.writingStyleProfileLimit} 个` : "文风分析可用，不支持保存资产",
+    `排版模板最多 ${snapshot.templateAccessLimit} 个`,
+    snapshot.customTemplateLimit > 0 ? `私有模板资产 ${snapshot.customTemplateLimit} 个` : "不支持私有模板提取",
+    `文风提取 ${snapshot.writingStyleAnalysisDailyLimit} 次/日`,
+    snapshot.fragmentLimit == null ? "无限素材容量" : `${snapshot.fragmentLimit} 条素材上限`,
+    snapshot.dailyGenerationLimit == null ? "生成次数不限" : `每日 ${snapshot.dailyGenerationLimit} 次生成`,
+    snapshot.maxWechatConnections == null
       ? "公众号连接不限"
-      : plan.max_wechat_connections === 0
+      : snapshot.maxWechatConnections === 0
         ? "不支持公众号推送"
-        : `${plan.max_wechat_connections} 个公众号连接`,
+        : `${snapshot.maxWechatConnections} 个公众号连接`,
   ];
 
-  if (plan.can_generate_cover_image) {
-    const coverImageLimit = getCoverImageDailyLimit(plan.code as "free" | "pro" | "ultra");
-    features.push(coverImageLimit > 0 ? `封面图 ${coverImageLimit} 次/天` : "支持真实封面图生成");
-    if (canUseCoverImageReference(plan.code as "free" | "pro" | "ultra")) {
+  if (snapshot.canGenerateCoverImage) {
+    features.push(snapshot.coverImageDailyLimit > 0 ? `封面图 ${snapshot.coverImageDailyLimit} 次/天` : "支持真实封面图生成");
+    if (snapshot.canUseCoverImageReference) {
       features.push("支持参考图垫图");
     }
   } else {
     features.push("仅提供文本配图建议");
   }
-  if (plan.can_export_pdf) {
+  if (snapshot.canExportPdf) {
     features.push("支持 PDF 导出");
   }
 
@@ -68,24 +42,10 @@ function planPrice(priceCny: number) {
   return priceCny > 0 ? `￥${priceCny}/月` : "￥0";
 }
 
-function planTagline(code: string) {
-  if (code === "free") return "Free";
-  if (code === "pro") return "Pro";
-  if (code === "ultra") return "Ultra";
-  return code.toUpperCase();
-}
-
-function planOrder(code: string) {
-  if (code === "free") return 0;
-  if (code === "pro") return 1;
-  if (code === "ultra") return 2;
-  return 9;
-}
-
 export default async function PricingPage() {
-  const plans = (await getPlans())
-    .filter((plan) => Boolean(plan.is_public) && ["free", "pro", "ultra"].includes(plan.code))
-    .sort((left, right) => planOrder(left.code) - planOrder(right.code));
+  const plans = (await getResolvedPlans())
+    .filter((plan) => isStandardPlanCode(plan.code))
+    .sort((left, right) => getPlanSortOrder(left.code) - getPlanSortOrder(right.code));
 
   return (
     <div className="space-y-10">
@@ -100,9 +60,9 @@ export default async function PricingPage() {
       <PricingMatrix
         plans={plans.map((plan) => ({
           name: plan.name,
-          price: planPrice(plan.price_cny),
-          tagline: planTagline(plan.code),
-          features: planFeatures(plan as typeof plan & { code: PublicPlanCode }),
+          price: planPrice(plan.priceCny ?? 0),
+          tagline: getPlanMarketingTagline(plan.code),
+          features: planFeatures(plan),
           featured: plan.code === "pro",
         }))}
       />

@@ -1,6 +1,6 @@
 import { ensureUserSession } from "@/lib/auth";
 import { fail, ok } from "@/lib/http";
-import { getActiveTemplates } from "@/lib/marketplace";
+import { getActiveTemplates } from "@/lib/layout-templates";
 
 export async function GET() {
   const session = await ensureUserSession();

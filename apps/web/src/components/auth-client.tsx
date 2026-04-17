@@ -1,5 +1,4 @@
 "use client";
-
 import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
 import { uiPrimitives } from "@huoziwriter/ui";
@@ -29,7 +28,7 @@ export function LoginForm() {
     if (json.data.mustChangePassword) {
       router.push("/change-password");
     } else {
-      router.push(json.data.role === "ops" ? "/ops" : "/dashboard");
+      router.push(json.data.role === "admin" ? "/admin" : "/dashboard");
     }
     router.refresh();
   }
@@ -42,6 +41,7 @@ export function LoginForm() {
           value={username}
           onChange={(event) => setUsername(event.target.value)}
           className={uiPrimitives.input}
+          placeholder="输入用户名"
         />
       </div>
       <div className="space-y-2">
@@ -51,7 +51,7 @@ export function LoginForm() {
           value={password}
           onChange={(event) => setPassword(event.target.value)}
           className={uiPrimitives.input}
-          placeholder="输入运维账号或已分配账号密码"
+          placeholder="输入管理账号或已分配账号密码"
         />
       </div>
       {error ? <div className="text-sm text-cinnabar">{error}</div> : null}
@@ -94,7 +94,7 @@ export function ChangePasswordForm({
       setError(json.error || "修改密码失败");
       return;
     }
-    router.push(json.data.role === "ops" ? "/ops" : "/dashboard");
+    router.push(json.data.role === "admin" ? "/admin" : "/dashboard");
     router.refresh();
   }
 

@@ -82,7 +82,7 @@ function getRolloutMatchReason(
 ) {
   if (!context) return false;
   const planCodes = parsePlanCodes(row.rollout_plan_codes_json);
-  if (Boolean(row.rollout_observe_only) && context.role === "ops") {
+  if (Boolean(row.rollout_observe_only) && context.role === "admin") {
     return "observe";
   }
   if (context.planCode && planCodes.includes(context.planCode)) {

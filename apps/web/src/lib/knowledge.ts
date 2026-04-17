@@ -32,7 +32,7 @@ type KnowledgeCardListItem = {
   source_fragment_ids: number[];
 };
 
-type OpsKnowledgeCardListItem = KnowledgeCardListItem & {
+type AdminKnowledgeCardListItem = KnowledgeCardListItem & {
   username: string | null;
   updated_at: string;
   revision_count: number;
@@ -715,10 +715,10 @@ export async function getRelevantKnowledgeCardsForArticle(
     .filter((item): item is NonNullable<typeof item> => Boolean(item));
 }
 
-export async function getOpsKnowledgeCards() {
+export async function getAdminKnowledgeCards() {
   await ensureExtendedProductSchema();
   const db = getDatabase();
-  const cards = await db.query<Omit<OpsKnowledgeCardListItem, "source_fragment_ids">>(
+  const cards = await db.query<Omit<AdminKnowledgeCardListItem, "source_fragment_ids">>(
     `SELECT
        kc.*,
        u.username,
@@ -744,7 +744,7 @@ export async function getOpsKnowledgeCards() {
   }));
 }
 
-export async function getOpsKnowledgeCardRevisions(cardId: number) {
+export async function getAdminKnowledgeCardRevisions(cardId: number) {
   await ensureExtendedProductSchema();
   const db = getDatabase();
   return db.query<{
@@ -805,4 +805,4 @@ export async function rebuildKnowledgeCard(cardId: number) {
   });
 }
 
-export const rebuildKnowledgeCardByOps = rebuildKnowledgeCard;
+export const rebuildKnowledgeCardByAdmin = rebuildKnowledgeCard;

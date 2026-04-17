@@ -15,7 +15,7 @@ export async function getWarroomData(userId: number) {
     getSeries(userId),
   ]);
   const seriesMap = new Map(series.map((item) => [item.id, item] as const));
-  const canStartRadar = planContext.effectivePlanCode !== "free";
+  const canStartRadar = planContext.planSnapshot.canStartTopicSignal;
   const drafts = articles.filter((article) => !isPublishedArticleStatus(article.status));
   const publishedArticles = articles.filter((article) => isPublishedArticleStatus(article.status));
   const outcomeBundleMap = new Map(outcomeBundles.map((bundle) => [bundle.outcome?.articleId, bundle] as const));

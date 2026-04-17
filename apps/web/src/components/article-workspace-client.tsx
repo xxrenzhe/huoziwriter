@@ -30,6 +30,11 @@ import { buildNodeVisualSuggestion, buildVisualSuggestion } from "@/lib/image-pr
 import { collectLanguageGuardHits, type LanguageGuardRule } from "@/lib/language-guard-core";
 import { formatPlanDisplayName } from "@/lib/plan-labels";
 import { summarizeTemplateRenderConfig } from "@/lib/template-rendering";
+import {
+  ARTICLE_MAIN_STEP_DEFINITIONS,
+  getArticleMainStepDefinitionByStageCode,
+  type ArticleMainStepCode,
+} from "@/lib/article-workflow-registry";
 import { buildWritingDiversityReport } from "@/lib/writing-diversity";
 import { buildWritingQualityPanel } from "@/lib/writing-quality";
 import type { ArticleStatus } from "@/lib/domain";
@@ -1400,61 +1405,10 @@ function formatOutcomeHitStatus(status: "pending" | "hit" | "near_miss" | "miss"
 
 type ArticleMainStepStatus = "pending" | "current" | "completed" | "needs_attention";
 
-type ArticleMainStepDefinition = {
-  code: "opportunity" | "strategy" | "evidence" | "draft" | "publish" | "result";
-  title: string;
-  primaryStageCode: string;
-  stageCodes: string[];
-  supportLabel: string;
-};
-
-const ARTICLE_MAIN_STEPS: ArticleMainStepDefinition[] = [
-  {
-    code: "opportunity",
-    title: "机会",
-    primaryStageCode: "opportunity",
-    stageCodes: ["opportunity"],
-    supportLabel: "选题切口",
-  },
-  {
-    code: "strategy",
-    title: "策略",
-    primaryStageCode: "researchBrief",
-    stageCodes: ["researchBrief", "audienceAnalysis"],
-    supportLabel: "研究与读者",
-  },
-  {
-    code: "evidence",
-    title: "证据",
-    primaryStageCode: "outlinePlanning",
-    stageCodes: ["outlinePlanning", "factCheck"],
-    supportLabel: "素材与核查",
-  },
-  {
-    code: "draft",
-    title: "成稿",
-    primaryStageCode: "deepWriting",
-    stageCodes: ["deepWriting", "prosePolish"],
-    supportLabel: "正文与润色",
-  },
-  {
-    code: "publish",
-    title: "发布",
-    primaryStageCode: "publish",
-    stageCodes: ["coverImage", "layout", "publish"],
-    supportLabel: "封面与推送",
-  },
-  {
-    code: "result",
-    title: "结果",
-    primaryStageCode: "publish",
-    stageCodes: [],
-    supportLabel: "回流与复盘",
-  },
-];
+const ARTICLE_MAIN_STEPS = ARTICLE_MAIN_STEP_DEFINITIONS;
 
 function getArticleMainStepByStageCode(stageCode: string) {
-  return ARTICLE_MAIN_STEPS.find((step) => step.stageCodes.includes(stageCode)) ?? ARTICLE_MAIN_STEPS[0];
+  return getArticleMainStepDefinitionByStageCode(stageCode);
 }
 
 function formatArticleMainStepStatus(status: ArticleMainStepStatus) {
@@ -1658,7 +1612,7 @@ export function ArticleEditorClient({
   initialImagePrompts: ArticleImagePromptItem[];
   initialCoverImage: { imageUrl: string; prompt: string; createdAt: string } | null;
   initialOutcomeBundle: ArticleOutcomeBundleItem;
-  requestedMainStepCode?: "evidence" | null;
+  requestedMainStepCode?: ArticleMainStepCode | null;
 }) {
   const router = useRouter();
   const displayPlanName = formatPlanDisplayName(planName);
@@ -3061,7 +3015,7 @@ export function ArticleEditorClient({
 
   async function reloadArticleMeta() {
     const [articleResponse, nodesResponse] = await Promise.all([
-      fetch(`/api/articles/${article.id}`),
+      fetch(`/api/articles/${article.id}/runtime`),
       fetch(`/api/articles/${article.id}/nodes`),
     ]);
     if (!articleResponse.ok || !nodesResponse.ok) {
@@ -4662,7 +4616,7 @@ export function ArticleEditorClient({
   async function updateWorkflow(stageCode: string, action: "set" | "complete" | "fail" = "set", silent = false) {
     setUpdatingWorkflowCode(stageCode);
     try {
-      const response = await fetch(`/api/articles/${article.id}/workflow`, {
+      const response = await fetch(`/api/articles/${article.id}/workflow/runtime`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ stageCode, action }),

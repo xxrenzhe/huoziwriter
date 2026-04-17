@@ -1,4 +1,3 @@
-import { getWritingStyleProfileLimit } from "./plan-access";
 import { getDatabase } from "./db";
 import { getUserPlanContext } from "./plan-access";
 import { ensureExtendedProductSchema } from "./schema-bootstrap";
@@ -128,8 +127,8 @@ async function countWritingStyleProfiles(userId: number) {
 
 export async function createWritingStyleProfile(userId: number, analysis: WritingStyleAnalysis, preferredName?: string | null) {
   await ensureExtendedProductSchema();
-  const { effectivePlanCode } = await getUserPlanContext(userId);
-  const limit = getWritingStyleProfileLimit(effectivePlanCode);
+  const { planSnapshot } = await getUserPlanContext(userId);
+  const limit = planSnapshot.writingStyleProfileLimit;
   if (limit <= 0) {
     throw new Error("当前套餐暂不支持保存写作风格资产");
   }

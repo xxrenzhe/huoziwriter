@@ -41,7 +41,7 @@ export function KnowledgeGovernanceClient({
     }
     let active = true;
     setLoading(true);
-    fetch(`/api/ops/knowledge/cards/${selectedId}/revisions`)
+    fetch(`/api/admin/knowledge/cards/${selectedId}/revisions`)
       .then((response) => response.json())
       .then((json) => {
         if (!active) return;
@@ -56,7 +56,7 @@ export function KnowledgeGovernanceClient({
   }, [selectedId]);
 
   async function handleStatus(cardId: number, status: string) {
-    await fetch(`/api/ops/knowledge/cards/${cardId}/status`, {
+    await fetch(`/api/admin/knowledge/cards/${cardId}/status`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status }),
@@ -65,7 +65,7 @@ export function KnowledgeGovernanceClient({
   }
 
   async function handleRebuild(cardId: number) {
-    await fetch(`/api/ops/knowledge/cards/${cardId}/rebuild`, {
+    await fetch(`/api/admin/knowledge/cards/${cardId}/rebuild`, {
       method: "POST",
     });
     router.refresh();

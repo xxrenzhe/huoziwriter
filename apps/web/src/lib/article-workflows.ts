@@ -1,17 +1,16 @@
 import { getDatabase } from "./db";
 import { ensureExtendedProductSchema } from "./schema-bootstrap";
+import {
+  ARTICLE_MAIN_STEP_DEFINITIONS,
+  ARTICLE_WORKFLOW_STAGE_DEFINITIONS,
+  getArticleWorkflowStageDefinition,
+  mapArticleStageCodeToMainStep,
+  normalizeArticleWorkflowStageCode,
+  type ArticleMainStepCode,
+  type ArticleWorkflowStageCode,
+} from "./article-workflow-registry";
 
-export type ArticleWorkflowStageCode =
-  | "opportunity"
-  | "researchBrief"
-  | "audienceAnalysis"
-  | "outlinePlanning"
-  | "deepWriting"
-  | "factCheck"
-  | "prosePolish"
-  | "coverImage"
-  | "layout"
-  | "publish";
+export type { ArticleWorkflowStageCode } from "./article-workflow-registry";
 
 export type ArticleWorkflowStageStatus = "pending" | "current" | "completed" | "failed";
 
@@ -36,18 +35,21 @@ export type ArticleWorkflow = {
   updatedAt: string;
 };
 
-const WORKFLOW_STAGE_CATALOG: Array<{ code: ArticleWorkflowStageCode; title: string }> = [
-  { code: "opportunity", title: "机会" },
-  { code: "researchBrief", title: "研究简报" },
-  { code: "audienceAnalysis", title: "受众分析" },
-  { code: "outlinePlanning", title: "大纲规划" },
-  { code: "deepWriting", title: "深度写作" },
-  { code: "factCheck", title: "事实核查" },
-  { code: "prosePolish", title: "文笔润色" },
-  { code: "coverImage", title: "配图生成" },
-  { code: "layout", title: "一键排版" },
-  { code: "publish", title: "一键发布" },
-];
+export type ArticleWorkflowMainStepCode = ArticleMainStepCode;
+
+export type ArticleWorkflowMainStep = {
+  code: ArticleWorkflowMainStepCode;
+  title: string;
+  status: ArticleWorkflowStageStatus;
+};
+
+export type ArticlePublicWorkflow = {
+  articleId: number;
+  currentStepCode: ArticleWorkflowMainStepCode;
+  steps: ArticleWorkflowMainStep[];
+  pendingPublishIntent: ArticlePendingPublishIntent | null;
+  updatedAt: string;
+};
 
 function areStagesEqual(left: ArticleWorkflowStage[], right: ArticleWorkflowStage[]) {
   if (left.length !== right.length) {
@@ -69,54 +71,68 @@ type WorkflowRow = {
   updated_at: string;
 };
 
-function normalizeStageCode(value: unknown): ArticleWorkflowStageCode {
-  const normalized = String(value || "").trim();
-  if (
-    normalized === "opportunity"
-    || normalized === "researchBrief"
-    || normalized === "audienceAnalysis"
-    || normalized === "outlinePlanning"
-    || normalized === "deepWriting"
-    || normalized === "factCheck"
-    || normalized === "prosePolish"
-    || normalized === "coverImage"
-    || normalized === "layout"
-    || normalized === "publish"
-  ) {
-    return normalized;
-  }
-  return "opportunity";
+export { mapArticleMainStepToStageCode, mapArticleStageCodeToMainStep } from "./article-workflow-registry";
+
+export function buildArticlePublicWorkflow(
+  workflow: ArticleWorkflow,
+  options: { articleStatus?: string | null } = {},
+): ArticlePublicWorkflow {
+  const currentStepCode =
+    String(options.articleStatus || "").trim() === "published"
+      ? "result"
+      : mapArticleStageCodeToMainStep(workflow.currentStageCode);
+  const currentIndex = ARTICLE_MAIN_STEP_DEFINITIONS.findIndex((step) => step.code === currentStepCode);
+  const failedStepCode = workflow.stages.find((stage) => stage.status === "failed")?.code
+    ? mapArticleStageCodeToMainStep(workflow.stages.find((stage) => stage.status === "failed")!.code)
+    : null;
+  const steps = ARTICLE_MAIN_STEP_DEFINITIONS.map((step, index) => {
+    if (failedStepCode === step.code) {
+      return { code: step.code, title: step.title, status: "failed" } satisfies ArticleWorkflowMainStep;
+    }
+    if (index < currentIndex) {
+      return { code: step.code, title: step.title, status: "completed" } satisfies ArticleWorkflowMainStep;
+    }
+    if (index === currentIndex) {
+      return { code: step.code, title: step.title, status: "current" } satisfies ArticleWorkflowMainStep;
+    }
+    return { code: step.code, title: step.title, status: "pending" } satisfies ArticleWorkflowMainStep;
+  });
+
+  return {
+    articleId: workflow.articleId,
+    currentStepCode,
+    steps,
+    pendingPublishIntent: workflow.pendingPublishIntent,
+    updatedAt: workflow.updatedAt,
+  };
 }
 
 function buildStages(currentStageCode: ArticleWorkflowStageCode, options?: { completedLastStage?: boolean; failedStageCode?: ArticleWorkflowStageCode | null }) {
-  const currentIndex = WORKFLOW_STAGE_CATALOG.findIndex((item) => item.code === currentStageCode);
-  return WORKFLOW_STAGE_CATALOG.map((stage, index) => {
+  const currentIndex = ARTICLE_WORKFLOW_STAGE_DEFINITIONS.findIndex((item) => item.code === currentStageCode);
+  return ARTICLE_WORKFLOW_STAGE_DEFINITIONS.map((stage, index) => {
     if (options?.failedStageCode === stage.code) {
-      return { ...stage, status: "failed" } satisfies ArticleWorkflowStage;
+      return { code: stage.code, title: stage.title, status: "failed" } satisfies ArticleWorkflowStage;
     }
     if (options?.completedLastStage && index === currentIndex) {
-      return { ...stage, status: "completed" } satisfies ArticleWorkflowStage;
+      return { code: stage.code, title: stage.title, status: "completed" } satisfies ArticleWorkflowStage;
     }
     if (index < currentIndex) {
-      return { ...stage, status: "completed" } satisfies ArticleWorkflowStage;
+      return { code: stage.code, title: stage.title, status: "completed" } satisfies ArticleWorkflowStage;
     }
     if (index === currentIndex) {
-      return { ...stage, status: "current" } satisfies ArticleWorkflowStage;
+      return { code: stage.code, title: stage.title, status: "current" } satisfies ArticleWorkflowStage;
     }
-    return { ...stage, status: "pending" } satisfies ArticleWorkflowStage;
+    return { code: stage.code, title: stage.title, status: "pending" } satisfies ArticleWorkflowStage;
   });
 }
 
 function normalizeStages(stages: ArticleWorkflowStage[], fallbackStageCode: ArticleWorkflowStageCode) {
   const normalizedStages = stages
     .map((stage) => {
-      const normalizedCode = normalizeStageCode(stage.code);
-      const catalogStage = WORKFLOW_STAGE_CATALOG.find((item) => item.code === normalizedCode);
-      return catalogStage
-        ? { ...catalogStage, status: stage.status }
-        : null;
-    })
-    .filter((stage): stage is ArticleWorkflowStage => Boolean(stage));
+      const normalizedCode = normalizeArticleWorkflowStageCode(stage.code);
+      const definition = getArticleWorkflowStageDefinition(normalizedCode);
+      return { code: definition.code, title: definition.title, status: stage.status } satisfies ArticleWorkflowStage;
+    });
   const failedStage = normalizedStages.find((stage) => stage.status === "failed")?.code ?? null;
   const hasCurrentStage = normalizedStages.some((stage) => stage.status === "current");
   const currentStageWasCompleted = normalizedStages.find((stage) => stage.code === fallbackStageCode)?.status === "completed";
@@ -210,7 +226,7 @@ export async function ensureArticleWorkflow(articleId: number, initialStageCode:
     [articleId],
   );
   if (existing) {
-    const normalizedCurrentStageCode = normalizeStageCode(existing.current_stage_code);
+    const normalizedCurrentStageCode = normalizeArticleWorkflowStageCode(existing.current_stage_code);
     const normalizedStages = parseStages(existing.stages_json, normalizedCurrentStageCode);
     const parsedStages = Array.isArray(existing.stages_json)
       ? existing.stages_json
@@ -274,8 +290,8 @@ export async function completeArticleWorkflowStage(input: {
   stageCode: ArticleWorkflowStageCode;
 }) {
   await ensureArticleAccess(input.articleId, input.userId);
-  const currentIndex = WORKFLOW_STAGE_CATALOG.findIndex((item) => item.code === input.stageCode);
-  const next = WORKFLOW_STAGE_CATALOG[currentIndex + 1];
+  const currentIndex = ARTICLE_WORKFLOW_STAGE_DEFINITIONS.findIndex((item) => item.code === input.stageCode);
+  const next = ARTICLE_WORKFLOW_STAGE_DEFINITIONS[currentIndex + 1];
   if (!next) {
     const stages = buildStages(input.stageCode, { completedLastStage: true });
     await upsertWorkflow(input.articleId, input.stageCode, stages.map((stage) => (

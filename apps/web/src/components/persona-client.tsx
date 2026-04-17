@@ -281,7 +281,7 @@ export function PersonaManager({
       <div className="grid gap-4 md:grid-cols-3">
         {[
           ["总人设数", String(personas.length), "每个系列长期绑定固定身份，不再在稿件后期随手切换口吻。"] as const,
-          ["默认人设", personas.find((item) => item.isDefault)?.name || "未设置", "账号级默认人设会作为未绑定系列时的兜底身份。"] as const,
+          ["默认人设", personas.find((item) => item.isDefault)?.name || "未设置", "账号级默认人设用于新系列初始化，不再作为稿件绕过系列绑定的兜底身份。"] as const,
           ["套餐额度", `${personas.length}/${maxCount}`, `当前套餐 ${displayPlanName} 可保留 ${maxCount} 套长期作者人设。`] as const,
         ].map(([label, value, note]) => (
           <article key={label} className="border border-stone-300/40 bg-[#fffdfa] p-4">

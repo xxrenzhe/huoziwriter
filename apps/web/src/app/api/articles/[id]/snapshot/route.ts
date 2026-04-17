@@ -1,7 +1,7 @@
+import { getArticleSnapshotAccessContext } from "@/lib/article-snapshot-access";
 import { ensureUserSession } from "@/lib/auth";
 import { fail, ok } from "@/lib/http";
-import { getSnapshotRetentionDays } from "@/lib/plan-access";
-import { createArticleSnapshot, getArticleById } from "@/lib/repositories";
+import { createArticleSnapshot } from "@/lib/repositories";
 
 export async function POST(request: Request, { params }: { params: { id: string } }) {
   const session = await ensureUserSession();
@@ -9,13 +9,13 @@ export async function POST(request: Request, { params }: { params: { id: string 
     return fail("未登录", 401);
   }
 
-  const article = await getArticleById(Number(params.id), session.userId);
+  const articleId = Number(params.id);
+  const { article, retentionDays } = await getArticleSnapshotAccessContext(session.userId, articleId);
   if (!article) {
     return fail("稿件不存在", 404);
   }
 
   const body = await request.json().catch(() => ({}));
-  const retentionDays = await getSnapshotRetentionDays(session.userId);
   const snapshot = await createArticleSnapshot(article.id, body.note || "手动快照");
   return ok({
     id: snapshot?.id,

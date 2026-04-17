@@ -6,7 +6,7 @@ import {
   setArticleWorkflowCurrentStage,
   setArticleWorkflowPendingPublishIntent,
 } from "./article-workflows";
-import { getActiveTemplateById } from "./marketplace";
+import { getActiveTemplateById } from "./layout-templates";
 import { assertWechatTemplateAllowed } from "./plan-access";
 import { evaluatePublishGuard, type PublishGuardResult } from "./publish-guard";
 import { createWechatSyncLog, getArticleById, getLatestWechatSyncLogForArticle, getWechatConnectionRaw, saveArticle, updateWechatConnectionToken } from "./repositories";

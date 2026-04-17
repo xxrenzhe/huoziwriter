@@ -7,18 +7,14 @@ import { WritingStyleProfilesPanel } from "@/components/writing-style-profiles-c
 import { WechatConnectionsManager } from "@/components/article-workspace-client";
 import { SettingsOverviewCards } from "@/components/settings-overview-cards";
 import { getKnowledgeCards } from "@/lib/knowledge";
-import { getActiveTemplates } from "@/lib/marketplace";
+import { getActiveTemplates } from "@/lib/layout-templates";
 import { requireWriterSession } from "@/lib/page-auth";
 import {
-  canExtractPrivateTemplate,
   getCoverImageQuotaStatus,
-  getCustomTemplateLimit,
-  getCustomTopicSourceLimit,
   getImageAssetStorageQuotaStatus,
   getUserPlanContext,
-  getWritingStyleProfileLimit,
 } from "@/lib/plan-access";
-import { getPersonaCatalog, getPersonaLimitForUser, getPersonas, hasPersona } from "@/lib/personas";
+import { getPersonaCatalog, getPersonas, hasPersona } from "@/lib/personas";
 import { formatPlanDisplayName } from "@/lib/plan-labels";
 import { getVisibleTopicSources } from "@/lib/topic-signals";
 import { getDailyGenerationUsage } from "@/lib/usage";
@@ -135,7 +131,6 @@ function parseStringList(value: unknown) {
 function formatSourceTypeLabel(value: string | null | undefined) {
   if (value === "youtube") return "YouTube";
   if (value === "reddit") return "Reddit";
-  if (value === "x") return "X";
   if (value === "podcast") return "播客";
   if (value === "spotify") return "Spotify";
   if (value === "rss") return "RSS";
@@ -156,7 +151,7 @@ export default async function SettingsPage() {
   if (!(await hasPersona(session.userId))) {
     return null;
   }
-  const [connections, syncLogs, fragments, knowledgeCards, assetFiles, dailyGenerationUsage, topicSources, subscription, coverImageQuota, imageAssetQuota, planContext, personas, personaLimit, personaCatalog, series, writingStyleProfiles, workspaceAssets, templates] = await Promise.all([
+  const [connections, syncLogs, fragments, knowledgeCards, assetFiles, dailyGenerationUsage, topicSources, subscription, coverImageQuota, imageAssetQuota, planContext, personas, personaCatalog, series, writingStyleProfiles, workspaceAssets, templates] = await Promise.all([
     getWechatConnections(session.userId),
     getWechatSyncLogs(session.userId),
     getFragmentsByUser(session.userId),
@@ -169,7 +164,6 @@ export default async function SettingsPage() {
     getImageAssetStorageQuotaStatus(session.userId),
     getUserPlanContext(session.userId),
     getPersonas(session.userId),
-    getPersonaLimitForUser(session.userId),
     getPersonaCatalog(),
     getSeries(session.userId),
     getWritingStyleProfiles(session.userId),
@@ -178,19 +172,23 @@ export default async function SettingsPage() {
   ]);
   const effectivePlanCode = planContext.effectivePlanCode;
   const currentPlan = planContext.plan;
+  const planSnapshot = planContext.planSnapshot;
+  const personaLimit = planSnapshot.personaLimit;
   const displayPlanName = formatPlanDisplayName(currentPlan?.name || effectivePlanCode);
-  const canManageWechatConnections = (currentPlan?.max_wechat_connections ?? 0) > 0;
-  const canManageSources = ["pro", "ultra"].includes(effectivePlanCode);
-  const canExtractTemplates = canExtractPrivateTemplate(effectivePlanCode);
-  const customTemplateLimit = getCustomTemplateLimit(effectivePlanCode);
-  const customTopicSourceLimit = getCustomTopicSourceLimit(effectivePlanCode);
+  const canManageWechatConnections = planSnapshot.canPublishToWechat;
+  const canManageSources = planSnapshot.canManageTopicSources;
+  const canExtractTemplates = planSnapshot.canExtractPrivateTemplate;
+  const customTemplateLimit = planSnapshot.customTemplateLimit;
+  const customTopicSourceLimit = planSnapshot.customTopicSourceLimit;
+  const writingStyleProfileLimit = planSnapshot.writingStyleProfileLimit;
+  const canAnalyzePersonaFromSources = planSnapshot.canAnalyzePersonaFromSources;
   const usagePercent =
-    currentPlan?.daily_generation_limit && currentPlan.daily_generation_limit > 0
-      ? Math.min(100, Math.round((dailyGenerationUsage / currentPlan.daily_generation_limit) * 100))
+    planSnapshot.dailyGenerationLimit && planSnapshot.dailyGenerationLimit > 0
+      ? Math.min(100, Math.round((dailyGenerationUsage / planSnapshot.dailyGenerationLimit) * 100))
       : 0;
   const subscriptionStatus = subscription?.status === "active" ? "使用中" : subscription?.status === "inactive" ? "已停用" : "人工维护中";
   const nextBillingAt =
-    subscription?.start_at && currentPlan?.price_cny
+    subscription?.start_at && planSnapshot.priceCny
       ? new Date(new Date(subscription.start_at).getTime() + 30 * 24 * 60 * 60 * 1000).toLocaleDateString("zh-CN")
       : null;
   const customTopicSources = topicSources.filter((source) => source.owner_user_id != null);
@@ -227,7 +225,7 @@ export default async function SettingsPage() {
           href: "#personas-series",
         }
       : null,
-    getWritingStyleProfileLimit(effectivePlanCode) > 0 && writingStyleProfiles.length === 0
+    writingStyleProfileLimit > 0 && writingStyleProfiles.length === 0
       ? {
           key: "style",
           level: "warning",
@@ -338,7 +336,7 @@ export default async function SettingsPage() {
       metric: displayPlanName,
       note: user.must_change_password ? "需关注登录安全" : "套餐与安全边界",
       description:
-        `今日生成 ${dailyGenerationUsage}${currentPlan?.daily_generation_limit == null ? " / 不限" : ` / ${currentPlan.daily_generation_limit}`}，封面图 ${coverImageQuota.used}${coverImageQuota.limit == null ? " / 不限" : ` / ${coverImageQuota.limit}`}，图片资产 ${formatBytes(imageAssetQuota.usedBytes)} / ${formatBytes(imageAssetQuota.limitBytes)}。`,
+        `今日生成 ${dailyGenerationUsage}${planSnapshot.dailyGenerationLimit == null ? " / 不限" : ` / ${planSnapshot.dailyGenerationLimit}`}，封面图 ${coverImageQuota.used}${coverImageQuota.limit == null ? " / 不限" : ` / ${coverImageQuota.limit}`}，图片资产 ${formatBytes(imageAssetQuota.usedBytes)} / ${formatBytes(imageAssetQuota.limitBytes)}。`,
     },
   ] as const;
 
@@ -391,16 +389,16 @@ export default async function SettingsPage() {
                 initialPersonas={personas}
                 maxCount={personaLimit}
                 currentPlanName={currentPlan?.name || effectivePlanCode}
-                canAnalyzeFromSources={effectivePlanCode !== "free"}
+                canAnalyzeFromSources={canAnalyzePersonaFromSources}
                 availableWritingStyles={writingStyleProfiles.map((profile) => ({ id: profile.id, name: profile.name }))}
                 tagCatalog={personaCatalog}
               />
             </div>
-            {getWritingStyleProfileLimit(effectivePlanCode) > 0 ? (
+            {writingStyleProfileLimit > 0 ? (
               <div id="style-assets" className="border border-stone-300/40 bg-white p-6 shadow-ink">
                 <WritingStyleProfilesPanel
                   profiles={writingStyleProfiles}
-                  maxCount={getWritingStyleProfileLimit(effectivePlanCode)}
+                  maxCount={writingStyleProfileLimit}
                 />
               </div>
             ) : (
@@ -850,7 +848,7 @@ export default async function SettingsPage() {
                 <div>
                   <div className="font-serifCn text-3xl text-ink">{formatPlanDisplayName(currentPlan?.name || subscription?.plan_name || effectivePlanCode)}</div>
                   <div className="mt-2 text-sm text-stone-700">
-                    {currentPlan?.price_cny ? `￥${currentPlan.price_cny}/月` : "免费套餐"}
+                    {planSnapshot.priceCny ? `￥${planSnapshot.priceCny}/月` : "免费套餐"}
                   </div>
                 </div>
                 <div className="border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
@@ -863,20 +861,20 @@ export default async function SettingsPage() {
                   <span>已用生成次数</span>
                   <span>
                     {dailyGenerationUsage}
-                    {currentPlan?.daily_generation_limit == null ? " / 不限" : ` / ${currentPlan.daily_generation_limit}`}
+                    {planSnapshot.dailyGenerationLimit == null ? " / 不限" : ` / ${planSnapshot.dailyGenerationLimit}`}
                   </span>
                 </div>
                 <div className="mt-3 h-3 overflow-hidden border border-stone-200 bg-[#f4efe6]">
                   <div
                     className="h-full bg-cinnabar transition-all"
-                    style={{ width: currentPlan?.daily_generation_limit == null ? "38%" : `${usagePercent}%` }}
+                    style={{ width: planSnapshot.dailyGenerationLimit == null ? "38%" : `${usagePercent}%` }}
                   />
                 </div>
               </div>
               <div className="mt-6 grid gap-3 text-sm leading-7 text-stone-700 md:grid-cols-2">
-                <div>公众号连接：{connections.length}{currentPlan?.max_wechat_connections == null ? " / 不限" : ` / ${currentPlan.max_wechat_connections}`}</div>
-                <div>素材容量：{currentPlan?.fragment_limit == null ? "不限" : `${currentPlan.fragment_limit} 条`}</div>
-                <div>语言规则上限：{currentPlan?.languageGuardRuleLimit == null ? "不限" : `${currentPlan.languageGuardRuleLimit} 个`}</div>
+                <div>公众号连接：{connections.length}{planSnapshot.maxWechatConnections == null ? " / 不限" : ` / ${planSnapshot.maxWechatConnections}`}</div>
+                <div>素材容量：{planSnapshot.fragmentLimit == null ? "不限" : `${planSnapshot.fragmentLimit} 条`}</div>
+                <div>语言规则上限：{planSnapshot.languageGuardRuleLimit == null ? "不限" : `${planSnapshot.languageGuardRuleLimit} 个`}</div>
                 <div>封面图额度：{coverImageQuota.used}{coverImageQuota.limit == null ? " / 不限" : ` / ${coverImageQuota.limit}`}</div>
                 <div>图片资产空间：{formatBytes(imageAssetQuota.usedBytes)} / {formatBytes(imageAssetQuota.limitBytes)}</div>
                 <div>私有模板资产：{customTemplateLimit > 0 ? `${ownedTemplates.length} / ${customTemplateLimit}` : "未开放"}</div>

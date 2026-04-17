@@ -1,5 +1,4 @@
 "use client";
-
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
@@ -193,7 +192,7 @@ export function WorkspaceShell({
   );
 }
 
-export function OpsShell({
+export function AdminShell({
   items,
   children,
 }: {
@@ -236,17 +235,17 @@ export function OpsShell({
             })}
           </nav>
           <div className="mt-8 border border-stone-800 bg-stone-950 p-4">
-            <div className="text-xs uppercase tracking-[0.24em] text-stone-500">默认运维账号</div>
+            <div className="text-xs uppercase tracking-[0.24em] text-stone-500">默认管理账号</div>
             <div className="mt-3 font-serifCn text-2xl text-stone-100">huozi</div>
             <p className="mt-2 text-sm leading-6 text-stone-400">
-              首次启动由初始化脚本注入，密码从 `DEFAULT_OPS_PASSWORD` 读取。
+              首次启动由初始化脚本注入，启动前需先配置 `DEFAULT_ADMIN_PASSWORD`。
             </p>
           </div>
         </aside>
         <main className="bg-[#121212] px-6 py-8 md:px-8">
           <div className="mb-6 flex flex-wrap items-center justify-between gap-4 border-b border-stone-800 pb-4">
             <div>
-              <div className="text-xs uppercase tracking-[0.28em] text-stone-500">Operations Console</div>
+              <div className="text-xs uppercase tracking-[0.28em] text-stone-500">Admin Console</div>
               <div className="mt-2 font-serifCn text-2xl text-stone-100">系统当前处于可上线骨架阶段</div>
             </div>
             <div className="border border-stone-800 bg-stone-950 px-4 py-2 text-sm text-stone-300">

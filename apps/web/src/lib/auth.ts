@@ -20,17 +20,23 @@ type DbUserRow = {
 };
 
 type DbUser = Omit<DbUserRow, "role"> & {
-  role: "ops" | "user";
+  role: ManagedUserRole;
 };
+
+export type ManagedUserRole = "admin" | "user";
 
 export type AuthUser = {
   userId: number;
   username: string;
-  role: "ops" | "user";
+  role: ManagedUserRole;
 };
 
-function normalizeUserRole(value: unknown): "ops" | "user" {
-  return String(value || "").trim().toLowerCase() === "user" ? "user" : "ops";
+export function normalizeManagedUserRole(value: unknown): ManagedUserRole {
+  return String(value || "").trim().toLowerCase() === "user" ? "user" : "admin";
+}
+
+export function toStoredManagedUserRole(role: ManagedUserRole) {
+  return role;
 }
 
 function mapDbUser(row: DbUserRow | null | undefined): DbUser | null {
@@ -39,7 +45,7 @@ function mapDbUser(row: DbUserRow | null | undefined): DbUser | null {
   }
   return {
     ...row,
-    role: normalizeUserRole(row.role),
+    role: normalizeManagedUserRole(row.role),
   };
 }
 
@@ -77,16 +83,16 @@ export async function ensureUserSession(request?: NextRequest): Promise<AuthUser
     const session = verifySession(token);
     return {
       ...session,
-      role: normalizeUserRole(session.role),
+      role: normalizeManagedUserRole(session.role),
     };
   } catch {
     return null;
   }
 }
 
-export async function requireOpsAccess(request?: NextRequest) {
+export async function requireAdminAccess(request?: NextRequest) {
   const session = await ensureUserSession(request);
-  if (!session || session.role !== "ops") {
+  if (!session || session.role !== "admin") {
     throw new Error("UNAUTHORIZED");
   }
   return session;
@@ -137,7 +143,7 @@ export async function createUser(input: {
   email?: string | null;
   password: string;
   displayName?: string | null;
-  role?: "ops" | "user";
+  role?: ManagedUserRole;
   planCode?: string;
   mustChangePassword?: boolean;
 }) {
@@ -154,7 +160,7 @@ export async function createUser(input: {
       input.email ?? null,
       passwordHash,
       input.displayName ?? null,
-      input.role ?? "user",
+      toStoredManagedUserRole(input.role ?? "user"),
       input.planCode ?? "free",
       input.mustChangePassword ?? true,
       true,

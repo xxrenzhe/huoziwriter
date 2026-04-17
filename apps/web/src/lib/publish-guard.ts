@@ -3,7 +3,7 @@ import { getArticleEvidenceStats } from "./article-evidence";
 import { getHumanSignalScore, getStrategyCardMissingFields, isStrategyCardComplete } from "./article-strategy";
 import { getArticleNodes } from "./article-outline";
 import { getArticleStageArtifact, getArticleStageArtifactsByDocumentIds } from "./article-stage-artifacts";
-import { getActiveTemplateById } from "./marketplace";
+import { getActiveTemplateById } from "./layout-templates";
 import { getArticleById, getArticleEvidenceItems, getArticlesByUser, getArticleStrategyCard, getLatestArticleCoverImage, getLatestWechatSyncLogForArticle, getWechatConnectionRaw } from "./repositories";
 import { buildWritingDiversityReport } from "./writing-diversity";
 import { buildWritingQualityPanel } from "./writing-quality";
@@ -752,7 +752,7 @@ export async function evaluatePublishGuard(input: {
           : "先补并保存策略卡，再进入发布守门。",
     },
     {
-      stageCode: "evidencePackage",
+      stageCode: "evidence",
       title: "证据包",
       status: evidenceStats.ready ? (evidenceStats.status === "warning" ? "needs_attention" : "ready") : "blocked",
       detail: evidenceStats.ready

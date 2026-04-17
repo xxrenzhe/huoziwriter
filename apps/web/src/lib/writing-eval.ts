@@ -219,7 +219,6 @@ type WritingEvalLayoutStrategyRow = {
   description: string | null;
   meta: string | null;
   config_json: string | Record<string, unknown>;
-  is_public: number | boolean;
   is_official: number | boolean;
   owner_user_id: number | null;
   created_at: string;
@@ -784,9 +783,9 @@ function mapLayoutStrategy(row: WritingEvalLayoutStrategyRow) {
     description: row.description,
     meta: row.meta,
     config: parseJsonObject(row.config_json),
-    isPublic: Boolean(row.is_public),
     isOfficial: Boolean(row.is_official),
     ownerUserId: row.owner_user_id,
+    scope: row.owner_user_id == null ? "official" : "private",
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -2172,9 +2171,11 @@ export async function getWritingEvalLayoutStrategies() {
   await ensureExtendedProductSchema();
   const db = getDatabase();
   const rows = await db.query<WritingEvalLayoutStrategyRow>(
-    `SELECT id, code, name, description, meta, config_json, is_public, is_official, owner_user_id, created_at, updated_at
+    `SELECT id, code, name, description, meta, config_json, is_official, owner_user_id, created_at, updated_at
      FROM layout_strategies
-     ORDER BY is_official DESC, is_public DESC, updated_at DESC, id DESC`,
+     WHERE is_official = ? OR owner_user_id IS NOT NULL
+     ORDER BY is_official DESC, owner_user_id ASC, updated_at DESC, id DESC`,
+    [true],
   );
   return rows.map(mapLayoutStrategy);
 }

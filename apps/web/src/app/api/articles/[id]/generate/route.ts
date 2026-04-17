@@ -8,7 +8,7 @@ import { resolveArticleApplyCommandTemplate, resolveArticleLayoutStrategy } from
 import { getArticleWritingContext } from "@/lib/article-writing-context";
 import { buildGeneratedArticleDraft } from "@/lib/generation";
 import { fail, ok } from "@/lib/http";
-import { canUseHistoryReferences, consumeDailyGenerationQuota, getUserPlanContext } from "@/lib/plan-access";
+import { consumeDailyGenerationQuota, getUserPlanContext } from "@/lib/plan-access";
 import { createArticleSnapshot, getArticleById } from "@/lib/repositories";
 import { getLanguageGuardRules, getLanguageGuardTokenBlacklist } from "@/lib/language-guard";
 import { getActiveWritingEvalScoringProfile } from "@/lib/writing-eval";
@@ -47,7 +47,7 @@ export async function POST(_: Request, { params }: { params: { id: string } }) {
       return fail(researchGate.generationBlockReason, 409);
     }
     await consumeDailyGenerationQuota(session.userId);
-    const usableHistoryReferences = canUseHistoryReferences(planContext.effectivePlanCode) ? historyReferences : [];
+    const usableHistoryReferences = planContext.planSnapshot.canUseHistoryReferences ? historyReferences : [];
     const [layoutStrategy, applyCommandTemplate] = await Promise.all([
       resolveArticleLayoutStrategy({
         userId: session.userId,

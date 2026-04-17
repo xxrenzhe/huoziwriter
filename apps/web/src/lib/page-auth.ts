@@ -16,9 +16,9 @@ export async function requireWriterSession() {
   return { session, user };
 }
 
-export async function requireOpsSession() {
+export async function requireAdminSession() {
   const { session, user } = await requireWriterSession();
-  if (session.role !== "ops") {
+  if (session.role !== "admin") {
     redirect("/dashboard");
   }
   return { session, user };

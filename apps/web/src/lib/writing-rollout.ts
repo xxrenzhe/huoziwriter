@@ -1,6 +1,6 @@
 import { appendAuditLog } from "./audit";
 import { getDatabase } from "./db";
-import { getLayoutStrategyById } from "./marketplace";
+import { getLayoutStrategyById } from "./layout-strategies";
 import { ensureExtendedProductSchema } from "./schema-bootstrap";
 import { WRITING_EVAL_APPLY_COMMAND_TEMPLATES } from "./writing-eval-assets";
 import { getArticleOutcomeVersionSummaries } from "./writing-eval";
@@ -175,7 +175,7 @@ function getRolloutMatchReason(
 ) {
   if (!context) return false;
   const planCodes = parsePlanCodes(row.rollout_plan_codes_json);
-  if (Boolean(row.rollout_observe_only) && context.role === "ops") {
+  if (Boolean(row.rollout_observe_only) && context.role === "admin") {
     return "observe";
   }
   if (context.planCode && planCodes.includes(context.planCode)) {
@@ -385,7 +385,7 @@ export async function loadRolledOutLayoutStrategy(context?: WritingRolloutContex
     id: layoutStrategy.id,
     code: layoutStrategy.code,
     name: layoutStrategy.name,
-    config: JSON.parse(layoutStrategy.config_json) as Record<string, unknown>,
+    config: layoutStrategy.config,
     resolutionMode,
     resolutionReason,
   };

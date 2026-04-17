@@ -1,5 +1,5 @@
 export type UserPlanCode = "free" | "pro" | "ultra";
-export type UserRole = "ops" | "user";
+export type UserRole = "admin" | "user";
 export type ArticleStatus =
   | "draft"
   | "ready"

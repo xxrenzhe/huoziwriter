@@ -79,6 +79,18 @@ async function renameTableIfNeeded(from: string, to: string) {
   await db.exec(`ALTER TABLE ${from} RENAME TO ${to}`);
 }
 
+async function dropTableIfNeeded(table: string) {
+  if (!(await hasTable(table))) {
+    return;
+  }
+  const db = getDatabase();
+  try {
+    await db.exec(`DROP TABLE ${table}`);
+  } catch {
+    // Ignore on engines or environments that cannot drop the legacy table in-place.
+  }
+}
+
 async function dropColumnIfNeeded(table: string, column: string) {
   if (!(await hasColumn(table, column))) {
     return;
@@ -109,10 +121,7 @@ async function replaceTextInColumn(table: string, column: string, replacements: 
 
 const LEGACY_STYLE_GENOME_ASSET_TYPE = "style_genome";
 const LEGACY_STYLE_GENOMES_TABLE = "style_genomes";
-const LEGACY_STYLE_GENOME_FORKS_TABLE = "style_genome_forks";
 const LEGACY_STYLE_GENOME_ID_COLUMN = "style_genome_id";
-const LEGACY_SOURCE_GENOME_ID_COLUMN = "source_genome_id";
-const LEGACY_TARGET_GENOME_ID_COLUMN = "target_genome_id";
 const LEGACY_AUTHOR_PERSONAS_TABLE = "author_personas";
 const LEGACY_AUTHOR_PERSONA_SOURCES_TABLE = "author_persona_sources";
 const LEGACY_AUTHOR_SERIES_TABLE = "author_series";
@@ -186,22 +195,28 @@ async function normalizeLayoutStrategyTerminology() {
   ]);
 }
 
-async function normalizeCanonicalOpsData() {
+async function normalizeCanonicalAdminData() {
   const db = getDatabase();
   await db.exec(
     `UPDATE users
-     SET role = 'ops'
-     WHERE role IS NOT NULL AND LOWER(TRIM(role)) <> 'user' AND LOWER(TRIM(role)) <> 'ops'`,
+     SET role = 'admin'
+     WHERE role IS NOT NULL AND LOWER(TRIM(role)) <> 'user' AND LOWER(TRIM(role)) <> 'admin'`,
   );
   await db.exec(
     `UPDATE prompt_rollout_observations
-     SET role = 'ops'
-     WHERE role IS NOT NULL AND LOWER(TRIM(role)) <> 'user' AND LOWER(TRIM(role)) <> 'ops'`,
+     SET role = 'admin'
+     WHERE role IS NOT NULL AND LOWER(TRIM(role)) <> 'user' AND LOWER(TRIM(role)) <> 'admin'`,
   );
   await db.exec(
     `UPDATE writing_asset_rollout_observations
-     SET role = 'ops'
-     WHERE role IS NOT NULL AND LOWER(TRIM(role)) <> 'user' AND LOWER(TRIM(role)) <> 'ops'`,
+     SET role = 'admin'
+     WHERE role IS NOT NULL AND LOWER(TRIM(role)) <> 'user' AND LOWER(TRIM(role)) <> 'admin'`,
+  );
+  await db.exec(
+    `UPDATE writing_eval_online_feedback
+     SET source_type = 'admin_review'
+     WHERE source_type IS NOT NULL
+       AND LOWER(TRIM(source_type)) NOT IN ('manual', 'wechat_dashboard', 'admin_review', 'article_outcome')`,
   );
   await db.exec(
     `UPDATE prompt_rollout_observations
@@ -407,7 +422,7 @@ const WRITING_EVAL_CASE_SEED_SPECS = [
     readerProfile: "对算力基础设施和产业链有持续兴趣的读者",
     backgroundAwareness: "知道 AI 芯片创业很多，但不了解客户切换障碍",
     targetEmotion: "感受到技术差距之外的商业卡点",
-    sourceFacts: ["企业客户在推理和训练链路上已经形成稳定工具链", "切换芯片不仅是换一块卡，还涉及适配、监控、运维和团队学习成本", "性能优势不足以覆盖迁移风险时，客户会继续保守采购"],
+    sourceFacts: ["企业客户在推理和训练链路上已经形成稳定工具链", "切换芯片不仅是换一块卡，还涉及适配、监控、维护和团队学习成本", "性能优势不足以覆盖迁移风险时，客户会继续保守采购"],
     titleGoal: "标题要把常见理解和真实阻力拉开",
     hookGoal: "首段要先指出客户为什么即使认可性能也不下单",
     shareTriggerGoal: "输出一句适合行业转发的迁移判断",
@@ -862,7 +877,6 @@ export async function ensureExtendedProductSchema() {
   await renameTableIfNeeded(LEGACY_AUTHOR_SERIES_TABLE, "series");
   await renameTableIfNeeded(LEGACY_BANNED_WORDS_TABLE, "language_guard_tokens");
   await renameTableIfNeeded(LEGACY_STYLE_GENOMES_TABLE, "layout_strategies");
-  await renameTableIfNeeded(LEGACY_STYLE_GENOME_FORKS_TABLE, "layout_strategy_forks");
   await renameTableIfNeeded(legacyArticleTable(), "articles");
   await renameTableIfNeeded(legacyArticleTable("snapshots"), "article_snapshots");
   await renameTableIfNeeded(legacyArticleTable("nodes"), "article_nodes");
@@ -897,14 +911,6 @@ export async function ensureExtendedProductSchema() {
   await renameColumnIfNeeded("cover_images", legacyArticleColumn("id"), "article_id");
   await renameColumnIfNeeded("asset_files", legacyArticleColumn("id"), "article_id");
   await renameColumnIfNeeded("cover_image_candidates", legacyArticleColumn("id"), "article_id");
-  if (await hasTable("layout_strategies")) {
-    await renameColumnIfNeeded("layout_strategies", LEGACY_SOURCE_GENOME_ID_COLUMN, "source_layout_strategy_id");
-  }
-  if (await hasTable("layout_strategy_forks")) {
-    await renameColumnIfNeeded("layout_strategy_forks", LEGACY_SOURCE_GENOME_ID_COLUMN, "source_layout_strategy_id");
-    await renameColumnIfNeeded("layout_strategy_forks", LEGACY_TARGET_GENOME_ID_COLUMN, "target_layout_strategy_id");
-  }
-
   await execAll([
     `CREATE TABLE IF NOT EXISTS article_nodes (
       id ${getDatabase().type === "postgres" ? "BIGSERIAL" : "INTEGER"} PRIMARY KEY ${getDatabase().type === "postgres" ? "" : "AUTOINCREMENT"},
@@ -1061,15 +1067,12 @@ export async function ensureExtendedProductSchema() {
     `CREATE TABLE IF NOT EXISTS layout_strategies (
       id ${getDatabase().type === "postgres" ? "BIGSERIAL" : "INTEGER"} PRIMARY KEY ${getDatabase().type === "postgres" ? "" : "AUTOINCREMENT"},
       owner_user_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"},
-      source_layout_strategy_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"},
       code TEXT NOT NULL UNIQUE,
       name TEXT NOT NULL,
       description TEXT,
       meta TEXT,
       config_json TEXT NOT NULL,
-      is_public ${getDatabase().type === "postgres" ? "BOOLEAN" : "INTEGER"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "FALSE" : "0"},
       is_official ${getDatabase().type === "postgres" ? "BOOLEAN" : "INTEGER"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "FALSE" : "0"},
-      published_at ${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"},
       created_at ${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "NOW()" : "(datetime('now'))"},
       updated_at ${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "NOW()" : "(datetime('now'))"}
     )`,
@@ -1420,13 +1423,6 @@ export async function ensureExtendedProductSchema() {
       captured_at ${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "NOW()" : "(datetime('now'))"},
       created_at ${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "NOW()" : "(datetime('now'))"},
       updated_at ${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "NOW()" : "(datetime('now'))"}
-    )`,
-    `CREATE TABLE IF NOT EXISTS layout_strategy_forks (
-      id ${getDatabase().type === "postgres" ? "BIGSERIAL" : "INTEGER"} PRIMARY KEY ${getDatabase().type === "postgres" ? "" : "AUTOINCREMENT"},
-      source_layout_strategy_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"} NOT NULL,
-      target_layout_strategy_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"} NOT NULL,
-      user_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"} NOT NULL,
-      created_at ${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "NOW()" : "(datetime('now'))"}
     )`,
     `CREATE TABLE IF NOT EXISTS knowledge_cards (
       id ${getDatabase().type === "postgres" ? "BIGSERIAL" : "INTEGER"} PRIMARY KEY ${getDatabase().type === "postgres" ? "" : "AUTOINCREMENT"},
@@ -1895,6 +1891,15 @@ export async function ensureExtendedProductSchema() {
   await ensureColumn("cover_image_candidates", "compressed_object_key", "TEXT");
   await ensureColumn("cover_image_candidates", "thumbnail_object_key", "TEXT");
   await ensureColumn("cover_image_candidates", "asset_manifest_json", getDatabase().type === "postgres" ? "JSONB" : "TEXT");
+  await dropColumnIfNeeded("plans", "can_fork_genomes");
+  await dropColumnIfNeeded("plans", "can_publish_genomes");
+  await dropColumnIfNeeded("plans", "is_public");
+  await dropColumnIfNeeded("layout_strategies", "source_genome_id");
+  await dropColumnIfNeeded("layout_strategies", "source_layout_strategy_id");
+  await dropColumnIfNeeded("layout_strategies", "is_public");
+  await dropColumnIfNeeded("layout_strategies", "published_at");
+  await dropTableIfNeeded("style_genome_forks");
+  await dropTableIfNeeded("layout_strategy_forks");
   await dropColumnIfNeeded("knowledge_cards", LEGACY_WORKSPACE_SCOPE_COLUMN);
   await renameColumnIfNeeded("asset_files", LEGACY_ASSET_FILES_LEGACY_ASSET_ID_COLUMN, "source_record_id");
   await ensureColumn("asset_files", "article_id", getDatabase().type === "postgres" ? "BIGINT" : "INTEGER");
@@ -1931,7 +1936,7 @@ export async function ensureExtendedProductSchema() {
     [LEGACY_AUDIT_LOG_STAFF_HIT_COUNT_KEY, "observeHitCount"],
     [LEGACY_AUDIT_LOG_STAFF_SCOPE_KEY, CANONICAL_OBSERVE_SCOPE_KEY],
   ]);
-  await normalizeCanonicalOpsData();
+  await normalizeCanonicalAdminData();
   await execAll([
     "CREATE INDEX IF NOT EXISTS idx_writing_eval_datasets_status_updated_at ON writing_eval_datasets(status, updated_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_writing_eval_cases_dataset_enabled_difficulty ON writing_eval_cases(dataset_id, is_enabled, difficulty_level)",
@@ -1970,17 +1975,16 @@ export async function ensureExtendedProductSchema() {
   await ensureWritingActiveAssetSeeds();
 }
 
-export async function ensureMarketplaceSeeds() {
+export async function ensureTemplateLibrarySeeds() {
   const db = getDatabase();
   for (const template of STYLE_TEMPLATE_LIBRARY) {
     const layoutStrategy = await db.queryOne<{ id: number }>("SELECT id FROM layout_strategies WHERE code = ?", [template.id]);
     if (!layoutStrategy) {
       await db.exec(
         `INSERT INTO layout_strategies (
-          owner_user_id, source_layout_strategy_id, code, name, description, meta, config_json, is_public, is_official, published_at, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          owner_user_id, code, name, description, meta, config_json, is_official, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
-          null,
           null,
           template.id,
           template.name,
@@ -1988,8 +1992,6 @@ export async function ensureMarketplaceSeeds() {
           template.meta,
           template.config,
           true,
-          true,
-          new Date().toISOString(),
           new Date().toISOString(),
           new Date().toISOString(),
         ],

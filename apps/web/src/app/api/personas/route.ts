@@ -1,6 +1,7 @@
 import { ensureUserSession } from "@/lib/auth";
 import { fail, ok } from "@/lib/http";
-import { createPersona, getPersonaCatalog, getPersonaLimitForUser, getPersonas } from "@/lib/personas";
+import { getUserPlanContext } from "@/lib/plan-access";
+import { createPersona, getPersonaCatalog, getPersonas } from "@/lib/personas";
 
 export async function GET() {
   const session = await ensureUserSession();
@@ -8,11 +9,12 @@ export async function GET() {
     return fail("未登录", 401);
   }
 
-  const [personas, maxCount, catalog] = await Promise.all([
+  const [personas, planContext, catalog] = await Promise.all([
     getPersonas(session.userId),
-    getPersonaLimitForUser(session.userId),
+    getUserPlanContext(session.userId),
     getPersonaCatalog(),
   ]);
+  const maxCount = planContext.planSnapshot.personaLimit;
   return ok({ personas, maxCount, catalog });
 }
 
