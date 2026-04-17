@@ -26,7 +26,7 @@ export const PERSONA_WRITING_STYLE_OPTIONS = [
   "复盘笔记",
 ] as const;
 
-export function deriveAuthorPersonaName(identityTags: string[], writingStyleTags: string[]) {
+export function derivePersonaName(identityTags: string[], writingStyleTags: string[]) {
   const identity = identityTags[0] || "创作者";
   const style = writingStyleTags[0] || "写作风格";
   return `${identity} · ${style}`;

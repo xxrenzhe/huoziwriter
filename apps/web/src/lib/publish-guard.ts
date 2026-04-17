@@ -1,8 +1,12 @@
 import { analyzeAiNoise } from "./ai-noise-scan";
-import { getDocumentNodes } from "./document-outline";
-import { getDocumentStageArtifact } from "./document-stage-artifacts";
+import { getArticleEvidenceStats } from "./article-evidence";
+import { getHumanSignalScore, getStrategyCardMissingFields, isStrategyCardComplete } from "./article-strategy";
+import { getArticleNodes } from "./article-outline";
+import { getArticleStageArtifact, getArticleStageArtifactsByDocumentIds } from "./article-stage-artifacts";
 import { getActiveTemplateById } from "./marketplace";
-import { getDocumentById, getLatestCoverImage, getLatestWechatSyncLogForDocument, getWechatConnectionRaw } from "./repositories";
+import { getArticleById, getArticleEvidenceItems, getArticlesByUser, getArticleStrategyCard, getLatestArticleCoverImage, getLatestWechatSyncLogForArticle, getWechatConnectionRaw } from "./repositories";
+import { buildWritingDiversityReport } from "./writing-diversity";
+import { buildWritingQualityPanel } from "./writing-quality";
 
 type GuardStatus = "passed" | "warning" | "blocked";
 type GuardSeverity = "blocking" | "warning" | "suggestion";
@@ -37,6 +41,7 @@ export type PublishGuardResult = {
     findings: string[];
     suggestions: string[];
   };
+  qualityPanel: ReturnType<typeof buildWritingQualityPanel>;
   materialReadiness: {
     attachedFragmentCount: number;
     uniqueSourceTypeCount: number;
@@ -66,6 +71,10 @@ function getString(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function getRecordArray(value: unknown) {
+  return Array.isArray(value) ? value.map((item) => getRecord(item)).filter(Boolean) as Record<string, unknown>[] : [];
+}
+
 function getStringArray(value: unknown, limit = 8) {
   return Array.isArray(value) ? value.map((item) => String(item || "").trim()).filter(Boolean).slice(0, limit) : [];
 }
@@ -93,25 +102,37 @@ function pushCheck(
   suggestions.push(input.detail);
 }
 
+function getWeakestQualityLayerTargetStage(code: ReturnType<typeof buildWritingQualityPanel>["weakestLayerCode"]) {
+  if (code === "hard_rules") return "prosePolish";
+  if (code === "style_consistency") return "deepWriting";
+  if (code === "content_quality") return "factCheck";
+  if (code === "humanity") return "audienceAnalysis";
+  return undefined;
+}
+
 export async function evaluatePublishGuard(input: {
-  documentId: number;
+  articleId: number;
   userId: number;
   templateId?: string | null;
   wechatConnectionId?: number | null;
 }): Promise<PublishGuardResult> {
-  const [document, outlineArtifact, deepWritingArtifact, factCheckArtifact, prosePolishArtifact, nodes, coverImage, connection, template, latestAttempt] = await Promise.all([
-    getDocumentById(input.documentId, input.userId),
-    getDocumentStageArtifact(input.documentId, input.userId, "outlinePlanning"),
-    getDocumentStageArtifact(input.documentId, input.userId, "deepWriting"),
-    getDocumentStageArtifact(input.documentId, input.userId, "factCheck"),
-    getDocumentStageArtifact(input.documentId, input.userId, "prosePolish"),
-    getDocumentNodes(input.documentId),
-    getLatestCoverImage(input.userId, input.documentId),
+  const [article, recentArticles, strategyCard, evidenceItems, researchArtifact, outlineArtifact, deepWritingArtifact, factCheckArtifact, prosePolishArtifact, nodes, coverImage, connection, template, latestAttempt] = await Promise.all([
+    getArticleById(input.articleId, input.userId),
+    getArticlesByUser(input.userId),
+    getArticleStrategyCard(input.articleId, input.userId),
+    getArticleEvidenceItems(input.articleId, input.userId),
+    getArticleStageArtifact(input.articleId, input.userId, "researchBrief"),
+    getArticleStageArtifact(input.articleId, input.userId, "outlinePlanning"),
+    getArticleStageArtifact(input.articleId, input.userId, "deepWriting"),
+    getArticleStageArtifact(input.articleId, input.userId, "factCheck"),
+    getArticleStageArtifact(input.articleId, input.userId, "prosePolish"),
+    getArticleNodes(input.articleId),
+    getLatestArticleCoverImage(input.userId, input.articleId),
     input.wechatConnectionId ? getWechatConnectionRaw(input.wechatConnectionId, input.userId) : Promise.resolve(null),
     input.templateId ? getActiveTemplateById(input.templateId, input.userId) : Promise.resolve(null),
-    getLatestWechatSyncLogForDocument({
+    getLatestWechatSyncLogForArticle({
       userId: input.userId,
-      documentId: input.documentId,
+      articleId: input.articleId,
       wechatConnectionId: input.wechatConnectionId ?? null,
     }),
   ]);
@@ -139,7 +160,7 @@ export async function evaluatePublishGuard(input: {
   const languageGuardHits = Array.isArray(prosePolishArtifact?.payload?.languageGuardHits)
     ? (prosePolishArtifact?.payload?.languageGuardHits as unknown[])
     : [];
-  const localAiNoise = analyzeAiNoise(document?.markdown_content || "");
+  const localAiNoise = analyzeAiNoise(article?.markdown_content || "");
   const aiNoiseRecord = getRecord(prosePolishArtifact?.payload?.aiNoise);
   const aiNoiseScore = Number(aiNoiseRecord?.score ?? localAiNoise.score ?? 0);
   const aiNoiseLevel =
@@ -150,10 +171,195 @@ export async function evaluatePublishGuard(input: {
   const aiNoiseSuggestions = getStringArray(aiNoiseRecord?.suggestions, 4).length
     ? getStringArray(aiNoiseRecord?.suggestions, 4)
     : getStringArray(localAiNoise.suggestions, 4);
+  const aiNoiseHasRigidOutline = localAiNoise.outlineRigidityRisk === "high";
+  const aiNoiseHasSummaryEnding = localAiNoise.summaryEndingRisk === "high";
+  const aiNoiseNeedsAttention = aiNoiseScore >= 70 || aiNoiseHasRigidOutline || aiNoiseHasSummaryEnding;
   const missingEvidence = getStringArray(factCheckArtifact?.payload?.missingEvidence, 6);
   const overallRisk = getString(factCheckArtifact?.payload?.overallRisk);
   const personaAlignment = getString(factCheckArtifact?.payload?.personaAlignment);
   const topicAlignment = getString(factCheckArtifact?.payload?.topicAlignment);
+  const researchSourceCoverage = getRecord(researchArtifact?.payload?.sourceCoverage);
+  const researchCoveredCategoryCount = ["official", "industry", "comparison", "userVoice", "timeline"]
+    .filter((key) => getStringArray(researchSourceCoverage?.[key], 4).length > 0)
+    .length;
+  const researchSufficiency = getString(researchSourceCoverage?.sufficiency);
+  const researchMissingCategories = getStringArray(researchSourceCoverage?.missingCategories, 5);
+  const researchTimelineCount = getRecordArray(researchArtifact?.payload?.timelineCards).length;
+  const researchComparisonCount = getRecordArray(researchArtifact?.payload?.comparisonCards).length;
+  const researchInsightCount = getRecordArray(researchArtifact?.payload?.intersectionInsights).length;
+  const researchCoverageBlocked = researchSufficiency === "blocked" || researchCoveredCategoryCount <= 1;
+  const researchTimelineMissing = researchTimelineCount === 0;
+  const researchComparisonMissing = researchComparisonCount === 0;
+  const researchInsightMissing = researchInsightCount === 0;
+  const factCheckCounterEvidenceCount = getRecordArray(factCheckArtifact?.payload?.evidenceCards).reduce((sum, card) => {
+    return sum + getRecordArray(card.counterEvidence).length;
+  }, 0);
+  const researchReady = researchArtifact?.status === "ready" && hasArtifactPayload(researchArtifact);
+  const strategyCardMissingFields = getStrategyCardMissingFields(strategyCard);
+  const strategyCardReady = isStrategyCardComplete(strategyCard);
+  const humanSignalScore = getHumanSignalScore(strategyCard);
+  const evidenceStats = getArticleEvidenceStats(evidenceItems);
+  const hasCounterEvidence = evidenceStats.counterEvidenceCount > 0 || factCheckCounterEvidenceCount > 0;
+  const researchHollowRiskItems = [
+    !researchReady ? "研究简报尚未生成，当前还无法确认内容是不是只有表达没有研究。" : null,
+    researchReady && researchCoverageBlocked
+      ? `研究层仍只覆盖 ${researchCoveredCategoryCount} 类信源，当前更像单口径观点草稿。`
+      : null,
+    researchReady && researchTimelineMissing ? "缺少时间脉络卡，文章容易把现象写成凭空发生。" : null,
+    researchReady && researchComparisonMissing ? "缺少横向比较卡，判断容易停在单点观察。" : null,
+    researchReady && researchInsightMissing ? "高风险：缺少交汇洞察，正文仍容易退化成资料整理。" : null,
+    evidenceStats.itemCount > 0 && !hasCounterEvidence ? "只有支持性证据，缺少反证或反例。" : null,
+  ].filter(Boolean) as string[];
+  const researchHollowRiskStatus: GuardStatus =
+    researchReady && researchCoverageBlocked
+      ? "blocked"
+      : researchHollowRiskItems.length > 0
+        ? "warning"
+        : "passed";
+  const researchHollowRiskTargetStage =
+    !researchReady || researchCoverageBlocked || researchTimelineMissing || researchComparisonMissing || researchInsightMissing
+      ? "researchBrief"
+      : evidenceStats.itemCount > 0 && !hasCounterEvidence
+        ? "factCheck"
+        : undefined;
+  const researchHollowRiskActionLabel =
+    researchHollowRiskTargetStage === "researchBrief"
+      ? "去补研究底座"
+      : researchHollowRiskTargetStage === "factCheck"
+        ? "去补反证"
+        : undefined;
+  const recentArticleItems = recentArticles
+    .filter((item) => item.id !== input.articleId)
+    .slice(0, 5)
+    .map((item) => ({
+      id: item.id,
+      title: item.title,
+      markdownContent: item.markdown_content,
+    }));
+  const recentDeepWritingStates = recentArticleItems.length
+    ? await getArticleStageArtifactsByDocumentIds({
+        userId: input.userId,
+        articleIds: recentArticleItems.map((item) => item.id),
+        stageCode: "deepWriting",
+      })
+    : [];
+  const diversityReport = buildWritingDiversityReport({
+    currentArticle: {
+      id: article?.id ?? input.articleId,
+      title: article?.title ?? "",
+      markdownContent: article?.markdown_content || "",
+    },
+    deepWritingPayload: deepWritingArtifact?.payload || null,
+    recentArticles: recentArticleItems,
+    recentDeepWritingStates: recentDeepWritingStates.map((item) => ({
+      id: item.articleId,
+      title: item.title,
+      payload: item.artifact.payload,
+    })),
+  });
+  const qualityPanel = buildWritingQualityPanel({
+    markdownContent: article?.markdown_content || "",
+    aiNoise: localAiNoise,
+    languageGuardHitsCount: languageGuardHits.length,
+    humanSignalScore,
+    hasRealScene: Boolean(String(strategyCard?.firstHandObservation || "").trim() || String(strategyCard?.realSceneOrDialogue || "").trim()),
+    hasNonDelegableTruth: Boolean(String(strategyCard?.nonDelegableTruth || "").trim()),
+    materialReadiness,
+    evidenceStats: {
+      ready: evidenceStats.ready,
+      itemCount: evidenceStats.itemCount,
+      flags: evidenceStats.flags,
+    },
+    missingEvidenceCount: missingEvidence.length,
+    deepWritingPayload: deepWritingArtifact?.payload || null,
+    researchBriefPayload: researchArtifact?.payload || null,
+    diversityReport,
+  });
+
+  pushCheck(checks, blockers, warnings, suggestions, {
+    key: "writingDiversity",
+    label: "写法去重",
+    status: diversityReport.status === "needs_attention" ? "warning" : "passed",
+    severity: diversityReport.status === "needs_attention" ? "warning" : "suggestion",
+    detail: diversityReport.status === "needs_attention" ? diversityReport.issues[0] || diversityReport.summary : diversityReport.summary,
+    targetStageCode: "deepWriting",
+    actionLabel: diversityReport.status === "needs_attention" ? "去换写法" : undefined,
+  });
+
+  const weakestQualityLayer = qualityPanel.layers.find((item) => item.code === qualityPanel.weakestLayerCode) ?? null;
+  if (weakestQualityLayer) {
+    pushCheck(checks, blockers, warnings, suggestions, {
+      key: "writingQualityFocus",
+      label: "当前最弱质检层",
+      status:
+        weakestQualityLayer.status === "blocked"
+          ? "blocked"
+          : weakestQualityLayer.status === "needs_attention"
+            ? "warning"
+            : "passed",
+      severity:
+        weakestQualityLayer.status === "blocked"
+          ? "blocking"
+          : weakestQualityLayer.status === "needs_attention"
+            ? "warning"
+            : "suggestion",
+      detail: `当前最弱层是「${weakestQualityLayer.title}」：${weakestQualityLayer.suggestions[0] || weakestQualityLayer.summary}`,
+      targetStageCode: getWeakestQualityLayerTargetStage(qualityPanel.weakestLayerCode),
+      actionLabel:
+        weakestQualityLayer.status === "ready"
+          ? undefined
+          : weakestQualityLayer.code === "hard_rules"
+            ? "先清硬伤"
+            : weakestQualityLayer.code === "style_consistency"
+              ? "先换执行卡"
+              : weakestQualityLayer.code === "content_quality"
+                ? "先补证据"
+                : "先补真人信号",
+    });
+  }
+
+  pushCheck(checks, blockers, warnings, suggestions, {
+    key: "strategyCard",
+    label: "策略卡",
+    status: strategyCardReady ? "passed" : "blocked",
+    severity: strategyCardReady ? "suggestion" : "blocking",
+    detail: strategyCardReady
+      ? "策略卡已确认，读者、判断、目标包和发布时间窗都已锁定。"
+      : strategyCard
+        ? `策略卡还缺这些必填项：${strategyCardMissingFields.join("；")}。`
+        : "发布前需要先确认并保存策略卡。",
+    targetStageCode: "audienceAnalysis",
+    actionLabel: strategyCardReady ? undefined : "去补策略卡",
+  });
+
+  pushCheck(checks, blockers, warnings, suggestions, {
+    key: "evidencePackage",
+    label: "证据包",
+    status: evidenceStats.ready ? "passed" : "blocked",
+    severity: evidenceStats.ready ? (evidenceStats.status === "warning" ? "warning" : "suggestion") : "blocking",
+    detail: evidenceStats.ready
+      ? evidenceStats.status === "warning"
+        ? `证据包已确认，但仍有这些缺口：${evidenceStats.flags.join("；")}。`
+        : `证据包已确认，共 ${evidenceStats.itemCount} 条。`
+      : `证据包未达发布标准：${evidenceStats.flags.join("；") || evidenceStats.detail}`,
+    targetStageCode: "outlinePlanning",
+    actionLabel: evidenceStats.ready ? undefined : "去补证据包",
+  });
+
+  pushCheck(checks, blockers, warnings, suggestions, {
+    key: "humanSignals",
+    label: "人类信号",
+    status: humanSignalScore >= 3 ? "passed" : humanSignalScore >= 2 ? "warning" : "blocked",
+    severity: humanSignalScore >= 3 ? "suggestion" : humanSignalScore >= 2 ? "warning" : "blocking",
+    detail:
+      humanSignalScore >= 3
+        ? `已补 ${humanSignalScore} / 6 条人类信号，正文可以更稳地落在你的观察、体感和真实场景上。`
+        : humanSignalScore >= 2
+          ? `当前只补了 ${humanSignalScore} / 6 条人类信号，勉强够用，但正文仍容易滑回“结构正确、呼吸感不足”的写法。`
+          : `当前只补了 ${humanSignalScore} / 6 条人类信号。发布前至少补到 2 条，最好到 3 条以上。`,
+    targetStageCode: "audienceAnalysis",
+    actionLabel: humanSignalScore >= 3 ? undefined : "去补人类信号",
+  });
 
   pushCheck(checks, blockers, warnings, suggestions, {
     key: "title_confirmation",
@@ -163,6 +369,126 @@ export async function evaluatePublishGuard(input: {
     detail: titleConfirmed ? `已确认发布标题：${selectedTitle}` : "发布前需要先确认一个可落地标题。",
     targetStageCode: "outlinePlanning",
     actionLabel: titleConfirmed ? undefined : "去确认标题",
+  });
+
+  pushCheck(checks, blockers, warnings, suggestions, {
+    key: "researchBrief",
+    label: "研究简报",
+    status:
+      !researchReady
+        ? "warning"
+        : researchCoverageBlocked
+          ? "blocked"
+          : researchTimelineMissing || researchComparisonMissing || researchInsightMissing
+            ? "warning"
+            : "passed",
+    severity:
+      !researchReady
+        ? "warning"
+        : researchCoverageBlocked
+          ? "blocking"
+          : researchTimelineMissing || researchComparisonMissing || researchInsightMissing
+            ? "warning"
+            : "suggestion",
+    detail:
+      !researchReady
+        ? "建议先生成研究简报，把核心问题、时间脉络、横向比较和交汇洞察补齐后再把判断写硬。"
+        : researchCoverageBlocked
+          ? `研究层仍未达到最低信源覆盖度${researchMissingCategories.length ? `，当前还缺：${researchMissingCategories.join("、")}` : ""}。`
+          : researchTimelineMissing || researchComparisonMissing || researchInsightMissing
+            ? `研究简报已生成，但仍有这些空洞风险：${[
+                researchTimelineMissing ? "缺少时间脉络卡" : null,
+                researchComparisonMissing ? "缺少横向比较卡" : null,
+                researchInsightMissing ? "缺少交汇洞察" : null,
+              ]
+                .filter(Boolean)
+                .join("；")}。`
+            : "研究简报已完成，纵向与横向研究底座可用于后续判断。",
+  });
+
+  pushCheck(checks, blockers, warnings, suggestions, {
+    key: "researchHollowRisk",
+    label: "内容空洞风险",
+    status: researchHollowRiskStatus,
+    severity:
+      researchHollowRiskStatus === "blocked"
+        ? "blocking"
+        : researchHollowRiskStatus === "warning"
+          ? "warning"
+          : "suggestion",
+    detail:
+      researchHollowRiskStatus === "blocked"
+        ? `内容空洞风险已触发阻断：${researchHollowRiskItems.join("；")}`
+        : researchHollowRiskStatus === "warning"
+          ? `当前仍有这些内容空洞风险：${researchHollowRiskItems.join("；")}`
+          : "纵向脉络、横向比较、交汇洞察与反证都已覆盖，内容空洞风险可控。",
+    targetStageCode: researchHollowRiskTargetStage,
+    actionLabel: researchHollowRiskActionLabel,
+  });
+
+  if (researchReady) {
+    pushCheck(checks, blockers, warnings, suggestions, {
+      key: "researchSourceCoverage",
+      label: "研究信源覆盖",
+      status: researchCoverageBlocked ? "blocked" : "passed",
+      severity: researchCoverageBlocked ? "blocking" : "suggestion",
+      detail: researchCoverageBlocked
+        ? `研究信源覆盖仍不足${researchMissingCategories.length ? `，当前还缺：${researchMissingCategories.join("、")}` : ""}。`
+        : `研究层已覆盖 ${researchCoveredCategoryCount} 类信源，当前可以支撑判断型正文。`,
+      targetStageCode: "researchBrief",
+      actionLabel: researchCoverageBlocked ? "去补研究信源" : undefined,
+    });
+
+    pushCheck(checks, blockers, warnings, suggestions, {
+      key: "researchTimeline",
+      label: "时间脉络",
+      status: researchTimelineMissing ? "warning" : "passed",
+      severity: researchTimelineMissing ? "warning" : "suggestion",
+      detail: researchTimelineMissing
+        ? "研究层还缺时间脉络卡，文章容易把现象写成凭空发生。"
+        : `已沉淀 ${researchTimelineCount} 张时间脉络卡，能解释事情为什么会走到今天。`,
+      targetStageCode: "researchBrief",
+      actionLabel: researchTimelineMissing ? "去补时间脉络" : undefined,
+    });
+
+    pushCheck(checks, blockers, warnings, suggestions, {
+      key: "researchComparison",
+      label: "横向比较",
+      status: researchComparisonMissing ? "warning" : "passed",
+      severity: researchComparisonMissing ? "warning" : "suggestion",
+      detail: researchComparisonMissing
+        ? "研究层还缺横向比较卡，判断仍然容易停留在单点观察。"
+        : `已沉淀 ${researchComparisonCount} 张横向比较卡，当前能把判断放回结构性对比里。`,
+      targetStageCode: "researchBrief",
+      actionLabel: researchComparisonMissing ? "去补横向比较" : undefined,
+    });
+
+    pushCheck(checks, blockers, warnings, suggestions, {
+      key: "researchIntersection",
+      label: "交汇洞察",
+      status: researchInsightMissing ? "warning" : "passed",
+      severity: researchInsightMissing ? "warning" : "suggestion",
+      detail: researchInsightMissing
+        ? "研究层还没有交汇洞察，正文仍容易停在资料整理层，而不是“为什么会这样发生”。"
+        : `已沉淀 ${researchInsightCount} 条交汇洞察，可直接支撑 why now 和核心判断。`,
+      targetStageCode: "researchBrief",
+      actionLabel: researchInsightMissing ? "去补交汇洞察" : undefined,
+    });
+  }
+
+  pushCheck(checks, blockers, warnings, suggestions, {
+    key: "counterEvidence",
+    label: "反证与反例",
+    status: evidenceStats.itemCount === 0 ? "warning" : hasCounterEvidence ? "passed" : "warning",
+    severity: evidenceStats.itemCount === 0 ? "warning" : hasCounterEvidence ? "suggestion" : "warning",
+    detail:
+      evidenceStats.itemCount === 0
+        ? "证据包还没确认，暂时无法判断是否覆盖反证或反例。"
+        : hasCounterEvidence
+          ? "证据包或事实核查中已保留反证/反例，判断不容易滑向单边结论。"
+          : "当前只有支持性证据，没有反证或反例。发布前建议至少补 1 条反向材料，避免把判断写成单边定论。",
+    targetStageCode: "factCheck",
+    actionLabel: hasCounterEvidence ? undefined : "去补反证",
   });
 
   pushCheck(checks, blockers, warnings, suggestions, {
@@ -240,7 +566,7 @@ export async function evaluatePublishGuard(input: {
       materialReadiness.attachedFragmentCount === 0 ? "warning" : materialReadiness.uniqueSourceTypeCount <= 1 ? "warning" : "suggestion",
     detail:
       materialReadiness.attachedFragmentCount === 0
-        ? "当前文稿没有挂载素材，发布前至少补 2 条可核对素材。"
+        ? "当前稿件没有挂载素材，发布前至少补 2 条可核对素材。"
         : materialReadiness.uniqueSourceTypeCount <= 1
           ? `当前只覆盖 ${materialReadiness.uniqueSourceTypeCount} 类来源，建议补链接或截图证据，避免单一信源。`
           : `当前已挂载 ${materialReadiness.attachedFragmentCount} 条素材，覆盖 ${materialReadiness.uniqueSourceTypeCount} 类来源。`,
@@ -298,14 +624,19 @@ export async function evaluatePublishGuard(input: {
   pushCheck(checks, blockers, warnings, suggestions, {
     key: "ai_noise",
     label: "AI 噪声",
-    status: aiNoiseScore >= 70 ? "warning" : "passed",
-    severity: aiNoiseScore >= 70 ? "warning" : "suggestion",
+    status: aiNoiseNeedsAttention ? "warning" : "passed",
+    severity: aiNoiseNeedsAttention ? "warning" : "suggestion",
     detail:
-      aiNoiseScore >= 70
-        ? `AI 噪声得分 ${aiNoiseScore}，建议先重写空话密集段落。`
+      aiNoiseNeedsAttention
+        ? [
+            `AI 噪声得分 ${aiNoiseScore}`,
+            aiNoiseScore >= 70 ? "空话或模板痕迹偏重" : null,
+            aiNoiseHasRigidOutline ? "段落推进过于工整，像按施工图展开" : null,
+            aiNoiseHasSummaryEnding ? "结尾仍带明显总结腔" : null,
+          ].filter(Boolean).join("，")
         : `AI 噪声得分 ${aiNoiseScore}，当前风险可控。`,
     targetStageCode: "prosePolish",
-    actionLabel: aiNoiseScore >= 70 ? "去精修段落" : undefined,
+    actionLabel: aiNoiseNeedsAttention ? "去精修段落" : undefined,
   });
 
   pushCheck(checks, blockers, warnings, suggestions, {
@@ -381,6 +712,56 @@ export async function evaluatePublishGuard(input: {
 
   const stageReadiness: StageReadiness[] = [
     {
+      stageCode: "researchBrief",
+      title: "研究简报",
+      status:
+        !researchReady
+          ? "needs_attention"
+          : researchCoverageBlocked
+            ? "blocked"
+            : researchTimelineMissing || researchComparisonMissing || researchInsightMissing
+              ? "needs_attention"
+              : "ready",
+      detail:
+        !researchReady
+          ? "建议先补研究问题、信源覆盖和交汇洞察，再把判断写硬。"
+          : researchCoverageBlocked
+            ? "研究层信源覆盖过窄，当前只适合观点草稿，不适合判断型长文。"
+            : researchTimelineMissing || researchComparisonMissing || researchInsightMissing
+              ? `研究简报已生成，但仍缺：${[
+                  researchTimelineMissing ? "时间脉络" : null,
+                  researchComparisonMissing ? "横向比较" : null,
+                  researchInsightMissing ? "交汇洞察" : null,
+                ]
+                  .filter(Boolean)
+                  .join("、")}。`
+              : "研究层已补齐，可为策略和大纲提供结构判断。",
+    },
+    {
+      stageCode: "audienceAnalysis",
+      title: "策略卡",
+      status: !strategyCardReady ? "blocked" : humanSignalScore >= 3 ? "ready" : humanSignalScore >= 2 ? "needs_attention" : "blocked",
+      detail: strategyCardReady
+        ? humanSignalScore >= 3
+          ? "目标读者、核心判断和人类信号都已到位。"
+          : humanSignalScore >= 2
+            ? "策略卡已确认，但人类信号仍偏薄，建议继续补真实观察和体感。"
+            : "策略卡已确认，但人类信号不足，发布前需要先补。"
+        : strategyCard
+          ? `策略卡仍缺：${strategyCardMissingFields.join("；")}。`
+          : "先补并保存策略卡，再进入发布守门。",
+    },
+    {
+      stageCode: "evidencePackage",
+      title: "证据包",
+      status: evidenceStats.ready ? (evidenceStats.status === "warning" ? "needs_attention" : "ready") : "blocked",
+      detail: evidenceStats.ready
+        ? evidenceStats.status === "warning"
+          ? `证据包已确认，但仍建议处理：${evidenceStats.flags.join("；")}。`
+          : `已确认 ${evidenceStats.itemCount} 条证据，可进入发布守门。`
+        : evidenceStats.detail,
+    },
+    {
       stageCode: "outlinePlanning",
       title: "大纲规划",
       status: outlineArtifact?.status === "ready" && hasArtifactPayload(outlineArtifact) ? "ready" : "blocked",
@@ -430,25 +811,40 @@ export async function evaluatePublishGuard(input: {
       title: "文笔润色",
       status:
         prosePolishArtifact?.status === "ready" && hasArtifactPayload(prosePolishArtifact)
-          ? aiNoiseScore >= 70 || languageGuardHits.length > 0
+          ? aiNoiseNeedsAttention || languageGuardHits.length > 0
             ? "needs_attention"
             : "ready"
           : "needs_attention",
       detail:
         prosePolishArtifact?.status === "ready" && hasArtifactPayload(prosePolishArtifact)
-          ? aiNoiseScore >= 70 || languageGuardHits.length > 0
-            ? "润色已完成，但仍建议处理 AI 噪声或语言守卫命中项。"
+          ? aiNoiseNeedsAttention || languageGuardHits.length > 0
+            ? "润色已完成，但仍建议处理 AI 噪声、结构过整齐或总结式收尾问题。"
             : "表达质量已基本收口。"
           : "可直接发布，但建议先做一次润色收口。",
     },
     {
       stageCode: "publish",
       title: "发布准备",
-      status: coverImage && connectionHealth.status === "valid" ? "ready" : coverImage || connectionHealth.status === "valid" ? "needs_attention" : "blocked",
+      status:
+        !strategyCardReady
+          || humanSignalScore < 2
+          || !evidenceStats.ready
+          ? "blocked"
+          : coverImage && connectionHealth.status === "valid"
+            ? "ready"
+            : coverImage || connectionHealth.status === "valid"
+              ? "needs_attention"
+              : "blocked",
       detail:
-        coverImage && connectionHealth.status === "valid"
-          ? "连接、封面和模板已准备。"
-          : "发布前还需要处理连接或封面缺口。",
+        !strategyCardReady
+          ? "策略卡尚未确认完成，发布仍处于阻断状态。"
+          : humanSignalScore < 2
+            ? "人类信号不足，正文还没有稳固的作者真实感，发布仍处于阻断状态。"
+          : !evidenceStats.ready
+            ? "证据包尚未确认到发布标准，发布仍处于阻断状态。"
+          : coverImage && connectionHealth.status === "valid"
+            ? "连接、封面和模板已准备。"
+            : "发布前还需要处理连接或封面缺口。",
     },
   ];
 
@@ -465,6 +861,7 @@ export async function evaluatePublishGuard(input: {
       findings: aiNoiseFindings,
       suggestions: aiNoiseSuggestions,
     },
+    qualityPanel,
     materialReadiness,
     connectionHealth,
     latestAttempt: latestAttempt
@@ -478,4 +875,18 @@ export async function evaluatePublishGuard(input: {
         }
       : null,
   };
+}
+
+export async function evaluateArticlePublishGuard(input: {
+  articleId: number;
+  userId: number;
+  templateId?: string | null;
+  wechatConnectionId?: number | null;
+}) {
+  return evaluatePublishGuard({
+    articleId: input.articleId,
+    userId: input.userId,
+    templateId: input.templateId,
+    wechatConnectionId: input.wechatConnectionId,
+  });
 }

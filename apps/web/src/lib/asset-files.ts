@@ -4,9 +4,9 @@ type AssetFileScope = "cover" | "candidate";
 
 type AssetFileSyncInput = {
   assetScope: AssetFileScope;
-  legacyAssetId: number;
+  sourceRecordId: number;
   userId: number;
-  documentId?: number | null;
+  articleId?: number | null;
   batchToken?: string | null;
   variantLabel?: string | null;
   imageUrl: string;
@@ -46,23 +46,23 @@ export async function syncCoverAssetToAssetFiles(input: AssetFileSyncInput) {
   const existing = await db.queryOne<{ id: number }>(
     `SELECT id
      FROM asset_files
-     WHERE asset_scope = ? AND legacy_asset_id = ?`,
-    [input.assetScope, input.legacyAssetId],
+     WHERE asset_scope = ? AND source_record_id = ?`,
+    [input.assetScope, input.sourceRecordId],
   );
 
   if (!existing) {
     const result = await db.exec(
       `INSERT INTO asset_files (
-        user_id, document_id, asset_scope, asset_type, legacy_asset_id, batch_token, variant_label,
+        user_id, document_id, asset_scope, asset_type, source_record_id, batch_token, variant_label,
         storage_provider, public_url, original_object_key, compressed_object_key, thumbnail_object_key,
         mime_type, byte_length, status, manifest_json, created_at, updated_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         input.userId,
-        input.documentId ?? null,
+        input.articleId ?? null,
         input.assetScope,
         "cover_image",
-        input.legacyAssetId,
+        input.sourceRecordId,
         input.batchToken ?? null,
         input.variantLabel ?? null,
         input.storageProvider ?? null,
@@ -86,10 +86,10 @@ export async function syncCoverAssetToAssetFiles(input: AssetFileSyncInput) {
      SET user_id = ?, document_id = ?, asset_type = ?, batch_token = ?, variant_label = ?, storage_provider = ?,
          public_url = ?, original_object_key = ?, compressed_object_key = ?, thumbnail_object_key = ?,
          mime_type = ?, byte_length = ?, status = ?, manifest_json = ?, updated_at = ?
-     WHERE asset_scope = ? AND legacy_asset_id = ?`,
+     WHERE asset_scope = ? AND source_record_id = ?`,
     [
       input.userId,
-      input.documentId ?? null,
+      input.articleId ?? null,
       "cover_image",
       input.batchToken ?? null,
       input.variantLabel ?? null,
@@ -104,13 +104,20 @@ export async function syncCoverAssetToAssetFiles(input: AssetFileSyncInput) {
       manifestJson,
       now,
       input.assetScope,
-      input.legacyAssetId,
+      input.sourceRecordId,
     ],
   );
   return existing.id;
 }
 
-export async function syncLegacyCoverAssetsToAssetFiles() {
+export async function syncArticleCoverAssetToAssetFiles(input: AssetFileSyncInput) {
+  return syncCoverAssetToAssetFiles({
+    ...input,
+    articleId: input.articleId ?? null,
+  });
+}
+
+export async function backfillAssetFilesFromCoverAssets() {
   const db = getDatabase();
   const coverRows = await db.query<{
     id: number;
@@ -133,9 +140,9 @@ export async function syncLegacyCoverAssetsToAssetFiles() {
   for (const row of coverRows) {
     await syncCoverAssetToAssetFiles({
       assetScope: "cover",
-      legacyAssetId: row.id,
+      sourceRecordId: row.id,
       userId: row.user_id,
-      documentId: row.document_id,
+      articleId: row.document_id,
       imageUrl: row.image_url,
       storageProvider: row.storage_provider,
       originalObjectKey: row.original_object_key,
@@ -169,9 +176,9 @@ export async function syncLegacyCoverAssetsToAssetFiles() {
   for (const row of candidateRows) {
     await syncCoverAssetToAssetFiles({
       assetScope: "candidate",
-      legacyAssetId: row.id,
+      sourceRecordId: row.id,
       userId: row.user_id,
-      documentId: row.document_id,
+      articleId: row.document_id,
       batchToken: row.batch_token,
       variantLabel: row.variant_label,
       imageUrl: row.image_url,

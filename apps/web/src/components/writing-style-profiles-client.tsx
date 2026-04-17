@@ -11,11 +11,26 @@ type WritingStyleProfileItem = {
   summary: string;
   toneKeywords: string[];
   sentenceRhythm?: string | null;
+  sentenceLengthProfile?: string | null;
+  paragraphBreathingPattern?: string | null;
   structurePatterns: string[];
   transitionPatterns?: string[];
   languageHabits: string[];
   openingPatterns: string[];
   endingPatterns: string[];
+  punctuationHabits?: string[];
+  tangentPatterns?: string[];
+  callbackPatterns?: string[];
+  verbatimPhraseBanks?: {
+    transitionPhrases?: string[];
+    judgementPhrases?: string[];
+    selfDisclosurePhrases?: string[];
+    emotionPhrases?: string[];
+    readerBridgePhrases?: string[];
+  };
+  tabooPatterns?: string[];
+  statePresets?: string[];
+  antiOutlineRules?: string[];
   factDensity?: string | null;
   emotionalIntensity?: string | null;
   suitableTopics?: string[];
@@ -57,16 +72,16 @@ export function WritingStyleProfilesPanel({
           <div className="text-xs uppercase tracking-[0.24em] text-cinnabar">写作风格资产</div>
           <h3 className="mt-3 font-serifCn text-3xl text-ink">把抽取结果沉淀成可复用风格。</h3>
           <p className="mt-3 text-sm leading-7 text-stone-700">
-            当前已保存 {profiles.length} / {maxCount} 个风格资产。你可以在外部工具页先分析，再保存到个人空间。
+            当前已保存 {profiles.length} / {maxCount} 个风格资产。先在“作者与系列”补分析样本，再把结果沉淀到个人空间。
           </p>
         </div>
-        <a href="/tools/style-extractor" className="border border-stone-300 bg-white px-4 py-3 text-sm text-stone-700">
-          打开风格提取器
+        <a href="/settings#personas-series" className="border border-stone-300 bg-white px-4 py-3 text-sm text-stone-700">
+          返回作者与系列
         </a>
       </div>
       {profiles.length === 0 ? (
         <div className="border border-dashed border-stone-300 bg-[#faf7f0] px-4 py-5 text-sm leading-7 text-stone-600">
-          还没有保存的写作风格。先去风格提取器输入文章链接，分析后再一键保存到个人空间。
+          还没有保存的写作风格。先在作者与系列里分析一篇文章，再把结果保存到个人空间。
         </div>
       ) : (
         <div className="grid gap-4 xl:grid-cols-2">
@@ -112,6 +127,31 @@ export function WritingStyleProfilesPanel({
                     <strong>句长节奏：</strong>{profile.sentenceRhythm}
                   </div>
                 ) : null}
+                {profile.sentenceLengthProfile ? (
+                  <div className="text-sm leading-7 text-stone-700">
+                    <strong>句长分布：</strong>{profile.sentenceLengthProfile}
+                  </div>
+                ) : null}
+                {profile.paragraphBreathingPattern ? (
+                  <div className="text-sm leading-7 text-stone-700">
+                    <strong>段落呼吸：</strong>{profile.paragraphBreathingPattern}
+                  </div>
+                ) : null}
+                {profile.punctuationHabits?.length ? (
+                  <div className="text-sm leading-7 text-stone-700">
+                    <strong>标点习惯：</strong>{profile.punctuationHabits.join(" / ")}
+                  </div>
+                ) : null}
+                {profile.tangentPatterns?.length ? (
+                  <div className="text-sm leading-7 text-stone-700">
+                    <strong>跑题方式：</strong>{profile.tangentPatterns.join(" / ")}
+                  </div>
+                ) : null}
+                {profile.callbackPatterns?.length ? (
+                  <div className="text-sm leading-7 text-stone-700">
+                    <strong>回环方式：</strong>{profile.callbackPatterns.join(" / ")}
+                  </div>
+                ) : null}
                 {(profile.factDensity || profile.emotionalIntensity) ? (
                   <div className="text-sm leading-7 text-stone-700">
                     <strong>风格强度：</strong>
@@ -131,12 +171,45 @@ export function WritingStyleProfilesPanel({
                 ) : null}
                 {profile.reusablePromptFragments?.length ? (
                   <div className="border border-stone-300/40 bg-[#fffdfa] p-4 text-sm leading-7 text-stone-700">
-                    <div className="text-xs uppercase tracking-[0.2em] text-stone-500">可复用 Prompt 片段</div>
+                    <div className="text-xs uppercase tracking-[0.2em] text-stone-500">可复用提示片段</div>
                     <ul className="mt-2 space-y-1">
                       {profile.reusablePromptFragments.map((item) => (
                         <li key={`${profile.id}-fragment-${item}`}>{item}</li>
                       ))}
                     </ul>
+                  </div>
+                ) : null}
+                {profile.verbatimPhraseBanks ? (
+                  <div className="border border-stone-300/40 bg-[#faf7f0] p-4 text-sm leading-7 text-stone-700">
+                    <div className="text-xs uppercase tracking-[0.2em] text-stone-500">逐字词组库</div>
+                    {[
+                      ["转场", profile.verbatimPhraseBanks.transitionPhrases],
+                      ["判断", profile.verbatimPhraseBanks.judgementPhrases],
+                      ["自我暴露", profile.verbatimPhraseBanks.selfDisclosurePhrases],
+                      ["情绪", profile.verbatimPhraseBanks.emotionPhrases],
+                      ["拉近读者", profile.verbatimPhraseBanks.readerBridgePhrases],
+                    ].map(([label, values]) =>
+                      values && values.length > 0 ? (
+                        <div key={`${profile.id}-${label}`} className="mt-2">
+                          <strong>{label}：</strong>{Array.isArray(values) ? values.join(" / ") : values}
+                        </div>
+                      ) : null,
+                    )}
+                  </div>
+                ) : null}
+                {profile.statePresets?.length ? (
+                  <div className="text-sm leading-7 text-stone-700">
+                    <strong>状态预设：</strong>{profile.statePresets.join(" / ")}
+                  </div>
+                ) : null}
+                {profile.antiOutlineRules?.length ? (
+                  <div className="text-sm leading-7 text-stone-700">
+                    <strong>反结构规则：</strong>{profile.antiOutlineRules.join(" / ")}
+                  </div>
+                ) : null}
+                {profile.tabooPatterns?.length ? (
+                  <div className="text-sm leading-7 text-stone-700">
+                    <strong>禁忌写法：</strong>{profile.tabooPatterns.join(" / ")}
                   </div>
                 ) : null}
                 <div className="border border-stone-300/40 bg-[#faf7f0] p-4 text-sm leading-7 text-stone-700">

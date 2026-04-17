@@ -16,12 +16,12 @@ export default function ManifestoPage() {
           <section>
             <h2 className="font-serifCn text-3xl font-semibold text-ink">为什么做活字？因为我们受够了“总而言之”。</h2>
             <p className="mt-4">
-              今天的大多数 AI 写作工具，只是在把一套更高效的空话生成器卖给写作者。它们不要求你拥有真实碎片，不要求你做结构判断，也不在乎你写出来的东西有没有人味。
+              今天的大多数 AI 写作工具，只是在把一套更高效的空话生成器卖给写作者。它们不要求你拥有真实素材，不要求你做结构判断，也不在乎你写出来的东西有没有人味。
             </p>
           </section>
 
           <blockquote className="border-l-4 border-cinnabar bg-[#f5f4ef] px-6 py-5 font-serifCn text-2xl leading-10 text-ink">
-            我们坚信，AI 只是印书机的活字盘，而灵魂必须来自你的记忆碎片。
+            我们坚信，AI 只是印书机的活字盘，而灵魂必须来自你的记忆、观察与判断。
           </blockquote>
 
           <section>
@@ -34,7 +34,7 @@ export default function ManifestoPage() {
           <section>
             <h2 className="font-serifCn text-3xl font-semibold text-ink">我们的判断</h2>
             <p className="mt-4">
-              AI 是印书机的活字盘，不是作者本人。它应该服务于你的判断，而不是反过来让你替它擦屁股。你提供碎片、立场与语感，系统才有资格替你加速。
+              AI 是印书机的活字盘，不是作者本人。它应该服务于你的判断，而不是反过来让你替它擦屁股。你提供素材、立场与语感，系统才有资格替你加速。
             </p>
           </section>
         </div>

@@ -47,7 +47,7 @@ function run() {
       ...process.env,
       DATABASE_PATH: "./data/runtime-smoke.db",
       DATABASE_URL: "",
-      DEFAULT_ADMIN_PASSWORD: "Smoke#Huozi42",
+      DEFAULT_OPS_PASSWORD: "Smoke#Huozi42",
     };
 
     const initOutput = execFileSync(process.execPath, ["docker/runtime-db-init.mjs"], {
@@ -68,8 +68,8 @@ function run() {
           const Database = require('better-sqlite3');
           const db = new Database('./data/runtime-smoke.db');
           const row = db.prepare("SELECT username, role, plan_code FROM users WHERE username = ?").get('huozi');
-          if (!row || row.role !== 'admin' || row.plan_code !== 'ultra') {
-            throw new Error('default admin bootstrap verification failed');
+          if (!row || row.role !== 'ops' || row.plan_code !== 'ultra') {
+            throw new Error('default ops bootstrap verification failed');
           }
           db.close();
         `,

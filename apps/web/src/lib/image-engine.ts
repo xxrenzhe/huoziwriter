@@ -152,7 +152,7 @@ export async function getGlobalCoverImageEngineSecret() {
 }
 
 export async function upsertGlobalCoverImageEngine(input: {
-  adminUserId: number;
+  operatorUserId: number;
   baseUrl: string;
   apiKey?: string | null;
   model?: string | null;
@@ -181,20 +181,20 @@ export async function upsertGlobalCoverImageEngine(input: {
       `UPDATE global_ai_engines
        SET provider_name = ?, base_url = ?, api_key_encrypted = ?, model = ?, is_enabled = ?, last_error = ?, updated_by = ?, updated_at = ?
        WHERE id = ?`,
-      ["custom", normalizedBaseUrl, apiKeyEncrypted, model, input.isEnabled ?? true, null, input.adminUserId, now, existing.id],
+      ["custom", normalizedBaseUrl, apiKeyEncrypted, model, input.isEnabled ?? true, null, input.operatorUserId, now, existing.id],
     );
   } else {
     await db.exec(
       `INSERT INTO global_ai_engines (
         engine_code, provider_name, base_url, api_key_encrypted, model, is_enabled, updated_by, created_at, updated_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [COVER_IMAGE_ENGINE_CODE, "custom", normalizedBaseUrl, apiKeyEncrypted, model, input.isEnabled ?? true, input.adminUserId, now, now],
+      [COVER_IMAGE_ENGINE_CODE, "custom", normalizedBaseUrl, apiKeyEncrypted, model, input.isEnabled ?? true, input.operatorUserId, now, now],
     );
   }
 
   await appendAuditLog({
-    userId: input.adminUserId,
-    action: "admin.cover_image_engine.update",
+    userId: input.operatorUserId,
+    action: "ops.cover_image_engine.update",
     targetType: "global_ai_engine",
     targetId: COVER_IMAGE_ENGINE_CODE,
     payload: { baseUrl: normalizedBaseUrl, model, isEnabled: input.isEnabled ?? true },

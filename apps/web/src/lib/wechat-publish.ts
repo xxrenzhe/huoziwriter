@@ -1,15 +1,15 @@
 import { createHash } from "node:crypto";
 import {
-  clearDocumentWorkflowPendingPublishIntent,
-  completeDocumentWorkflowStage,
-  failDocumentWorkflowStage,
-  setDocumentWorkflowCurrentStage,
-  setDocumentWorkflowPendingPublishIntent,
-} from "./document-workflows";
+  clearArticleWorkflowPendingPublishIntent,
+  completeArticleWorkflowStage,
+  failArticleWorkflowStage,
+  setArticleWorkflowCurrentStage,
+  setArticleWorkflowPendingPublishIntent,
+} from "./article-workflows";
 import { getActiveTemplateById } from "./marketplace";
 import { assertWechatTemplateAllowed } from "./plan-access";
 import { evaluatePublishGuard, type PublishGuardResult } from "./publish-guard";
-import { createWechatSyncLog, getDocumentById, getLatestWechatSyncLogForDocument, getWechatConnectionRaw, saveDocument, updateWechatConnectionToken } from "./repositories";
+import { createWechatSyncLog, getArticleById, getLatestWechatSyncLogForArticle, getWechatConnectionRaw, saveArticle, updateWechatConnectionToken } from "./repositories";
 import { encryptSecret } from "./security";
 import { resolveTemplateRenderConfig } from "./template-rendering";
 import { publishWechatDraft } from "./wechat";
@@ -27,8 +27,8 @@ export class WechatPublishError extends Error {
   }
 }
 
-export function buildDocumentVersionHash(input: {
-  documentId: number;
+export function buildArticleVersionHash(input: {
+  articleId: number;
   title: string;
   markdownContent: string;
   templateId: string | null;
@@ -37,7 +37,7 @@ export function buildDocumentVersionHash(input: {
   return createHash("sha1")
     .update(
       JSON.stringify({
-        documentId: input.documentId,
+        articleId: input.articleId,
         title: input.title,
         markdownContent: input.markdownContent,
         templateId: input.templateId,
@@ -64,17 +64,17 @@ export function classifyPublishFailure(error: unknown) {
   return { code: "upstream_error", message };
 }
 
-export async function publishDocumentToWechat(input: {
+export async function publishArticleToWechat(input: {
   userId: number;
-  documentId: number;
+  articleId: number;
   wechatConnectionId: number;
   templateId?: string | null;
   digest?: string | null;
   author?: string | null;
 }) {
-  const document = await getDocumentById(input.documentId, input.userId);
-  if (!document) {
-    throw new WechatPublishError("文稿不存在", { code: "document_missing" });
+  const article = await getArticleById(input.articleId, input.userId);
+  if (!article) {
+    throw new WechatPublishError("稿件不存在", { code: "article_missing" });
   }
   const connection = await getWechatConnectionRaw(input.wechatConnectionId, input.userId);
   if (!connection) {
@@ -84,26 +84,26 @@ export async function publishDocumentToWechat(input: {
     throw new WechatPublishError("公众号连接已停用", { code: "connection_disabled" });
   }
 
-  const templateId = input.templateId ?? document.wechat_template_id;
+  const templateId = input.templateId ?? article.wechat_template_id;
 
   try {
-    await setDocumentWorkflowCurrentStage({
-      documentId: document.id,
+    await setArticleWorkflowCurrentStage({
+      articleId: article.id,
       userId: input.userId,
       stageCode: "publish",
     });
 
     await assertWechatTemplateAllowed(input.userId, templateId);
-    const documentVersionHash = buildDocumentVersionHash({
-      documentId: document.id,
-      title: document.title,
-      markdownContent: document.markdown_content,
+    const articleVersionHash = buildArticleVersionHash({
+      articleId: article.id,
+      title: article.title,
+      markdownContent: article.markdown_content,
       templateId: templateId ?? null,
       wechatConnectionId: connection.id,
     });
-    const idempotencyKey = `wechat:${document.id}:${connection.id}:${documentVersionHash}`;
+    const idempotencyKey = `wechat:${article.id}:${connection.id}:${articleVersionHash}`;
     const publishGuard = await evaluatePublishGuard({
-      documentId: document.id,
+      articleId: article.id,
       userId: input.userId,
       templateId,
       wechatConnectionId: connection.id,
@@ -115,25 +115,25 @@ export async function publishDocumentToWechat(input: {
       });
     }
 
-    const latestVersionLog = await getLatestWechatSyncLogForDocument({
+    const latestVersionLog = await getLatestWechatSyncLogForArticle({
       userId: input.userId,
-      documentId: document.id,
+      articleId: article.id,
       wechatConnectionId: connection.id,
-      documentVersionHash,
+      articleVersionHash,
     });
     if (latestVersionLog?.status === "success" && latestVersionLog.media_id) {
-      await saveDocument({
-        documentId: document.id,
+      await saveArticle({
+        articleId: article.id,
         userId: input.userId,
         status: "published",
         wechatTemplateId: templateId ?? null,
       });
-      await clearDocumentWorkflowPendingPublishIntent({
-        documentId: document.id,
+      await clearArticleWorkflowPendingPublishIntent({
+        articleId: article.id,
         userId: input.userId,
       });
-      await completeDocumentWorkflowStage({
-        documentId: document.id,
+      await completeArticleWorkflowStage({
+        articleId: article.id,
         userId: input.userId,
         stageCode: "publish",
       });
@@ -141,15 +141,15 @@ export async function publishDocumentToWechat(input: {
         mediaId: latestVersionLog.media_id,
         reused: true,
         idempotencyKey,
-        documentVersionHash,
+        articleVersionHash,
       };
     }
 
     const template = templateId ? await getActiveTemplateById(templateId, input.userId) : null;
     const result = await publishWechatDraft({
       connection,
-      title: document.title,
-      markdownContent: document.markdown_content,
+      title: article.title,
+      markdownContent: article.markdown_content,
       digest: input.digest ?? undefined,
       author: input.author ?? undefined,
       templateConfig: resolveTemplateRenderConfig(template),
@@ -163,29 +163,29 @@ export async function publishDocumentToWechat(input: {
     });
     await createWechatSyncLog({
       userId: input.userId,
-      documentId: document.id,
+      articleId: article.id,
       wechatConnectionId: connection.id,
       mediaId: result.mediaId,
       status: "success",
       requestSummary: result.requestSummary,
       responseSummary: result.responseSummary,
-      documentVersionHash,
+      articleVersionHash,
       templateId: templateId ?? null,
       idempotencyKey,
       retryCount: latestVersionLog?.status === "failed" ? (latestVersionLog.retry_count ?? 0) + 1 : 0,
     });
-    await saveDocument({
-      documentId: document.id,
+    await saveArticle({
+      articleId: article.id,
       userId: input.userId,
       status: "published",
       wechatTemplateId: templateId ?? null,
     });
-    await clearDocumentWorkflowPendingPublishIntent({
-      documentId: document.id,
+    await clearArticleWorkflowPendingPublishIntent({
+      articleId: article.id,
       userId: input.userId,
     });
-    await completeDocumentWorkflowStage({
-      documentId: document.id,
+    await completeArticleWorkflowStage({
+      articleId: article.id,
       userId: input.userId,
       stageCode: "publish",
     });
@@ -193,45 +193,45 @@ export async function publishDocumentToWechat(input: {
       mediaId: result.mediaId,
       reused: false,
       idempotencyKey,
-      documentVersionHash,
+      articleVersionHash,
     };
   } catch (error) {
     if (error instanceof WechatPublishError && error.code === "publish_guard_blocked") {
       throw error;
     }
     const failure = classifyPublishFailure(error);
-    const latestVersionLog = await getLatestWechatSyncLogForDocument({
+    const latestVersionLog = await getLatestWechatSyncLogForArticle({
       userId: input.userId,
-      documentId: document.id,
+      articleId: article.id,
       wechatConnectionId: connection.id,
     });
-    const documentVersionHash = buildDocumentVersionHash({
-      documentId: document.id,
-      title: document.title,
-      markdownContent: document.markdown_content,
+    const articleVersionHash = buildArticleVersionHash({
+      articleId: article.id,
+      title: article.title,
+      markdownContent: article.markdown_content,
       templateId: templateId ?? null,
       wechatConnectionId: connection.id,
     });
     await createWechatSyncLog({
       userId: input.userId,
-      documentId: document.id,
+      articleId: article.id,
       wechatConnectionId: connection.id,
       status: "failed",
       failureReason: failure.message,
       failureCode: failure.code,
-      documentVersionHash,
+      articleVersionHash,
       templateId: templateId ?? null,
-      idempotencyKey: `wechat:${document.id}:${connection.id}:${documentVersionHash}`,
+      idempotencyKey: `wechat:${article.id}:${connection.id}:${articleVersionHash}`,
       retryCount: (latestVersionLog?.retry_count ?? 0) + 1,
     });
-    await saveDocument({
-      documentId: document.id,
+    await saveArticle({
+      articleId: article.id,
       userId: input.userId,
-      status: "publishFailed",
+      status: "publish_failed",
     });
     if (failure.code === "auth_failed") {
-      await setDocumentWorkflowPendingPublishIntent({
-        documentId: document.id,
+      await setArticleWorkflowPendingPublishIntent({
+        articleId: article.id,
         userId: input.userId,
         intent: {
           templateId: templateId ?? null,
@@ -239,8 +239,8 @@ export async function publishDocumentToWechat(input: {
         },
       });
     }
-    await failDocumentWorkflowStage({
-      documentId: document.id,
+    await failArticleWorkflowStage({
+      articleId: article.id,
       userId: input.userId,
       stageCode: "publish",
     });

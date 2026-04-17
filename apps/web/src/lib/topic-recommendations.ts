@@ -1,8 +1,8 @@
-import { getAuthorPersonas } from "./author-personas";
 import { getDatabase } from "./db";
 import { getKnowledgeCards } from "./knowledge";
 import { matchTopicToKnowledgeCards } from "./knowledge-match";
 import { getUserPlanContext } from "./plan-access";
+import { getPersonas } from "./personas";
 import { ensureExtendedProductSchema } from "./schema-bootstrap";
 import { getVisibleTopicEvents } from "./topic-radar";
 
@@ -577,7 +577,7 @@ async function materializeDailyTopicRecommendationsForUser(userId: number) {
 
   const [topics, personas, excludedTitleKeys, knowledgeCards] = await Promise.all([
     getVisibleTopicEvents(userId),
-    getAuthorPersonas(userId),
+    getPersonas(userId),
     listRecentRecommendationDedupKeys(userId, recommendationDate),
     getKnowledgeCards(userId),
   ]);

@@ -33,7 +33,7 @@ function resolveMood(seed: string, authoringSignals: string) {
 }
 
 function buildRoleHint(context: ImageAuthoringStyleContext | null | undefined) {
-  const identity = context?.authorPersona?.identityTags?.[0];
+  const identity = context?.persona?.identityTags?.[0];
   if (!identity) {
     return "";
   }
@@ -52,11 +52,11 @@ export function buildVisualSuggestion(
   const subject = title.trim() || seed.slice(0, 24) || "内容生产现场";
   const authoringLine = buildVisualAuthoringDirective(authoringContext, "cover");
   const roleHint = buildRoleHint(authoringContext);
-  return `视觉联想：围绕“${subject}”，提炼一个单主体隐喻场景，画面保持 ${mood}，16:9 横版，不出现水印与密集文字，只保留一个高辨识度主体和明确情绪。${authoringLine ? `${authoringLine} ` : ""}${roleHint ? `${roleHint} ` : ""}参考内容：${seed || "请根据当前文稿核心冲突生成画面。"}。`;
+  return `视觉联想：围绕“${subject}”，提炼一个单主体隐喻场景，画面保持 ${mood}，16:9 横版，不出现水印与密集文字，只保留一个高辨识度主体和明确情绪。${authoringLine ? `${authoringLine} ` : ""}${roleHint ? `${roleHint} ` : ""}参考内容：${seed || "请根据当前稿件核心冲突生成画面。"}。`;
 }
 
 export function buildNodeVisualSuggestion(input: {
-  documentTitle: string;
+  articleTitle: string;
   nodeTitle: string;
   nodeDescription?: string | null;
   fragments: Array<{ distilledContent: string }>;
@@ -65,7 +65,7 @@ export function buildNodeVisualSuggestion(input: {
   const seed = stripMarkdown(
     [input.nodeTitle, input.nodeDescription || "", ...input.fragments.slice(0, 2).map((fragment) => fragment.distilledContent)].join(" "),
   ).slice(0, 140);
-  const subject = input.nodeTitle.trim() || input.documentTitle.trim() || "当前段落";
+  const subject = input.nodeTitle.trim() || input.articleTitle.trim() || "当前段落";
   const mood = /裁员|亏损|争议|风险|危机|焦虑|失效|冲突/.test(seed)
     ? "冷峻、压迫感、纪实摄影"
     : /增长|机会|突破|创新|回暖|发布/.test(seed)

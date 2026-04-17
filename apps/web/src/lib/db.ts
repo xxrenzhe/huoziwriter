@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import { AsyncLocalStorage } from "node:async_hooks";
 import Database from "better-sqlite3";
-import postgres from "postgres";
+import type { Sql } from "postgres";
 import {
   detectDatabaseType,
   normalizeSqlParams,
@@ -19,11 +19,23 @@ export interface DatabaseAdapter {
   close(): Promise<void>;
 }
 
-type PostgresClient = postgres.Sql<Record<string, never>>;
+type PostgresClient = Sql<Record<string, never>>;
 type PostgresQueryable = Pick<PostgresClient, "unsafe">;
 
 let sqliteInstance: SQLiteAdapter | null = null;
 let postgresInstance: PostgresAdapter | null = null;
+let postgresFactory:
+  | ((connectionString: string, options?: Record<string, unknown>) => PostgresClient)
+  | null = null;
+
+function getPostgresFactory() {
+  if (!postgresFactory) {
+    const runtimeRequire = Function("return require")() as NodeRequire;
+    const moduleName = ["post", "gres"].join("");
+    postgresFactory = runtimeRequire(moduleName) as unknown as (connectionString: string, options?: Record<string, unknown>) => PostgresClient;
+  }
+  return postgresFactory;
+}
 
 function ensureSqliteDir(dbPath: string) {
   const dir = require("node:path").dirname(dbPath);
@@ -91,6 +103,7 @@ class PostgresAdapter implements DatabaseAdapter {
   private txStorage = new AsyncLocalStorage<PostgresQueryable>();
 
   constructor(connectionString: string) {
+    const postgres = getPostgresFactory();
     this.client = postgres(connectionString, {
       max: 5,
       idle_timeout: 20,

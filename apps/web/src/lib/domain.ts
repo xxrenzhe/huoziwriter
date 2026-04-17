@@ -4,8 +4,8 @@ export {
 } from "@huoziwriter/core";
 
 export type {
+  ArticleStatus,
   CaptureSourceType,
-  DocumentStatus,
   UserPlanCode,
   UserRole,
   WechatConnectionStatus,

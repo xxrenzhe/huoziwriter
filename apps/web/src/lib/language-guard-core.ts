@@ -4,7 +4,7 @@ export type LanguageGuardMatchMode = "contains" | "template";
 export type LanguageGuardRule = {
   id: string;
   scope: "system" | "user";
-  source: "system" | "rule" | "legacy";
+  source: "system" | "rule" | "token_rule";
   ruleKind: LanguageGuardRuleKind;
   matchMode: LanguageGuardMatchMode;
   patternText: string;

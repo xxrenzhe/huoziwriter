@@ -285,7 +285,7 @@ async function normalizeBootstrapData(runtime, mode) {
 
 async function ensureDefaultAdmin(runtime, mode) {
   const bcrypt = getPackage("bcryptjs");
-  const password = process.env.DEFAULT_ADMIN_PASSWORD || "REDACTED_ADMIN_PASSWORD";
+  const password = process.env.DEFAULT_OPS_PASSWORD || "REDACTED_ADMIN_PASSWORD";
   const passwordHash = await bcrypt.hash(password, 10);
 
   const existing =
@@ -302,7 +302,7 @@ async function ensureDefaultAdmin(runtime, mode) {
           username, email, password_hash, display_name, referral_code, role, plan_code, must_change_password, is_active, created_at, updated_at
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())
         RETURNING id`,
-        ["huozi", "admin@huoziwriter.local", passwordHash, "Huozi Admin", null, "admin", "ultra", false, true],
+        ["huozi", "ops@huoziwriter.local", passwordHash, "Huozi Ops", null, "ops", "ultra", false, true],
       );
       userId = inserted?.id;
     } else {
@@ -310,28 +310,28 @@ async function ensureDefaultAdmin(runtime, mode) {
         `INSERT INTO users (
           username, email, password_hash, display_name, referral_code, role, plan_code, must_change_password, is_active, created_at, updated_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        ["huozi", "admin@huoziwriter.local", passwordHash, "Huozi Admin", null, "admin", "ultra", 0, 1, new Date().toISOString(), new Date().toISOString()],
+        ["huozi", "ops@huoziwriter.local", passwordHash, "Huozi Ops", null, "ops", "ultra", 0, 1, new Date().toISOString(), new Date().toISOString()],
       );
       userId = Number(inserted.lastInsertRowid);
     }
-    console.log("runtime-db-init: created default admin huozi");
+    console.log("runtime-db-init: created default ops user huozi");
   } else {
     if (mode === "postgres") {
       await runtime.run(
         `UPDATE users
          SET role = $1, plan_code = $2, must_change_password = $3, is_active = $4, updated_at = NOW()
          WHERE id = $5`,
-        ["admin", "ultra", false, true, userId],
+        ["ops", "ultra", false, true, userId],
       );
     } else {
       await runtime.run(
         `UPDATE users
          SET role = ?, plan_code = ?, must_change_password = ?, is_active = ?, updated_at = ?
          WHERE id = ?`,
-        ["admin", "ultra", 0, 1, new Date().toISOString(), userId],
+        ["ops", "ultra", 0, 1, new Date().toISOString(), userId],
       );
     }
-    console.log("runtime-db-init: default admin already exists");
+    console.log("runtime-db-init: default ops user already exists");
   }
 
   const referralCode = buildReferralCode(Number(userId), "huozi");

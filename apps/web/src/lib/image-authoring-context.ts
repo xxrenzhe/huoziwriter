@@ -1,5 +1,5 @@
 export type ImageAuthoringStyleContext = {
-  authorPersona?: {
+  persona?: {
     name: string;
     identityTags: string[];
     writingStyleTags: string[];
@@ -26,11 +26,11 @@ export function buildVisualAuthoringDirective(
   context: ImageAuthoringStyleContext | null | undefined,
   mode: "cover" | "inline",
 ) {
-  if (!context?.authorPersona && !context?.writingStyleProfile) {
+  if (!context?.persona && !context?.writingStyleProfile) {
     return "";
   }
 
-  const persona = context.authorPersona;
+  const persona = context.persona;
   const profile = context.writingStyleProfile;
   const personaBits = [
     persona?.name ? `作者人设：${persona.name}` : null,
@@ -57,8 +57,8 @@ export function buildVisualSignalText(context: ImageAuthoringStyleContext | null
   }
 
   return [
-    ...(context.authorPersona?.identityTags || []),
-    ...(context.authorPersona?.writingStyleTags || []),
+    ...(context.persona?.identityTags || []),
+    ...(context.persona?.writingStyleTags || []),
     ...(context.writingStyleProfile?.toneKeywords || []),
     ...(context.writingStyleProfile?.languageHabits || []),
     ...(context.writingStyleProfile?.structurePatterns || []),

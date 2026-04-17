@@ -41,7 +41,7 @@ export function KnowledgeGovernanceClient({
     }
     let active = true;
     setLoading(true);
-    fetch(`/api/admin/knowledge/cards/${selectedId}/revisions`)
+    fetch(`/api/ops/knowledge/cards/${selectedId}/revisions`)
       .then((response) => response.json())
       .then((json) => {
         if (!active) return;
@@ -56,7 +56,7 @@ export function KnowledgeGovernanceClient({
   }, [selectedId]);
 
   async function handleStatus(cardId: number, status: string) {
-    await fetch(`/api/admin/knowledge/cards/${cardId}/status`, {
+    await fetch(`/api/ops/knowledge/cards/${cardId}/status`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status }),
@@ -65,7 +65,7 @@ export function KnowledgeGovernanceClient({
   }
 
   async function handleRebuild(cardId: number) {
-    await fetch(`/api/admin/knowledge/cards/${cardId}/rebuild`, {
+    await fetch(`/api/ops/knowledge/cards/${cardId}/rebuild`, {
       method: "POST",
     });
     router.refresh();
@@ -81,7 +81,7 @@ export function KnowledgeGovernanceClient({
         {[
           ["冲突档案", String(conflictedCount), "需要后台优先审查证据冲突与更新时间线。"],
           ["过期档案", String(staleCount), "优先触发 refresh 或人工复核。"],
-          ["低置信度", String(lowConfidenceCount), "说明证据碎片太少或互相支撑不足。"],
+          ["低置信度", String(lowConfidenceCount), "说明证据素材太少或互相支撑不足。"],
         ].map(([label, value, note]) => (
           <article key={label} className="border border-stone-800 bg-[#171718] p-5">
             <div className="text-xs uppercase tracking-[0.24em] text-stone-500">{label}</div>

@@ -1,12 +1,10 @@
 export type UserPlanCode = "free" | "pro" | "ultra";
-export type UserRole = "admin" | "user";
-export type DocumentStatus =
+export type UserRole = "ops" | "user";
+export type ArticleStatus =
   | "draft"
-  | "generating"
-  | "reviewed"
-  | "readyToPublish"
+  | "ready"
   | "published"
-  | "publishFailed";
+  | "publish_failed";
 export type WechatConnectionStatus = "valid" | "invalid" | "expired" | "disabled";
 export type CaptureSourceType = "manual" | "url" | "screenshot";
 
@@ -25,6 +23,12 @@ export const PLAN_LABELS: Record<UserPlanCode, string> = {
 
 export const DEFAULT_MODEL_ROUTES: readonly ModelRouteDefinition[] = [
   {
+    sceneCode: "researchBrief",
+    primaryModel: "claude-sonnet-4-6",
+    fallbackModel: "claude-haiku-4-5",
+    description: "研究简报、时间脉络、横向比较与交汇洞察生成",
+  },
+  {
     sceneCode: "fragmentDistill",
     primaryModel: "gemini-3.0-flash-lite",
     fallbackModel: "gemini-3.0-flash",
@@ -37,7 +41,7 @@ export const DEFAULT_MODEL_ROUTES: readonly ModelRouteDefinition[] = [
     description: "截图视觉理解与结构化笔记生成",
   },
   {
-    sceneCode: "documentWrite",
+    sceneCode: "articleWrite",
     primaryModel: "claude-sonnet-4-6",
     fallbackModel: "claude-haiku-4-5",
     description: "正文生成与改写",
@@ -91,10 +95,10 @@ export const DEFAULT_MODEL_ROUTES: readonly ModelRouteDefinition[] = [
     description: "文笔润色、语言节奏与表达修订建议",
   },
   {
-    sceneCode: "bannedWordAudit",
+    sceneCode: "languageGuardAudit",
     primaryModel: "gpt-5.4-mini",
     fallbackModel: "gpt-5.4-nano",
-    description: "死刑词与长句审校",
+    description: "语言守卫规则与长句审校",
   },
   {
     sceneCode: "layoutExtract",
@@ -110,8 +114,8 @@ export const DEFAULT_MODEL_ROUTES: readonly ModelRouteDefinition[] = [
   },
   {
     sceneCode: "wechatRender",
-    primaryModel: "internal-renderer",
-    fallbackModel: "fallback-renderer",
+    primaryModel: "wechat-renderer",
+    fallbackModel: "backup-renderer",
     description: "微信排版渲染",
   },
 ] as const;

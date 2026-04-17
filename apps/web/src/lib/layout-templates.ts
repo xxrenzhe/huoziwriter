@@ -91,9 +91,9 @@ export async function syncTemplateVersionToLayoutTemplates(input: LayoutTemplate
   }
 }
 
-export async function syncLegacyTemplateVersionsToLayoutTemplates() {
+export async function backfillLayoutTemplatesFromTemplateVersions() {
   const db = getDatabase();
-  const legacyRows = await db.query<{
+  const templateVersionRows = await db.query<{
     template_id: string;
     version: string;
     owner_user_id: number | null;
@@ -108,7 +108,7 @@ export async function syncLegacyTemplateVersionsToLayoutTemplates() {
      ORDER BY id ASC`,
   );
 
-  for (const row of legacyRows) {
+  for (const row of templateVersionRows) {
     let config: Record<string, unknown> = {};
     if (typeof row.config_json === "string") {
       try {

@@ -1,19 +1,16 @@
 import { cookies } from "next/headers";
 import { NextRequest } from "next/server";
 import { getDatabase } from "./db";
-import { getReferralCodeForUser, matchesReferralCode, normalizeReferralCode, parseReferralCodeUserId } from "./referrals";
+import { ensureExtendedProductSchema } from "./schema-bootstrap";
 import { getAuthCookieName, hashPassword, signSession, verifyPassword, verifySession } from "./security";
 
-type DbUser = {
+type DbUserRow = {
   id: number;
   username: string;
   email: string | null;
   password_hash: string | null;
   display_name: string | null;
-  referral_code: string | null;
-  referred_by_user_id: number | null;
-  referral_bound_at: string | null;
-  role: "admin" | "user";
+  role: string;
   plan_code: string;
   must_change_password: number | boolean;
   is_active: number | boolean;
@@ -22,20 +19,40 @@ type DbUser = {
   updated_at: string;
 };
 
+type DbUser = Omit<DbUserRow, "role"> & {
+  role: "ops" | "user";
+};
+
 export type AuthUser = {
   userId: number;
   username: string;
-  role: "admin" | "user";
+  role: "ops" | "user";
 };
 
+function normalizeUserRole(value: unknown): "ops" | "user" {
+  return String(value || "").trim().toLowerCase() === "user" ? "user" : "ops";
+}
+
+function mapDbUser(row: DbUserRow | null | undefined): DbUser | null {
+  if (!row) {
+    return null;
+  }
+  return {
+    ...row,
+    role: normalizeUserRole(row.role),
+  };
+}
+
 export async function findUserByUsername(username: string) {
+  await ensureExtendedProductSchema();
   const db = getDatabase();
-  return db.queryOne<DbUser>("SELECT * FROM users WHERE username = ?", [username]);
+  return mapDbUser(await db.queryOne<DbUserRow>("SELECT * FROM users WHERE username = ?", [username]));
 }
 
 export async function findUserById(userId: number) {
+  await ensureExtendedProductSchema();
   const db = getDatabase();
-  return db.queryOne<DbUser>("SELECT * FROM users WHERE id = ?", [userId]);
+  return mapDbUser(await db.queryOne<DbUserRow>("SELECT * FROM users WHERE id = ?", [userId]));
 }
 
 export async function getEffectivePlanCodeForUser(userId: number, fallbackPlanCode: string) {
@@ -50,45 +67,26 @@ export async function getEffectivePlanCodeForUser(userId: number, fallbackPlanCo
   return latest.status === "active" ? latest.plan_code : "free";
 }
 
-async function resolveReferrer(referralCode?: string | null) {
-  if (!referralCode?.trim()) {
-    return null;
-  }
-
-  const db = getDatabase();
-  const normalizedCode = normalizeReferralCode(referralCode);
-  const exact = await db.queryOne<DbUser>("SELECT * FROM users WHERE referral_code = ?", [normalizedCode]);
-  if (exact) {
-    return exact;
-  }
-
-  const referrerId = parseReferralCodeUserId(normalizedCode);
-  if (!referrerId) {
-    return null;
-  }
-
-  const user = await findUserById(referrerId);
-  if (!user || !matchesReferralCode(user, normalizedCode)) {
-    return null;
-  }
-  return user;
-}
-
 export async function ensureUserSession(request?: NextRequest): Promise<AuthUser | null> {
   try {
+    await ensureExtendedProductSchema();
     const token = request?.cookies.get(getAuthCookieName())?.value ?? cookies().get(getAuthCookieName())?.value;
     if (!token) {
       return null;
     }
-    return verifySession(token);
+    const session = verifySession(token);
+    return {
+      ...session,
+      role: normalizeUserRole(session.role),
+    };
   } catch {
     return null;
   }
 }
 
-export async function requireAdmin(request?: NextRequest) {
+export async function requireOpsAccess(request?: NextRequest) {
   const session = await ensureUserSession(request);
-  if (!session || session.role !== "admin") {
+  if (!session || session.role !== "ops") {
     throw new Error("UNAUTHORIZED");
   }
   return session;
@@ -139,30 +137,23 @@ export async function createUser(input: {
   email?: string | null;
   password: string;
   displayName?: string | null;
-  role?: "admin" | "user";
+  role?: "ops" | "user";
   planCode?: string;
   mustChangePassword?: boolean;
-  referralCode?: string | null;
 }) {
+  await ensureExtendedProductSchema();
   const db = getDatabase();
   const passwordHash = await hashPassword(input.password);
   const now = new Date().toISOString();
-  const referrer = await resolveReferrer(input.referralCode);
-  if (input.referralCode?.trim() && !referrer) {
-    throw new Error("推荐码不存在");
-  }
   const result = await db.exec(
     `INSERT INTO users (
-      username, email, password_hash, display_name, referral_code, referred_by_user_id, referral_bound_at, role, plan_code, must_change_password, is_active, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      username, email, password_hash, display_name, role, plan_code, must_change_password, is_active, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       input.username,
       input.email ?? null,
       passwordHash,
       input.displayName ?? null,
-      null,
-      referrer?.id ?? null,
-      referrer ? now : null,
       input.role ?? "user",
       input.planCode ?? "free",
       input.mustChangePassword ?? true,
@@ -171,11 +162,6 @@ export async function createUser(input: {
       now,
     ],
   );
-  await db.exec("UPDATE users SET referral_code = ?, updated_at = ? WHERE id = ?", [
-    getReferralCodeForUser({ id: result.lastInsertRowid!, username: input.username }),
-    now,
-    result.lastInsertRowid!,
-  ]);
   await syncUserSubscription(result.lastInsertRowid!, input.planCode ?? "free", true);
 
   const user = await findUserById(result.lastInsertRowid!);

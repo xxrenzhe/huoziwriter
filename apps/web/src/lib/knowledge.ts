@@ -32,7 +32,7 @@ type KnowledgeCardListItem = {
   source_fragment_ids: number[];
 };
 
-type AdminKnowledgeCardListItem = KnowledgeCardListItem & {
+type OpsKnowledgeCardListItem = KnowledgeCardListItem & {
   username: string | null;
   updated_at: string;
   revision_count: number;
@@ -237,8 +237,8 @@ function analyzeKnowledgeConsensus(fragments: CompileFragment[]) {
       ]
     : fragmentCount >= 3
       ? ["是否还缺少相反事实来源？", "下一轮需要补充时间线和关键人信息。"]
-      : ["当前证据仍偏少，需要继续补充碎片。", "是否已经出现与现有判断相反的新事实？"];
-  const changeSummary = hasConflict ? `检测到潜在冲突：${conflictSignals.join("、")}，档案已转为 conflicted。` : "基于最新碎片重新编译主题档案";
+      : ["当前证据仍偏少，需要继续补充素材。", "是否已经出现与现有判断相反的新事实？"];
+  const changeSummary = hasConflict ? `检测到潜在冲突：${conflictSignals.join("、")}，档案已转为 conflicted。` : "基于最新素材重新编译主题档案";
 
   return {
     status,
@@ -395,7 +395,7 @@ export async function compileKnowledgeCardFromFragments(
   const fragments = await loadFragmentsForCompile(userId, options.fragmentIds);
 
   if (fragments.length === 0) {
-    throw new Error("当前没有可编译的碎片");
+    throw new Error("当前没有可编译的素材");
   }
 
   const existingCard = options.existingCardId ? await getKnowledgeCardRecord(userId, options.existingCardId) : null;
@@ -675,10 +675,10 @@ export async function getKnowledgeCardDetail(userId: number, cardId: number) {
   };
 }
 
-export async function getRelevantKnowledgeCardsForDocument(
+export async function getRelevantKnowledgeCardsForArticle(
   userId: number,
   input: {
-    documentTitle: string;
+    articleTitle: string;
     markdownContent: string;
     nodeTitles?: string[];
     attachedFragmentIds?: number[];
@@ -686,7 +686,7 @@ export async function getRelevantKnowledgeCardsForDocument(
   },
 ) {
   const attachedFragmentIds = Array.from(new Set((input.attachedFragmentIds ?? []).filter(Boolean)));
-  const tokens = tokenizeSearchText([input.documentTitle, input.markdownContent, ...(input.nodeTitles ?? [])].join(" "));
+  const tokens = tokenizeSearchText([input.articleTitle, input.markdownContent, ...(input.nodeTitles ?? [])].join(" "));
   const cards = await getKnowledgeCards(userId);
 
   const ranked = cards
@@ -715,10 +715,10 @@ export async function getRelevantKnowledgeCardsForDocument(
     .filter((item): item is NonNullable<typeof item> => Boolean(item));
 }
 
-export async function getAdminKnowledgeCards() {
+export async function getOpsKnowledgeCards() {
   await ensureExtendedProductSchema();
   const db = getDatabase();
-  const cards = await db.query<Omit<AdminKnowledgeCardListItem, "source_fragment_ids">>(
+  const cards = await db.query<Omit<OpsKnowledgeCardListItem, "source_fragment_ids">>(
     `SELECT
        kc.*,
        u.username,
@@ -744,7 +744,7 @@ export async function getAdminKnowledgeCards() {
   }));
 }
 
-export async function getAdminKnowledgeCardRevisions(cardId: number) {
+export async function getOpsKnowledgeCardRevisions(cardId: number) {
   await ensureExtendedProductSchema();
   const db = getDatabase();
   return db.query<{
@@ -805,4 +805,4 @@ export async function rebuildKnowledgeCard(cardId: number) {
   });
 }
 
-export const rebuildKnowledgeCardByAdmin = rebuildKnowledgeCard;
+export const rebuildKnowledgeCardByOps = rebuildKnowledgeCard;

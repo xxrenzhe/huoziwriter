@@ -6,10 +6,12 @@ import {
   type LanguageGuardRule,
   type LanguageGuardRuleKind,
 } from "./language-guard-core";
-import { assertBannedWordQuota } from "./plan-access";
+import { assertLanguageGuardRuleQuota } from "./plan-access";
 import { ensureExtendedProductSchema } from "./schema-bootstrap";
 export { collectLanguageGuardHits };
 export type { LanguageGuardMatchMode, LanguageGuardRule, LanguageGuardRuleKind } from "./language-guard-core";
+
+const LANGUAGE_GUARD_TOKENS_TABLE = "language_guard_tokens";
 
 const SYSTEM_LANGUAGE_GUARD_RULES: LanguageGuardRule[] = [
   { id: "system-token-1", scope: "system", source: "system", ruleKind: "token", matchMode: "contains", patternText: "赋能", rewriteHint: "改成具体动作、结果或角色关系。", isEnabled: true, createdAt: null },
@@ -69,7 +71,7 @@ async function getUserStoredLanguageGuardRules(userId: number) {
   const db = getDatabase();
   const scope = await getUserAccessScope(userId);
   const placeholders = scope.userIds.map(() => "?").join(", ");
-  const [storedRules, legacyWords] = await Promise.all([
+  const [storedRules, tokenRows] = await Promise.all([
     db.query<LanguageGuardRuleRow>(
       `SELECT id, user_id, rule_kind, match_mode, pattern_text, rewrite_hint, is_enabled, created_at
        FROM language_guard_rules
@@ -79,7 +81,7 @@ async function getUserStoredLanguageGuardRules(userId: number) {
     ),
     db.query<{ id: number; user_id: number; word: string; created_at: string }>(
       `SELECT id, user_id, word, created_at
-       FROM banned_words
+       FROM ${LANGUAGE_GUARD_TOKENS_TABLE}
        WHERE user_id IN (${placeholders})
        ORDER BY id DESC`,
       scope.userIds,
@@ -87,13 +89,13 @@ async function getUserStoredLanguageGuardRules(userId: number) {
   ]);
 
   const deduped = new Map<string, LanguageGuardRule>();
-  for (const word of legacyWords) {
-    const key = `legacy:${word.word.trim()}`;
+  for (const word of tokenRows) {
+    const key = `token_rule:${word.word.trim()}`;
     if (deduped.has(key)) continue;
     deduped.set(key, {
-      id: `legacy-${word.id}`,
+      id: `token-rule-${word.id}`,
       scope: "user",
-      source: "legacy",
+      source: "token_rule",
       ruleKind: "token",
       matchMode: "contains",
       patternText: word.word.trim(),
@@ -149,11 +151,11 @@ export async function createLanguageGuardRule(input: {
   }
 
   const now = new Date().toISOString();
-  await assertBannedWordQuota(input.userId);
+  await assertLanguageGuardRuleQuota(input.userId);
   if (normalized.ruleKind === "token" && normalized.matchMode === "contains") {
-    await db.exec("INSERT INTO banned_words (user_id, word, created_at) VALUES (?, ?, ?)", [input.userId, normalized.patternText, now]);
+    await db.exec(`INSERT INTO ${LANGUAGE_GUARD_TOKENS_TABLE} (user_id, word, created_at) VALUES (?, ?, ?)`, [input.userId, normalized.patternText, now]);
     const created = await getUserStoredLanguageGuardRules(input.userId);
-    return created.find((rule) => rule.source === "legacy" && rule.patternText === normalized.patternText) ?? created[0];
+    return created.find((rule) => rule.source === "token_rule" && rule.patternText === normalized.patternText) ?? created[0];
   }
 
   const result = await db.exec(
@@ -179,8 +181,8 @@ export async function deleteLanguageGuardRule(userId: number, id: string) {
   await ensureExtendedProductSchema();
   const db = getDatabase();
   const normalizedId = String(id || "").trim();
-  if (normalizedId.startsWith("legacy-")) {
-    await db.exec("DELETE FROM banned_words WHERE id = ? AND user_id = ?", [Number(normalizedId.replace("legacy-", "")), userId]);
+  if (normalizedId.startsWith("token-rule-")) {
+    await db.exec(`DELETE FROM ${LANGUAGE_GUARD_TOKENS_TABLE} WHERE id = ? AND user_id = ?`, [Number(normalizedId.replace("token-rule-", "")), userId]);
     return;
   }
   if (normalizedId.startsWith("rule-")) {

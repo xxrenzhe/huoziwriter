@@ -48,7 +48,7 @@ export async function appendAuditLog(input: {
   );
 }
 
-export async function getAdminAuditLogs(input: {
+export async function getOpsAuditLogs(input: {
   query?: string;
   action?: string;
   targetType?: string;
@@ -108,7 +108,7 @@ export async function getAdminAuditLogs(input: {
   }));
 }
 
-export async function getAdminAuditFilterOptions() {
+export async function getOpsAuditFilterOptions() {
   await ensureExtendedProductSchema();
   const db = getDatabase();
   const [actions, targetTypes] = await Promise.all([

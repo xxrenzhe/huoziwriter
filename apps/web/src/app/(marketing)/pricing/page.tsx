@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { PricingMatrix } from "@/components/marketing-views";
-import { getAuthorPersonaLimit } from "@/lib/author-personas";
 import {
   canUseCoverImageReference,
   getCoverImageDailyLimit,
@@ -10,6 +9,7 @@ import {
   getTemplateAccessLimit,
   getWritingStyleProfileLimit,
 } from "@/lib/plan-access";
+import { getPersonaLimit } from "@/lib/personas";
 import { getPlans } from "@/lib/repositories";
 import { getTopicRadarVisibleLimit } from "@/lib/topic-recommendations";
 
@@ -19,10 +19,8 @@ function planFeatures(plan: {
   code: PublicPlanCode;
   daily_generation_limit: number | null;
   fragment_limit: number | null;
-  custom_banned_word_limit: number | null;
+  languageGuardRuleLimit: number | null;
   max_wechat_connections: number | null;
-  can_fork_genomes: number | boolean;
-  can_publish_genomes: number | boolean;
   can_generate_cover_image: number | boolean;
   can_export_pdf: number | boolean;
 }) {
@@ -32,16 +30,16 @@ function planFeatures(plan: {
   const writingStyleProfileLimit = getWritingStyleProfileLimit(plan.code);
   const templateAccessLimit = getTemplateAccessLimit(plan.code);
   const styleExtractDailyLimit = getStyleExtractDailyLimit(plan.code);
-  const authorPersonaLimit = getAuthorPersonaLimit(plan.code);
+  const personaLimit = getPersonaLimit(plan.code);
   const features = [
-    `${authorPersonaLimit} 个作者人设`,
+    `${personaLimit} 个作者人设`,
     `情绪罗盘 Top${topicVisibleLimit} 可见`,
     customTopicSourceLimit > 0 ? `自定义信源 ${customTopicSourceLimit} 个` : "只读系统默认信源",
     writingStyleProfileLimit > 0 ? `写作风格资产 ${writingStyleProfileLimit} 个` : "文风分析可用，不支持保存资产",
     `排版模板最多 ${templateAccessLimit} 个`,
     customTemplateLimit > 0 ? `私有模板资产 ${customTemplateLimit} 个` : "不支持私有模板提取",
     `文风提取 ${styleExtractDailyLimit} 次/日`,
-    plan.fragment_limit == null ? "无限碎片容量" : `${plan.fragment_limit} 条碎片上限`,
+    plan.fragment_limit == null ? "无限素材容量" : `${plan.fragment_limit} 条素材上限`,
     plan.daily_generation_limit == null ? "生成次数不限" : `每日 ${plan.daily_generation_limit} 次生成`,
     plan.max_wechat_connections == null
       ? "公众号连接不限"
@@ -50,12 +48,6 @@ function planFeatures(plan: {
         : `${plan.max_wechat_connections} 个公众号连接`,
   ];
 
-  if (plan.can_fork_genomes) {
-    features.push("支持 Fork 排版基因");
-  }
-  if (plan.can_publish_genomes) {
-    features.push("支持发布公开基因");
-  }
   if (plan.can_generate_cover_image) {
     const coverImageLimit = getCoverImageDailyLimit(plan.code as "free" | "pro" | "ultra");
     features.push(coverImageLimit > 0 ? `封面图 ${coverImageLimit} 次/天` : "支持真实封面图生成");
@@ -101,7 +93,7 @@ export default async function PricingPage() {
         <div className="text-xs uppercase tracking-[0.3em] text-cinnabar">Pricing & Access</div>
         <h1 className="mt-4 font-serifCn text-4xl font-semibold text-ink md:text-5xl">套餐决定次数、容量和高级功能，不决定底层模型。</h1>
         <p className="mt-4 text-base leading-8 text-stone-700">
-          活字只保留 `free / pro / ultra` 三档。套餐差异体现在作者人设数量、情绪罗盘可见位、自定义信源额度、文风资产、模板权限、封面图和发布能力，而不是按付费档位切换成不同模型。
+          活字只保留 `free / pro / ultra` 三档。套餐差异体现在作者人设数量、情绪罗盘可见位、自定义信源额度、文风资产、私有模板、封面图和发布能力，而不是按付费档位切换成不同模型。
         </p>
       </section>
 
@@ -119,18 +111,18 @@ export default async function PricingPage() {
         <article className="border border-stone-300/40 bg-white p-6 shadow-ink">
           <div className="text-xs uppercase tracking-[0.24em] text-cinnabar">统一模型原则</div>
           <div className="mt-4 space-y-3 text-sm leading-7 text-stone-700">
-            <p>碎片提纯、截图理解和热点处理统一走 Gemini 3.0 场景路由。</p>
-            <p>正文生成统一走 Claude 4.6 写作链路，死刑词复勘统一走 GPT-5.4。</p>
-            <p>封面图统一走管理员维护的全局生图引擎，不要求用户单独配置密钥。</p>
-            <p>因此升级套餐买到的是更高配额和更完整工作流，不是“换一套模型皮肤”。</p>
+            <p>素材提纯、截图理解和热点处理统一走 Gemini 3.0 场景路由。</p>
+            <p>正文生成统一走 Claude 4.6 写作链路，语言守卫复勘统一走 GPT-5.4。</p>
+            <p>封面图统一走运营后台维护的全局生图引擎，不要求用户单独配置密钥。</p>
+            <p>因此升级套餐买到的是更高配额和更完整链路，不是“换一套模型皮肤”。</p>
           </div>
         </article>
         <aside className="border border-stone-300/40 bg-[#f4efe6] p-6 shadow-ink">
           <div className="text-xs uppercase tracking-[0.24em] text-stone-500">开通方式</div>
           <div className="mt-4 space-y-3 text-sm leading-7 text-stone-700">
-            <p>当前版本不开放自助注册，所有账号都由管理员手动创建。</p>
+            <p>当前版本不开放自助注册，所有账号都由运营后台手动创建。</p>
             <p>如果你需要试用或升级，请直接联系支持。</p>
-            <p>后台可手动调整套餐、状态、到期时间和推荐归因关系。</p>
+            <p>后台可手动调整套餐、状态、到期时间，以及必要的历史来源记录。</p>
           </div>
           <div className="mt-5 space-y-3">
             <Link href="/support?type=billing" className="block border border-cinnabar bg-cinnabar px-4 py-3 text-sm text-white">

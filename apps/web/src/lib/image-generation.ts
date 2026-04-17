@@ -101,7 +101,7 @@ export async function generateCoverImage(input: {
 }) {
   const engine = await getGlobalCoverImageEngineSecret();
   if (!engine || !engine.isEnabled || !engine.baseUrl || !engine.apiKey) {
-    throw new Error("请先由管理员在后台配置全局生图 AI 引擎的 Base_URL 和 API Key");
+    throw new Error("请先由运营后台在后台配置全局生图 AI 引擎的 Base_URL 和 API Key");
   }
 
   const prompt = buildImagePrompt(
@@ -184,7 +184,7 @@ async function requestCoverImage(input: {
 }) {
   const engine = await getGlobalCoverImageEngineSecret();
   if (!engine || !engine.isEnabled || !engine.baseUrl || !engine.apiKey) {
-    throw new Error("请先由管理员在后台配置全局生图 AI 引擎的 Base_URL 和 API Key");
+    throw new Error("请先由运营后台在后台配置全局生图 AI 引擎的 Base_URL 和 API Key");
   }
 
   const prompt = buildImagePrompt(

@@ -1,6 +1,5 @@
 import { ensureUserSession, findUserById, getEffectivePlanCodeForUser } from "@/lib/auth";
 import { fail, ok } from "@/lib/http";
-import { getReferralCodeForUser } from "@/lib/referrals";
 
 export async function GET() {
   const session = await ensureUserSession();
@@ -18,7 +17,6 @@ export async function GET() {
     displayName: user.display_name,
     role: user.role,
     planCode: await getEffectivePlanCodeForUser(user.id, user.plan_code),
-    referralCode: getReferralCodeForUser(user),
     mustChangePassword: Boolean(user.must_change_password),
   });
 }

@@ -17,10 +17,8 @@ type PlanRecord = {
   price_cny: number | null;
   daily_generation_limit: number | null;
   fragment_limit: number | null;
-  custom_banned_word_limit: number | null;
+  languageGuardRuleLimit: number | null;
   max_wechat_connections: number | null;
-  can_fork_genomes: number | boolean;
-  can_publish_genomes: number | boolean;
   can_generate_cover_image: number | boolean;
   can_export_pdf: number | boolean;
 };
@@ -102,8 +100,9 @@ export async function getUserPlanContext(userId: number) {
 
   const db = getDatabase();
   const plan = await db.queryOne<PlanRecord>(
-    `SELECT code, name, price_cny, daily_generation_limit, fragment_limit, custom_banned_word_limit, max_wechat_connections,
-            can_fork_genomes, can_publish_genomes, can_generate_cover_image, can_export_pdf
+    `SELECT code, name, price_cny, daily_generation_limit, fragment_limit,
+            language_guard_rule_limit AS "languageGuardRuleLimit", max_wechat_connections,
+            can_generate_cover_image, can_export_pdf
      FROM plans WHERE code = ?`,
     [effectivePlanCode],
   );
@@ -115,20 +114,20 @@ export async function getUserPlanContext(userId: number) {
   return { user, plan, effectivePlanCode, subscriptionStatus: subscription?.status ?? null };
 }
 
-export async function assertBannedWordQuota(userId: number) {
+export async function assertLanguageGuardRuleQuota(userId: number) {
   const { plan } = await getUserPlanContext(userId);
-  if (plan.custom_banned_word_limit == null) {
+  if (plan.languageGuardRuleLimit == null) {
     return;
   }
 
   const db = getDatabase();
-  const [legacyCount, guardRuleCount] = await Promise.all([
-    db.queryOne<{ count: number }>("SELECT COUNT(*) as count FROM banned_words WHERE user_id = ?", [userId]),
+  const [tokenRuleCount, guardRuleCount] = await Promise.all([
+    db.queryOne<{ count: number }>("SELECT COUNT(*) as count FROM language_guard_tokens WHERE user_id = ?", [userId]),
     db.queryOne<{ count: number }>("SELECT COUNT(*) as count FROM language_guard_rules WHERE user_id = ?", [userId]),
   ]);
-  const total = (legacyCount?.count ?? 0) + (guardRuleCount?.count ?? 0);
-  if (total >= plan.custom_banned_word_limit) {
-    throw new Error(`${PLAN_LABELS[plan.code]}套餐最多只能配置 ${plan.custom_banned_word_limit} 个自定义语言守卫规则`);
+  const total = (tokenRuleCount?.count ?? 0) + (guardRuleCount?.count ?? 0);
+  if (total >= plan.languageGuardRuleLimit) {
+    throw new Error(`${PLAN_LABELS[plan.code]}套餐最多只能配置 ${plan.languageGuardRuleLimit} 个自定义语言守卫规则`);
   }
 }
 
@@ -141,7 +140,7 @@ export async function assertFragmentQuota(userId: number) {
   const db = getDatabase();
   const count = await db.queryOne<{ count: number }>("SELECT COUNT(*) as count FROM fragments WHERE user_id = ?", [userId]);
   if ((count?.count ?? 0) >= plan.fragment_limit) {
-    throw new Error(`${PLAN_LABELS[plan.code]}套餐最多只能保存 ${plan.fragment_limit} 条碎片`);
+    throw new Error(`${PLAN_LABELS[plan.code]}套餐最多只能保存 ${plan.fragment_limit} 条素材`);
   }
 }
 
@@ -186,7 +185,7 @@ export async function assertPdfExportAllowed(userId: number) {
 export async function assertTopicRadarStartAllowed(userId: number) {
   const { plan } = await getUserPlanContext(userId);
   if (plan.code === "free") {
-    throw new Error(`${PLAN_LABELS[plan.code]}套餐仅可浏览情绪罗盘，不能一键落笔`);
+    throw new Error(`${PLAN_LABELS[plan.code]}套餐仅可浏览选题雷达，不能一键落笔`);
   }
 }
 
@@ -211,20 +210,6 @@ export async function assertTopicSourceQuota(userId: number) {
   );
   if ((count?.count ?? 0) >= limit) {
     throw new Error(`${PLAN_LABELS[plan.code]}套餐最多只能启用 ${limit} 个自定义信息源`);
-  }
-}
-
-export async function assertGenomeForkAllowed(userId: number) {
-  const { plan } = await getUserPlanContext(userId);
-  if (!plan.can_fork_genomes) {
-    throw new Error(`${PLAN_LABELS[plan.code]}套餐不支持 Fork 排版基因`);
-  }
-}
-
-export async function assertStyleGenomeApplyAllowed(userId: number) {
-  const { plan } = await getUserPlanContext(userId);
-  if (!plan.can_fork_genomes) {
-    throw new Error(`${PLAN_LABELS[plan.code]}套餐当前只能浏览排版基因，不能把它套用到文稿。请先升级到 Pro 或更高套餐。`);
   }
 }
 
@@ -278,7 +263,7 @@ export async function assertWritingStyleProfileSaveAllowed(userId: number) {
   }
 }
 
-export async function assertAuthorPersonaSourceAnalysisAllowed(userId: number) {
+export async function assertPersonaSourceAnalysisAllowed(userId: number) {
   const { plan } = await getUserPlanContext(userId);
   if (!["pro", "ultra"].includes(plan.code)) {
     throw new Error(`${PLAN_LABELS[plan.code]}套餐暂不支持基于资料分析生成作者人设`);
@@ -289,13 +274,6 @@ export async function assertHistoryReferenceAllowed(userId: number) {
   const { plan } = await getUserPlanContext(userId);
   if (!canUseHistoryReferences(plan.code)) {
     throw new Error(`${PLAN_LABELS[plan.code]}套餐暂不支持历史文章自然引用`);
-  }
-}
-
-export async function assertGenomePublishAllowed(userId: number) {
-  const { plan } = await getUserPlanContext(userId);
-  if (!plan.can_publish_genomes) {
-    throw new Error(`${PLAN_LABELS[plan.code]}套餐不支持发布排版基因`);
   }
 }
 

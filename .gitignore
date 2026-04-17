@@ -148,10 +148,17 @@ vite.config.ts.timestamp-*
 *.db
 *.db-shm
 *.db-wal
+*.sqlite
 data/
 test-results/
 __pycache__/
 *.py[cod]
+
+# Local runtime-generated assets and data
+/public/generated-assets/
+/apps/web/data.sqlite
+/apps/web/public/generated-assets/wechat/
+/apps/web/public/generated-assets/__healthchecks__/object-storage-*.txt
 
 # Project policy: these directories must not be uploaded to GitHub
 docs/

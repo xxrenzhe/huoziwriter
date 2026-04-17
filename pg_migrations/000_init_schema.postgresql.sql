@@ -6,9 +6,6 @@ CREATE TABLE IF NOT EXISTS users (
   email TEXT UNIQUE,
   password_hash TEXT,
   display_name TEXT,
-  referral_code TEXT,
-  referred_by_user_id BIGINT,
-  referral_bound_at TIMESTAMPTZ,
   role TEXT NOT NULL DEFAULT 'user',
   plan_code TEXT NOT NULL DEFAULT 'free',
   must_change_password BOOLEAN NOT NULL DEFAULT TRUE,
@@ -25,10 +22,8 @@ CREATE TABLE IF NOT EXISTS plans (
   price_cny INTEGER NOT NULL DEFAULT 0,
   daily_generation_limit INTEGER,
   fragment_limit INTEGER,
-  custom_banned_word_limit INTEGER,
+  language_guard_rule_limit INTEGER,
   max_wechat_connections INTEGER,
-  can_fork_genomes BOOLEAN NOT NULL DEFAULT FALSE,
-  can_publish_genomes BOOLEAN NOT NULL DEFAULT FALSE,
   can_generate_cover_image BOOLEAN NOT NULL DEFAULT FALSE,
   can_export_pdf BOOLEAN NOT NULL DEFAULT FALSE,
   is_public BOOLEAN NOT NULL DEFAULT TRUE,
@@ -113,7 +108,7 @@ CREATE TABLE IF NOT EXISTS fragments (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS banned_words (
+CREATE TABLE IF NOT EXISTS language_guard_tokens (
   id BIGSERIAL PRIMARY KEY,
   user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   word TEXT NOT NULL,
@@ -390,10 +385,10 @@ CREATE TABLE IF NOT EXISTS fragment_embeddings (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS style_genomes (
+CREATE TABLE IF NOT EXISTS layout_strategies (
   id BIGSERIAL PRIMARY KEY,
   owner_user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
-  source_genome_id BIGINT REFERENCES style_genomes(id) ON DELETE SET NULL,
+  source_layout_strategy_id BIGINT REFERENCES layout_strategies(id) ON DELETE SET NULL,
   code TEXT NOT NULL UNIQUE,
   name TEXT NOT NULL,
   description TEXT,
@@ -406,15 +401,15 @@ CREATE TABLE IF NOT EXISTS style_genomes (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS style_genome_forks (
+CREATE TABLE IF NOT EXISTS layout_strategy_forks (
   id BIGSERIAL PRIMARY KEY,
-  source_genome_id BIGINT NOT NULL REFERENCES style_genomes(id) ON DELETE CASCADE,
-  target_genome_id BIGINT NOT NULL REFERENCES style_genomes(id) ON DELETE CASCADE,
+  source_layout_strategy_id BIGINT NOT NULL REFERENCES layout_strategies(id) ON DELETE CASCADE,
+  target_layout_strategy_id BIGINT NOT NULL REFERENCES layout_strategies(id) ON DELETE CASCADE,
   user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS author_personas (
+CREATE TABLE IF NOT EXISTS personas (
   id BIGSERIAL PRIMARY KEY,
   user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
@@ -432,7 +427,7 @@ CREATE TABLE IF NOT EXISTS author_personas (
   UNIQUE(user_id, name)
 );
 
-CREATE TABLE IF NOT EXISTS author_persona_sources (
+CREATE TABLE IF NOT EXISTS persona_sources (
   id BIGSERIAL PRIMARY KEY,
   persona_id BIGINT NOT NULL,
   source_type TEXT NOT NULL,
@@ -505,7 +500,6 @@ CREATE TABLE IF NOT EXISTS writing_style_profiles (
 CREATE TABLE IF NOT EXISTS knowledge_cards (
   id BIGSERIAL PRIMARY KEY,
   user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  workspace_scope TEXT NOT NULL DEFAULT 'personal',
   card_type TEXT NOT NULL,
   title TEXT NOT NULL,
   slug TEXT NOT NULL,
@@ -604,7 +598,7 @@ CREATE TABLE IF NOT EXISTS asset_files (
   document_id BIGINT REFERENCES documents(id) ON DELETE SET NULL,
   asset_scope TEXT NOT NULL,
   asset_type TEXT NOT NULL DEFAULT 'cover_image',
-  legacy_asset_id BIGINT NOT NULL,
+  source_record_id BIGINT NOT NULL,
   batch_token TEXT,
   variant_label TEXT,
   storage_provider TEXT,
@@ -618,7 +612,7 @@ CREATE TABLE IF NOT EXISTS asset_files (
   manifest_json JSONB,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  UNIQUE(asset_scope, legacy_asset_id)
+  UNIQUE(asset_scope, source_record_id)
 );
 
 CREATE TABLE IF NOT EXISTS cover_image_candidates (
@@ -716,18 +710,18 @@ CREATE TABLE IF NOT EXISTS audit_logs (
 );
 
 INSERT INTO plans (
-  code, name, price_cny, daily_generation_limit, fragment_limit, custom_banned_word_limit,
-  max_wechat_connections, can_fork_genomes, can_publish_genomes, can_generate_cover_image, can_export_pdf, is_public
+  code, name, price_cny, daily_generation_limit, fragment_limit, language_guard_rule_limit,
+  max_wechat_connections, can_generate_cover_image, can_export_pdf, is_public
 ) VALUES
-  ('free', '游墨', 0, 1, 50, 5, 0, FALSE, FALSE, FALSE, FALSE, TRUE),
-  ('pro', '执毫', 108, 10, NULL, NULL, 1, TRUE, FALSE, TRUE, FALSE, TRUE),
-  ('ultra', '藏锋', 298, NULL, NULL, NULL, 5, TRUE, TRUE, TRUE, TRUE, TRUE)
+  ('free', '游墨', 0, 1, 50, 5, 0, FALSE, FALSE, TRUE),
+  ('pro', '执毫', 108, 10, NULL, NULL, 1, TRUE, FALSE, TRUE),
+  ('ultra', '藏锋', 298, NULL, NULL, NULL, 5, TRUE, TRUE, TRUE)
 ON CONFLICT (code) DO NOTHING;
 
 INSERT INTO ai_model_routes (scene_code, primary_model, fallback_model, description) VALUES
   ('fragmentDistill', 'gemini-3.0-flash-lite', 'gemini-3.0-flash', '碎片提纯与原子事实抽取'),
   ('visionNote', 'gemini-3.0-flash', 'gpt-5.4-mini', '截图视觉理解与结构化笔记生成'),
-  ('documentWrite', 'claude-sonnet-4-6', 'claude-haiku-4-5', '正文生成与改写'),
+  ('articleWrite', 'claude-sonnet-4-6', 'claude-haiku-4-5', '正文生成与改写'),
   ('styleExtract', 'gemini-3.0-flash', 'gpt-5.4-mini', '文章写作风格提取与结构化分析'),
   ('topicSupplement', 'gemini-3.0-flash', 'gpt-5.4-mini', '选题补证信源补充与查询建议生成'),
   ('topicSourceScout', 'gemini-3.0-flash', 'gpt-5.4-mini', '选题雷达补充信源建议与补证线索生成'),
@@ -736,10 +730,10 @@ INSERT INTO ai_model_routes (scene_code, primary_model, fallback_model, descript
   ('deepWrite', 'claude-sonnet-4-6', 'claude-haiku-4-5', '深度写作执行卡与正文生成策略'),
   ('factCheck', 'gpt-5.4-mini', 'gpt-5.4-nano', '事实核查、风险分级与证据缺口分析'),
   ('prosePolish', 'gpt-5.4-mini', 'gpt-5.4-nano', '文笔润色、语言节奏与表达修订建议'),
-  ('bannedWordAudit', 'gpt-5.4-mini', 'gpt-5.4-nano', '死刑词与长句审校'),
+  ('languageGuardAudit', 'gpt-5.4-mini', 'gpt-5.4-nano', '死刑词与长句审校'),
   ('layoutExtract', 'gemini-3.0-flash', 'gpt-5.4-mini', '文章排版结构提取与模板 DSL 生成'),
   ('publishGuard', 'gpt-5.4-mini', 'gpt-5.4-nano', '发布前守门检查与风险总结'),
-  ('wechatRender', 'internal-renderer', 'fallback-renderer', '微信排版渲染')
+  ('wechatRender', 'wechat-renderer', 'backup-renderer', '微信排版渲染')
 ON CONFLICT (scene_code) DO NOTHING;
 
 INSERT INTO prompt_versions (
@@ -747,10 +741,10 @@ INSERT INTO prompt_versions (
 ) VALUES
   ('fragment_distill', 'v1.0.0', 'capture', '碎片提纯', '将原始内容转为原子事实碎片', 'system:capture', 'fragmentDistill', '你是碎片提纯器。保留时间、地点、数据、冲突，不要写空泛总结。', 'zh-CN', TRUE, '初始化版本'),
   ('vision_note', 'v1.0.0', 'capture', '截图视觉理解', '从截图中提取可复用的事实与上下文', 'system:capture', 'visionNote', '你是截图理解编辑。必须先看图，再提取正文、数字、图表结论、界面状态和异常信号，输出可复用的写作碎片。', 'zh-CN', TRUE, '初始化版本'),
-  ('document_write', 'v1.0.0', 'writing', '正文生成', '根据碎片和大纲生成正文', 'system:writing', 'documentWrite', '你是中文专栏作者。根据节点和碎片生成短句、克制、反机器腔调的正文。', 'zh-CN', TRUE, '初始化版本'),
+  ('article_write', 'v1.0.0', 'writing', '正文生成', '根据碎片和大纲生成正文', 'system:writing', 'articleWrite', '你是中文专栏作者。根据节点和碎片生成短句、克制、反机器腔调的正文。', 'zh-CN', TRUE, '初始化版本'),
   ('style_extract', 'v1.0.0', 'analysis', '写作风格提取', '从网页文章中提炼写作风格画像', 'system:analysis', 'styleExtract', '你是中文文风分析师。必须基于正文内容抽取语气、句式、结构、开头结尾习惯和模仿提示，不要空泛赞美。', 'zh-CN', TRUE, '初始化版本'),
   ('topic_supplement', 'v1.0.0', 'analysis', '选题补证', '围绕选题生成补充信源、检索词与补证清单', 'system:analysis', 'topicSupplement', '你是选题补证编辑。围绕一个待写选题，优先推荐 YouTube、Reddit、X、Podcast、Spotify、主流新闻等第一手或近一手信源的补证方向，输出可直接执行的查询词、平台建议与验证清单，不要把模型猜测写成事实。', 'zh-CN', TRUE, '新增二期标准场景码 topicSupplement'),
-  ('banned_word_audit', 'v1.0.0', 'review', '死刑词审校', '检查并替换死刑词与长句', 'system:review', 'bannedWordAudit', '你是终审编辑。删除禁用词，保留事实，拆解长句。', 'zh-CN', TRUE, '初始化版本'),
+  ('language_guard_audit', 'v1.0.0', 'review', '死刑词审校', '检查并替换死刑词与长句', 'system:review', 'languageGuardAudit', '你是终审编辑。删除禁用词，保留事实，拆解长句。', 'zh-CN', TRUE, '初始化版本'),
   ('audience_profile', 'v1.0.0', 'analysis', '受众画像', '根据选题、人设和素材生成读者画像与表达建议', 'system:analysis', 'audienceProfile', '你是内容策略编辑。你要为一篇中文内容判断真正应该写给谁看、怎么说他们才会继续读。必须优先给出可执行的读者分层、痛点、动机、表达方式、背景认知分层和通俗度建议，避免空泛人口学描述，避免营销套话。', 'zh-CN', TRUE, '新增二期标准场景码 audienceProfile'),
   ('audience_analysis', 'v1.0.0', 'analysis', '受众分析', '根据选题、人设和素材生成读者画像与表达建议', 'system:analysis', 'audienceAnalysis', '你是内容策略编辑。请基于选题、人设、素材和当前文稿，输出结构化的受众分析，重点给出读者分层、痛点、表达方式与语言通俗度建议。', 'zh-CN', TRUE, '初始化版本'),
   ('outline_plan', 'v1.0.0', 'writing', '大纲规划场景', '根据选题、人设、受众和素材生成结构化大纲', 'system:writing', 'outlinePlan', '你是专栏主编。请基于主题、人设、受众和素材，设计一份真正可写的结构化文章大纲。大纲必须体现核心观点、论证递进、证据挂载、情绪转折、开头策略和结尾动作，不能把信息并列堆砌成目录。', 'zh-CN', TRUE, '新增二期标准场景码 outlinePlan'),
@@ -763,8 +757,8 @@ INSERT INTO prompt_versions (
   ('wechat_render', 'v1.0.0', 'publish', '微信排版器', '将 Markdown 转为适合微信公众号的 HTML', 'system:publish', 'wechatRender', '你是微信排版器。输出适配公众号草稿箱的简洁 HTML。', 'zh-CN', TRUE, '初始化版本')
 ON CONFLICT (prompt_id, version) DO NOTHING;
 
-INSERT INTO style_genomes (
-  owner_user_id, source_genome_id, code, name, description, meta, config_json, is_public, is_official, published_at
+INSERT INTO layout_strategies (
+  owner_user_id, source_layout_strategy_id, code, name, description, meta, config_json, is_public, is_official, published_at
 ) VALUES
   (NULL, NULL, 'latepost-minimal', '晚点极简风', '偏报道感、低修饰、段落克制，适合商业评论和行业观察。', '模板', '{"tone":"克制报道","paragraphLength":"short","titleStyle":"sharp","bannedPunctuation":["！！！"]}'::jsonb, TRUE, TRUE, NOW()),
   (NULL, NULL, 'huozi-editorial', '活字新中式', '强调留白、衬线标题、正文行距宽，适合专栏长文。', '版式', '{"tone":"留白专栏","paragraphLength":"medium","titleStyle":"serif","bannedPunctuation":[]}'::jsonb, TRUE, TRUE, NOW()),
@@ -800,5 +794,32 @@ INSERT INTO topic_sources (name, homepage_url, source_type, priority, is_active)
   ('36Kr', 'https://36kr.com', 'news', 80, TRUE),
   ('华尔街日报 Wall Street Journal', 'https://www.wsj.com', 'news', 70, TRUE)
 ON CONFLICT (name) DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS article_research_cards (
+  id BIGSERIAL PRIMARY KEY,
+  document_id BIGINT NOT NULL,
+  user_id BIGINT NOT NULL,
+  card_kind TEXT NOT NULL,
+  title TEXT NOT NULL,
+  summary TEXT,
+  payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+  sort_order INTEGER NOT NULL DEFAULT 1,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(document_id, card_kind, sort_order)
+);
+
+CREATE TABLE IF NOT EXISTS article_research_card_sources (
+  id BIGSERIAL PRIMARY KEY,
+  research_card_id BIGINT NOT NULL,
+  label TEXT NOT NULL,
+  source_type TEXT NOT NULL DEFAULT 'manual',
+  detail TEXT,
+  source_url TEXT,
+  sort_order INTEGER NOT NULL DEFAULT 1,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(research_card_id, sort_order)
+);
 
 COMMIT;

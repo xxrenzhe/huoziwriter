@@ -213,7 +213,7 @@ export async function getGlobalObjectStorageSecret(): Promise<GlobalObjectStorag
 }
 
 export async function upsertGlobalObjectStorageConfig(input: {
-  adminUserId: number;
+  operatorUserId: number;
   providerName: ObjectStorageProviderName;
   providerPreset?: ObjectStorageProviderPreset | null;
   endpoint?: string | null;
@@ -281,7 +281,7 @@ export async function upsertGlobalObjectStorageConfig(input: {
         pathPrefix || null,
         isEnabled,
         null,
-        input.adminUserId,
+        input.operatorUserId,
         now,
         IMAGE_OBJECT_STORAGE_CODE,
       ],
@@ -304,7 +304,7 @@ export async function upsertGlobalObjectStorageConfig(input: {
         pathPrefix || null,
         isEnabled,
         null,
-        input.adminUserId,
+        input.operatorUserId,
         now,
         now,
       ],
@@ -312,8 +312,8 @@ export async function upsertGlobalObjectStorageConfig(input: {
   }
 
   await appendAuditLog({
-    userId: input.adminUserId,
-    action: "admin.object_storage.update",
+    userId: input.operatorUserId,
+    action: "ops.object_storage.update",
     targetType: "global_object_storage",
     targetId: IMAGE_OBJECT_STORAGE_CODE,
     payload: {

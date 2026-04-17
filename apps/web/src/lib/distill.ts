@@ -20,13 +20,13 @@ function inferTitleFromUrl(url: string) {
     }
     return parsed.hostname.replace(/^www\./, "");
   } catch {
-    return "URL 碎片";
+    return "URL 素材";
   }
 }
 
 function fallbackDistill(input: { title?: string | null; rawContent: string }) {
   const text = input.rawContent.replace(/\s+/g, " ").trim();
-  const title = (input.title || text.slice(0, 24) || "未命名碎片").trim();
+  const title = (input.title || text.slice(0, 24) || "未命名素材").trim();
   return {
     title,
     distilledContent: text.slice(0, 400),

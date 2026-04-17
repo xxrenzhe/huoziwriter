@@ -21,7 +21,7 @@ export default defineConfig({
       PORT: "3101",
       HOSTNAME: "127.0.0.1",
       DATABASE_PATH: databasePath,
-      DEFAULT_ADMIN_PASSWORD: process.env.DEFAULT_ADMIN_PASSWORD || "REDACTED_ADMIN_PASSWORD",
+      DEFAULT_OPS_PASSWORD: process.env.DEFAULT_OPS_PASSWORD || "REDACTED_ADMIN_PASSWORD",
     },
   },
 });

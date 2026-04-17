@@ -29,7 +29,7 @@ export function LoginForm() {
     if (json.data.mustChangePassword) {
       router.push("/change-password");
     } else {
-      router.push(json.data.role === "admin" ? "/admin" : "/dashboard");
+      router.push(json.data.role === "ops" ? "/ops" : "/dashboard");
     }
     router.refresh();
   }
@@ -51,7 +51,7 @@ export function LoginForm() {
           value={password}
           onChange={(event) => setPassword(event.target.value)}
           className={uiPrimitives.input}
-          placeholder="输入管理员或已分配账号密码"
+          placeholder="输入运维账号或已分配账号密码"
         />
       </div>
       {error ? <div className="text-sm text-cinnabar">{error}</div> : null}
@@ -94,14 +94,14 @@ export function ChangePasswordForm({
       setError(json.error || "修改密码失败");
       return;
     }
-    router.push(json.data.role === "admin" ? "/admin" : "/dashboard");
+    router.push(json.data.role === "ops" ? "/ops" : "/dashboard");
     router.refresh();
   }
 
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
       <div className="text-sm leading-7 text-stone-600">
-        {mustChange ? "这是管理员发放的初始密码，首次登录后必须立即修改。" : "为了账号安全，建议定期轮换密码。"}
+        {mustChange ? "这是运营后台发放的初始密码，首次登录后必须立即修改。" : "为了账号安全，建议定期轮换密码。"}
       </div>
       <div className="space-y-2">
         <label className="text-sm text-stone-600">当前密码</label>

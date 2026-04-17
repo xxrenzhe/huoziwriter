@@ -21,13 +21,13 @@ function normalizeList(value: unknown) {
     .slice(0, 12);
 }
 
-export async function getStyleGenomes(options?: { includePrivateForUserId?: number }) {
+export async function getLayoutStrategies(options?: { includePrivateForUserId?: number }) {
   const db = getDatabase();
   if (options?.includePrivateForUserId) {
     return db.query<{
       id: number;
       owner_user_id: number | null;
-      source_genome_id: number | null;
+      source_layout_strategy_id: number | null;
       code: string;
       name: string;
       description: string | null;
@@ -42,7 +42,7 @@ export async function getStyleGenomes(options?: { includePrivateForUserId?: numb
       `SELECT
          sg.*,
          u.username as owner_username
-       FROM style_genomes sg
+       FROM layout_strategies sg
        LEFT JOIN users u ON u.id = sg.owner_user_id
        WHERE sg.is_public = ? OR sg.owner_user_id = ?
        ORDER BY is_official DESC, published_at DESC, id DESC`,
@@ -53,7 +53,7 @@ export async function getStyleGenomes(options?: { includePrivateForUserId?: numb
   return db.query<{
     id: number;
     owner_user_id: number | null;
-    source_genome_id: number | null;
+    source_layout_strategy_id: number | null;
     code: string;
     name: string;
     description: string | null;
@@ -68,7 +68,7 @@ export async function getStyleGenomes(options?: { includePrivateForUserId?: numb
     `SELECT
        sg.*,
        u.username as owner_username
-     FROM style_genomes sg
+     FROM layout_strategies sg
      LEFT JOIN users u ON u.id = sg.owner_user_id
      WHERE sg.is_public = ?
      ORDER BY is_official DESC, published_at DESC, id DESC`,
@@ -76,9 +76,9 @@ export async function getStyleGenomes(options?: { includePrivateForUserId?: numb
   );
 }
 
-export async function getStyleGenomeById(genomeId: number, options?: { userId?: number }) {
+export async function getLayoutStrategyById(layoutStrategyId: number, options?: { userId?: number }) {
   const db = getDatabase();
-  const params: unknown[] = [genomeId];
+  const params: unknown[] = [layoutStrategyId];
   let where = "sg.id = ?";
   if (options?.userId) {
     where += " AND (sg.is_public = ? OR sg.owner_user_id = ?)";
@@ -88,7 +88,7 @@ export async function getStyleGenomeById(genomeId: number, options?: { userId?: 
   return db.queryOne<{
     id: number;
     owner_user_id: number | null;
-    source_genome_id: number | null;
+    source_layout_strategy_id: number | null;
     code: string;
     name: string;
     description: string | null;
@@ -103,7 +103,7 @@ export async function getStyleGenomeById(genomeId: number, options?: { userId?: 
     `SELECT
        sg.*,
        u.username as owner_username
-     FROM style_genomes sg
+     FROM layout_strategies sg
      LEFT JOIN users u ON u.id = sg.owner_user_id
      WHERE ${where}
      LIMIT 1`,
@@ -111,12 +111,12 @@ export async function getStyleGenomeById(genomeId: number, options?: { userId?: 
   );
 }
 
-export async function getOwnedStyleGenomes(userId: number) {
+export async function getOwnedLayoutStrategies(userId: number) {
   const db = getDatabase();
   return db.query<{
     id: number;
     owner_user_id: number | null;
-    source_genome_id: number | null;
+    source_layout_strategy_id: number | null;
     code: string;
     name: string;
     description: string | null;
@@ -131,7 +131,7 @@ export async function getOwnedStyleGenomes(userId: number) {
     `SELECT
        sg.*,
        u.username as owner_username
-     FROM style_genomes sg
+     FROM layout_strategies sg
      LEFT JOIN users u ON u.id = sg.owner_user_id
      WHERE sg.owner_user_id = ?
      ORDER BY published_at DESC, id DESC`,
@@ -139,12 +139,12 @@ export async function getOwnedStyleGenomes(userId: number) {
   );
 }
 
-export async function getOwnedStyleGenomeById(genomeId: number, userId: number) {
+export async function getOwnedLayoutStrategyById(layoutStrategyId: number, userId: number) {
   const db = getDatabase();
   return db.queryOne<{
     id: number;
     owner_user_id: number | null;
-    source_genome_id: number | null;
+    source_layout_strategy_id: number | null;
     code: string;
     name: string;
     description: string | null;
@@ -159,15 +159,15 @@ export async function getOwnedStyleGenomeById(genomeId: number, userId: number) 
     `SELECT
        sg.*,
        u.username as owner_username
-     FROM style_genomes sg
+     FROM layout_strategies sg
      LEFT JOIN users u ON u.id = sg.owner_user_id
      WHERE sg.id = ? AND sg.owner_user_id = ?
      LIMIT 1`,
-    [genomeId, userId],
+    [layoutStrategyId, userId],
   );
 }
 
-export async function createGenomeFork(input: { sourceGenomeId: number; userId: number }) {
+export async function createLayoutStrategyFork(input: { sourceLayoutStrategyId: number; userId: number }) {
   const db = getDatabase();
   const source = await db.queryOne<{
     id: number;
@@ -176,19 +176,19 @@ export async function createGenomeFork(input: { sourceGenomeId: number; userId: 
     description: string | null;
     meta: string | null;
     config_json: string;
-  }>("SELECT id, code, name, description, meta, config_json FROM style_genomes WHERE id = ?", [input.sourceGenomeId]);
+  }>("SELECT id, code, name, description, meta, config_json FROM layout_strategies WHERE id = ?", [input.sourceLayoutStrategyId]);
   if (!source) {
-    throw new Error("排版基因不存在");
+    throw new Error("写作风格资产不存在");
   }
   const result = await db.exec(
-    `INSERT INTO style_genomes (
-      owner_user_id, source_genome_id, code, name, description, meta, config_json, is_public, is_official, published_at, created_at, updated_at
+    `INSERT INTO layout_strategies (
+      owner_user_id, source_layout_strategy_id, code, name, description, meta, config_json, is_public, is_official, published_at, created_at, updated_at
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       input.userId,
       source.id,
       `${source.code}-fork-${input.userId}-${Date.now()}`,
-      `${source.name} Fork`,
+      `${source.name} 副本`,
       source.description,
       source.meta,
       source.config_json,
@@ -200,14 +200,14 @@ export async function createGenomeFork(input: { sourceGenomeId: number; userId: 
     ],
   );
   await db.exec(
-    `INSERT INTO style_genome_forks (source_genome_id, target_genome_id, user_id, created_at)
+    `INSERT INTO layout_strategy_forks (source_layout_strategy_id, target_layout_strategy_id, user_id, created_at)
      VALUES (?, ?, ?, ?)`,
     [source.id, result.lastInsertRowid!, input.userId, new Date().toISOString()],
   );
-  return db.queryOne("SELECT * FROM style_genomes WHERE id = ?", [result.lastInsertRowid!]);
+  return db.queryOne("SELECT * FROM layout_strategies WHERE id = ?", [result.lastInsertRowid!]);
 }
 
-export async function createStyleGenome(input: {
+export async function createLayoutStrategy(input: {
   userId: number;
   name: string;
   description?: string | null;
@@ -218,7 +218,7 @@ export async function createStyleGenome(input: {
   const now = new Date().toISOString();
   const name = input.name.trim();
   if (!name) {
-    throw new Error("排版基因名称不能为空");
+    throw new Error("写作风格资产名称不能为空");
   }
 
   const config = {
@@ -234,8 +234,8 @@ export async function createStyleGenome(input: {
   };
 
   const result = await db.exec(
-    `INSERT INTO style_genomes (
-      owner_user_id, source_genome_id, code, name, description, meta, config_json, is_public, is_official, published_at, created_at, updated_at
+    `INSERT INTO layout_strategies (
+      owner_user_id, source_layout_strategy_id, code, name, description, meta, config_json, is_public, is_official, published_at, created_at, updated_at
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       input.userId,
@@ -256,7 +256,7 @@ export async function createStyleGenome(input: {
   return db.queryOne<{
     id: number;
     owner_user_id: number | null;
-    source_genome_id: number | null;
+    source_layout_strategy_id: number | null;
     code: string;
     name: string;
     description: string | null;
@@ -266,16 +266,16 @@ export async function createStyleGenome(input: {
     is_official: number | boolean;
     published_at: string | null;
     created_at: string;
-  }>("SELECT * FROM style_genomes WHERE id = ?", [result.lastInsertRowid!]);
+  }>("SELECT * FROM layout_strategies WHERE id = ?", [result.lastInsertRowid!]);
 }
 
-export async function publishStyleGenome(input: { genomeId: number; userId: number }) {
+export async function publishLayoutStrategy(input: { layoutStrategyId: number; userId: number }) {
   const db = getDatabase();
   await db.exec(
-    `UPDATE style_genomes
+    `UPDATE layout_strategies
      SET is_public = ?, published_at = ?, updated_at = ?
      WHERE id = ? AND owner_user_id = ?`,
-    [true, new Date().toISOString(), new Date().toISOString(), input.genomeId, input.userId],
+    [true, new Date().toISOString(), new Date().toISOString(), input.layoutStrategyId, input.userId],
   );
 }
 

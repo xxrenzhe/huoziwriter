@@ -1,9 +1,10 @@
 import { getDatabase } from "./db";
 
 type SupportedSceneCode =
+  | "researchBrief"
   | "fragmentDistill"
   | "visionNote"
-  | "documentWrite"
+  | "articleWrite"
   | "styleExtract"
   | "topicSupplement"
   | "topicSourceScout"
@@ -12,7 +13,7 @@ type SupportedSceneCode =
   | "deepWrite"
   | "factCheck"
   | "prosePolish"
-  | "bannedWordAudit"
+  | "languageGuardAudit"
   | "layoutExtract"
   | "publishGuard";
 type Provider = "openai" | "anthropic" | "gemini";
@@ -44,10 +45,18 @@ function inferProvider(model: string): Provider {
 
 async function getSceneRoute(sceneCode: SupportedSceneCode): Promise<SceneRoute> {
   const db = getDatabase();
-  const route = await db.queryOne<{ primary_model: string; fallback_model: string | null }>(
-    "SELECT primary_model, fallback_model FROM ai_model_routes WHERE scene_code = ?",
-    [sceneCode],
-  );
+  const candidateSceneCodes = [sceneCode];
+  let route: { primary_model: string; fallback_model: string | null } | null = null;
+  for (const candidateSceneCode of candidateSceneCodes) {
+    const foundRoute = await db.queryOne<{ primary_model: string; fallback_model: string | null }>(
+      "SELECT primary_model, fallback_model FROM ai_model_routes WHERE scene_code = ?",
+      [candidateSceneCode],
+    );
+    if (foundRoute) {
+      route = foundRoute;
+      break;
+    }
+  }
   if (!route) {
     throw new Error(`未找到场景模型路由：${sceneCode}`);
   }

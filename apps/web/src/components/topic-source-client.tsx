@@ -1,5 +1,6 @@
 "use client";
 
+import { createTopicSourceAction, disableTopicSourceAction, updateTopicSourceAction } from "@/app/(writer)/writer-actions";
 import { useRouter } from "next/navigation";
 import { FormEvent, startTransition, useState } from "react";
 
@@ -64,14 +65,15 @@ export function TopicSourceManagerClient({
       setMessage(`${planName || "当前"}套餐最多只能启用 ${maxCustomCount} 个自定义信息源。先停用旧源，再新增新的来源。`);
       return;
     }
-    const response = await fetch("/api/topic-sources", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, homepageUrl, sourceType, priority: Number(priority || 100) }),
-    });
-    const json = await response.json();
-    if (!response.ok) {
-      setMessage(json.error || "新增信息源失败");
+    try {
+      await createTopicSourceAction({
+        name,
+        homepageUrl,
+        sourceType,
+        priority: Number(priority || 100),
+      });
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "新增信息源失败");
       return;
     }
     setName("");
@@ -84,14 +86,10 @@ export function TopicSourceManagerClient({
 
   async function updateSource(sourceId: number, payload: { sourceType?: string; priority?: number }) {
     setUpdatingId(sourceId);
-    const response = await fetch(`/api/topic-sources/${sourceId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    const json = await response.json();
-    if (!response.ok) {
-      setMessage(json.error || "更新信息源失败");
+    try {
+      await updateTopicSourceAction(sourceId, payload);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "更新信息源失败");
       setUpdatingId(null);
       return;
     }
@@ -101,10 +99,10 @@ export function TopicSourceManagerClient({
   }
 
   async function disableSource(id: number) {
-    const response = await fetch(`/api/topic-sources/${id}`, { method: "DELETE" });
-    const json = await response.json();
-    if (!response.ok) {
-      setMessage(json.error || "停用失败");
+    try {
+      await disableTopicSourceAction(id);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "停用失败");
       return;
     }
     setMessage("信息源已停用。");

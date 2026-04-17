@@ -4,22 +4,22 @@ import { createUser, findUserByUsername } from "../apps/web/src/lib/auth";
 import { ensureBootstrapData } from "../apps/web/src/lib/repositories";
 import { runPendingMigrations } from "./db-flow";
 
-async function ensureAdmin() {
+async function ensureOpsUser() {
   const existing = await findUserByUsername("huozi");
   if (existing) {
-    console.log("默认管理员已存在: huozi");
+    console.log("默认运维账号已存在: huozi");
     return;
   }
   await createUser({
     username: "huozi",
-    email: "admin@huoziwriter.local",
-    password: process.env.DEFAULT_ADMIN_PASSWORD || "REDACTED_ADMIN_PASSWORD",
-    displayName: "Huozi Admin",
-    role: "admin",
+    email: "ops@huoziwriter.local",
+    password: process.env.DEFAULT_OPS_PASSWORD || "REDACTED_ADMIN_PASSWORD",
+    displayName: "Huozi Ops",
+    role: "ops",
     planCode: "ultra",
     mustChangePassword: false,
   });
-  console.log("已创建默认管理员 huozi");
+  console.log("已创建默认运维账号 huozi");
 }
 
 async function main() {
@@ -34,7 +34,7 @@ async function main() {
   }
 
   await ensureBootstrapData();
-  await ensureAdmin();
+  await ensureOpsUser();
   await closeDatabase();
 }
 
