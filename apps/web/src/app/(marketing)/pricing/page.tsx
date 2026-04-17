@@ -5,13 +5,13 @@ import {
   getCoverImageDailyLimit,
   getCustomTemplateLimit,
   getCustomTopicSourceLimit,
-  getStyleExtractDailyLimit,
+  getWritingStyleAnalysisDailyLimit,
   getTemplateAccessLimit,
   getWritingStyleProfileLimit,
 } from "@/lib/plan-access";
 import { getPersonaLimit } from "@/lib/personas";
 import { getPlans } from "@/lib/repositories";
-import { getTopicRadarVisibleLimit } from "@/lib/topic-recommendations";
+import { getTopicSignalVisibleLimit } from "@/lib/topic-recommendations";
 
 type PublicPlanCode = "free" | "pro" | "ultra";
 
@@ -24,12 +24,12 @@ function planFeatures(plan: {
   can_generate_cover_image: number | boolean;
   can_export_pdf: number | boolean;
 }) {
-  const topicVisibleLimit = getTopicRadarVisibleLimit(plan.code);
+  const topicVisibleLimit = getTopicSignalVisibleLimit(plan.code);
   const customTopicSourceLimit = getCustomTopicSourceLimit(plan.code);
   const customTemplateLimit = getCustomTemplateLimit(plan.code);
   const writingStyleProfileLimit = getWritingStyleProfileLimit(plan.code);
   const templateAccessLimit = getTemplateAccessLimit(plan.code);
-  const styleExtractDailyLimit = getStyleExtractDailyLimit(plan.code);
+  const writingStyleAnalysisDailyLimit = getWritingStyleAnalysisDailyLimit(plan.code);
   const personaLimit = getPersonaLimit(plan.code);
   const features = [
     `${personaLimit} 个作者人设`,
@@ -38,7 +38,7 @@ function planFeatures(plan: {
     writingStyleProfileLimit > 0 ? `写作风格资产 ${writingStyleProfileLimit} 个` : "文风分析可用，不支持保存资产",
     `排版模板最多 ${templateAccessLimit} 个`,
     customTemplateLimit > 0 ? `私有模板资产 ${customTemplateLimit} 个` : "不支持私有模板提取",
-    `文风提取 ${styleExtractDailyLimit} 次/日`,
+    `文风提取 ${writingStyleAnalysisDailyLimit} 次/日`,
     plan.fragment_limit == null ? "无限素材容量" : `${plan.fragment_limit} 条素材上限`,
     plan.daily_generation_limit == null ? "生成次数不限" : `每日 ${plan.daily_generation_limit} 次生成`,
     plan.max_wechat_connections == null

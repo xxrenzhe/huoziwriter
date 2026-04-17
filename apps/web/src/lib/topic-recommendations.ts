@@ -4,7 +4,7 @@ import { matchTopicToKnowledgeCards } from "./knowledge-match";
 import { getUserPlanContext } from "./plan-access";
 import { getPersonas } from "./personas";
 import { ensureExtendedProductSchema } from "./schema-bootstrap";
-import { getVisibleTopicEvents } from "./topic-radar";
+import { getVisibleTopicEvents } from "./topic-signals";
 
 type RawTopicItem = {
   id: number;
@@ -188,7 +188,7 @@ function getDaysAgoRecommendationDate(days: number) {
   return getShanghaiRecommendationDate(date);
 }
 
-export function getTopicRadarVisibleLimit(planCode: "free" | "pro" | "ultra") {
+export function getTopicSignalVisibleLimit(planCode: "free" | "pro" | "ultra") {
   if (planCode === "pro") return 5;
   if (planCode === "ultra") return DAILY_RECOMMENDATION_LIMIT;
   return 1;
@@ -694,5 +694,5 @@ export async function getVisibleTopicRecommendationsForUser(userId: number) {
     })
     .sort((left, right) => right.priorityScore - left.priorityScore || right.relevanceScore - left.relevanceScore || right.id - left.id);
 
-  return boosted.slice(0, getTopicRadarVisibleLimit(planContext.effectivePlanCode));
+  return boosted.slice(0, getTopicSignalVisibleLimit(planContext.effectivePlanCode));
 }

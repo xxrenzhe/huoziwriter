@@ -1,6 +1,6 @@
 import { fail, ok } from "@/lib/http";
 import { isSchedulerServiceAuthorized } from "@/lib/scheduler-service-auth";
-import { runScheduledTopicSync } from "@/lib/topic-radar";
+import { runScheduledTopicSync } from "@/lib/topic-signals";
 
 type SchedulerTopicSyncBody = {
   limitPerSource?: number;

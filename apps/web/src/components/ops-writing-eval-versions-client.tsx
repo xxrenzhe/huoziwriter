@@ -210,7 +210,7 @@ function isRolloutVersionType(value: string): value is RolloutAssetType {
 }
 
 function getVersionTypeLabel(versionType: string) {
-  if (versionType === "layout_strategy") return "layout_strategy（风格策略）";
+  if (versionType === "layout_strategy") return "layout_strategy（写作风格资产）";
   return versionType;
 }
 
@@ -1104,7 +1104,7 @@ export function OpsWritingEvalVersionsClient({
               <div className="mt-3 text-sm leading-7 text-stone-400">
                 {selectedVersion && isRolloutVersionType(selectedVersion.versionType)
                   ? `${getVersionTypeLabel(selectedVersion.versionType)} · ${selectedVersion.candidateContent}`
-                  : "仅 prompt_version、layout_strategy（风格策略）、apply_command_template、scoring_profile 支持这里的灰度配置。"}
+                  : "仅 prompt_version、layout_strategy（写作风格资产）、apply_command_template、scoring_profile 支持这里的灰度配置。"}
               </div>
             </div>
             {selectedVersion && isRolloutVersionType(selectedVersion.versionType) ? (

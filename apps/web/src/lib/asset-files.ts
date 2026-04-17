@@ -122,7 +122,7 @@ export async function backfillAssetFilesFromCoverAssets() {
   const coverRows = await db.query<{
     id: number;
     user_id: number;
-    document_id: number | null;
+    article_id: number | null;
     image_url: string;
     storage_provider: string | null;
     original_object_key: string | null;
@@ -132,7 +132,7 @@ export async function backfillAssetFilesFromCoverAssets() {
     created_at: string | null;
   }>(
     `SELECT
-       id, user_id, document_id, image_url, storage_provider, original_object_key,
+       id, user_id, document_id AS article_id, image_url, storage_provider, original_object_key,
        compressed_object_key, thumbnail_object_key, asset_manifest_json, created_at
      FROM cover_images
      ORDER BY id ASC`,
@@ -142,7 +142,7 @@ export async function backfillAssetFilesFromCoverAssets() {
       assetScope: "cover",
       sourceRecordId: row.id,
       userId: row.user_id,
-      articleId: row.document_id,
+      articleId: row.article_id,
       imageUrl: row.image_url,
       storageProvider: row.storage_provider,
       originalObjectKey: row.original_object_key,
@@ -156,7 +156,7 @@ export async function backfillAssetFilesFromCoverAssets() {
   const candidateRows = await db.query<{
     id: number;
     user_id: number;
-    document_id: number | null;
+    article_id: number | null;
     batch_token: string | null;
     variant_label: string | null;
     image_url: string;
@@ -168,7 +168,7 @@ export async function backfillAssetFilesFromCoverAssets() {
     created_at: string | null;
   }>(
     `SELECT
-       id, user_id, document_id, batch_token, variant_label, image_url, storage_provider,
+       id, user_id, document_id AS article_id, batch_token, variant_label, image_url, storage_provider,
        original_object_key, compressed_object_key, thumbnail_object_key, asset_manifest_json, created_at
      FROM cover_image_candidates
      ORDER BY id ASC`,
@@ -178,7 +178,7 @@ export async function backfillAssetFilesFromCoverAssets() {
       assetScope: "candidate",
       sourceRecordId: row.id,
       userId: row.user_id,
-      articleId: row.document_id,
+      articleId: row.article_id,
       batchToken: row.batch_token,
       variantLabel: row.variant_label,
       imageUrl: row.image_url,

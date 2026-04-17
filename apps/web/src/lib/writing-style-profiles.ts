@@ -2,7 +2,7 @@ import { getWritingStyleProfileLimit } from "./plan-access";
 import { getDatabase } from "./db";
 import { getUserPlanContext } from "./plan-access";
 import { ensureExtendedProductSchema } from "./schema-bootstrap";
-import type { WritingStyleAnalysis } from "./style-extractor";
+import type { WritingStyleAnalysis } from "./writing-style-analysis";
 
 type WritingStyleProfileRow = {
   id: number;

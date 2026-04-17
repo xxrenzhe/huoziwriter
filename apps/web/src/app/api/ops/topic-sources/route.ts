@@ -1,6 +1,6 @@
 import { requireOpsAccess } from "@/lib/auth";
 import { fail, ok } from "@/lib/http";
-import { createOpsTopicSource, getOpsTopicSources } from "@/lib/topic-radar";
+import { createOpsTopicSource, getOpsTopicSources } from "@/lib/topic-signals";
 
 export async function GET() {
   try {

@@ -32,6 +32,7 @@ import { formatPlanDisplayName } from "@/lib/plan-labels";
 import { summarizeTemplateRenderConfig } from "@/lib/template-rendering";
 import { buildWritingDiversityReport } from "@/lib/writing-diversity";
 import { buildWritingQualityPanel } from "@/lib/writing-quality";
+import type { ArticleStatus } from "@/lib/domain";
 import { ArticleOutlineClient } from "./article-outline-client";
 
 function escapeHtml(text: string) {
@@ -1665,7 +1666,7 @@ export function ArticleEditorClient({
   const [title, setTitle] = useState(article.title);
   const [markdown, setMarkdown] = useState(article.markdownContent);
   const [htmlPreview, setHtmlPreview] = useState(article.htmlContent);
-  const [status, setStatus] = useState(() => normalizeArticleStatus(article.status));
+  const [status, setStatus] = useState<ArticleStatus | "generating">(() => normalizeArticleStatus(article.status));
   const [seriesId, setSeriesId] = useState<number | null>(article.seriesId ?? (seriesOptions.length === 1 ? seriesOptions[0].id : null));
   const [wechatTemplateId, setWechatTemplateId] = useState<string | null>(article.wechatTemplateId);
   const [nodes, setNodes] = useState(initialNodes);
@@ -8491,7 +8492,7 @@ export function ArticleEditorClient({
         </div>
         <div className="border border-stone-300/40 bg-[#faf7f0] p-5">
           <div className="text-xs uppercase tracking-[0.24em] text-stone-500">稿件状态</div>
-          <div className="mt-3 font-serifCn text-3xl text-ink">{formatArticleStatusLabel(status)}</div>
+          <div className="mt-3 font-serifCn text-3xl text-ink">{status === "generating" ? "生成中" : formatArticleStatusLabel(status)}</div>
         </div>
 
         <div className="border border-stone-300/40 bg-[#faf7f0] p-5">

@@ -6,7 +6,7 @@ import { getCurrentSubscriptionForUser, getImageAssetStorageSummary } from "./re
 import {
   getDailyCoverImageUsage,
   getDailyGenerationUsage,
-  getDailyStyleExtractUsage,
+  getDailyWritingStyleAnalysisUsage,
   incrementDailyCoverImageUsage,
   incrementDailyGenerationUsage,
 } from "./usage";
@@ -46,7 +46,7 @@ export function getCoverImageGenerationStorageReserveBytes() {
   return COVER_IMAGE_GENERATION_STORAGE_RESERVE_BYTES;
 }
 
-export function getStyleExtractDailyLimit(planCode: UserPlanCode | null) {
+export function getWritingStyleAnalysisDailyLimit(planCode: UserPlanCode | null) {
   if (planCode === "free") return 3;
   if (planCode === "pro") return 20;
   if (planCode === "ultra") return 100;
@@ -182,7 +182,7 @@ export async function assertPdfExportAllowed(userId: number) {
   }
 }
 
-export async function assertTopicRadarStartAllowed(userId: number) {
+export async function assertTopicSignalStartAllowed(userId: number) {
   const { plan } = await getUserPlanContext(userId);
   if (plan.code === "free") {
     throw new Error(`${PLAN_LABELS[plan.code]}套餐仅可浏览选题雷达，不能一键落笔`);
@@ -387,10 +387,10 @@ export async function consumeDailyGenerationQuota(userId: number) {
   await incrementDailyGenerationUsage(userId);
 }
 
-export async function getStyleExtractQuotaStatus(userId: number) {
+export async function getWritingStyleAnalysisQuotaStatus(userId: number) {
   const { plan } = await getUserPlanContext(userId);
-  const limit = getStyleExtractDailyLimit(plan.code);
-  const used = await getDailyStyleExtractUsage(userId);
+  const limit = getWritingStyleAnalysisDailyLimit(plan.code);
+  const used = await getDailyWritingStyleAnalysisUsage(userId);
   return {
     used,
     limit,

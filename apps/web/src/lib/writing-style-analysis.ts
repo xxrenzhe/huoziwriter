@@ -143,7 +143,7 @@ export async function extractWritingStyleFromUrl(url: string) {
   });
 
   try {
-    const systemPrompt = await loadPrompt("style_extract");
+    const systemPrompt = await loadPrompt("writing_style_analysis");
     const userPrompt = [
       "请分析下面这篇中文文章的写作风格。",
       "必须返回 JSON，不要解释，不要 markdown。",

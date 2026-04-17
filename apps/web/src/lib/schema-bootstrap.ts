@@ -107,29 +107,42 @@ async function replaceTextInColumn(table: string, column: string, replacements: 
   );
 }
 
+const LEGACY_STYLE_GENOME_ASSET_TYPE = "style_genome";
+const LEGACY_STYLE_GENOMES_TABLE = "style_genomes";
+const LEGACY_STYLE_GENOME_FORKS_TABLE = "style_genome_forks";
+const LEGACY_STYLE_GENOME_ID_COLUMN = "style_genome_id";
+const LEGACY_SOURCE_GENOME_ID_COLUMN = "source_genome_id";
+const LEGACY_TARGET_GENOME_ID_COLUMN = "target_genome_id";
+const LEGACY_AUTHOR_PERSONAS_TABLE = "author_personas";
+const LEGACY_AUTHOR_PERSONA_SOURCES_TABLE = "author_persona_sources";
+const LEGACY_AUTHOR_SERIES_TABLE = "author_series";
+const LEGACY_BANNED_WORDS_TABLE = "banned_words";
+const LEGACY_CUSTOM_BANNED_WORD_LIMIT_COLUMN = "custom_banned_word_limit";
+
 async function normalizeLayoutStrategyTerminology() {
   const db = getDatabase();
+  // Legacy aliases are intentionally centralized here for one-way historical migration.
   if (await hasTable("writing_active_assets")) {
-    await db.exec("UPDATE writing_active_assets SET asset_type = ? WHERE asset_type = ?", ["layout_strategy", "style_genome"]);
+    await db.exec("UPDATE writing_active_assets SET asset_type = ? WHERE asset_type = ?", ["layout_strategy", LEGACY_STYLE_GENOME_ASSET_TYPE]);
   }
   if (await hasTable("writing_asset_rollouts")) {
-    await db.exec("UPDATE writing_asset_rollouts SET asset_type = ? WHERE asset_type = ?", ["layout_strategy", "style_genome"]);
+    await db.exec("UPDATE writing_asset_rollouts SET asset_type = ? WHERE asset_type = ?", ["layout_strategy", LEGACY_STYLE_GENOME_ASSET_TYPE]);
   }
   if (await hasTable("writing_asset_rollout_observations")) {
-    await db.exec("UPDATE writing_asset_rollout_observations SET asset_type = ? WHERE asset_type = ?", ["layout_strategy", "style_genome"]);
+    await db.exec("UPDATE writing_asset_rollout_observations SET asset_type = ? WHERE asset_type = ?", ["layout_strategy", LEGACY_STYLE_GENOME_ASSET_TYPE]);
   }
   if (await hasTable("writing_asset_rollout_daily_metrics")) {
-    await db.exec("UPDATE writing_asset_rollout_daily_metrics SET asset_type = ? WHERE asset_type = ?", ["layout_strategy", "style_genome"]);
+    await db.exec("UPDATE writing_asset_rollout_daily_metrics SET asset_type = ? WHERE asset_type = ?", ["layout_strategy", LEGACY_STYLE_GENOME_ASSET_TYPE]);
   }
   if (await hasTable("writing_optimization_runs")) {
-    await db.exec("UPDATE writing_optimization_runs SET base_version_type = ? WHERE base_version_type = ?", ["layout_strategy", "style_genome"]);
-    await db.exec("UPDATE writing_optimization_runs SET candidate_version_type = ? WHERE candidate_version_type = ?", ["layout_strategy", "style_genome"]);
+    await db.exec("UPDATE writing_optimization_runs SET base_version_type = ? WHERE base_version_type = ?", ["layout_strategy", LEGACY_STYLE_GENOME_ASSET_TYPE]);
+    await db.exec("UPDATE writing_optimization_runs SET candidate_version_type = ? WHERE candidate_version_type = ?", ["layout_strategy", LEGACY_STYLE_GENOME_ASSET_TYPE]);
   }
   if (await hasTable("writing_optimization_versions")) {
-    await db.exec("UPDATE writing_optimization_versions SET version_type = ? WHERE version_type = ?", ["layout_strategy", "style_genome"]);
+    await db.exec("UPDATE writing_optimization_versions SET version_type = ? WHERE version_type = ?", ["layout_strategy", LEGACY_STYLE_GENOME_ASSET_TYPE]);
   }
   await replaceTextInColumn("audit_logs", "payload_json", [
-    ["style_genome", "layout_strategy"],
+    [LEGACY_STYLE_GENOME_ASSET_TYPE, "layout_strategy"],
     ["styleGenome", "layoutStrategy"],
     ["writingStyleAsset", "layoutStrategy"],
   ]);
@@ -138,7 +151,7 @@ async function normalizeLayoutStrategyTerminology() {
     ["writingStyleAsset", "layoutStrategy"],
   ]);
   await replaceTextInColumn("article_outcomes", "scorecard_json", [
-    ["style_genome", "layout_strategy"],
+    [LEGACY_STYLE_GENOME_ASSET_TYPE, "layout_strategy"],
     ["styleGenomeId", "layoutStrategyId"],
     ["styleGenomeCode", "layoutStrategyCode"],
     ["styleGenomeName", "layoutStrategyName"],
@@ -823,24 +836,24 @@ async function ensureWritingActiveAssetSeeds() {
 }
 
 export async function ensureExtendedProductSchema() {
-  await renameTableIfNeeded("author_personas", "personas");
-  await renameTableIfNeeded("author_persona_sources", "persona_sources");
-  await renameTableIfNeeded("author_series", "series");
-  await renameTableIfNeeded("banned_words", "language_guard_tokens");
-  await renameTableIfNeeded("style_genomes", "layout_strategies");
-  await renameTableIfNeeded("style_genome_forks", "layout_strategy_forks");
+  await renameTableIfNeeded(LEGACY_AUTHOR_PERSONAS_TABLE, "personas");
+  await renameTableIfNeeded(LEGACY_AUTHOR_PERSONA_SOURCES_TABLE, "persona_sources");
+  await renameTableIfNeeded(LEGACY_AUTHOR_SERIES_TABLE, "series");
+  await renameTableIfNeeded(LEGACY_BANNED_WORDS_TABLE, "language_guard_tokens");
+  await renameTableIfNeeded(LEGACY_STYLE_GENOMES_TABLE, "layout_strategies");
+  await renameTableIfNeeded(LEGACY_STYLE_GENOME_FORKS_TABLE, "layout_strategy_forks");
   if (await hasTable("plans")) {
-    await renameColumnIfNeeded("plans", "custom_banned_word_limit", "language_guard_rule_limit");
+    await renameColumnIfNeeded("plans", LEGACY_CUSTOM_BANNED_WORD_LIMIT_COLUMN, "language_guard_rule_limit");
   }
   if (await hasTable("documents")) {
-    await renameColumnIfNeeded("documents", "style_genome_id", "layout_strategy_id");
+    await renameColumnIfNeeded("documents", LEGACY_STYLE_GENOME_ID_COLUMN, "layout_strategy_id");
   }
   if (await hasTable("layout_strategies")) {
-    await renameColumnIfNeeded("layout_strategies", "source_genome_id", "source_layout_strategy_id");
+    await renameColumnIfNeeded("layout_strategies", LEGACY_SOURCE_GENOME_ID_COLUMN, "source_layout_strategy_id");
   }
   if (await hasTable("layout_strategy_forks")) {
-    await renameColumnIfNeeded("layout_strategy_forks", "source_genome_id", "source_layout_strategy_id");
-    await renameColumnIfNeeded("layout_strategy_forks", "target_genome_id", "target_layout_strategy_id");
+    await renameColumnIfNeeded("layout_strategy_forks", LEGACY_SOURCE_GENOME_ID_COLUMN, "source_layout_strategy_id");
+    await renameColumnIfNeeded("layout_strategy_forks", LEGACY_TARGET_GENOME_ID_COLUMN, "target_layout_strategy_id");
   }
 
   await execAll([

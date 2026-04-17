@@ -573,7 +573,7 @@ function getExperimentModeLabel(experimentMode: string) {
 }
 
 function getVersionTypeLabel(versionType: string) {
-  if (versionType === "layout_strategy") return "layout_strategy（风格策略）";
+  if (versionType === "layout_strategy") return "layout_strategy（写作风格资产）";
   return versionType;
 }
 

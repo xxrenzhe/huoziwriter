@@ -2,7 +2,8 @@ import { getDatabase } from "./db";
 
 const DAILY_GENERATION_KEY = "daily_generation";
 const DAILY_COVER_IMAGE_KEY = "daily_cover_image";
-const DAILY_STYLE_EXTRACT_KEY = "daily_style_extract";
+const DAILY_WRITING_STYLE_ANALYSIS_KEY = "daily_writing_style_analysis";
+const LEGACY_DAILY_WRITING_STYLE_ANALYSIS_KEY = "daily_style_extract";
 
 export async function ensureUsageCounterSchema() {
   const db = getDatabase();
@@ -29,6 +30,18 @@ export async function ensureUsageCounterSchema() {
       updated_at ${db.type === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${db.type === "postgres" ? "NOW()" : "(datetime('now'))"},
       UNIQUE(visitor_key, counter_key, counter_date)
     )`,
+  );
+  await db.exec(
+    `UPDATE usage_counters
+     SET counter_key = ?
+     WHERE counter_key = ?`,
+    [DAILY_WRITING_STYLE_ANALYSIS_KEY, LEGACY_DAILY_WRITING_STYLE_ANALYSIS_KEY],
+  );
+  await db.exec(
+    `UPDATE visitor_usage_counters
+     SET counter_key = ?
+     WHERE counter_key = ?`,
+    [DAILY_WRITING_STYLE_ANALYSIS_KEY, LEGACY_DAILY_WRITING_STYLE_ANALYSIS_KEY],
   );
 }
 
@@ -118,18 +131,18 @@ export async function incrementDailyCoverImageUsage(userId: number) {
   return incrementDailyUsage(userId, DAILY_COVER_IMAGE_KEY);
 }
 
-export async function getDailyStyleExtractUsage(userId: number) {
-  return getDailyUsage(userId, DAILY_STYLE_EXTRACT_KEY);
+export async function getDailyWritingStyleAnalysisUsage(userId: number) {
+  return getDailyUsage(userId, DAILY_WRITING_STYLE_ANALYSIS_KEY);
 }
 
-export async function incrementDailyStyleExtractUsage(userId: number) {
-  return incrementDailyUsage(userId, DAILY_STYLE_EXTRACT_KEY);
+export async function incrementDailyWritingStyleAnalysisUsage(userId: number) {
+  return incrementDailyUsage(userId, DAILY_WRITING_STYLE_ANALYSIS_KEY);
 }
 
-export async function getVisitorDailyStyleExtractUsage(visitorKey: string) {
-  return getVisitorDailyUsage(visitorKey, DAILY_STYLE_EXTRACT_KEY);
+export async function getVisitorDailyWritingStyleAnalysisUsage(visitorKey: string) {
+  return getVisitorDailyUsage(visitorKey, DAILY_WRITING_STYLE_ANALYSIS_KEY);
 }
 
-export async function incrementVisitorDailyStyleExtractUsage(visitorKey: string) {
-  return incrementVisitorDailyUsage(visitorKey, DAILY_STYLE_EXTRACT_KEY);
+export async function incrementVisitorDailyWritingStyleAnalysisUsage(visitorKey: string) {
+  return incrementVisitorDailyUsage(visitorKey, DAILY_WRITING_STYLE_ANALYSIS_KEY);
 }

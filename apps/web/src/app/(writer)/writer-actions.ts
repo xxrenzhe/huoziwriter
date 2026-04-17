@@ -29,7 +29,7 @@ import {
   upsertWechatConnection,
 } from "@/lib/repositories";
 import { ensureExtendedProductSchema } from "@/lib/schema-bootstrap";
-import { createTopicSource, disableTopicSource, updateTopicSource } from "@/lib/topic-radar";
+import { createTopicSource, disableTopicSource, updateTopicSource } from "@/lib/topic-signals";
 import { encryptWechatConnection, verifyWechatCredential } from "@/lib/wechat";
 import { getArticleAuthoringStyleContext } from "@/lib/article-authoring-style-context";
 
@@ -384,7 +384,7 @@ export async function selectCoverCandidateAction(candidateId: number) {
   const candidate = await db.queryOne<{
     id: number;
     user_id: number;
-    document_id: number | null;
+    article_id: number | null;
     batch_token: string;
     variant_label: string;
     prompt: string;
@@ -395,7 +395,7 @@ export async function selectCoverCandidateAction(candidateId: number) {
     thumbnail_object_key: string | null;
     asset_manifest_json: string | null;
   }>(
-    `SELECT id, user_id, document_id, batch_token, variant_label, prompt, image_url,
+    `SELECT id, user_id, document_id AS article_id, batch_token, variant_label, prompt, image_url,
             storage_provider, original_object_key, compressed_object_key, thumbnail_object_key, asset_manifest_json
      FROM cover_image_candidates
      WHERE id = ? AND user_id = ?`,
@@ -413,7 +413,7 @@ export async function selectCoverCandidateAction(candidateId: number) {
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       session.userId,
-      candidate.document_id,
+      candidate.article_id,
       candidate.prompt,
       candidate.image_url,
       candidate.storage_provider,
@@ -428,7 +428,7 @@ export async function selectCoverCandidateAction(candidateId: number) {
     assetScope: "cover",
     sourceRecordId: Number(result.lastInsertRowid || 0),
     userId: session.userId,
-    articleId: candidate.document_id,
+    articleId: candidate.article_id,
     batchToken: candidate.batch_token,
     variantLabel: candidate.variant_label,
     imageUrl: candidate.image_url,
@@ -456,13 +456,13 @@ export async function selectCoverCandidateAction(candidateId: number) {
     userId: session.userId,
     action: "cover_image.select",
     targetType: "article",
-    targetId: candidate.document_id,
+    targetId: candidate.article_id,
     payload: { candidateId: candidate.id, batchToken: candidate.batch_token, variantLabel: candidate.variant_label },
   });
-  revalidateWriterSurface(candidate.document_id);
+  revalidateWriterSurface(candidate.article_id);
   return {
     id: candidate.id,
-    articleId: candidate.document_id,
+    articleId: candidate.article_id,
     imageUrl: candidate.image_url,
     prompt: candidate.prompt,
     variantLabel: candidate.variant_label,

@@ -15,14 +15,14 @@ export async function saveArticleDraft(input: {
   userId: number;
   body: ArticleDraftBody;
 }) {
-  const currentDocument = await getArticleById(input.articleId, input.userId);
-  if (!currentDocument) {
+  const currentArticle = await getArticleById(input.articleId, input.userId);
+  if (!currentArticle) {
     return null;
   }
 
   const wechatTemplateId =
     input.body.wechatTemplateId === undefined
-      ? currentDocument.wechat_template_id
+      ? currentArticle.wechat_template_id
       : input.body.wechatTemplateId === null
         ? null
         : String(input.body.wechatTemplateId);
@@ -45,15 +45,15 @@ export async function saveArticleDraft(input: {
 }
 
 export function serializeArticleDraft(
-  savedDocument: Awaited<ReturnType<typeof saveArticleDraft>>,
+  savedArticle: Awaited<ReturnType<typeof saveArticleDraft>>,
 ) {
   return {
-    id: savedDocument?.id,
-    title: savedDocument?.title,
-    htmlContent: savedDocument?.html_content,
-    status: normalizeArticleStatus(savedDocument?.status),
-    seriesId: savedDocument?.series_id ?? null,
-    wechatTemplateId: savedDocument?.wechat_template_id,
-    updatedAt: savedDocument?.updated_at,
+    id: savedArticle?.id,
+    title: savedArticle?.title,
+    htmlContent: savedArticle?.html_content,
+    status: normalizeArticleStatus(savedArticle?.status),
+    seriesId: savedArticle?.series_id ?? null,
+    wechatTemplateId: savedArticle?.wechat_template_id,
+    updatedAt: savedArticle?.updated_at,
   };
 }

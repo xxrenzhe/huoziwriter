@@ -7,7 +7,7 @@ import { getDatabase } from "@/lib/db";
 import { getGlobalCoverImageEngine } from "@/lib/image-engine";
 import { requireOpsSession } from "@/lib/page-auth";
 import { getOpsBusinessOverview, getModelRoutes, getPlans, getPromptVersions, getRecentSupportMessages, getSupportMessageCount, getUsers } from "@/lib/repositories";
-import { getOpsTopicSources } from "@/lib/topic-radar";
+import { getOpsTopicSources } from "@/lib/topic-signals";
 
 function parseJobPayload(value: string | null) {
   if (!value) {
@@ -217,7 +217,7 @@ export default async function OpsOverviewPage() {
     db.query<{
       asset_scope: string;
       id: number;
-      document_id: number | null;
+      article_id: number | null;
       variant_label: string | null;
       image_url: string;
       storage_provider: string | null;
@@ -227,10 +227,10 @@ export default async function OpsOverviewPage() {
     }>(
       `SELECT *
        FROM (
-         SELECT 'cover' as asset_scope, id, document_id, NULL as variant_label, image_url, storage_provider, compressed_object_key, asset_manifest_json, created_at
+         SELECT 'cover' as asset_scope, id, document_id AS article_id, NULL as variant_label, image_url, storage_provider, compressed_object_key, asset_manifest_json, created_at
          FROM cover_images
          UNION ALL
-         SELECT 'candidate' as asset_scope, id, document_id, variant_label, image_url, storage_provider, compressed_object_key, asset_manifest_json, created_at
+         SELECT 'candidate' as asset_scope, id, document_id AS article_id, variant_label, image_url, storage_provider, compressed_object_key, asset_manifest_json, created_at
          FROM cover_image_candidates
        )
        ORDER BY created_at DESC, id DESC
@@ -548,7 +548,7 @@ export default async function OpsOverviewPage() {
                       <div className="text-xs text-stone-500">{new Date(asset.created_at).toLocaleString("zh-CN")}</div>
                     </div>
                     <div className="mt-2 flex flex-wrap gap-2 text-[11px] uppercase tracking-[0.18em] text-stone-500">
-                      <span>doc #{asset.document_id ?? "draft"}</span>
+                      <span>doc #{asset.article_id ?? "draft"}</span>
                       <span>{asset.storage_provider || "unknown"}</span>
                       <span>{derivativeMode}</span>
                       <span>{formatBytes(originalBytes)}</span>

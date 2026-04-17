@@ -1,4 +1,4 @@
-export type ArticleStatus = "draft" | "ready" | "published" | "publish_failed";
+import type { ArticleStatus } from "./domain";
 
 const ARTICLE_STATUS_ORDER: Record<ArticleStatus, number> = {
   draft: 0,
@@ -7,14 +7,35 @@ const ARTICLE_STATUS_ORDER: Record<ArticleStatus, number> = {
   publish_failed: 3,
 };
 
-export function normalizeArticleStatus(status: string | null | undefined) {
-  if (status === "draft" || status === "ready" || status === "published" || status === "publish_failed") {
-    return status;
-  }
-  return status || "draft";
+const ARTICLE_STATUS_ALIASES: Record<string, ArticleStatus> = {
+  draft: "draft",
+  pending: "draft",
+  writing: "draft",
+  ready: "ready",
+  complete: "ready",
+  completed: "ready",
+  generated: "ready",
+  published: "published",
+  publish_success: "published",
+  publish_succeeded: "published",
+  publish_failed: "publish_failed",
+  publish_fail: "publish_failed",
+  publish_error: "publish_failed",
+  failed: "publish_failed",
+};
+
+function normalizeArticleStatusKey(status: string | null | undefined) {
+  return String(status || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
 }
 
-export function toStoredArticleStatus(status: string | null | undefined) {
+export function normalizeArticleStatus(status: string | null | undefined): ArticleStatus {
+  return ARTICLE_STATUS_ALIASES[normalizeArticleStatusKey(status)] ?? "draft";
+}
+
+export function toStoredArticleStatus(status: string | null | undefined): ArticleStatus {
   return normalizeArticleStatus(status);
 }
 
@@ -33,6 +54,5 @@ export function formatArticleStatusLabel(status: string | null | undefined) {
   if (normalized === "published") return "已发布";
   if (normalized === "draft") return "草稿";
   if (normalized === "ready") return "待成稿";
-  if (normalized === "publish_failed") return "发布失败";
-  return normalized || "未设置状态";
+  return "发布失败";
 }

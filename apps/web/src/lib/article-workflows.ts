@@ -61,7 +61,7 @@ function areStagesEqual(left: ArticleWorkflowStage[], right: ArticleWorkflowStag
 
 type WorkflowRow = {
   id: number;
-  document_id: number;
+  article_id: number;
   current_stage_code: string;
   stages_json: string | ArticleWorkflowStage[];
   pending_publish_intent_json: string | ArticlePendingPublishIntent | null;
@@ -176,7 +176,9 @@ export async function ensureArticleWorkflow(articleId: number, initialStageCode:
   await ensureExtendedProductSchema();
   const db = getDatabase();
   const existing = await db.queryOne<WorkflowRow>(
-    "SELECT * FROM document_workflows WHERE document_id = ?",
+    `SELECT id, document_id AS article_id, current_stage_code, stages_json, pending_publish_intent_json, created_at, updated_at
+     FROM document_workflows
+     WHERE document_id = ?`,
     [articleId],
   );
   if (existing) {
@@ -195,10 +197,10 @@ export async function ensureArticleWorkflow(articleId: number, initialStageCode:
       await upsertWorkflow(articleId, existing.current_stage_code as ArticleWorkflowStageCode, normalizedStages);
     }
     return {
-      articleId: existing.document_id,
+      articleId: existing.article_id,
       currentStageCode: existing.current_stage_code as ArticleWorkflowStageCode,
       stages: normalizedStages,
-      pendingPublishIntent: parsePendingPublishIntent(existing.pending_publish_intent_json, existing.document_id),
+      pendingPublishIntent: parsePendingPublishIntent(existing.pending_publish_intent_json, existing.article_id),
       updatedAt: existing.updated_at,
     };
   }
@@ -206,7 +208,9 @@ export async function ensureArticleWorkflow(articleId: number, initialStageCode:
   const stages = buildStages(initialStageCode);
   await upsertWorkflow(articleId, initialStageCode, stages);
   const created = await db.queryOne<WorkflowRow>(
-    "SELECT * FROM document_workflows WHERE document_id = ?",
+    `SELECT id, document_id AS article_id, current_stage_code, stages_json, pending_publish_intent_json, created_at, updated_at
+     FROM document_workflows
+     WHERE document_id = ?`,
     [articleId],
   );
   return {

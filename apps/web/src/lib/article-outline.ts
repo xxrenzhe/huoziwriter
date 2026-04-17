@@ -4,7 +4,7 @@ const DEFAULT_NODE_TITLES = ["痛点引入", "核心反转", "底层原因", "�
 
 function mapArticleNodeRecord(node: {
   id: number;
-  document_id: number;
+  article_id: number;
   parent_node_id: number | null;
   title: string;
   description: string | null;
@@ -14,7 +14,7 @@ function mapArticleNodeRecord(node: {
 }) {
   return {
     id: node.id,
-    articleId: node.document_id,
+    articleId: node.article_id,
     parentNodeId: node.parent_node_id,
     title: node.title,
     description: node.description,
@@ -28,17 +28,23 @@ export async function getArticleNodes(articleId: number) {
   const db = getDatabase();
   const nodes = await db.query<{
     id: number;
-    document_id: number;
+    article_id: number;
     parent_node_id: number | null;
     title: string;
     description: string | null;
     sort_order: number;
     created_at: string;
     updated_at: string;
-  }>("SELECT * FROM document_nodes WHERE document_id = ? ORDER BY sort_order ASC, id ASC", [articleId]);
+  }>(
+    `SELECT id, document_id AS article_id, parent_node_id, title, description, sort_order, created_at, updated_at
+     FROM document_nodes
+     WHERE document_id = ?
+     ORDER BY sort_order ASC, id ASC`,
+    [articleId],
+  );
 
   const refs = await db.query<{
-    document_node_id: number;
+    article_node_id: number;
     fragment_id: number;
     usage_mode: string | null;
     user_id: number;
@@ -48,7 +54,7 @@ export async function getArticleNodes(articleId: number) {
     source_url: string | null;
     screenshot_path: string | null;
   }>(
-    `SELECT r.document_node_id, f.id as fragment_id, r.usage_mode, f.user_id, f.title, f.distilled_content, f.source_type, f.source_url, f.screenshot_path
+    `SELECT r.document_node_id AS article_node_id, f.id as fragment_id, r.usage_mode, f.user_id, f.title, f.distilled_content, f.source_type, f.source_url, f.screenshot_path
      FROM document_fragment_refs r
      INNER JOIN fragments f ON f.id = r.fragment_id
      WHERE r.document_id = ?
@@ -59,7 +65,7 @@ export async function getArticleNodes(articleId: number) {
   return nodes.map((node) => ({
     ...mapArticleNodeRecord(node),
     fragments: refs
-      .filter((ref) => ref.document_node_id === node.id)
+      .filter((ref) => ref.article_node_id === node.id)
       .map((ref) => ({
         id: ref.fragment_id,
         userId: ref.user_id,
@@ -89,8 +95,6 @@ export async function ensureDefaultArticleNodes(articleId: number) {
   }
 }
 
-export const ensureDefaultDocumentNodes = ensureDefaultArticleNodes;
-
 export async function createArticleNode(input: {
   articleId: number;
   title: string;
@@ -116,14 +120,19 @@ export async function createArticleNode(input: {
   );
   const inserted = await db.queryOne<{
     id: number;
-    document_id: number;
+    article_id: number;
     parent_node_id: number | null;
     title: string;
     description: string | null;
     sort_order: number;
     created_at: string;
     updated_at: string;
-  }>("SELECT * FROM document_nodes WHERE id = ?", [result.lastInsertRowid!]);
+  }>(
+    `SELECT id, document_id AS article_id, parent_node_id, title, description, sort_order, created_at, updated_at
+     FROM document_nodes
+     WHERE id = ?`,
+    [result.lastInsertRowid!],
+  );
   return inserted ? mapArticleNodeRecord(inserted) : undefined;
 }
 

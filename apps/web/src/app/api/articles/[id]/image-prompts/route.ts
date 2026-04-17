@@ -19,7 +19,7 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
   return ok(
     prompts.map((item) => ({
       id: item.id,
-      articleNodeId: item.document_node_id,
+      articleNodeId: item.article_node_id,
       assetType: item.asset_type,
       title: item.title,
       prompt: item.prompt,
@@ -75,7 +75,7 @@ export async function POST(_: Request, { params }: { params: { id: string } }) {
   return ok(
     prompts.map((item) => ({
       id: item.id,
-      articleNodeId: item.document_node_id,
+      articleNodeId: item.article_node_id,
       assetType: item.asset_type,
       title: item.title,
       prompt: item.prompt,

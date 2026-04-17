@@ -20,7 +20,7 @@ import {
 } from "@/lib/plan-access";
 import { getPersonaCatalog, getPersonaLimitForUser, getPersonas, hasPersona } from "@/lib/personas";
 import { formatPlanDisplayName } from "@/lib/plan-labels";
-import { getVisibleTopicSources } from "@/lib/topic-radar";
+import { getVisibleTopicSources } from "@/lib/topic-signals";
 import { getDailyGenerationUsage } from "@/lib/usage";
 import { getAssetFilesByUser, getCurrentSubscriptionForUser, getFragmentsByUser, getUserWorkspaceAssetSummary, getWechatConnections, getWechatSyncLogs } from "@/lib/repositories";
 import { getSeries } from "@/lib/series";

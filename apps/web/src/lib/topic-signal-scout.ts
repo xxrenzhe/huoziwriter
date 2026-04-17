@@ -158,7 +158,7 @@ function buildFallbackPlan(input: {
       "如果社媒观点和新闻稿口径冲突，保留冲突本身，不要擅自替模型下结论。",
       "最终引用前，回看这个选题是否仍符合当前人设和预期读者处境。",
     ],
-    model: "fallback-topic-source-scout",
+    model: "fallback-topic-signal-scout",
     provider: "local",
     degradedReason: "topicSourceScout failed",
   } satisfies TopicSourceScoutPlan;
@@ -176,7 +176,7 @@ export async function generateTopicSourceScout(input: {
   const fallback = buildFallbackPlan(input);
 
   try {
-    const systemPrompt = await loadPrompt("topic_source_scout");
+    const systemPrompt = await loadPrompt("topic_signal_scout");
     const userPrompt = [
       "请围绕下面这个待写选题，给出补充信源建议。",
       "Gemini 只做补证建议，不直接充当事实来源。",

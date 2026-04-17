@@ -3,7 +3,7 @@ import { DEFAULT_MODEL_ROUTES } from "./domain";
 import { renderMarkdownToHtml } from "./rendering";
 import { getActiveTemplateById } from "./marketplace";
 import { resolveTemplateRenderConfig } from "./template-rendering";
-import { ensureDefaultTopics } from "./topic-radar";
+import { ensureDefaultTopics } from "./topic-signals";
 import { clearPromptCache } from "./prompt-loader";
 import { ensureUsageCounterSchema } from "./usage";
 import { ensureDefaultArticleNodes } from "./article-outline";
@@ -65,7 +65,7 @@ const DEFAULT_PROMPT_SEEDS = [
     changeNotes: "初始化版本",
   },
   {
-    promptId: "style_extract",
+    promptId: "writing_style_analysis",
     version: "v1.0.0",
     category: "analysis",
     name: "写作风格提取",
@@ -77,7 +77,7 @@ const DEFAULT_PROMPT_SEEDS = [
     changeNotes: "初始化版本",
   },
   {
-    promptId: "topic_source_scout",
+    promptId: "topic_signal_scout",
     version: "v1.1.0",
     category: "analysis",
     name: "选题补充信源",
@@ -345,6 +345,30 @@ export async function ensureBootstrapData() {
     ["language_guard_audit", new Date().toISOString(), "banned_word_audit", "language_guard_audit"],
   );
   await db.exec("DELETE FROM prompt_versions WHERE prompt_id = ?", ["banned_word_audit"]);
+  await db.exec(
+    `UPDATE prompt_versions
+     SET prompt_id = ?, updated_at = ?
+     WHERE prompt_id = ?
+       AND NOT EXISTS (
+         SELECT 1 FROM prompt_versions migrated
+         WHERE migrated.prompt_id = ?
+           AND migrated.version = prompt_versions.version
+       )`,
+    ["writing_style_analysis", new Date().toISOString(), "style_extract", "writing_style_analysis"],
+  );
+  await db.exec("DELETE FROM prompt_versions WHERE prompt_id = ?", ["style_extract"]);
+  await db.exec(
+    `UPDATE prompt_versions
+     SET prompt_id = ?, updated_at = ?
+     WHERE prompt_id = ?
+       AND NOT EXISTS (
+         SELECT 1 FROM prompt_versions migrated
+         WHERE migrated.prompt_id = ?
+           AND migrated.version = prompt_versions.version
+       )`,
+    ["topic_signal_scout", new Date().toISOString(), "topic_source_scout", "topic_signal_scout"],
+  );
+  await db.exec("DELETE FROM prompt_versions WHERE prompt_id = ?", ["topic_source_scout"]);
 
   for (const prompt of DEFAULT_PROMPT_SEEDS) {
     const exists = await db.queryOne<{ id: number }>(
@@ -462,14 +486,14 @@ export async function getArticleImagePrompts(userId: number, articleId: number) 
   const db = getDatabase();
   return db.query<{
     id: number;
-    document_node_id: number | null;
+    article_node_id: number | null;
     asset_type: string;
     title: string;
     prompt: string;
     created_at: string;
     updated_at: string;
   }>(
-    `SELECT id, document_node_id, asset_type, title, prompt, created_at, updated_at
+    `SELECT id, document_node_id AS article_node_id, asset_type, title, prompt, created_at, updated_at
      FROM document_image_prompts
      WHERE user_id = ? AND document_id = ?
      ORDER BY COALESCE(document_node_id, 0) ASC, id ASC`,
@@ -783,8 +807,8 @@ export async function getAssetFilesByUser(userId: number) {
   const db = getDatabase();
   const rows = await db.query<{
     id: number;
-    document_id: number | null;
-    document_title: string | null;
+    article_id: number | null;
+    article_title: string | null;
     asset_scope: string;
     asset_type: string;
     source_record_id: number;
@@ -803,8 +827,8 @@ export async function getAssetFilesByUser(userId: number) {
   }>(
     `SELECT
        af.id,
-       af.document_id,
-       d.title AS document_title,
+       af.document_id AS article_id,
+       d.title AS article_title,
        af.asset_scope,
        af.asset_type,
        af.source_record_id,
@@ -828,8 +852,8 @@ export async function getAssetFilesByUser(userId: number) {
   );
   return rows.map((row) => ({
     id: row.id,
-    articleId: row.document_id,
-    articleTitle: row.document_title,
+    articleId: row.article_id,
+    articleTitle: row.article_title,
     assetScope: row.asset_scope,
     assetType: row.asset_type,
     sourceRecordId: row.source_record_id,
@@ -1049,7 +1073,7 @@ export type AuthorPlaybookItem = {
 
 function mapArticleOutcome(row: {
   id: number;
-  document_id: number;
+  article_id: number;
   user_id: number;
   target_package: string | null;
   scorecard_json: string | Record<string, unknown> | null;
@@ -1062,7 +1086,7 @@ function mapArticleOutcome(row: {
 }): ArticleOutcome {
   return {
     id: row.id,
-    articleId: row.document_id,
+    articleId: row.article_id,
     userId: row.user_id,
     targetPackage: row.target_package,
     scorecard: parseJsonRecord(row.scorecard_json),
@@ -1077,7 +1101,7 @@ function mapArticleOutcome(row: {
 
 function mapArticleStrategyCard(row: {
   id: number;
-  document_id: number;
+  article_id: number;
   user_id: number;
   target_reader: string | null;
   core_assertion: string | null;
@@ -1099,7 +1123,7 @@ function mapArticleStrategyCard(row: {
 }): ArticleStrategyCard {
   return {
     id: row.id,
-    articleId: row.document_id,
+    articleId: row.article_id,
     userId: row.user_id,
     targetReader: row.target_reader,
     coreAssertion: row.core_assertion,
@@ -1123,7 +1147,7 @@ function mapArticleStrategyCard(row: {
 
 function mapArticleEvidenceItem(row: {
   id: number;
-  document_id: number;
+  article_id: number;
   user_id: number;
   fragment_id: number | null;
   node_id: number | null;
@@ -1143,7 +1167,7 @@ function mapArticleEvidenceItem(row: {
 }): ArticleEvidenceItem {
   return {
     id: row.id,
-    articleId: row.document_id,
+    articleId: row.article_id,
     userId: row.user_id,
     fragmentId: row.fragment_id,
     nodeId: row.node_id,
@@ -1196,7 +1220,7 @@ function mapArticleResearchCardSource(row: {
 
 function mapArticleResearchCard(row: {
   id: number;
-  document_id: number;
+  article_id: number;
   user_id: number;
   card_kind: string;
   title: string;
@@ -1208,7 +1232,7 @@ function mapArticleResearchCard(row: {
 }, sources: ArticleResearchCardSource[]): ArticleResearchCard {
   return {
     id: row.id,
-    articleId: row.document_id,
+    articleId: row.article_id,
     userId: row.user_id,
     cardKind: normalizeArticleResearchCardKind(row.card_kind),
     title: row.title,
@@ -1224,7 +1248,7 @@ function mapArticleResearchCard(row: {
 function mapArticleOutcomeSnapshot(row: {
   id: number;
   outcome_id: number;
-  document_id: number;
+  article_id: number;
   user_id: number;
   window_code: string;
   read_count: number;
@@ -1239,7 +1263,7 @@ function mapArticleOutcomeSnapshot(row: {
   return {
     id: row.id,
     outcomeId: row.outcome_id,
-    articleId: row.document_id,
+    articleId: row.article_id,
     userId: row.user_id,
     windowCode: normalizeWindowCode(row.window_code),
     readCount: normalizeNonNegativeInteger(row.read_count),
@@ -1985,7 +2009,7 @@ export async function getWechatSyncLogs(userId: number) {
   const db = getDatabase();
   const rows = await db.query<{
     id: number;
-    document_id: number;
+    article_id: number;
     title: string;
     connection_name: string | null;
     media_id: string | null;
@@ -1995,14 +2019,14 @@ export async function getWechatSyncLogs(userId: number) {
     failure_reason: string | null;
     failure_code: string | null;
     retry_count: number;
-    document_version_hash: string | null;
+    article_version_hash: string | null;
     template_id: string | null;
     idempotency_key: string | null;
     created_at: string;
   }>(
     `SELECT
        l.id,
-       l.document_id,
+       l.document_id AS article_id,
        d.title,
        c.account_name as connection_name,
        l.media_id,
@@ -2012,7 +2036,7 @@ export async function getWechatSyncLogs(userId: number) {
        l.failure_reason,
        l.failure_code,
        l.retry_count,
-       l.document_version_hash,
+       l.document_version_hash AS article_version_hash,
        l.template_id,
        l.idempotency_key,
        l.created_at
@@ -2025,7 +2049,7 @@ export async function getWechatSyncLogs(userId: number) {
   );
   return rows.map((row) => ({
     id: row.id,
-    articleId: row.document_id,
+    articleId: row.article_id,
     title: row.title,
     connectionName: row.connection_name,
     mediaId: row.media_id,
@@ -2035,7 +2059,7 @@ export async function getWechatSyncLogs(userId: number) {
     failureReason: row.failure_reason,
     failureCode: row.failure_code,
     retryCount: row.retry_count,
-    articleVersionHash: row.document_version_hash,
+    articleVersionHash: row.article_version_hash,
     templateId: row.template_id,
     idempotencyKey: row.idempotency_key,
     createdAt: row.created_at,
@@ -2086,7 +2110,7 @@ export async function getArticleOutcome(articleId: number, userId: number) {
   const db = getDatabase();
   const row = await db.queryOne<{
     id: number;
-    document_id: number;
+    article_id: number;
     user_id: number;
     target_package: string | null;
     scorecard_json: string | Record<string, unknown> | null;
@@ -2097,7 +2121,7 @@ export async function getArticleOutcome(articleId: number, userId: number) {
     created_at: string;
     updated_at: string;
   }>(
-    `SELECT id, document_id, user_id, target_package, scorecard_json, hit_status, review_summary, next_action, playbook_tags_json, created_at, updated_at
+    `SELECT id, document_id AS article_id, user_id, target_package, scorecard_json, hit_status, review_summary, next_action, playbook_tags_json, created_at, updated_at
      FROM article_outcomes
      WHERE document_id = ? AND user_id = ?
      LIMIT 1`,
@@ -2111,7 +2135,7 @@ export async function getArticleStrategyCard(articleId: number, userId: number) 
   const db = getDatabase();
   const row = await db.queryOne<{
     id: number;
-    document_id: number;
+    article_id: number;
     user_id: number;
     target_reader: string | null;
     core_assertion: string | null;
@@ -2131,7 +2155,7 @@ export async function getArticleStrategyCard(articleId: number, userId: number) 
     created_at: string;
     updated_at: string;
   }>(
-    `SELECT id, document_id, user_id, target_reader, core_assertion, why_now, research_hypothesis, market_position_insight, historical_turning_point, target_package, publish_window, ending_action,
+    `SELECT id, document_id AS article_id, user_id, target_reader, core_assertion, why_now, research_hypothesis, market_position_insight, historical_turning_point, target_package, publish_window, ending_action,
             first_hand_observation, felt_moment, why_this_hit_me, real_scene_or_dialogue, want_to_complain, non_delegable_truth,
             created_at, updated_at
      FROM article_strategy_cards
@@ -2146,7 +2170,7 @@ export async function getArticleEvidenceItems(articleId: number, userId: number)
   const db = getDatabase();
   const rows = await db.query<{
     id: number;
-    document_id: number;
+    article_id: number;
     user_id: number;
     fragment_id: number | null;
     node_id: number | null;
@@ -2164,7 +2188,7 @@ export async function getArticleEvidenceItems(articleId: number, userId: number)
     created_at: string;
     updated_at: string;
   }>(
-    `SELECT id, document_id, user_id, fragment_id, node_id, claim, title, excerpt, source_type, source_url, screenshot_path, usage_mode, rationale, research_tag, evidence_role, sort_order, created_at, updated_at
+    `SELECT id, document_id AS article_id, user_id, fragment_id, node_id, claim, title, excerpt, source_type, source_url, screenshot_path, usage_mode, rationale, research_tag, evidence_role, sort_order, created_at, updated_at
      FROM article_evidence_items
      WHERE document_id = ? AND user_id = ?
      ORDER BY sort_order ASC, id ASC`,
@@ -2179,7 +2203,7 @@ export async function getArticleResearchCards(articleId: number, userId: number)
   const [cardRows, sourceRows] = await Promise.all([
     db.query<{
       id: number;
-      document_id: number;
+      article_id: number;
       user_id: number;
       card_kind: string;
       title: string;
@@ -2189,7 +2213,7 @@ export async function getArticleResearchCards(articleId: number, userId: number)
       created_at: string;
       updated_at: string;
     }>(
-      `SELECT id, document_id, user_id, card_kind, title, summary, payload_json, sort_order, created_at, updated_at
+      `SELECT id, document_id AS article_id, user_id, card_kind, title, summary, payload_json, sort_order, created_at, updated_at
        FROM article_research_cards
        WHERE document_id = ? AND user_id = ?
        ORDER BY CASE card_kind
@@ -2453,7 +2477,7 @@ export async function getArticleOutcomeSnapshots(articleId: number, userId: numb
   const rows = await db.query<{
     id: number;
     outcome_id: number;
-    document_id: number;
+    article_id: number;
     user_id: number;
     window_code: string;
     read_count: number;
@@ -2464,7 +2488,7 @@ export async function getArticleOutcomeSnapshots(articleId: number, userId: numb
     created_at: string;
     updated_at: string;
   }>(
-    `SELECT id, outcome_id, document_id, user_id, window_code, read_count, share_count, like_count, notes, writing_state_feedback_json, created_at, updated_at
+    `SELECT id, outcome_id, document_id AS article_id, user_id, window_code, read_count, share_count, like_count, notes, writing_state_feedback_json, created_at, updated_at
      FROM article_outcome_snapshots
      WHERE document_id = ? AND user_id = ?
      ORDER BY CASE window_code WHEN '24h' THEN 1 WHEN '72h' THEN 2 WHEN '7d' THEN 3 ELSE 4 END, id ASC`,
@@ -2594,7 +2618,7 @@ export async function upsertArticleOutcomeSnapshot(input: {
   const snapshot = await db.queryOne<{
     id: number;
     outcome_id: number;
-    document_id: number;
+    article_id: number;
     user_id: number;
     window_code: string;
     read_count: number;
@@ -2605,7 +2629,7 @@ export async function upsertArticleOutcomeSnapshot(input: {
     created_at: string;
     updated_at: string;
   }>(
-    `SELECT id, outcome_id, document_id, user_id, window_code, read_count, share_count, like_count, notes, writing_state_feedback_json, created_at, updated_at
+    `SELECT id, outcome_id, document_id AS article_id, user_id, window_code, read_count, share_count, like_count, notes, writing_state_feedback_json, created_at, updated_at
      FROM article_outcome_snapshots
      WHERE document_id = ? AND user_id = ? AND window_code = ?
      LIMIT 1`,
@@ -2622,7 +2646,7 @@ export async function getArticleOutcomeBundlesByUser(userId: number) {
   const db = getDatabase();
   const outcomes = await db.query<{
     id: number;
-    document_id: number;
+    article_id: number;
     user_id: number;
     target_package: string | null;
     scorecard_json: string | Record<string, unknown> | null;
@@ -2633,7 +2657,7 @@ export async function getArticleOutcomeBundlesByUser(userId: number) {
     created_at: string;
     updated_at: string;
   }>(
-    `SELECT id, document_id, user_id, target_package, scorecard_json, hit_status, review_summary, next_action, playbook_tags_json, created_at, updated_at
+    `SELECT id, document_id AS article_id, user_id, target_package, scorecard_json, hit_status, review_summary, next_action, playbook_tags_json, created_at, updated_at
      FROM article_outcomes
      WHERE user_id = ?
      ORDER BY updated_at DESC, id DESC`,
@@ -2642,7 +2666,7 @@ export async function getArticleOutcomeBundlesByUser(userId: number) {
   const snapshots = await db.query<{
     id: number;
     outcome_id: number;
-    document_id: number;
+    article_id: number;
     user_id: number;
     window_code: string;
     read_count: number;
@@ -2653,7 +2677,7 @@ export async function getArticleOutcomeBundlesByUser(userId: number) {
     created_at: string;
     updated_at: string;
   }>(
-    `SELECT id, outcome_id, document_id, user_id, window_code, read_count, share_count, like_count, notes, writing_state_feedback_json, created_at, updated_at
+    `SELECT id, outcome_id, document_id AS article_id, user_id, window_code, read_count, share_count, like_count, notes, writing_state_feedback_json, created_at, updated_at
      FROM article_outcome_snapshots
      WHERE user_id = ?
      ORDER BY updated_at DESC, id DESC`,
@@ -2687,14 +2711,14 @@ export async function getAuthorPlaybooks(userId: number, limit = 6): Promise<Aut
   await ensureExtendedProductSchema();
   const db = getDatabase();
   const rows = await db.query<{
-    document_id: number;
+    article_id: number;
     title: string;
     target_package: string | null;
     hit_status: string;
     playbook_tags_json: string | string[] | null;
     updated_at: string;
   }>(
-    `SELECT ao.document_id, d.title, ao.target_package, ao.hit_status, ao.playbook_tags_json, ao.updated_at
+    `SELECT ao.document_id AS article_id, d.title, ao.target_package, ao.hit_status, ao.playbook_tags_json, ao.updated_at
      FROM article_outcomes ao
      INNER JOIN documents d ON d.id = ao.document_id
      WHERE ao.user_id = ?
@@ -2719,8 +2743,8 @@ export async function getAuthorPlaybooks(userId: number, limit = 6): Promise<Aut
         updatedAt: row.updated_at,
         articleIds: new Set<number>(),
       };
-      if (!existing.articleIds.has(row.document_id)) {
-        existing.articleIds.add(row.document_id);
+      if (!existing.articleIds.has(row.article_id)) {
+        existing.articleIds.add(row.article_id);
         existing.articleCount += 1;
       }
       if (row.hit_status === "hit") {

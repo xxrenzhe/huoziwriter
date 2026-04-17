@@ -1,6 +1,6 @@
 import { requireOpsAccess } from "@/lib/auth";
 import { fail, ok } from "@/lib/http";
-import { runOpsTopicSourceSync } from "@/lib/topic-radar";
+import { runOpsTopicSourceSync } from "@/lib/topic-signals";
 
 export async function POST(request: Request, { params }: { params: { id: string } }) {
   try {

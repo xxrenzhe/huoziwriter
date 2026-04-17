@@ -1,7 +1,9 @@
 const isStandaloneBuild = process.env.NEXT_OUTPUT_MODE === 'standalone'
+const distDir = process.env.NEXT_DIST_DIR ? String(process.env.NEXT_DIST_DIR) : undefined
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  distDir,
   output: isStandaloneBuild ? 'standalone' : undefined,
   poweredByHeader: false,
   productionBrowserSourceMaps: false,

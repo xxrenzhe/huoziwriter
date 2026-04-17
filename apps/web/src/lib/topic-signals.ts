@@ -1065,7 +1065,7 @@ async function syncTopicSourcesBatch(input: {
   } satisfies TopicSyncBatchResult;
 }
 
-export async function syncTopicRadar(options?: { userId?: number; limitPerSource?: number }) {
+export async function syncTopicSignals(options?: { userId?: number; limitPerSource?: number }) {
   const sources = await getTopicSources(options?.userId);
   const result = await syncTopicSourcesBatch({
     sources,
@@ -1294,7 +1294,7 @@ export async function ensureDefaultTopics() {
   if ((count?.count ?? 0) > 0) {
     return;
   }
-  await syncTopicRadar({ limitPerSource: 4 });
+  await syncTopicSignals({ limitPerSource: 4 });
 }
 
 export async function getVisibleTopicSources(userId: number) {
@@ -1352,7 +1352,7 @@ export async function createTopicSource(input: {
   if (created) {
     await syncTopicSourceToSourceConnectorById(created.id);
   }
-  await syncTopicRadar({ userId: input.userId, limitPerSource: 4 });
+  await syncTopicSignals({ userId: input.userId, limitPerSource: 4 });
 }
 
 export async function disableTopicSource(input: { userId: number; sourceId: number }) {
@@ -1392,7 +1392,7 @@ export async function updateTopicSource(input: {
     [nextSourceType, nextPriority, new Date().toISOString(), input.sourceId, input.userId],
   );
   await syncTopicSourceToSourceConnectorById(input.sourceId);
-  await syncTopicRadar({ userId: input.userId, limitPerSource: 4 });
+  await syncTopicSignals({ userId: input.userId, limitPerSource: 4 });
 }
 
 export async function getOpsTopicSources() {

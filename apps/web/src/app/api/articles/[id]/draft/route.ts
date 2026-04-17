@@ -10,15 +10,15 @@ export async function PUT(request: Request, { params }: { params: { id: string }
   try {
     const body = await request.json();
     const articleId = Number(params.id);
-    const savedDocument = await saveArticleDraft({
+    const savedArticle = await saveArticleDraft({
       articleId,
       userId: session.userId,
       body,
     });
-    if (!savedDocument) {
+    if (!savedArticle) {
       return fail("稿件不存在", 404);
     }
-    return ok(serializeArticleDraft(savedDocument));
+    return ok(serializeArticleDraft(savedArticle));
   } catch (error) {
     return fail(error instanceof Error ? error.message : "稿件保存失败", 400);
   }

@@ -1,6 +1,6 @@
 import { requireOpsAccess } from "@/lib/auth";
 import { fail, ok } from "@/lib/http";
-import { retryOpsTopicSyncRun } from "@/lib/topic-radar";
+import { retryOpsTopicSyncRun } from "@/lib/topic-signals";
 
 type Params = {
   params: Promise<{

@@ -3647,8 +3647,8 @@ export async function getArticleStageArtifactsByDocumentIds(input: {
     }>;
   }
   const placeholders = uniqueArticleIds.map(() => "?").join(", ");
-  const rows = await getDatabase().query<ArtifactRow & { document_title: string; document_updated_at: string }>(
-    `SELECT dsa.*, d.title AS document_title, d.updated_at AS document_updated_at
+  const rows = await getDatabase().query<ArtifactRow & { article_title: string; article_updated_at: string }>(
+    `SELECT dsa.*, d.title AS article_title, d.updated_at AS article_updated_at
      FROM document_stage_artifacts dsa
      INNER JOIN documents d ON d.id = dsa.document_id
      WHERE d.user_id = ? AND dsa.stage_code = ? AND dsa.document_id IN (${placeholders})
@@ -3657,8 +3657,8 @@ export async function getArticleStageArtifactsByDocumentIds(input: {
   );
   return rows.map((row) => ({
     articleId: row.document_id,
-    title: row.document_title,
-    updatedAt: row.document_updated_at,
+    title: row.article_title,
+    updatedAt: row.article_updated_at,
     artifact: toArtifact(row),
   }));
 }

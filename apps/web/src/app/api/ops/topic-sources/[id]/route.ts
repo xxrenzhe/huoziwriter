@@ -1,6 +1,6 @@
 import { requireOpsAccess } from "@/lib/auth";
 import { fail, ok } from "@/lib/http";
-import { updateOpsTopicSource } from "@/lib/topic-radar";
+import { updateOpsTopicSource } from "@/lib/topic-signals";
 
 export async function PATCH(request: Request, { params }: { params: { id: string } }) {
   try {

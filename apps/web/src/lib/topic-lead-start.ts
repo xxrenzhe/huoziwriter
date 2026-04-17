@@ -4,7 +4,7 @@ import { attachFragmentToArticleNode, getArticleNodes, updateArticleNode } from 
 import { distillCaptureInput } from "./distill";
 import { getKnowledgeCards } from "./knowledge";
 import { matchTopicToKnowledgeCards } from "./knowledge-match";
-import { assertFragmentQuota, assertTopicRadarStartAllowed } from "./plan-access";
+import { assertFragmentQuota, assertTopicSignalStartAllowed } from "./plan-access";
 import { assertPersonaReady } from "./personas";
 import { createArticle, createFragment } from "./repositories";
 import { getVisibleTopicRecommendationsForUser } from "./topic-recommendations";
@@ -49,7 +49,7 @@ export async function startTopicLeadForUser(input: {
   seriesId?: number | null;
 }) {
   await assertPersonaReady(input.userId);
-  await assertTopicRadarStartAllowed(input.userId);
+  await assertTopicSignalStartAllowed(input.userId);
   await assertFragmentQuota(input.userId);
 
   const topics = await getVisibleTopicRecommendationsForUser(input.userId);

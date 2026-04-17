@@ -12,14 +12,15 @@ export default defineConfig({
     baseURL: "http://127.0.0.1:3101",
   },
   webServer: {
-    command: "pnpm db:init && cd apps/web && rm -rf .next && pnpm dev --port 3101 --hostname 127.0.0.1",
+    command: "pnpm db:init && cd apps/web && rm -rf .next-e2e && pnpm build && pnpm start --port 3101 --hostname 127.0.0.1",
     url: "http://127.0.0.1:3101/login",
-    reuseExistingServer: !process.env.CI,
-    timeout: 120_000,
+    reuseExistingServer: false,
+    timeout: 300_000,
     env: {
       ...process.env,
       PORT: "3101",
       HOSTNAME: "127.0.0.1",
+      NEXT_DIST_DIR: ".next-e2e",
       DATABASE_PATH: databasePath,
       DEFAULT_OPS_PASSWORD: process.env.DEFAULT_OPS_PASSWORD || "REDACTED_ADMIN_PASSWORD",
     },

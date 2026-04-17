@@ -167,7 +167,7 @@ type WritingEvalOnlineFeedbackRow = {
   run_id: number;
   result_id: number | null;
   case_id: number | null;
-  document_id: number | null;
+  article_id: number | null;
   wechat_sync_log_id: number | null;
   source_type: string;
   source_label: string | null;
@@ -186,7 +186,7 @@ type WritingEvalOnlineFeedbackRow = {
   updated_at: string;
   task_code?: string | null;
   topic_title?: string | null;
-  document_title?: string | null;
+  article_title?: string | null;
   sync_status?: string | null;
   media_id?: string | null;
   predicted_viral_score?: number | null;
@@ -245,7 +245,7 @@ type WritingEvalFeedbackOptionDocumentRow = {
 
 type WritingEvalFeedbackOptionSyncLogRow = {
   id: number;
-  document_id: number;
+  article_id: number;
   title: string | null;
   status: string;
   media_id: string | null;
@@ -254,7 +254,7 @@ type WritingEvalFeedbackOptionSyncLogRow = {
 
 type ArticleOutcomeCalibrationRow = {
   id: number;
-  document_id: number;
+  article_id: number;
   target_package: string | null;
   scorecard_json: string | Record<string, unknown> | null;
   hit_status: string;
@@ -955,7 +955,7 @@ function mapFeedback(row: WritingEvalOnlineFeedbackRow) {
     runId: row.run_id,
     resultId: row.result_id,
     caseId: row.case_id,
-    articleId: row.document_id,
+    articleId: row.article_id,
     wechatSyncLogId: row.wechat_sync_log_id,
     sourceType: row.source_type,
     sourceLabel: row.source_label,
@@ -974,7 +974,7 @@ function mapFeedback(row: WritingEvalOnlineFeedbackRow) {
     updatedAt: row.updated_at,
     taskCode: row.task_code ?? null,
     topicTitle: row.topic_title ?? null,
-    articleTitle: row.document_title ?? null,
+    articleTitle: row.article_title ?? null,
     syncStatus: row.sync_status ?? null,
     mediaId: row.media_id ?? null,
     predictedViralScore,
@@ -1056,7 +1056,7 @@ function mapArticleOutcomeCalibrationItem(
     runId: null,
     resultId: null,
     caseId: null,
-    articleId: row.document_id,
+    articleId: row.article_id,
     wechatSyncLogId: null,
     sourceType: "article_outcome",
     sourceLabel: row.target_package ? `真实回流 · ${row.target_package}` : "真实回流",
@@ -1110,10 +1110,10 @@ function buildRunCode() {
 }
 
 function getWritingEvalFeedbackSelectSql() {
-  return `SELECT f.id, f.run_id, f.result_id, f.case_id, f.document_id, f.wechat_sync_log_id, f.source_type, f.source_label,
+  return `SELECT f.id, f.run_id, f.result_id, f.case_id, f.document_id AS article_id, f.wechat_sync_log_id, f.source_type, f.source_label,
                  f.open_rate, f.read_completion_rate, f.share_rate, f.favorite_rate, f.read_count, f.like_count,
                  f.comment_count, f.notes, f.payload_json, f.created_by, f.captured_at, f.created_at, f.updated_at,
-                 c.task_code, c.topic_title, d.title AS document_title, l.status AS sync_status, l.media_id,
+                 c.task_code, c.topic_title, d.title AS article_title, l.status AS sync_status, l.media_id,
                  r.viral_score AS predicted_viral_score, r.total_score AS predicted_total_score,
                  r.topic_momentum_score, r.headline_score, r.hook_score, r.shareability_score, r.reader_value_score,
                  r.novelty_score, r.platform_fit_score
@@ -1564,7 +1564,7 @@ async function getArticleOutcomeCalibrationItems(limit = 240) {
   await ensureExtendedProductSchema();
   const db = getDatabase();
   const outcomeRows = await db.query<ArticleOutcomeCalibrationRow>(
-    `SELECT ao.id, ao.document_id, ao.target_package, ao.scorecard_json, ao.hit_status, ao.review_summary, ao.updated_at, d.title
+    `SELECT ao.id, ao.document_id AS article_id, ao.target_package, ao.scorecard_json, ao.hit_status, ao.review_summary, ao.updated_at, d.title
      FROM article_outcomes ao
      LEFT JOIN documents d ON d.id = ao.document_id
      ORDER BY ao.updated_at DESC, ao.id DESC
@@ -3210,7 +3210,7 @@ export async function getWritingEvalRunFeedback(runId: number) {
        LIMIT 24`,
     ),
     db.query<WritingEvalFeedbackOptionSyncLogRow>(
-      `SELECT l.id, l.document_id, d.title, l.status, l.media_id, l.created_at
+      `SELECT l.id, l.document_id AS article_id, d.title, l.status, l.media_id, l.created_at
        FROM wechat_sync_logs l
        LEFT JOIN documents d ON d.id = l.document_id
        ORDER BY CASE WHEN l.status = 'success' THEN 0 ELSE 1 END, l.id DESC
@@ -3255,7 +3255,7 @@ export async function getWritingEvalRunFeedback(runId: number) {
       })),
       syncLogs: syncLogRows.map((row) => ({
         id: row.id,
-        articleId: row.document_id,
+        articleId: row.article_id,
         title: row.title,
         status: row.status,
         mediaId: row.media_id,
@@ -3354,7 +3354,7 @@ export async function getArticleOutcomeVersionSummaries(
   const db = getDatabase();
   const [rows, snapshots] = await Promise.all([
     db.query<ArticleOutcomeCalibrationRow>(
-      `SELECT ao.id, ao.document_id, ao.target_package, ao.scorecard_json, ao.hit_status, ao.review_summary, ao.updated_at, d.title
+      `SELECT ao.id, ao.document_id AS article_id, ao.target_package, ao.scorecard_json, ao.hit_status, ao.review_summary, ao.updated_at, d.title
        FROM article_outcomes ao
        LEFT JOIN documents d ON d.id = ao.document_id
        ORDER BY ao.updated_at DESC, ao.id DESC`,
@@ -3455,7 +3455,7 @@ async function getArticleOutcomeVersionFeedback(input: {
   const db = getDatabase();
   const [rows, snapshots] = await Promise.all([
     db.query<ArticleOutcomeCalibrationRow>(
-      `SELECT ao.id, ao.document_id, ao.target_package, ao.scorecard_json, ao.hit_status, ao.review_summary, ao.updated_at, d.title
+      `SELECT ao.id, ao.document_id AS article_id, ao.target_package, ao.scorecard_json, ao.hit_status, ao.review_summary, ao.updated_at, d.title
        FROM article_outcomes ao
        LEFT JOIN documents d ON d.id = ao.document_id
        ORDER BY ao.updated_at DESC, ao.id DESC`,
@@ -3568,15 +3568,15 @@ export async function createWritingEvalRunFeedback(input: {
   }
 
   if (resolvedSyncLogId !== null) {
-    const syncLog = await db.queryOne<{ id: number; document_id: number }>(
-      "SELECT id, document_id FROM wechat_sync_logs WHERE id = ?",
+    const syncLog = await db.queryOne<{ id: number; article_id: number }>(
+      "SELECT id, document_id AS article_id FROM wechat_sync_logs WHERE id = ?",
       [resolvedSyncLogId],
     );
     if (!syncLog) throw new Error("关联微信同步记录不存在");
-    if (resolvedArticleId !== null && resolvedArticleId !== syncLog.document_id) {
+    if (resolvedArticleId !== null && resolvedArticleId !== syncLog.article_id) {
       throw new Error("微信同步记录与稿件不匹配");
     }
-    resolvedArticleId = syncLog.document_id;
+    resolvedArticleId = syncLog.article_id;
   }
 
   const now = new Date().toISOString();

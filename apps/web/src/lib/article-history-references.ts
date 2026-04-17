@@ -107,13 +107,13 @@ export async function getSavedArticleHistoryReferences(articleId: number) {
   await ensureExtendedProductSchema();
   const db = getDatabase();
   const rows = await db.query<{
-    referenced_document_id: number;
+    referenced_article_id: number;
     title: string;
     relation_reason: string | null;
     bridge_sentence: string | null;
     sort_order: number;
   }>(
-    `SELECT r.referenced_document_id, d.title, r.relation_reason, r.bridge_sentence, r.sort_order
+    `SELECT r.referenced_document_id AS referenced_article_id, d.title, r.relation_reason, r.bridge_sentence, r.sort_order
      FROM document_reference_articles r
      INNER JOIN documents d ON d.id = r.referenced_document_id
      WHERE r.document_id = ?
@@ -121,7 +121,7 @@ export async function getSavedArticleHistoryReferences(articleId: number) {
     [articleId],
   );
   return rows.map((item) => ({
-    referencedArticleId: item.referenced_document_id,
+    referencedArticleId: item.referenced_article_id,
     title: item.title,
     relationReason: item.relation_reason,
     bridgeSentence: item.bridge_sentence,

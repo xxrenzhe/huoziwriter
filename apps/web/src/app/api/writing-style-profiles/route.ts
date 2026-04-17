@@ -2,7 +2,7 @@ import { ensureUserSession } from "@/lib/auth";
 import { fail, ok } from "@/lib/http";
 import { assertWritingStyleProfileSaveAllowed } from "@/lib/plan-access";
 import { createWritingStyleProfile, getWritingStyleProfiles } from "@/lib/writing-style-profiles";
-import type { WritingStyleAnalysis } from "@/lib/style-extractor";
+import type { WritingStyleAnalysis } from "@/lib/writing-style-analysis";
 
 export async function GET() {
   const session = await ensureUserSession();

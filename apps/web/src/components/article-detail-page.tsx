@@ -253,7 +253,7 @@ export async function ArticleDetailPage({
       }))}
       initialImagePrompts={imagePrompts.map((item) => ({
         id: item.id,
-        articleNodeId: item.document_node_id,
+        articleNodeId: item.article_node_id,
         assetType: item.asset_type,
         title: item.title,
         prompt: item.prompt,
