@@ -15,7 +15,7 @@ export default async function ReviewPage() {
     <div className="space-y-8">
       <section className="border border-stone-300/40 bg-[rgba(255,255,255,0.72)] p-6 shadow-ink md:p-8">
         <div className="text-xs uppercase tracking-[0.3em] text-cinnabar">复盘</div>
-        <h1 className="mt-4 font-serifCn text-4xl font-semibold text-ink md:text-5xl">结果与经验沉淀，先从一个入口收口。</h1>
+        <h1 className="mt-4 font-serifCn text-4xl font-semibold text-ink md:text-5xl text-balance">结果与经验沉淀，先从一个入口收口。</h1>
         <p className="mt-4 max-w-3xl text-base leading-8 text-stone-700">
           复盘页统一消费真实结果回流：24h / 72h / 7d 快照、命中判定和打法标签都从结果模型读取，只回答哪些命中了、哪些差一点、下一篇该复用什么。
         </p>
@@ -28,7 +28,7 @@ export default async function ReviewPage() {
           ].map(([label, value, note]) => (
             <article key={label} className="border border-stone-300/40 bg-white p-5 shadow-ink">
               <div className="text-xs uppercase tracking-[0.24em] text-stone-500">{label}</div>
-              <div className="mt-3 font-serifCn text-4xl text-ink">{value}</div>
+              <div className="mt-3 font-serifCn text-4xl text-ink text-balance">{value}</div>
               <div className="mt-3 text-sm leading-7 text-stone-700">{note}</div>
             </article>
           ))}
@@ -37,11 +37,11 @@ export default async function ReviewPage() {
 
       <section className="border border-stone-300/40 bg-white p-6 shadow-ink">
         <div className="text-xs uppercase tracking-[0.28em] text-cinnabar">命中结果</div>
-        <h2 className="mt-3 font-serifCn text-3xl text-ink">先看哪些稿件已经完成命中判定。</h2>
+        <h2 className="mt-3 font-serifCn text-3xl text-ink text-balance">先看哪些稿件已经完成命中判定。</h2>
         <div className="mt-6 grid gap-4 xl:grid-cols-2">
           {hitCandidates.slice(0, 6).map(({ article, bundle }) => (
             <article key={article.id} className="border border-stone-300/40 bg-[#fffdfa] p-5">
-              <div className="font-serifCn text-2xl text-ink">{article.title}</div>
+              <div className="font-serifCn text-2xl text-ink text-balance">{article.title}</div>
               <div className="mt-3 text-sm leading-7 text-stone-700">
                 {bundle?.outcome?.reviewSummary || "这篇稿件已经命中目标包，可继续沉淀可复用打法。"}
               </div>
@@ -64,11 +64,11 @@ export default async function ReviewPage() {
 
       <section className="border border-stone-300/40 bg-white p-6 shadow-ink">
         <div className="text-xs uppercase tracking-[0.28em] text-cinnabar">差一点命中</div>
-        <h2 className="mt-3 font-serifCn text-3xl text-ink">先看那些已经回流，但仍差一点的稿件。</h2>
+        <h2 className="mt-3 font-serifCn text-3xl text-ink text-balance">先看那些已经回流，但仍差一点的稿件。</h2>
         <div className="mt-6 grid gap-4 xl:grid-cols-2">
           {nearMisses.slice(0, 6).map(({ article, bundle }) => (
             <article key={article.id} className="border border-stone-300/40 bg-[#faf7f0] p-5">
-              <div className="font-serifCn text-2xl text-ink">{article.title}</div>
+              <div className="font-serifCn text-2xl text-ink text-balance">{article.title}</div>
               <div className="mt-3 text-sm leading-7 text-stone-700">
                 {bundle?.outcome?.nextAction || bundle?.outcome?.reviewSummary || "已经形成结果回流，下一篇应针对这次差距重写打法。"}
               </div>
@@ -91,13 +91,13 @@ export default async function ReviewPage() {
 
       <section className="border border-stone-300/40 bg-white p-6 shadow-ink">
         <div className="text-xs uppercase tracking-[0.28em] text-cinnabar">系列打法沉淀</div>
-        <h2 className="mt-3 font-serifCn text-3xl text-ink">先看每个系列，下一篇该继续放大哪套打法。</h2>
+        <h2 className="mt-3 font-serifCn text-3xl text-ink text-balance">先看每个系列，下一篇该继续放大哪套打法。</h2>
         <div className="mt-6 grid gap-4 xl:grid-cols-2">
           {seriesPlaybooks.map((item) => (
             <article key={item.seriesId} className="border border-stone-300/40 bg-[#faf7f0] p-5">
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div>
-                  <div className="font-serifCn text-2xl text-ink">{item.seriesName}</div>
+                  <div className="font-serifCn text-2xl text-ink text-balance">{item.seriesName}</div>
                   <div className="mt-2 text-xs leading-6 text-stone-500">
                     绑定人设：{item.personaName} · 已沉淀 {item.articleCount} 篇结果样本
                   </div>
@@ -136,7 +136,7 @@ export default async function ReviewPage() {
 
       <section className="border border-stone-300/40 bg-white p-6 shadow-ink">
         <div className="text-xs uppercase tracking-[0.28em] text-cinnabar">全局打法沉淀</div>
-        <h2 className="mt-3 font-serifCn text-3xl text-ink">跨系列看，下一篇该复用什么。</h2>
+        <h2 className="mt-3 font-serifCn text-3xl text-ink text-balance">跨系列看，下一篇该复用什么。</h2>
         <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {playbooks.map((item) => (
             <article key={item.label} className="border border-stone-300/40 bg-[#fffdfa] px-4 py-4">

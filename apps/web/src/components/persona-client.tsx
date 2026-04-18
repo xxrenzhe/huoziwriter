@@ -286,7 +286,7 @@ export function PersonaManager({
         ].map(([label, value, note]) => (
           <article key={label} className="border border-stone-300/40 bg-[#fffdfa] p-4">
             <div className="text-xs uppercase tracking-[0.18em] text-stone-500">{label}</div>
-            <div className="mt-3 font-serifCn text-3xl text-ink">{value}</div>
+            <div className="mt-3 font-serifCn text-3xl text-ink text-balance">{value}</div>
             <div className="mt-2 text-sm leading-6 text-stone-700">{note}</div>
           </article>
         ))}
@@ -295,13 +295,13 @@ export function PersonaManager({
       <form onSubmit={handleCreate} className="grid gap-3 border border-stone-300/40 bg-[#faf7f0] p-5">
         <div className="text-xs uppercase tracking-[0.24em] text-cinnabar">新建作者人设</div>
         <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_240px]">
-          <input
+          <input aria-label="作者人设名称，例如：长期主义产业观察者"
             value={name}
             onChange={(event) => setName(event.target.value)}
             placeholder="作者人设名称，例如：长期主义产业观察者"
             className="border border-stone-300 bg-white px-4 py-3 text-sm"
           />
-          <select
+          <select aria-label="select control"
             value={boundWritingStyleProfileId}
             onChange={(event) => setBoundWritingStyleProfileId(event.target.value)}
             className="border border-stone-300 bg-white px-4 py-3 text-sm"
@@ -353,7 +353,7 @@ export function PersonaManager({
             disabled={submitting || reachedLimit}
             className="border border-cinnabar bg-cinnabar px-4 py-3 text-sm text-white disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {submitting ? "保存中..." : reachedLimit ? "已达到套餐额度" : "保存作者人设"}
+            {submitting ? "保存中…" : reachedLimit ? "已达到套餐额度" : "保存作者人设"}
           </button>
         </div>
       </form>
@@ -370,17 +370,17 @@ export function PersonaManager({
             disabled={analyzingSources || reachedLimit}
             className="border border-ink bg-ink px-4 py-3 text-sm text-white disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {analyzingSources ? "分析中..." : reachedLimit ? "已达到套餐额度" : "分析并沉淀作者人设"}
+            {analyzingSources ? "分析中…" : reachedLimit ? "已达到套餐额度" : "分析并沉淀作者人设"}
           </button>
         </div>
         <div className="grid gap-3 md:grid-cols-2">
-          <input
+          <input aria-label="资料标题，例如：近半年公众号文章合集"
             value={sourceTitle}
             onChange={(event) => setSourceTitle(event.target.value)}
             placeholder="资料标题，例如：近半年公众号文章合集"
             className="border border-stone-300 bg-[#fffdfa] px-4 py-3 text-sm"
           />
-          <input
+          <input aria-label="资料来源链接，可选"
             value={sourceUrl}
             onChange={(event) => setSourceUrl(event.target.value)}
             placeholder="资料来源链接，可选"
@@ -394,7 +394,7 @@ export function PersonaManager({
           className="min-h-[160px] border border-stone-300 bg-[#fffdfa] px-4 py-3 text-sm leading-7"
         />
         <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_240px]">
-          <input
+          <input aria-label="input control"
             ref={sourceFileInputRef}
             type="file"
             multiple
@@ -414,7 +414,7 @@ export function PersonaManager({
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <div className="text-xs uppercase tracking-[0.18em] text-stone-500">{persona.isDefault ? "默认作者人设" : "作者人设"}</div>
-                <div className="mt-2 font-serifCn text-2xl text-ink">{persona.name}</div>
+                <div className="mt-2 font-serifCn text-2xl text-ink text-balance">{persona.name}</div>
                 {persona.summary ? <div className="mt-3 text-sm leading-7 text-stone-700">{persona.summary}</div> : null}
                 <div className="mt-3 flex flex-wrap gap-2 text-xs text-stone-500">
                   {persona.identityTags.map((tag) => <span key={`${persona.id}-identity-${tag}`} className="border border-stone-300 px-2 py-1">{tag}</span>)}
@@ -428,7 +428,7 @@ export function PersonaManager({
                 disabled={persona.isDefault || updatingId === persona.id}
                 className="border border-stone-300 bg-white px-4 py-2 text-sm text-stone-700 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {persona.isDefault ? "当前默认" : updatingId === persona.id ? "切换中..." : "设为默认"}
+                {persona.isDefault ? "当前默认" : updatingId === persona.id ? "切换中…" : "设为默认"}
               </button>
             </div>
           </article>

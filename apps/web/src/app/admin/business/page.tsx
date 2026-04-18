@@ -19,7 +19,7 @@ export default async function AdminBusinessPage() {
         ].map(([label, value, note]) => (
           <article key={label} className="border border-stone-800 bg-[#171718] p-5">
             <div className="text-xs uppercase tracking-[0.24em] text-stone-500">{label}</div>
-            <div className="mt-3 font-serifCn text-4xl text-stone-100">{value}</div>
+            <div className="mt-3 font-serifCn text-4xl text-stone-100 text-balance">{value}</div>
             <p className="mt-3 text-sm leading-7 text-stone-400">{note}</p>
           </article>
         ))}
@@ -27,7 +27,7 @@ export default async function AdminBusinessPage() {
       <div className="grid gap-4 xl:grid-cols-[320px_minmax(0,1fr)]">
         <article className="border border-stone-800 bg-[#171718] p-6">
           <div className="text-xs uppercase tracking-[0.24em] text-cinnabar">内容主链路</div>
-          <div className="mt-4 font-serifCn text-4xl text-stone-100">{overview.publishedArticleCount}</div>
+          <div className="mt-4 font-serifCn text-4xl text-stone-100 text-balance">{overview.publishedArticleCount}</div>
           <p className="mt-4 text-sm leading-7 text-stone-400">
             当前已经真正走到发布阶段的稿件数。这里不再统计推荐归因，业务视角回到内容生产、资产沉淀与发布履约本身。
           </p>

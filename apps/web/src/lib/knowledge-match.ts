@@ -74,7 +74,7 @@ export function matchTopicToKnowledgeCards(topicTitle: string, cards: MatchableK
 function shorten(value: string | null | undefined, maxLength = 54) {
   if (!value) return "";
   const normalized = value.replace(/\s+/g, " ").trim();
-  return normalized.length > maxLength ? `${normalized.slice(0, maxLength)}...` : normalized;
+  return normalized.length > maxLength ? `${normalized.slice(0, maxLength)}…` : normalized;
 }
 
 export function buildTopicJudgementShift(topicTitle: string, matches: TopicKnowledgeMatch[]) {

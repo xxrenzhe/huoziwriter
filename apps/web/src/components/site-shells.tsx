@@ -131,7 +131,7 @@ export function WorkspaceShell({
         <aside className="border-r border-stone-300/20 bg-panel px-5 py-8">
           <div className="mb-8 border-b border-stone-300/40 pb-6">
             <div className="font-sansCn text-xs uppercase tracking-[0.3em] text-stone-500">主工作流</div>
-            <div className="mt-3 font-serifCn text-3xl font-semibold">公众号爆款写作系统</div>
+            <div className="mt-3 font-serifCn text-3xl font-semibold text-balance">公众号爆款写作系统</div>
             <p className="mt-3 text-sm leading-7 text-stone-600">
               把今天值得写的题、正在推进的稿件和结果回流收进作战台、稿件区与复盘主链路。
             </p>
@@ -159,7 +159,7 @@ export function WorkspaceShell({
             <div className="border border-stone-300/70 bg-white p-4">
               <div className="text-sm text-stone-600">{displayPlanName}</div>
               <div className="mt-3 flex items-end justify-between">
-                <div className="font-serifCn text-3xl text-ink">{usageText}</div>
+                <div className="font-serifCn text-3xl text-ink text-balance">{usageText}</div>
                 <div className="text-xs text-stone-500">今日生成</div>
               </div>
               <div className="mt-4 h-2 overflow-hidden border border-stone-200 bg-[#f4efe6]">
@@ -172,7 +172,7 @@ export function WorkspaceShell({
           <div className="mb-6 flex flex-wrap items-center justify-between gap-4 border-b border-stone-300/25 pb-4">
             <div>
               <div className="text-xs uppercase tracking-[0.28em] text-stone-500">{currentSection}</div>
-              <div className="mt-2 font-serifCn text-2xl">{statusHeadline}</div>
+              <div className="mt-2 font-serifCn text-2xl text-balance">{statusHeadline}</div>
               <div className="mt-2 text-sm leading-7 text-stone-600">{statusDetail}</div>
             </div>
             <div className="flex items-center gap-3 text-stone-500">
@@ -209,7 +209,7 @@ export function AdminShell({
             <div className="font-sansCn text-xs uppercase tracking-[0.25em] text-stone-500">
               HuoZi Writer
             </div>
-            <div className="font-serifCn text-3xl font-semibold text-stone-100">
+            <div className="font-serifCn text-3xl font-semibold text-stone-100 text-balance">
               管理后台
             </div>
             <p className="text-sm leading-7 text-stone-400">
@@ -236,7 +236,7 @@ export function AdminShell({
           </nav>
           <div className="mt-8 border border-stone-800 bg-stone-950 p-4">
             <div className="text-xs uppercase tracking-[0.24em] text-stone-500">默认管理账号</div>
-            <div className="mt-3 font-serifCn text-2xl text-stone-100">huozi</div>
+            <div className="mt-3 font-serifCn text-2xl text-stone-100 text-balance">huozi</div>
             <p className="mt-2 text-sm leading-6 text-stone-400">
               首次启动由初始化脚本注入，启动前需先配置 `DEFAULT_ADMIN_PASSWORD`。
             </p>
@@ -246,7 +246,7 @@ export function AdminShell({
           <div className="mb-6 flex flex-wrap items-center justify-between gap-4 border-b border-stone-800 pb-4">
             <div>
               <div className="text-xs uppercase tracking-[0.28em] text-stone-500">Admin Console</div>
-              <div className="mt-2 font-serifCn text-2xl text-stone-100">系统当前处于可上线骨架阶段</div>
+              <div className="mt-2 font-serifCn text-2xl text-stone-100 text-balance">系统当前处于可上线骨架阶段</div>
             </div>
             <div className="border border-stone-800 bg-stone-950 px-4 py-2 text-sm text-stone-300">
               微信草稿箱真实推送已纳入 v1

@@ -117,9 +117,9 @@ export function TopicSourceManagerClient({
       ) : null}
       {canManage ? (
         <form onSubmit={handleSubmit} className="grid gap-3 border border-stone-300/40 bg-[#faf7f0] p-4 md:grid-cols-[180px_minmax(0,1fr)_140px_120px_140px]">
-          <input value={name} onChange={(event) => setName(event.target.value)} placeholder="信息源名称" disabled={reachedLimit} className="border border-stone-300 bg-white px-4 py-3 text-sm disabled:bg-stone-100" />
-          <input value={homepageUrl} onChange={(event) => setHomepageUrl(event.target.value)} placeholder="https://example.com 或 RSS 地址" disabled={reachedLimit} className="border border-stone-300 bg-white px-4 py-3 text-sm disabled:bg-stone-100" />
-          <select value={sourceType} onChange={(event) => setSourceType(event.target.value)} disabled={reachedLimit} className="border border-stone-300 bg-white px-4 py-3 text-sm disabled:bg-stone-100">
+          <input aria-label="信息源名称" value={name} onChange={(event) => setName(event.target.value)} placeholder="信息源名称" disabled={reachedLimit} className="border border-stone-300 bg-white px-4 py-3 text-sm disabled:bg-stone-100" />
+          <input aria-label="https://example.com 或 RSS 地址" value={homepageUrl} onChange={(event) => setHomepageUrl(event.target.value)} placeholder="https://example.com 或 RSS 地址" disabled={reachedLimit} className="border border-stone-300 bg-white px-4 py-3 text-sm disabled:bg-stone-100" />
+          <select aria-label="select control" value={sourceType} onChange={(event) => setSourceType(event.target.value)} disabled={reachedLimit} className="border border-stone-300 bg-white px-4 py-3 text-sm disabled:bg-stone-100">
             <option value="youtube">YouTube</option>
             <option value="reddit">Reddit</option>
             <option value="podcast">Podcast</option>
@@ -128,7 +128,7 @@ export function TopicSourceManagerClient({
             <option value="blog">Blog</option>
             <option value="rss">RSS</option>
           </select>
-          <input value={priority} onChange={(event) => setPriority(event.target.value)} placeholder="优先级" disabled={reachedLimit} className="border border-stone-300 bg-white px-4 py-3 text-sm disabled:bg-stone-100" />
+          <input aria-label="优先级" value={priority} onChange={(event) => setPriority(event.target.value)} placeholder="优先级" disabled={reachedLimit} className="border border-stone-300 bg-white px-4 py-3 text-sm disabled:bg-stone-100" />
           <button disabled={reachedLimit} className="bg-cinnabar px-4 py-3 text-sm text-white disabled:opacity-60">
             {reachedLimit ? "已达上限" : "新增信息源"}
           </button>
@@ -145,7 +145,7 @@ export function TopicSourceManagerClient({
               <div className="text-xs uppercase tracking-[0.24em] text-stone-500">
                 {source.scope === "system" ? "系统源" : "自定义源"}
               </div>
-              <div className="mt-2 font-serifCn text-2xl text-ink">{source.name}</div>
+              <div className="mt-2 font-serifCn text-2xl text-ink text-balance">{source.name}</div>
               <div className="mt-2 text-sm text-stone-600">{source.homepageUrl || "未配置主页地址"}</div>
               <div className="mt-3 flex flex-wrap gap-2 text-xs text-stone-500">
                 <span className="border border-stone-300 bg-[#faf7f0] px-2 py-1">
@@ -174,7 +174,7 @@ export function TopicSourceManagerClient({
             </div>
             {canManage && source.scope !== "system" ? (
               <div className="flex flex-wrap items-center gap-2">
-                <select
+                <select aria-label="select control"
                   defaultValue={source.sourceType}
                   onChange={(event) => updateSource(source.id, { sourceType: event.target.value })}
                   disabled={updatingId === source.id}

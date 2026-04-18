@@ -51,7 +51,7 @@ export default async function PricingPage() {
     <div className="space-y-10">
       <section className="max-w-4xl border border-stone-300/40 bg-white px-6 py-10 shadow-ink md:px-10">
         <div className="text-xs uppercase tracking-[0.3em] text-cinnabar">Pricing & Access</div>
-        <h1 className="mt-4 font-serifCn text-4xl font-semibold text-ink md:text-5xl">套餐决定次数、容量和高级功能，不决定底层模型。</h1>
+        <h1 className="mt-4 font-serifCn text-4xl font-semibold text-ink md:text-5xl text-balance">套餐决定次数、容量和高级功能，不决定底层模型。</h1>
         <p className="mt-4 text-base leading-8 text-stone-700">
           活字只保留 `free / pro / ultra` 三档。套餐差异体现在作者人设数量、情绪罗盘可见位、自定义信源额度、文风资产、私有模板、封面图和发布能力，而不是按付费档位切换成不同模型。
         </p>

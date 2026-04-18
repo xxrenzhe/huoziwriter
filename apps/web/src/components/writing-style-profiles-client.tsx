@@ -53,6 +53,8 @@ export function WritingStyleProfilesPanel({
   const [deletingId, setDeletingId] = useState<number | null>(null);
 
   async function handleDelete(id: number) {
+    if (!window.confirm("确定要删除吗？")) return;
+
     setDeletingId(id);
     setMessage("");
     const response = await fetch(`/api/writing-style-profiles/${id}`, { method: "DELETE" });
@@ -70,7 +72,7 @@ export function WritingStyleProfilesPanel({
       <div className="flex items-end justify-between gap-3">
         <div>
           <div className="text-xs uppercase tracking-[0.24em] text-cinnabar">写作风格资产</div>
-          <h3 className="mt-3 font-serifCn text-3xl text-ink">把抽取结果沉淀成可复用风格。</h3>
+          <h3 className="mt-3 font-serifCn text-3xl text-ink text-balance">把抽取结果沉淀成可复用风格。</h3>
           <p className="mt-3 text-sm leading-7 text-stone-700">
             当前已保存 {profiles.length} / {maxCount} 个风格资产。先在“作者与系列”补分析样本，再把结果沉淀到个人空间。
           </p>
@@ -89,7 +91,7 @@ export function WritingStyleProfilesPanel({
             <article key={profile.id} className="border border-stone-300/40 bg-white p-5">
               <div className="flex items-start justify-between gap-4">
                 <div>
-                  <div className="font-serifCn text-2xl text-ink">{profile.name}</div>
+                  <div className="font-serifCn text-2xl text-ink text-balance">{profile.name}</div>
                   <div className="mt-2 text-xs uppercase tracking-[0.2em] text-stone-500">
                     {profile.sourceTitle || "外部文章"} · {new Date(profile.createdAt).toLocaleDateString("zh-CN")}
                   </div>
@@ -99,7 +101,7 @@ export function WritingStyleProfilesPanel({
                   disabled={deletingId === profile.id}
                   className="border border-[#d8b0b2] px-3 py-2 text-xs text-[#8f3136] disabled:opacity-60"
                 >
-                  {deletingId === profile.id ? "删除中..." : "删除"}
+                  {deletingId === profile.id ? "删除中…" : "删除"}
                 </button>
               </div>
               <p className="mt-4 text-sm leading-7 text-stone-700">{profile.summary}</p>

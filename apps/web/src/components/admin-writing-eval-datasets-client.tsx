@@ -52,6 +52,10 @@ type CaseItem = {
   taskCode: string;
   taskType: string;
   topicTitle: string;
+  sourceType: string;
+  sourceRef: string | null;
+  sourceLabel: string | null;
+  sourceUrl: string | null;
   inputPayload: Record<string, unknown>;
   expectedConstraints: Record<string, unknown>;
   viralTargets: Record<string, unknown>;
@@ -62,6 +66,104 @@ type CaseItem = {
   isEnabled: boolean;
   createdAt: string;
   updatedAt: string;
+};
+
+type ArticleImportOption = {
+  id: number;
+  title: string;
+  status: string;
+  seriesName: string | null;
+  updatedAt: string;
+  hasMarkdown: boolean;
+  stageCodes: string[];
+  suggestedTaskType: string;
+  suggestedDifficultyLevel: string;
+  sourceFactCount: number;
+  knowledgeCardCount: number;
+  historyReferenceCount: number;
+  alreadyImportedDatasetIds: number[];
+};
+
+type KnowledgeCardImportOption = {
+  id: number;
+  title: string;
+  cardType: string;
+  status: string;
+  ownerUsername: string | null;
+  updatedAt: string;
+  confidenceScore: number;
+  suggestedTaskType: string;
+  suggestedDifficultyLevel: string;
+  sourceFactCount: number;
+  knowledgeCardCount: number;
+  historyReferenceCount: number;
+  openQuestionCount: number;
+  conflictFlagCount: number;
+  alreadyImportedDatasetIds: number[];
+};
+
+type TopicImportOption = {
+  id: number;
+  title: string;
+  sourceName: string;
+  sourceType: string;
+  sourcePriority: number | null;
+  publishedAt: string | null;
+  suggestedTaskType: string;
+  suggestedDifficultyLevel: string;
+  sourceFactCount: number;
+  knowledgeCardCount: number;
+  historyReferenceCount: number;
+  emotionLabelCount: number;
+  angleOptionCount: number;
+  alreadyImportedDatasetIds: number[];
+};
+
+type FragmentImportOption = {
+  id: number;
+  title: string;
+  sourceType: string;
+  sourceUrl: string | null;
+  hasScreenshot: boolean;
+  createdAt: string;
+  suggestedTaskType: string;
+  suggestedDifficultyLevel: string;
+  sourceFactCount: number;
+  knowledgeCardCount: number;
+  historyReferenceCount: number;
+  alreadyImportedDatasetIds: number[];
+};
+
+type ImportRecommendationItem = {
+  sourceType: "article" | "knowledge_card" | "topic_item" | "fragment";
+  sourceId: number;
+  title: string;
+  subtitle: string | null;
+  suggestedTaskType: string;
+  suggestedDifficultyLevel: string;
+  sourceFactCount: number;
+  knowledgeCardCount: number;
+  historyReferenceCount: number;
+  referenceGoodOutput: boolean;
+  reasonTags: string[];
+  score: number;
+};
+
+type ImportRecommendationPayload = {
+  datasetId: number;
+  targetSummary: string[];
+  recommendations: ImportRecommendationItem[];
+};
+
+type AutoFillAuditLogItem = {
+  id: number;
+  userId: number | null;
+  username: string | null;
+  action: string;
+  targetType: string;
+  targetId: string | null;
+  payload: Record<string, unknown> | null;
+  createdAt: string;
 };
 
 function stringifyJson(value: unknown) {
@@ -104,6 +206,32 @@ function getArrayLength(value: unknown) {
   return Array.isArray(value) ? value.filter(Boolean).length : 0;
 }
 
+function getStringArray(value: unknown) {
+  return Array.isArray(value) ? value.map((item) => String(item || "").trim()).filter(Boolean) : [];
+}
+
+function getNumberValue(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function getCaseSourceBadge(caseItem: CaseItem) {
+  const sourceType = getTrimmedString(caseItem.sourceType) || "manual";
+  const sourceLabel = getTrimmedString(caseItem.sourceLabel);
+  const sourceRef = getTrimmedString(caseItem.sourceRef);
+  if (sourceLabel) {
+    return `${sourceType} · ${sourceLabel}`;
+  }
+  if (sourceRef) {
+    return `${sourceType} · ${sourceRef}`;
+  }
+  return sourceType;
+}
+
+function getCaseSourceDetail(caseItem: CaseItem) {
+  const parts = [getTrimmedString(caseItem.sourceRef), getTrimmedString(caseItem.sourceUrl)].filter(Boolean);
+  return parts.join(" · ");
+}
+
 function buildCaseCoverage(caseItem: CaseItem) {
   const inputPayload = caseItem.inputPayload || {};
   const viralTargets = caseItem.viralTargets || {};
@@ -122,6 +250,11 @@ function buildCaseCoverage(caseItem: CaseItem) {
 export function AdminWritingEvalDatasetsClient({
   initialDatasets,
   initialCases,
+  articleImportOptions,
+  knowledgeCardImportOptions,
+  topicImportOptions,
+  fragmentImportOptions,
+  initialAutoFillAuditLogs,
   initialSelectedDatasetId,
   initialSelectedCaseId,
   focusDataset,
@@ -129,6 +262,11 @@ export function AdminWritingEvalDatasetsClient({
 }: {
   initialDatasets: DatasetItem[];
   initialCases: CaseItem[];
+  articleImportOptions: ArticleImportOption[];
+  knowledgeCardImportOptions: KnowledgeCardImportOption[];
+  topicImportOptions: TopicImportOption[];
+  fragmentImportOptions: FragmentImportOption[];
+  initialAutoFillAuditLogs: AutoFillAuditLogItem[];
   initialSelectedDatasetId?: number | null;
   initialSelectedCaseId?: number | null;
   focusDataset?: {
@@ -146,10 +284,23 @@ export function AdminWritingEvalDatasetsClient({
   const pathname = usePathname();
   const [message, setMessage] = useState("");
   const [datasets, setDatasets] = useState(initialDatasets);
+  const [articleImportCandidates, setArticleImportCandidates] = useState(articleImportOptions);
+  const [knowledgeCardImportCandidates, setKnowledgeCardImportCandidates] = useState(knowledgeCardImportOptions);
+  const [topicImportCandidates, setTopicImportCandidates] = useState(topicImportOptions);
+  const [fragmentImportCandidates, setFragmentImportCandidates] = useState(fragmentImportOptions);
+  const [autoFillAuditLogs, setAutoFillAuditLogs] = useState(initialAutoFillAuditLogs);
   const [selectedDatasetId, setSelectedDatasetId] = useState<number | null>(initialSelectedDatasetId ?? initialDatasets[0]?.id ?? null);
   const [cases, setCases] = useState(initialCases);
   const [selectedCaseId, setSelectedCaseId] = useState<number | null>(initialSelectedCaseId ?? initialCases[0]?.id ?? null);
   const [loadingCases, setLoadingCases] = useState(false);
+  const [importingBatchArticles, setImportingBatchArticles] = useState(false);
+  const [importingBatchKnowledgeCards, setImportingBatchKnowledgeCards] = useState(false);
+  const [importingBatchTopics, setImportingBatchTopics] = useState(false);
+  const [importingBatchFragments, setImportingBatchFragments] = useState(false);
+  const [loadingImportRecommendations, setLoadingImportRecommendations] = useState(false);
+  const [autoFillingImports, setAutoFillingImports] = useState(false);
+  const [importRecommendationTargets, setImportRecommendationTargets] = useState<string[]>([]);
+  const [importRecommendations, setImportRecommendations] = useState<ImportRecommendationItem[]>([]);
   const [datasetForm, setDatasetForm] = useState({
     code: "",
     name: "",
@@ -161,6 +312,18 @@ export function AdminWritingEvalDatasetsClient({
     name: "",
     description: "",
     status: "draft",
+  });
+  const [articleImportForm, setArticleImportForm] = useState({
+    articleId: "",
+  });
+  const [knowledgeCardImportForm, setKnowledgeCardImportForm] = useState({
+    knowledgeCardId: "",
+  });
+  const [topicImportForm, setTopicImportForm] = useState({
+    topicItemId: "",
+  });
+  const [fragmentImportForm, setFragmentImportForm] = useState({
+    fragmentId: "",
   });
   const [caseForm, setCaseForm] = useState({
     taskCode: "",
@@ -202,6 +365,9 @@ export function AdminWritingEvalDatasetsClient({
   });
 
   const selectedDataset = datasets.find((item) => item.id === selectedDatasetId) ?? null;
+  const selectedDatasetAutoFillLogs = selectedDataset
+    ? autoFillAuditLogs.filter((item) => item.targetId === String(selectedDataset.id)).slice(0, 6)
+    : [];
   const selectedCase = cases.find((item) => item.id === selectedCaseId) ?? null;
   const selectedDatasetReadinessMeta = getDatasetReadinessMeta(selectedDataset?.readiness);
   const difficultyCounts = cases.reduce<Record<string, number>>((acc, item) => {
@@ -230,6 +396,30 @@ export function AdminWritingEvalDatasetsClient({
     },
   );
   const selectedCaseCoverage = selectedCase ? buildCaseCoverage(selectedCase) : null;
+  const recentArticleOptions = articleImportCandidates.slice(0, 12);
+  const importableRecentArticleIds = selectedDataset
+    ? recentArticleOptions
+      .filter((article) => !article.alreadyImportedDatasetIds.includes(selectedDataset.id))
+      .map((article) => article.id)
+    : [];
+  const recentKnowledgeCardOptions = knowledgeCardImportCandidates.slice(0, 12);
+  const importableRecentKnowledgeCardIds = selectedDataset
+    ? recentKnowledgeCardOptions
+      .filter((card) => !card.alreadyImportedDatasetIds.includes(selectedDataset.id))
+      .map((card) => card.id)
+    : [];
+  const recentTopicOptions = topicImportCandidates.slice(0, 12);
+  const importableRecentTopicIds = selectedDataset
+    ? recentTopicOptions
+      .filter((topic) => !topic.alreadyImportedDatasetIds.includes(selectedDataset.id))
+      .map((topic) => topic.id)
+    : [];
+  const recentFragmentOptions = fragmentImportCandidates.slice(0, 12);
+  const importableRecentFragmentIds = selectedDataset
+    ? recentFragmentOptions
+      .filter((fragment) => !fragment.alreadyImportedDatasetIds.includes(selectedDataset.id))
+      .map((fragment) => fragment.id)
+    : [];
   const selectedCaseMissingFields = selectedCaseCoverage
     ? [
         selectedCaseCoverage.readerProfile ? null : "readerProfile",
@@ -265,6 +455,10 @@ export function AdminWritingEvalDatasetsClient({
   }, [pathname, selectedDatasetId, selectedCaseId]);
 
   useEffect(() => {
+    setAutoFillAuditLogs(initialAutoFillAuditLogs);
+  }, [initialAutoFillAuditLogs]);
+
+  useEffect(() => {
     if (!selectedDatasetId) {
       setCases([]);
       setSelectedCaseId(null);
@@ -290,6 +484,145 @@ export function AdminWritingEvalDatasetsClient({
       cancelled = true;
     };
   }, [selectedDatasetId]);
+
+  async function loadImportRecommendations(datasetId: number) {
+    setLoadingImportRecommendations(true);
+    const response = await fetch(`/api/admin/writing-eval/datasets/${datasetId}/import-recommendations?limit=8`);
+    const json = await response.json().catch(() => ({}));
+    setLoadingImportRecommendations(false);
+    if (!response.ok || !json.success) {
+      setImportRecommendationTargets([]);
+      setImportRecommendations([]);
+      setMessage(json.error || "加载补桶推荐失败");
+      return;
+    }
+    const payload = json.data as ImportRecommendationPayload;
+    setImportRecommendationTargets(Array.isArray(payload.targetSummary) ? payload.targetSummary : []);
+    setImportRecommendations(Array.isArray(payload.recommendations) ? payload.recommendations : []);
+  }
+
+  useEffect(() => {
+    if (!selectedDatasetId) {
+      setImportRecommendationTargets([]);
+      setImportRecommendations([]);
+      return;
+    }
+    let cancelled = false;
+    async function load() {
+      setLoadingImportRecommendations(true);
+      const response = await fetch(`/api/admin/writing-eval/datasets/${selectedDatasetId}/import-recommendations?limit=8`);
+      const json = await response.json().catch(() => ({}));
+      if (cancelled) return;
+      setLoadingImportRecommendations(false);
+      if (!response.ok || !json.success) {
+        setImportRecommendationTargets([]);
+        setImportRecommendations([]);
+        return;
+      }
+      const payload = json.data as ImportRecommendationPayload;
+      setImportRecommendationTargets(Array.isArray(payload.targetSummary) ? payload.targetSummary : []);
+      setImportRecommendations(Array.isArray(payload.recommendations) ? payload.recommendations : []);
+    }
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedDatasetId]);
+
+  function markImportedSources(importedItems: Array<{ sourceType: ImportRecommendationItem["sourceType"]; sourceId: number }>) {
+    if (!selectedDatasetId || importedItems.length === 0) return;
+    const importedByType = new Map<ImportRecommendationItem["sourceType"], Set<number>>();
+    for (const item of importedItems) {
+      const current = importedByType.get(item.sourceType) ?? new Set<number>();
+      current.add(item.sourceId);
+      importedByType.set(item.sourceType, current);
+    }
+    setArticleImportCandidates((prev) => prev.map((item) => (
+      importedByType.get("article")?.has(item.id)
+        ? { ...item, alreadyImportedDatasetIds: item.alreadyImportedDatasetIds.includes(selectedDatasetId) ? item.alreadyImportedDatasetIds : [...item.alreadyImportedDatasetIds, selectedDatasetId] }
+        : item
+    )));
+    setKnowledgeCardImportCandidates((prev) => prev.map((item) => (
+      importedByType.get("knowledge_card")?.has(item.id)
+        ? { ...item, alreadyImportedDatasetIds: item.alreadyImportedDatasetIds.includes(selectedDatasetId) ? item.alreadyImportedDatasetIds : [...item.alreadyImportedDatasetIds, selectedDatasetId] }
+        : item
+    )));
+    setTopicImportCandidates((prev) => prev.map((item) => (
+      importedByType.get("topic_item")?.has(item.id)
+        ? { ...item, alreadyImportedDatasetIds: item.alreadyImportedDatasetIds.includes(selectedDatasetId) ? item.alreadyImportedDatasetIds : [...item.alreadyImportedDatasetIds, selectedDatasetId] }
+        : item
+    )));
+    setFragmentImportCandidates((prev) => prev.map((item) => (
+      importedByType.get("fragment")?.has(item.id)
+        ? { ...item, alreadyImportedDatasetIds: item.alreadyImportedDatasetIds.includes(selectedDatasetId) ? item.alreadyImportedDatasetIds : [...item.alreadyImportedDatasetIds, selectedDatasetId] }
+        : item
+    )));
+  }
+
+  async function handleAutoFillImports(limit: number) {
+    if (!selectedDatasetId) {
+      setMessage("请先选择一个评测集");
+      return;
+    }
+    setAutoFillingImports(true);
+    setMessage("");
+    try {
+      const response = await fetch(`/api/admin/writing-eval/datasets/${selectedDatasetId}/auto-fill`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ maxImports: limit }),
+      });
+      const json = await response.json().catch(() => ({}));
+      if (!response.ok || !json.success) {
+        setMessage(json.error || "自动补桶失败");
+        return;
+      }
+      const payload = json.data as {
+        createdCases: CaseItem[];
+        importedItems: Array<{ sourceType: ImportRecommendationItem["sourceType"]; sourceId: number }>;
+        skipped: Array<{ sourceType: string; sourceId: number; reason: string }>;
+      };
+      const createdCases = Array.isArray(payload.createdCases) ? payload.createdCases : [];
+      const importedItems = Array.isArray(payload.importedItems) ? payload.importedItems : [];
+      const skipped = Array.isArray(payload.skipped) ? payload.skipped : [];
+      if (createdCases.length > 0) {
+        const createdCaseIds = new Set(createdCases.map((item) => item.id));
+        setCases((prev) => [...createdCases, ...prev.filter((item) => !createdCaseIds.has(item.id))]);
+        setSelectedCaseId(createdCases[0]?.id ?? null);
+        setDatasets((prev) => prev.map((item) => (
+          item.id === selectedDatasetId ? { ...item, sampleCount: item.sampleCount + createdCases.length } : item
+        )));
+        markImportedSources(importedItems);
+      }
+      await loadImportRecommendations(selectedDatasetId);
+      setMessage(
+        createdCases.length > 0
+          ? `已自动补桶导入 ${createdCases.length} 条样本${skipped.length > 0 ? `，跳过 ${skipped.length} 条` : ""}`
+          : skipped.length > 0
+            ? `没有新增样本，已跳过 ${skipped.length} 条候选`
+            : "当前没有可自动补入的新样本",
+      );
+      startTransition(() => router.refresh());
+    } finally {
+      setAutoFillingImports(false);
+    }
+  }
+
+  async function importRecommendedItem(item: ImportRecommendationItem) {
+    if (item.sourceType === "article") {
+      await importArticleById(item.sourceId);
+      return;
+    }
+    if (item.sourceType === "knowledge_card") {
+      await importKnowledgeCardById(item.sourceId);
+      return;
+    }
+    if (item.sourceType === "topic_item") {
+      await importTopicById(item.sourceId);
+      return;
+    }
+    await importFragmentById(item.sourceId);
+  }
 
   useEffect(() => {
     if (!selectedDataset) {
@@ -424,8 +757,397 @@ export function AdminWritingEvalDatasetsClient({
       }),
       referenceGoodOutput: "",
     }));
+    await loadImportRecommendations(selectedDatasetId);
     setMessage(`已创建样本 ${created.taskCode}`);
     startTransition(() => router.refresh());
+  }
+
+  async function importArticleById(articleId: number) {
+    if (!selectedDatasetId) {
+      setMessage("请先选择一个评测集");
+      return;
+    }
+    if (!Number.isInteger(articleId) || articleId <= 0) {
+      setMessage("请输入有效的历史稿件 ID");
+      return;
+    }
+    setMessage("");
+    const response = await fetch(`/api/admin/writing-eval/datasets/${selectedDatasetId}/import-article`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ articleId }),
+    });
+    const json = await response.json().catch(() => ({}));
+    if (!response.ok || !json.success) {
+      setMessage(json.error || "导入历史稿件失败");
+      return;
+    }
+    const created = json.data as CaseItem;
+    setCases((prev) => [created, ...prev]);
+    setSelectedCaseId(created.id);
+    setDatasets((prev) => prev.map((item) => (item.id === selectedDatasetId ? { ...item, sampleCount: item.sampleCount + 1 } : item)));
+    setArticleImportCandidates((prev) => prev.map((item) => (
+      item.id === articleId
+        ? { ...item, alreadyImportedDatasetIds: item.alreadyImportedDatasetIds.includes(selectedDatasetId) ? item.alreadyImportedDatasetIds : [...item.alreadyImportedDatasetIds, selectedDatasetId] }
+        : item
+    )));
+    setArticleImportForm({ articleId: "" });
+    await loadImportRecommendations(selectedDatasetId);
+    setMessage(`已从历史稿件 ${articleId} 导入样本 ${created.taskCode}`);
+    startTransition(() => router.refresh());
+  }
+
+  async function handleImportArticle(event: FormEvent) {
+    event.preventDefault();
+    await importArticleById(Number(articleImportForm.articleId));
+  }
+
+  async function handleImportRecentArticles(limit: number) {
+    if (!selectedDatasetId) {
+      setMessage("请先选择一个评测集");
+      return;
+    }
+    const articleIds = importableRecentArticleIds.slice(0, limit);
+    if (articleIds.length === 0) {
+      setMessage("最近文章里没有可导入的新稿件");
+      return;
+    }
+    setImportingBatchArticles(true);
+    setMessage("");
+    try {
+      const response = await fetch(`/api/admin/writing-eval/datasets/${selectedDatasetId}/import-articles`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ articleIds }),
+      });
+      const json = await response.json().catch(() => ({}));
+      if (!response.ok || !json.success) {
+        setMessage(json.error || "批量导入历史稿件失败");
+        return;
+      }
+      const payload = json.data as {
+        createdCases: CaseItem[];
+        skipped: Array<{ articleId: number; reason: string }>;
+      };
+      const createdCases = Array.isArray(payload.createdCases) ? payload.createdCases : [];
+      const skipped = Array.isArray(payload.skipped) ? payload.skipped : [];
+      if (createdCases.length > 0) {
+        const createdCaseIds = new Set(createdCases.map((item) => item.id));
+        setCases((prev) => [...createdCases, ...prev.filter((item) => !createdCaseIds.has(item.id))]);
+        setSelectedCaseId(createdCases[0]?.id ?? null);
+        setDatasets((prev) => prev.map((item) => (
+          item.id === selectedDatasetId ? { ...item, sampleCount: item.sampleCount + createdCases.length } : item
+        )));
+        const importedArticleIds = new Set(articleIds.filter((articleId) => !skipped.some((item) => item.articleId === articleId)));
+        setArticleImportCandidates((prev) => prev.map((item) => (
+          importedArticleIds.has(item.id)
+            ? { ...item, alreadyImportedDatasetIds: item.alreadyImportedDatasetIds.includes(selectedDatasetId) ? item.alreadyImportedDatasetIds : [...item.alreadyImportedDatasetIds, selectedDatasetId] }
+            : item
+        )));
+      }
+      await loadImportRecommendations(selectedDatasetId);
+      setMessage(
+        createdCases.length > 0
+          ? `已批量导入 ${createdCases.length} 篇历史稿件${skipped.length > 0 ? `，跳过 ${skipped.length} 篇` : ""}`
+          : skipped.length > 0
+            ? `没有新增样本，已跳过 ${skipped.length} 篇历史稿件`
+            : "没有新增样本",
+      );
+      startTransition(() => router.refresh());
+    } finally {
+      setImportingBatchArticles(false);
+    }
+  }
+
+  async function importKnowledgeCardById(knowledgeCardId: number) {
+    if (!selectedDatasetId) {
+      setMessage("请先选择一个评测集");
+      return;
+    }
+    if (!Number.isInteger(knowledgeCardId) || knowledgeCardId <= 0) {
+      setMessage("请输入有效的知识卡 ID");
+      return;
+    }
+    setMessage("");
+    const response = await fetch(`/api/admin/writing-eval/datasets/${selectedDatasetId}/import-knowledge-card`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ knowledgeCardId }),
+    });
+    const json = await response.json().catch(() => ({}));
+    if (!response.ok || !json.success) {
+      setMessage(json.error || "导入知识卡失败");
+      return;
+    }
+    const created = json.data as CaseItem;
+    setCases((prev) => [created, ...prev]);
+    setSelectedCaseId(created.id);
+    setDatasets((prev) => prev.map((item) => (item.id === selectedDatasetId ? { ...item, sampleCount: item.sampleCount + 1 } : item)));
+    setKnowledgeCardImportCandidates((prev) => prev.map((item) => (
+      item.id === knowledgeCardId
+        ? { ...item, alreadyImportedDatasetIds: item.alreadyImportedDatasetIds.includes(selectedDatasetId) ? item.alreadyImportedDatasetIds : [...item.alreadyImportedDatasetIds, selectedDatasetId] }
+        : item
+    )));
+    setKnowledgeCardImportForm({ knowledgeCardId: "" });
+    await loadImportRecommendations(selectedDatasetId);
+    setMessage(`已从知识卡 ${knowledgeCardId} 导入样本 ${created.taskCode}`);
+    startTransition(() => router.refresh());
+  }
+
+  async function handleImportKnowledgeCard(event: FormEvent) {
+    event.preventDefault();
+    await importKnowledgeCardById(Number(knowledgeCardImportForm.knowledgeCardId));
+  }
+
+  async function handleImportRecentKnowledgeCards(limit: number) {
+    if (!selectedDatasetId) {
+      setMessage("请先选择一个评测集");
+      return;
+    }
+    const knowledgeCardIds = importableRecentKnowledgeCardIds.slice(0, limit);
+    if (knowledgeCardIds.length === 0) {
+      setMessage("最近知识卡里没有可导入的新条目");
+      return;
+    }
+    setImportingBatchKnowledgeCards(true);
+    setMessage("");
+    try {
+      const response = await fetch(`/api/admin/writing-eval/datasets/${selectedDatasetId}/import-knowledge-cards`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ knowledgeCardIds }),
+      });
+      const json = await response.json().catch(() => ({}));
+      if (!response.ok || !json.success) {
+        setMessage(json.error || "批量导入知识卡失败");
+        return;
+      }
+      const payload = json.data as {
+        createdCases: CaseItem[];
+        skipped: Array<{ knowledgeCardId: number; reason: string }>;
+      };
+      const createdCases = Array.isArray(payload.createdCases) ? payload.createdCases : [];
+      const skipped = Array.isArray(payload.skipped) ? payload.skipped : [];
+      if (createdCases.length > 0) {
+        const createdCaseIds = new Set(createdCases.map((item) => item.id));
+        setCases((prev) => [...createdCases, ...prev.filter((item) => !createdCaseIds.has(item.id))]);
+        setSelectedCaseId(createdCases[0]?.id ?? null);
+        setDatasets((prev) => prev.map((item) => (
+          item.id === selectedDatasetId ? { ...item, sampleCount: item.sampleCount + createdCases.length } : item
+        )));
+        const importedKnowledgeCardIds = new Set(knowledgeCardIds.filter((knowledgeCardId) => !skipped.some((item) => item.knowledgeCardId === knowledgeCardId)));
+        setKnowledgeCardImportCandidates((prev) => prev.map((item) => (
+          importedKnowledgeCardIds.has(item.id)
+            ? { ...item, alreadyImportedDatasetIds: item.alreadyImportedDatasetIds.includes(selectedDatasetId) ? item.alreadyImportedDatasetIds : [...item.alreadyImportedDatasetIds, selectedDatasetId] }
+            : item
+        )));
+      }
+      await loadImportRecommendations(selectedDatasetId);
+      setMessage(
+        createdCases.length > 0
+          ? `已批量导入 ${createdCases.length} 张知识卡${skipped.length > 0 ? `，跳过 ${skipped.length} 张` : ""}`
+          : skipped.length > 0
+            ? `没有新增样本，已跳过 ${skipped.length} 张知识卡`
+            : "没有新增样本",
+      );
+      startTransition(() => router.refresh());
+    } finally {
+      setImportingBatchKnowledgeCards(false);
+    }
+  }
+
+  async function importTopicById(topicItemId: number) {
+    if (!selectedDatasetId) {
+      setMessage("请先选择一个评测集");
+      return;
+    }
+    if (!Number.isInteger(topicItemId) || topicItemId <= 0) {
+      setMessage("请输入有效的主题档案 ID");
+      return;
+    }
+    setMessage("");
+    const response = await fetch(`/api/admin/writing-eval/datasets/${selectedDatasetId}/import-topic`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ topicItemId }),
+    });
+    const json = await response.json().catch(() => ({}));
+    if (!response.ok || !json.success) {
+      setMessage(json.error || "导入主题档案失败");
+      return;
+    }
+    const created = json.data as CaseItem;
+    setCases((prev) => [created, ...prev]);
+    setSelectedCaseId(created.id);
+    setDatasets((prev) => prev.map((item) => (item.id === selectedDatasetId ? { ...item, sampleCount: item.sampleCount + 1 } : item)));
+    setTopicImportCandidates((prev) => prev.map((item) => (
+      item.id === topicItemId
+        ? { ...item, alreadyImportedDatasetIds: item.alreadyImportedDatasetIds.includes(selectedDatasetId) ? item.alreadyImportedDatasetIds : [...item.alreadyImportedDatasetIds, selectedDatasetId] }
+        : item
+    )));
+    setTopicImportForm({ topicItemId: "" });
+    await loadImportRecommendations(selectedDatasetId);
+    setMessage(`已从主题档案 ${topicItemId} 导入样本 ${created.taskCode}`);
+    startTransition(() => router.refresh());
+  }
+
+  async function handleImportTopic(event: FormEvent) {
+    event.preventDefault();
+    await importTopicById(Number(topicImportForm.topicItemId));
+  }
+
+  async function handleImportRecentTopics(limit: number) {
+    if (!selectedDatasetId) {
+      setMessage("请先选择一个评测集");
+      return;
+    }
+    const topicItemIds = importableRecentTopicIds.slice(0, limit);
+    if (topicItemIds.length === 0) {
+      setMessage("最近主题档案里没有可导入的新条目");
+      return;
+    }
+    setImportingBatchTopics(true);
+    setMessage("");
+    try {
+      const response = await fetch(`/api/admin/writing-eval/datasets/${selectedDatasetId}/import-topics`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ topicItemIds }),
+      });
+      const json = await response.json().catch(() => ({}));
+      if (!response.ok || !json.success) {
+        setMessage(json.error || "批量导入主题档案失败");
+        return;
+      }
+      const payload = json.data as {
+        createdCases: CaseItem[];
+        skipped: Array<{ topicItemId: number; reason: string }>;
+      };
+      const createdCases = Array.isArray(payload.createdCases) ? payload.createdCases : [];
+      const skipped = Array.isArray(payload.skipped) ? payload.skipped : [];
+      if (createdCases.length > 0) {
+        const createdCaseIds = new Set(createdCases.map((item) => item.id));
+        setCases((prev) => [...createdCases, ...prev.filter((item) => !createdCaseIds.has(item.id))]);
+        setSelectedCaseId(createdCases[0]?.id ?? null);
+        setDatasets((prev) => prev.map((item) => (
+          item.id === selectedDatasetId ? { ...item, sampleCount: item.sampleCount + createdCases.length } : item
+        )));
+        const importedTopicItemIds = new Set(topicItemIds.filter((topicItemId) => !skipped.some((item) => item.topicItemId === topicItemId)));
+        setTopicImportCandidates((prev) => prev.map((item) => (
+          importedTopicItemIds.has(item.id)
+            ? { ...item, alreadyImportedDatasetIds: item.alreadyImportedDatasetIds.includes(selectedDatasetId) ? item.alreadyImportedDatasetIds : [...item.alreadyImportedDatasetIds, selectedDatasetId] }
+            : item
+        )));
+      }
+      await loadImportRecommendations(selectedDatasetId);
+      setMessage(
+        createdCases.length > 0
+          ? `已批量导入 ${createdCases.length} 条主题档案${skipped.length > 0 ? `，跳过 ${skipped.length} 条` : ""}`
+          : skipped.length > 0
+            ? `没有新增样本，已跳过 ${skipped.length} 条主题档案`
+            : "没有新增样本",
+      );
+      startTransition(() => router.refresh());
+    } finally {
+      setImportingBatchTopics(false);
+    }
+  }
+
+  async function importFragmentById(fragmentId: number) {
+    if (!selectedDatasetId) {
+      setMessage("请先选择一个评测集");
+      return;
+    }
+    if (!Number.isInteger(fragmentId) || fragmentId <= 0) {
+      setMessage("请输入有效的素材 ID");
+      return;
+    }
+    setMessage("");
+    const response = await fetch(`/api/admin/writing-eval/datasets/${selectedDatasetId}/import-fragment`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ fragmentId }),
+    });
+    const json = await response.json().catch(() => ({}));
+    if (!response.ok || !json.success) {
+      setMessage(json.error || "导入素材失败");
+      return;
+    }
+    const created = json.data as CaseItem;
+    setCases((prev) => [created, ...prev]);
+    setSelectedCaseId(created.id);
+    setDatasets((prev) => prev.map((item) => (item.id === selectedDatasetId ? { ...item, sampleCount: item.sampleCount + 1 } : item)));
+    setFragmentImportCandidates((prev) => prev.map((item) => (
+      item.id === fragmentId
+        ? { ...item, alreadyImportedDatasetIds: item.alreadyImportedDatasetIds.includes(selectedDatasetId) ? item.alreadyImportedDatasetIds : [...item.alreadyImportedDatasetIds, selectedDatasetId] }
+        : item
+    )));
+    setFragmentImportForm({ fragmentId: "" });
+    await loadImportRecommendations(selectedDatasetId);
+    setMessage(`已从素材 ${fragmentId} 导入样本 ${created.taskCode}`);
+    startTransition(() => router.refresh());
+  }
+
+  async function handleImportFragment(event: FormEvent) {
+    event.preventDefault();
+    await importFragmentById(Number(fragmentImportForm.fragmentId));
+  }
+
+  async function handleImportRecentFragments(limit: number) {
+    if (!selectedDatasetId) {
+      setMessage("请先选择一个评测集");
+      return;
+    }
+    const fragmentIds = importableRecentFragmentIds.slice(0, limit);
+    if (fragmentIds.length === 0) {
+      setMessage("最近素材里没有可导入的新条目");
+      return;
+    }
+    setImportingBatchFragments(true);
+    setMessage("");
+    try {
+      const response = await fetch(`/api/admin/writing-eval/datasets/${selectedDatasetId}/import-fragments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fragmentIds }),
+      });
+      const json = await response.json().catch(() => ({}));
+      if (!response.ok || !json.success) {
+        setMessage(json.error || "批量导入素材失败");
+        return;
+      }
+      const payload = json.data as {
+        createdCases: CaseItem[];
+        skipped: Array<{ fragmentId: number; reason: string }>;
+      };
+      const createdCases = Array.isArray(payload.createdCases) ? payload.createdCases : [];
+      const skipped = Array.isArray(payload.skipped) ? payload.skipped : [];
+      if (createdCases.length > 0) {
+        const createdCaseIds = new Set(createdCases.map((item) => item.id));
+        setCases((prev) => [...createdCases, ...prev.filter((item) => !createdCaseIds.has(item.id))]);
+        setSelectedCaseId(createdCases[0]?.id ?? null);
+        setDatasets((prev) => prev.map((item) => (
+          item.id === selectedDatasetId ? { ...item, sampleCount: item.sampleCount + createdCases.length } : item
+        )));
+        const importedFragmentIds = new Set(fragmentIds.filter((fragmentId) => !skipped.some((item) => item.fragmentId === fragmentId)));
+        setFragmentImportCandidates((prev) => prev.map((item) => (
+          importedFragmentIds.has(item.id)
+            ? { ...item, alreadyImportedDatasetIds: item.alreadyImportedDatasetIds.includes(selectedDatasetId) ? item.alreadyImportedDatasetIds : [...item.alreadyImportedDatasetIds, selectedDatasetId] }
+            : item
+        )));
+      }
+      await loadImportRecommendations(selectedDatasetId);
+      setMessage(
+        createdCases.length > 0
+          ? `已批量导入 ${createdCases.length} 条素材${skipped.length > 0 ? `，跳过 ${skipped.length} 条` : ""}`
+          : skipped.length > 0
+            ? `没有新增样本，已跳过 ${skipped.length} 条素材`
+            : "没有新增样本",
+      );
+      startTransition(() => router.refresh());
+    } finally {
+      setImportingBatchFragments(false);
+    }
   }
 
   async function handleSaveDataset(event: FormEvent) {
@@ -497,6 +1219,9 @@ export function AdminWritingEvalDatasetsClient({
     }
     const updated = json.data as CaseItem;
     setCases((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
+    if (selectedDatasetId) {
+      await loadImportRecommendations(selectedDatasetId);
+    }
     setMessage(`已更新样本 ${updated.taskCode}`);
     startTransition(() => router.refresh());
   }
@@ -507,7 +1232,7 @@ export function AdminWritingEvalDatasetsClient({
         <div className="flex items-start justify-between gap-4">
           <div>
             <div className="text-xs uppercase tracking-[0.28em] text-cinnabar">Writing Eval Datasets</div>
-            <h1 className="mt-4 font-serifCn text-4xl text-stone-100">评测集与样本管理</h1>
+            <h1 className="mt-4 font-serifCn text-4xl text-stone-100 text-balance">评测集与样本管理</h1>
             <p className="mt-4 max-w-4xl text-sm leading-7 text-stone-400">
               这里单独管理固定评测集、样本难度分布和样本编辑器，避免运行页同时承担实验编排与样本维护两种职责。
             </p>
@@ -554,10 +1279,10 @@ export function AdminWritingEvalDatasetsClient({
       <section className="grid gap-6 xl:grid-cols-[360px_minmax(0,1fr)]">
         <form onSubmit={handleCreateDataset} className={uiPrimitives.adminPanel + " space-y-3 p-5"}>
           <div className="text-xs uppercase tracking-[0.24em] text-stone-500">新建评测集</div>
-          <input value={datasetForm.code} onChange={(event) => setDatasetForm((prev) => ({ ...prev, code: event.target.value }))} placeholder="编码，例如 viral-mvp-v1" className={uiPrimitives.adminInput} />
-          <input value={datasetForm.name} onChange={(event) => setDatasetForm((prev) => ({ ...prev, name: event.target.value }))} placeholder="名称" className={uiPrimitives.adminInput} />
-          <textarea value={datasetForm.description} onChange={(event) => setDatasetForm((prev) => ({ ...prev, description: event.target.value }))} placeholder="说明" className={`min-h-[120px] ${uiPrimitives.adminInput}`} />
-          <select value={datasetForm.status} onChange={(event) => setDatasetForm((prev) => ({ ...prev, status: event.target.value }))} className={uiPrimitives.adminSelect}>
+          <input aria-label="编码，例如 viral-mvp-v1" value={datasetForm.code} onChange={(event) => setDatasetForm((prev) => ({ ...prev, code: event.target.value }))} placeholder="编码，例如 viral-mvp-v1" className={uiPrimitives.adminInput} />
+          <input aria-label="名称" value={datasetForm.name} onChange={(event) => setDatasetForm((prev) => ({ ...prev, name: event.target.value }))} placeholder="名称" className={uiPrimitives.adminInput} />
+          <textarea aria-label="说明" value={datasetForm.description} onChange={(event) => setDatasetForm((prev) => ({ ...prev, description: event.target.value }))} placeholder="说明" className={`min-h-[120px] ${uiPrimitives.adminInput}`} />
+          <select aria-label="select control" value={datasetForm.status} onChange={(event) => setDatasetForm((prev) => ({ ...prev, status: event.target.value }))} className={uiPrimitives.adminSelect}>
             <option value="draft">draft</option>
             <option value="active">active</option>
             <option value="archived">archived</option>
@@ -569,7 +1294,7 @@ export function AdminWritingEvalDatasetsClient({
           <div className="flex items-center justify-between gap-3">
             <div>
               <div className="text-xs uppercase tracking-[0.24em] text-stone-500">数据集列表</div>
-              <h2 className="mt-3 font-serifCn text-2xl text-stone-100">当前评测集</h2>
+              <h2 className="mt-3 font-serifCn text-2xl text-stone-100 text-balance">当前评测集</h2>
             </div>
             <div className="text-sm text-stone-500">{datasets.length} 个数据集</div>
           </div>
@@ -615,9 +1340,9 @@ export function AdminWritingEvalDatasetsClient({
             <div className="flex items-start justify-between gap-4">
               <div>
                 <div className="text-xs uppercase tracking-[0.24em] text-stone-500">数据集详情</div>
-                <h2 className="mt-3 font-serifCn text-2xl text-stone-100">{selectedDataset?.name || "选择一个评测集"}</h2>
+                <h2 className="mt-3 font-serifCn text-2xl text-stone-100 text-balance">{selectedDataset?.name || "选择一个评测集"}</h2>
               </div>
-              <div className="text-sm text-stone-500">{loadingCases ? "加载样本中..." : `${cases.length} 条样本`}</div>
+              <div className="text-sm text-stone-500">{loadingCases ? "加载样本中…" : `${cases.length} 条样本`}</div>
             </div>
 
             {selectedDataset ? (
@@ -735,10 +1460,10 @@ export function AdminWritingEvalDatasetsClient({
             <div className="text-xs uppercase tracking-[0.24em] text-stone-500">数据集编辑器</div>
             {selectedDataset ? (
               <>
-                <input value={datasetEditorForm.code} onChange={(event) => setDatasetEditorForm((prev) => ({ ...prev, code: event.target.value }))} className={uiPrimitives.adminInput} />
-                <input value={datasetEditorForm.name} onChange={(event) => setDatasetEditorForm((prev) => ({ ...prev, name: event.target.value }))} className={uiPrimitives.adminInput} />
-                <textarea value={datasetEditorForm.description} onChange={(event) => setDatasetEditorForm((prev) => ({ ...prev, description: event.target.value }))} className={`min-h-[110px] ${uiPrimitives.adminInput}`} />
-                <select value={datasetEditorForm.status} onChange={(event) => setDatasetEditorForm((prev) => ({ ...prev, status: event.target.value }))} className={uiPrimitives.adminSelect}>
+                <input aria-label="input control" value={datasetEditorForm.code} onChange={(event) => setDatasetEditorForm((prev) => ({ ...prev, code: event.target.value }))} className={uiPrimitives.adminInput} />
+                <input aria-label="input control" value={datasetEditorForm.name} onChange={(event) => setDatasetEditorForm((prev) => ({ ...prev, name: event.target.value }))} className={uiPrimitives.adminInput} />
+                <textarea aria-label="textarea control" value={datasetEditorForm.description} onChange={(event) => setDatasetEditorForm((prev) => ({ ...prev, description: event.target.value }))} className={`min-h-[110px] ${uiPrimitives.adminInput}`} />
+                <select aria-label="select control" value={datasetEditorForm.status} onChange={(event) => setDatasetEditorForm((prev) => ({ ...prev, status: event.target.value }))} className={uiPrimitives.adminSelect}>
                   <option value="draft">draft</option>
                   <option value="active">active</option>
                   <option value="archived">archived</option>
@@ -754,7 +1479,7 @@ export function AdminWritingEvalDatasetsClient({
             <div className="flex items-center justify-between gap-3">
               <div>
                 <div className="text-xs uppercase tracking-[0.24em] text-stone-500">评测样本</div>
-                <h2 className="mt-3 font-serifCn text-2xl text-stone-100">样本表格</h2>
+                <h2 className="mt-3 font-serifCn text-2xl text-stone-100 text-balance">样本表格</h2>
               </div>
               <div className="text-sm text-stone-500">{cases.length} 条记录</div>
             </div>
@@ -762,7 +1487,7 @@ export function AdminWritingEvalDatasetsClient({
               <table className="w-full min-w-[880px] text-left text-sm">
                 <thead className="text-stone-500">
                   <tr>
-                    {["样本", "类型", "标题", "难度", "启用", "参考好稿", "更新时间"].map((head) => (
+                    {["样本", "类型", "来源", "标题", "难度", "启用", "参考好稿", "更新时间"].map((head) => (
                       <th key={head} className="pb-4 font-medium">
                         {head}
                       </th>
@@ -778,6 +1503,7 @@ export function AdminWritingEvalDatasetsClient({
                     >
                       <td className="py-4 font-mono text-xs text-stone-300">{item.taskCode}</td>
                       <td className="py-4 text-stone-400">{item.taskType}</td>
+                      <td className="py-4 text-xs text-stone-500">{getCaseSourceBadge(item)}</td>
                       <td className="py-4 text-stone-100">{item.topicTitle}</td>
                       <td className="py-4 text-stone-400">{item.difficultyLevel}</td>
                       <td className="py-4 text-stone-400">{item.isEnabled ? "enabled" : "disabled"}</td>
@@ -787,7 +1513,7 @@ export function AdminWritingEvalDatasetsClient({
                   ))}
                   {cases.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="py-6 text-stone-500">
+                      <td colSpan={8} className="py-6 text-stone-500">
                         当前评测集还没有样本。
                       </td>
                     </tr>
@@ -799,11 +1525,544 @@ export function AdminWritingEvalDatasetsClient({
         </div>
 
         <div className="space-y-6">
+          <div className={uiPrimitives.adminPanel + " space-y-4 p-5"}>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-xs uppercase tracking-[0.24em] text-stone-500">自动补桶</div>
+                <h2 className="mt-3 font-serifCn text-2xl text-stone-100 text-balance">按 readiness 缺口推荐样本</h2>
+              </div>
+              <div className="text-xs leading-6 text-stone-500">
+                先推荐，再支持一键自动补入 4 条
+              </div>
+            </div>
+            {selectedDataset ? (
+              <>
+                <div className="border border-stone-800 bg-stone-950 px-4 py-4 text-sm leading-7 text-stone-400">
+                  当前围绕评测集 <span className="text-stone-100">{selectedDataset.code}</span> 的题型、难度和 coverage 缺口生成推荐。
+                  会优先补样本总量、缺失题型、缺失难度，以及 `sourceFacts / knowledgeCards / historyReferences / referenceGoodOutput` 等薄弱项。
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void loadImportRecommendations(selectedDataset.id)}
+                    className={uiPrimitives.adminSecondaryButton}
+                    disabled={loadingImportRecommendations}
+                  >
+                    {loadingImportRecommendations ? "刷新推荐中…" : "刷新推荐"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleAutoFillImports(4)}
+                    className={uiPrimitives.primaryButton}
+                    disabled={autoFillingImports || loadingImportRecommendations || importRecommendations.length === 0}
+                  >
+                    {autoFillingImports ? "自动补桶中…" : "自动补入 4 条"}
+                  </button>
+                </div>
+                {importRecommendationTargets.length > 0 ? (
+                  <div className="flex flex-wrap gap-2 text-xs">
+                    {importRecommendationTargets.map((item) => (
+                      <span key={`import-target-${item}`} className="border border-stone-700 bg-stone-950 px-2 py-1 text-stone-400">
+                        {item}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+                <div className="space-y-3">
+                  {importRecommendations.length > 0 ? (
+                    importRecommendations.map((item) => (
+                      <div key={`${item.sourceType}-${item.sourceId}`} className="border border-stone-800 bg-[#141414] px-3 py-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="text-sm text-stone-100">{item.title}</div>
+                            <div className="mt-1 text-xs text-stone-500">
+                              {item.sourceType} · #{item.sourceId}
+                              {item.subtitle ? ` · ${item.subtitle}` : ""}
+                              {` · score ${item.score}`}
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => void importRecommendedItem(item)}
+                            className={uiPrimitives.adminSecondaryButton}
+                          >
+                            一键导入
+                          </button>
+                        </div>
+                        <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                          <span className="border border-stone-700 px-2 py-1 text-stone-400">{item.suggestedTaskType}</span>
+                          <span className="border border-stone-700 px-2 py-1 text-stone-400">{item.suggestedDifficultyLevel}</span>
+                          <span className="border border-stone-700 px-2 py-1 text-stone-400">facts {item.sourceFactCount}</span>
+                          <span className="border border-stone-700 px-2 py-1 text-stone-400">knowledge {item.knowledgeCardCount}</span>
+                          <span className="border border-stone-700 px-2 py-1 text-stone-400">history {item.historyReferenceCount}</span>
+                          <span className="border border-stone-700 px-2 py-1 text-stone-400">
+                            {item.referenceGoodOutput ? "with good output" : "no good output"}
+                          </span>
+                        </div>
+                        {item.reasonTags.length > 0 ? (
+                          <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                            {item.reasonTags.map((reason) => (
+                              <span key={`${item.sourceType}-${item.sourceId}-${reason}`} className="border border-cyan-900/60 bg-cyan-950/40 px-2 py-1 text-cyan-100">
+                                {reason}
+                              </span>
+                            ))}
+                          </div>
+                        ) : null}
+                      </div>
+                    ))
+                  ) : (
+                    <div className="border border-dashed border-stone-700 bg-stone-950 px-4 py-6 text-sm text-stone-500">
+                      {loadingImportRecommendations ? "正在分析当前数据集缺口…" : "当前没有额外推荐样本，可能该数据集已经比较完整，或候选池里没有更合适的条目。"}
+                    </div>
+                  )}
+                </div>
+              </>
+            ) : (
+              <div className="border border-dashed border-stone-700 bg-stone-950 px-4 py-6 text-sm text-stone-500">先从左侧选择一个评测集，再生成补桶推荐。</div>
+            )}
+          </div>
+
+          <div className={uiPrimitives.adminPanel + " space-y-4 p-5"}>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-xs uppercase tracking-[0.24em] text-stone-500">补桶台账</div>
+                <h2 className="mt-3 font-serifCn text-2xl text-stone-100 text-balance">最近自动补桶记录</h2>
+              </div>
+              <div className="text-xs leading-6 text-stone-500">
+                展示最近写入 audit 的自动补桶结果
+              </div>
+            </div>
+            {selectedDataset ? (
+              selectedDatasetAutoFillLogs.length > 0 ? (
+                <div className="space-y-3">
+                  {selectedDatasetAutoFillLogs.map((log) => {
+                    const payload = log.payload || {};
+                    const importedCount = getNumberValue(payload.importedCount);
+                    const targetSummary = getStringArray(payload.targetSummary).slice(0, 4);
+                    const readinessStatus = getTrimmedString(payload.readinessStatus) || "unknown";
+                    const importedItems = Array.isArray(payload.importedItems) ? payload.importedItems.length : 0;
+                    const skippedCount = Array.isArray(payload.skipped) ? payload.skipped.length : 0;
+                    return (
+                      <div key={log.id} className="border border-stone-800 bg-[#141414] px-4 py-4">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <div className="text-sm text-stone-100">
+                              {formatWritingEvalDateTime(log.createdAt)} · 导入 {importedCount} 条样本
+                            </div>
+                            <div className="mt-1 text-xs text-stone-500">
+                              readiness {readinessStatus} · importedItems {importedItems} · skipped {skippedCount}
+                              {log.username ? ` · by ${log.username}` : " · by scheduler/service"}
+                            </div>
+                          </div>
+                          <Link
+                            href={buildAdminWritingEvalRunsHref({ datasetId: selectedDataset.id })}
+                            className={uiPrimitives.adminSecondaryButton}
+                          >
+                            去 Runs
+                          </Link>
+                        </div>
+                        {targetSummary.length > 0 ? (
+                          <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                            {targetSummary.map((item) => (
+                              <span key={`${log.id}-${item}`} className="border border-stone-700 bg-stone-950 px-2 py-1 text-stone-400">
+                                {item}
+                              </span>
+                            ))}
+                          </div>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="border border-dashed border-stone-700 bg-stone-950 px-4 py-6 text-sm text-stone-500">
+                  当前评测集还没有自动补桶记录。后续由 scheduler/service 或管理员触发自动补桶后，会在这里沉淀最近台账。
+                </div>
+              )
+            ) : (
+              <div className="border border-dashed border-stone-700 bg-stone-950 px-4 py-6 text-sm text-stone-500">先从左侧选择一个评测集，再查看补桶台账。</div>
+            )}
+          </div>
+
+          <form onSubmit={handleImportArticle} className={uiPrimitives.adminPanel + " space-y-3 p-5"}>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-xs uppercase tracking-[0.24em] text-stone-500">历史文章导入</div>
+                <h2 className="mt-3 font-serifCn text-2xl text-stone-100 text-balance">从已发布稿件沉淀样本</h2>
+              </div>
+              <div className="text-xs leading-6 text-stone-500">
+                自动带入 stage artifacts、历史参考和好稿正文
+              </div>
+            </div>
+            {selectedDataset ? (
+              <>
+                <div className="border border-stone-800 bg-stone-950 px-4 py-4 text-sm leading-7 text-stone-400">
+                  向当前评测集 <span className="text-stone-100">{selectedDataset.code}</span> 导入历史稿件后，会自动生成
+                  <span className="mx-1 font-mono text-stone-200">taskCode=article-&lt;id&gt;</span>
+                  的 case 草稿，并预填 reference good output、阶段产物与 history references。
+                </div>
+                <input
+                  aria-label="历史稿件 ID"
+                  value={articleImportForm.articleId}
+                  onChange={(event) => setArticleImportForm({ articleId: event.target.value })}
+                  placeholder="历史稿件 ID，例如 123"
+                  className={uiPrimitives.adminInput}
+                />
+                <button className={uiPrimitives.primaryButton}>导入历史稿件</button>
+                <div className="border border-stone-800 bg-stone-950 px-4 py-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="text-xs uppercase tracking-[0.18em] text-stone-500">最近可导入文章</div>
+                      <div className="mt-2 text-sm text-stone-400">优先挑带阶段产物、事实素材、历史参考的稿件，减少手工补样本。</div>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="text-xs text-stone-500">{recentArticleOptions.length} 条</div>
+                      <button
+                        type="button"
+                        onClick={() => void handleImportRecentArticles(5)}
+                        className={uiPrimitives.adminSecondaryButton}
+                        disabled={importingBatchArticles || importableRecentArticleIds.length === 0}
+                      >
+                        {importingBatchArticles ? "批量导入中…" : `导入最近 5 篇未导入文章${importableRecentArticleIds.length > 0 ? `（${Math.min(importableRecentArticleIds.length, 5)} 篇）` : ""}`}
+                      </button>
+                    </div>
+                  </div>
+                  <div className="mt-4 space-y-3">
+                    {recentArticleOptions.length > 0 ? (
+                      recentArticleOptions.map((article) => {
+                        const alreadyImported = selectedDataset ? article.alreadyImportedDatasetIds.includes(selectedDataset.id) : false;
+                        return (
+                          <div key={`article-import-option-${article.id}`} className="border border-stone-800 bg-[#141414] px-3 py-3">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <div className="text-sm text-stone-100">{article.title || `article-${article.id}`}</div>
+                                <div className="mt-1 text-xs text-stone-500">
+                                  #{article.id} · {article.status}
+                                  {article.seriesName ? ` · ${article.seriesName}` : ""}
+                                  {` · ${formatWritingEvalDateTime(article.updatedAt)}`}
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setArticleImportForm({ articleId: String(article.id) });
+                                  void importArticleById(article.id);
+                                }}
+                                className={uiPrimitives.adminSecondaryButton}
+                                disabled={alreadyImported}
+                              >
+                                {alreadyImported ? "当前数据集已导入" : "一键导入"}
+                              </button>
+                            </div>
+                            <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                              <span className="border border-stone-700 px-2 py-1 text-stone-400">{article.suggestedTaskType}</span>
+                              <span className="border border-stone-700 px-2 py-1 text-stone-400">{article.suggestedDifficultyLevel}</span>
+                              <span className="border border-stone-700 px-2 py-1 text-stone-400">facts {article.sourceFactCount}</span>
+                              <span className="border border-stone-700 px-2 py-1 text-stone-400">knowledge {article.knowledgeCardCount}</span>
+                              <span className="border border-stone-700 px-2 py-1 text-stone-400">history {article.historyReferenceCount}</span>
+                              <span className="border border-stone-700 px-2 py-1 text-stone-400">
+                                stages {article.stageCodes.length > 0 ? article.stageCodes.join(", ") : "none"}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })
+                    ) : (
+                      <div className="text-sm text-stone-500">当前没有可用于导入的历史稿件。</div>
+                    )}
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div className="border border-dashed border-stone-700 bg-stone-950 px-4 py-6 text-sm text-stone-500">先从左侧选择一个评测集，再导入历史稿件。</div>
+            )}
+          </form>
+
+          <form onSubmit={handleImportKnowledgeCard} className={uiPrimitives.adminPanel + " space-y-3 p-5"}>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-xs uppercase tracking-[0.24em] text-stone-500">知识卡导入</div>
+                <h2 className="mt-3 font-serifCn text-2xl text-stone-100 text-balance">从背景卡沉淀 case 草稿</h2>
+              </div>
+              <div className="text-xs leading-6 text-stone-500">
+                自动带入 key facts、open questions、related cards
+              </div>
+            </div>
+            {selectedDataset ? (
+              <>
+                <div className="border border-stone-800 bg-stone-950 px-4 py-4 text-sm leading-7 text-stone-400">
+                  向当前评测集 <span className="text-stone-100">{selectedDataset.code}</span> 导入知识卡后，会自动生成
+                  <span className="mx-1 font-mono text-stone-200">taskCode=knowledge-card-&lt;id&gt;</span>
+                  的 case 草稿，并预填 source facts、开放问题、冲突信号和关联背景卡。
+                </div>
+                <input
+                  aria-label="知识卡 ID"
+                  value={knowledgeCardImportForm.knowledgeCardId}
+                  onChange={(event) => setKnowledgeCardImportForm({ knowledgeCardId: event.target.value })}
+                  placeholder="知识卡 ID，例如 42"
+                  className={uiPrimitives.adminInput}
+                />
+                <button className={uiPrimitives.primaryButton}>导入知识卡</button>
+                <div className="border border-stone-800 bg-stone-950 px-4 py-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="text-xs uppercase tracking-[0.18em] text-stone-500">最近可导入知识卡</div>
+                      <div className="mt-2 text-sm text-stone-400">优先挑事实密度高、带开放问题和关联卡的背景卡，能更快补齐中高难样本。</div>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="text-xs text-stone-500">{recentKnowledgeCardOptions.length} 条</div>
+                      <button
+                        type="button"
+                        onClick={() => void handleImportRecentKnowledgeCards(5)}
+                        className={uiPrimitives.adminSecondaryButton}
+                        disabled={importingBatchKnowledgeCards || importableRecentKnowledgeCardIds.length === 0}
+                      >
+                        {importingBatchKnowledgeCards ? "批量导入中…" : `导入最近 5 张未导入知识卡${importableRecentKnowledgeCardIds.length > 0 ? `（${Math.min(importableRecentKnowledgeCardIds.length, 5)} 张）` : ""}`}
+                      </button>
+                    </div>
+                  </div>
+                  <div className="mt-4 space-y-3">
+                    {recentKnowledgeCardOptions.length > 0 ? (
+                      recentKnowledgeCardOptions.map((card) => {
+                        const alreadyImported = selectedDataset ? card.alreadyImportedDatasetIds.includes(selectedDataset.id) : false;
+                        return (
+                          <div key={`knowledge-card-import-option-${card.id}`} className="border border-stone-800 bg-[#141414] px-3 py-3">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <div className="text-sm text-stone-100">{card.title || `knowledge-card-${card.id}`}</div>
+                                <div className="mt-1 text-xs text-stone-500">
+                                  #{card.id} · {card.cardType} · {card.status}
+                                  {card.ownerUsername ? ` · ${card.ownerUsername}` : ""}
+                                  {` · ${formatWritingEvalDateTime(card.updatedAt)}`}
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setKnowledgeCardImportForm({ knowledgeCardId: String(card.id) });
+                                  void importKnowledgeCardById(card.id);
+                                }}
+                                className={uiPrimitives.adminSecondaryButton}
+                                disabled={alreadyImported}
+                              >
+                                {alreadyImported ? "当前数据集已导入" : "一键导入"}
+                              </button>
+                            </div>
+                            <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                              <span className="border border-stone-700 px-2 py-1 text-stone-400">{card.suggestedTaskType}</span>
+                              <span className="border border-stone-700 px-2 py-1 text-stone-400">{card.suggestedDifficultyLevel}</span>
+                              <span className="border border-stone-700 px-2 py-1 text-stone-400">confidence {Math.round(card.confidenceScore * 100)}%</span>
+                              <span className="border border-stone-700 px-2 py-1 text-stone-400">facts {card.sourceFactCount}</span>
+                              <span className="border border-stone-700 px-2 py-1 text-stone-400">related {card.knowledgeCardCount}</span>
+                              <span className="border border-stone-700 px-2 py-1 text-stone-400">history {card.historyReferenceCount}</span>
+                              <span className="border border-stone-700 px-2 py-1 text-stone-400">questions {card.openQuestionCount}</span>
+                              <span className="border border-stone-700 px-2 py-1 text-stone-400">conflicts {card.conflictFlagCount}</span>
+                            </div>
+                          </div>
+                        );
+                      })
+                    ) : (
+                      <div className="text-sm text-stone-500">当前没有可用于导入的知识卡。</div>
+                    )}
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div className="border border-dashed border-stone-700 bg-stone-950 px-4 py-6 text-sm text-stone-500">先从左侧选择一个评测集，再导入知识卡。</div>
+            )}
+          </form>
+
+          <form onSubmit={handleImportTopic} className={uiPrimitives.adminPanel + " space-y-3 p-5"}>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-xs uppercase tracking-[0.24em] text-stone-500">主题档案导入</div>
+                <h2 className="mt-3 font-serifCn text-2xl text-stone-100 text-balance">从热点/选题池沉淀 case 草稿</h2>
+              </div>
+              <div className="text-xs leading-6 text-stone-500">
+                自动带入 topic summary、angle options、匹配背景卡
+              </div>
+            </div>
+            {selectedDataset ? (
+              <>
+                <div className="border border-stone-800 bg-stone-950 px-4 py-4 text-sm leading-7 text-stone-400">
+                  向当前评测集 <span className="text-stone-100">{selectedDataset.code}</span> 导入主题档案后，会自动生成
+                  <span className="mx-1 font-mono text-stone-200">taskCode=topic-item-&lt;id&gt;</span>
+                  的 case 草稿，并预填热点摘要、切角建议与可复用背景卡。
+                </div>
+                <input
+                  aria-label="主题档案 ID"
+                  value={topicImportForm.topicItemId}
+                  onChange={(event) => setTopicImportForm({ topicItemId: event.target.value })}
+                  placeholder="主题档案 ID，例如 88"
+                  className={uiPrimitives.adminInput}
+                />
+                <button className={uiPrimitives.primaryButton}>导入主题档案</button>
+                <div className="border border-stone-800 bg-stone-950 px-4 py-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="text-xs uppercase tracking-[0.18em] text-stone-500">最近可导入主题档案</div>
+                      <div className="mt-2 text-sm text-stone-400">优先挑摘要完整、切角充足、能匹配到背景卡的热点条目，适合快速补足观察类样本。</div>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="text-xs text-stone-500">{recentTopicOptions.length} 条</div>
+                      <button
+                        type="button"
+                        onClick={() => void handleImportRecentTopics(5)}
+                        className={uiPrimitives.adminSecondaryButton}
+                        disabled={importingBatchTopics || importableRecentTopicIds.length === 0}
+                      >
+                        {importingBatchTopics ? "批量导入中…" : `导入最近 5 条未导入主题${importableRecentTopicIds.length > 0 ? `（${Math.min(importableRecentTopicIds.length, 5)} 条）` : ""}`}
+                      </button>
+                    </div>
+                  </div>
+                  <div className="mt-4 space-y-3">
+                    {recentTopicOptions.length > 0 ? (
+                      recentTopicOptions.map((topic) => {
+                        const alreadyImported = selectedDataset ? topic.alreadyImportedDatasetIds.includes(selectedDataset.id) : false;
+                        return (
+                          <div key={`topic-import-option-${topic.id}`} className="border border-stone-800 bg-[#141414] px-3 py-3">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <div className="text-sm text-stone-100">{topic.title || `topic-item-${topic.id}`}</div>
+                                <div className="mt-1 text-xs text-stone-500">
+                                  #{topic.id} · {topic.sourceName} · {topic.sourceType}
+                                  {topic.publishedAt ? ` · ${formatWritingEvalDateTime(topic.publishedAt)}` : ""}
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setTopicImportForm({ topicItemId: String(topic.id) });
+                                  void importTopicById(topic.id);
+                                }}
+                                className={uiPrimitives.adminSecondaryButton}
+                                disabled={alreadyImported}
+                              >
+                                {alreadyImported ? "当前数据集已导入" : "一键导入"}
+                              </button>
+                            </div>
+                            <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                              <span className="border border-stone-700 px-2 py-1 text-stone-400">{topic.suggestedTaskType}</span>
+                              <span className="border border-stone-700 px-2 py-1 text-stone-400">{topic.suggestedDifficultyLevel}</span>
+                              <span className="border border-stone-700 px-2 py-1 text-stone-400">facts {topic.sourceFactCount}</span>
+                              <span className="border border-stone-700 px-2 py-1 text-stone-400">knowledge {topic.knowledgeCardCount}</span>
+                              <span className="border border-stone-700 px-2 py-1 text-stone-400">history {topic.historyReferenceCount}</span>
+                              <span className="border border-stone-700 px-2 py-1 text-stone-400">emotions {topic.emotionLabelCount}</span>
+                              <span className="border border-stone-700 px-2 py-1 text-stone-400">angles {topic.angleOptionCount}</span>
+                            </div>
+                          </div>
+                        );
+                      })
+                    ) : (
+                      <div className="text-sm text-stone-500">当前没有可用于导入的主题档案。</div>
+                    )}
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div className="border border-dashed border-stone-700 bg-stone-950 px-4 py-6 text-sm text-stone-500">先从左侧选择一个评测集，再导入主题档案。</div>
+            )}
+          </form>
+
+          <form onSubmit={handleImportFragment} className={uiPrimitives.adminPanel + " space-y-3 p-5"}>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-xs uppercase tracking-[0.24em] text-stone-500">素材包导入</div>
+                <h2 className="mt-3 font-serifCn text-2xl text-stone-100 text-balance">从素材碎片沉淀 case 草稿</h2>
+              </div>
+              <div className="text-xs leading-6 text-stone-500">
+                自动带入 material bundle、来源边界、关联背景卡
+              </div>
+            </div>
+            {selectedDataset ? (
+              <>
+                <div className="border border-stone-800 bg-stone-950 px-4 py-4 text-sm leading-7 text-stone-400">
+                  向当前评测集 <span className="text-stone-100">{selectedDataset.code}</span> 导入素材后，会自动生成
+                  <span className="mx-1 font-mono text-stone-200">taskCode=fragment-&lt;id&gt;</span>
+                  的 case 草稿，并预填素材包、来源边界和关联背景卡。
+                </div>
+                <input
+                  aria-label="素材 ID"
+                  value={fragmentImportForm.fragmentId}
+                  onChange={(event) => setFragmentImportForm({ fragmentId: event.target.value })}
+                  placeholder="素材 ID，例如 315"
+                  className={uiPrimitives.adminInput}
+                />
+                <button className={uiPrimitives.primaryButton}>导入素材</button>
+                <div className="border border-stone-800 bg-stone-950 px-4 py-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="text-xs uppercase tracking-[0.18em] text-stone-500">最近可导入素材</div>
+                      <div className="mt-2 text-sm text-stone-400">优先挑带外链、截图或已沉淀背景卡的素材，能更快补足 fact/density 维度。</div>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="text-xs text-stone-500">{recentFragmentOptions.length} 条</div>
+                      <button
+                        type="button"
+                        onClick={() => void handleImportRecentFragments(5)}
+                        className={uiPrimitives.adminSecondaryButton}
+                        disabled={importingBatchFragments || importableRecentFragmentIds.length === 0}
+                      >
+                        {importingBatchFragments ? "批量导入中…" : `导入最近 5 条未导入素材${importableRecentFragmentIds.length > 0 ? `（${Math.min(importableRecentFragmentIds.length, 5)} 条）` : ""}`}
+                      </button>
+                    </div>
+                  </div>
+                  <div className="mt-4 space-y-3">
+                    {recentFragmentOptions.length > 0 ? (
+                      recentFragmentOptions.map((fragment) => {
+                        const alreadyImported = selectedDataset ? fragment.alreadyImportedDatasetIds.includes(selectedDataset.id) : false;
+                        return (
+                          <div key={`fragment-import-option-${fragment.id}`} className="border border-stone-800 bg-[#141414] px-3 py-3">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <div className="text-sm text-stone-100">{fragment.title || `fragment-${fragment.id}`}</div>
+                                <div className="mt-1 text-xs text-stone-500">
+                                  #{fragment.id} · {fragment.sourceType}
+                                  {fragment.hasScreenshot ? " · screenshot" : ""}
+                                  {` · ${formatWritingEvalDateTime(fragment.createdAt)}`}
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setFragmentImportForm({ fragmentId: String(fragment.id) });
+                                  void importFragmentById(fragment.id);
+                                }}
+                                className={uiPrimitives.adminSecondaryButton}
+                                disabled={alreadyImported}
+                              >
+                                {alreadyImported ? "当前数据集已导入" : "一键导入"}
+                              </button>
+                            </div>
+                            <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                              <span className="border border-stone-700 px-2 py-1 text-stone-400">{fragment.suggestedTaskType}</span>
+                              <span className="border border-stone-700 px-2 py-1 text-stone-400">{fragment.suggestedDifficultyLevel}</span>
+                              <span className="border border-stone-700 px-2 py-1 text-stone-400">facts {fragment.sourceFactCount}</span>
+                              <span className="border border-stone-700 px-2 py-1 text-stone-400">knowledge {fragment.knowledgeCardCount}</span>
+                              <span className="border border-stone-700 px-2 py-1 text-stone-400">history {fragment.historyReferenceCount}</span>
+                              <span className="border border-stone-700 px-2 py-1 text-stone-400">
+                                {fragment.sourceUrl ? "with url" : "no url"}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })
+                    ) : (
+                      <div className="text-sm text-stone-500">当前没有可用于导入的素材。</div>
+                    )}
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div className="border border-dashed border-stone-700 bg-stone-950 px-4 py-6 text-sm text-stone-500">先从左侧选择一个评测集，再导入素材。</div>
+            )}
+          </form>
+
           <form onSubmit={handleCreateCase} className={uiPrimitives.adminPanel + " space-y-3 p-5"}>
             <div className="text-xs uppercase tracking-[0.24em] text-stone-500">新建样本</div>
-            <input value={caseForm.taskCode} onChange={(event) => setCaseForm((prev) => ({ ...prev, taskCode: event.target.value }))} placeholder="taskCode" className={uiPrimitives.adminInput} />
-            <input value={caseForm.topicTitle} onChange={(event) => setCaseForm((prev) => ({ ...prev, topicTitle: event.target.value }))} placeholder="topicTitle" className={uiPrimitives.adminInput} />
-            <select value={caseForm.taskType} onChange={(event) => setCaseForm((prev) => ({ ...prev, taskType: event.target.value }))} className={uiPrimitives.adminSelect}>
+            <input aria-label="taskCode" value={caseForm.taskCode} onChange={(event) => setCaseForm((prev) => ({ ...prev, taskCode: event.target.value }))} placeholder="taskCode" className={uiPrimitives.adminInput} />
+            <input aria-label="topicTitle" value={caseForm.topicTitle} onChange={(event) => setCaseForm((prev) => ({ ...prev, topicTitle: event.target.value }))} placeholder="topicTitle" className={uiPrimitives.adminInput} />
+            <select aria-label="select control" value={caseForm.taskType} onChange={(event) => setCaseForm((prev) => ({ ...prev, taskType: event.target.value }))} className={uiPrimitives.adminSelect}>
               <option value="tech_commentary">tech_commentary</option>
               <option value="business_breakdown">business_breakdown</option>
               <option value="experience_recap">experience_recap</option>
@@ -814,12 +2073,12 @@ export function AdminWritingEvalDatasetsClient({
               <option value="medium">medium</option>
               <option value="hard">hard</option>
             </select>
-            <textarea value={caseForm.inputPayload} onChange={(event) => setCaseForm((prev) => ({ ...prev, inputPayload: event.target.value }))} className={`min-h-[110px] ${uiPrimitives.adminInput}`} placeholder="输入上下文 JSON" />
-            <textarea value={caseForm.expectedConstraints} onChange={(event) => setCaseForm((prev) => ({ ...prev, expectedConstraints: event.target.value }))} className={`min-h-[110px] ${uiPrimitives.adminInput}`} placeholder="固定约束 JSON" />
-            <textarea value={caseForm.viralTargets} onChange={(event) => setCaseForm((prev) => ({ ...prev, viralTargets: event.target.value }))} className={`min-h-[110px] ${uiPrimitives.adminInput}`} placeholder="爆款目标 JSON" />
-            <textarea value={caseForm.stageArtifactPayloads} onChange={(event) => setCaseForm((prev) => ({ ...prev, stageArtifactPayloads: event.target.value }))} className={`min-h-[150px] ${uiPrimitives.adminInput}`} placeholder="阶段产物 payloads JSON，可选。例：{&quot;deepWriting&quot;:{...}}" />
-            <textarea value={caseForm.referenceBadPatterns} onChange={(event) => setCaseForm((prev) => ({ ...prev, referenceBadPatterns: event.target.value }))} className={`min-h-[90px] ${uiPrimitives.adminInput}`} placeholder="反例模式 JSON 数组" />
-            <textarea value={caseForm.referenceGoodOutput} onChange={(event) => setCaseForm((prev) => ({ ...prev, referenceGoodOutput: event.target.value }))} className={`min-h-[90px] ${uiPrimitives.adminInput}`} placeholder="参考好稿，可选" />
+            <textarea aria-label="输入上下文 JSON" value={caseForm.inputPayload} onChange={(event) => setCaseForm((prev) => ({ ...prev, inputPayload: event.target.value }))} className={`min-h-[110px] ${uiPrimitives.adminInput}`} placeholder="输入上下文 JSON" />
+            <textarea aria-label="固定约束 JSON" value={caseForm.expectedConstraints} onChange={(event) => setCaseForm((prev) => ({ ...prev, expectedConstraints: event.target.value }))} className={`min-h-[110px] ${uiPrimitives.adminInput}`} placeholder="固定约束 JSON" />
+            <textarea aria-label="爆款目标 JSON" value={caseForm.viralTargets} onChange={(event) => setCaseForm((prev) => ({ ...prev, viralTargets: event.target.value }))} className={`min-h-[110px] ${uiPrimitives.adminInput}`} placeholder="爆款目标 JSON" />
+            <textarea aria-label="阶段产物 payloads JSON，可选。例：{&quot;deepWriting&quot;:{...}}" value={caseForm.stageArtifactPayloads} onChange={(event) => setCaseForm((prev) => ({ ...prev, stageArtifactPayloads: event.target.value }))} className={`min-h-[150px] ${uiPrimitives.adminInput}`} placeholder="阶段产物 payloads JSON，可选。例：{&quot;deepWriting&quot;:{...}}" />
+            <textarea aria-label="反例模式 JSON 数组" value={caseForm.referenceBadPatterns} onChange={(event) => setCaseForm((prev) => ({ ...prev, referenceBadPatterns: event.target.value }))} className={`min-h-[90px] ${uiPrimitives.adminInput}`} placeholder="反例模式 JSON 数组" />
+            <textarea aria-label="参考好稿，可选" value={caseForm.referenceGoodOutput} onChange={(event) => setCaseForm((prev) => ({ ...prev, referenceGoodOutput: event.target.value }))} className={`min-h-[90px] ${uiPrimitives.adminInput}`} placeholder="参考好稿，可选" />
             <button className={uiPrimitives.primaryButton}>创建样本</button>
           </form>
 
@@ -827,7 +2086,7 @@ export function AdminWritingEvalDatasetsClient({
             <div className="flex items-start justify-between gap-3">
               <div>
                 <div className="text-xs uppercase tracking-[0.24em] text-stone-500">样本编辑器</div>
-                <h2 className="mt-3 font-serifCn text-2xl text-stone-100">{selectedCase ? selectedCase.taskCode : "选择样本后编辑"}</h2>
+                <h2 className="mt-3 font-serifCn text-2xl text-stone-100 text-balance">{selectedCase ? selectedCase.taskCode : "选择样本后编辑"}</h2>
               </div>
               <div className="flex items-center gap-3">
                 {selectedDataset ? (
@@ -836,13 +2095,27 @@ export function AdminWritingEvalDatasetsClient({
                   </Link>
                 ) : null}
                 <label className="flex items-center gap-2 text-sm text-stone-400">
-                  <input type="checkbox" checked={editorForm.isEnabled} onChange={(event) => setEditorForm((prev) => ({ ...prev, isEnabled: event.target.checked }))} />
+                  <input aria-label="input control" type="checkbox" checked={editorForm.isEnabled} onChange={(event) => setEditorForm((prev) => ({ ...prev, isEnabled: event.target.checked }))} />
                   启用
                 </label>
               </div>
             </div>
             {selectedCase ? (
               <>
+                <div className="border border-stone-800 bg-stone-950 px-4 py-4 text-sm text-stone-400">
+                  <div className="text-xs uppercase tracking-[0.18em] text-stone-500">样本来源</div>
+                  <div className="mt-3 text-stone-100">{getCaseSourceBadge(selectedCase)}</div>
+                  {getCaseSourceDetail(selectedCase) ? (
+                    <div className="mt-2 text-xs leading-6 text-stone-500">{getCaseSourceDetail(selectedCase)}</div>
+                  ) : null}
+                  {selectedCase.sourceUrl ? (
+                    <div className="mt-3">
+                      <Link href={selectedCase.sourceUrl} target="_blank" rel="noreferrer" className={uiPrimitives.adminSecondaryButton}>
+                        打开原始来源
+                      </Link>
+                    </div>
+                  ) : null}
+                </div>
                 <div className="border border-stone-800 bg-stone-950 px-4 py-4 text-sm text-stone-400">
                   <div className="text-xs uppercase tracking-[0.18em] text-stone-500">样本完备度</div>
                   <div className="mt-3 flex flex-wrap gap-2">
@@ -870,9 +2143,9 @@ export function AdminWritingEvalDatasetsClient({
                       : "当前样本已补齐基础输入、爆款目标和事实上下文字段，可以直接参与离线实验。"}
                   </div>
                 </div>
-                <input value={editorForm.taskCode} onChange={(event) => setEditorForm((prev) => ({ ...prev, taskCode: event.target.value }))} className={uiPrimitives.adminInput} />
-                <input value={editorForm.topicTitle} onChange={(event) => setEditorForm((prev) => ({ ...prev, topicTitle: event.target.value }))} className={uiPrimitives.adminInput} />
-                <select value={editorForm.taskType} onChange={(event) => setEditorForm((prev) => ({ ...prev, taskType: event.target.value }))} className={uiPrimitives.adminSelect}>
+                <input aria-label="input control" value={editorForm.taskCode} onChange={(event) => setEditorForm((prev) => ({ ...prev, taskCode: event.target.value }))} className={uiPrimitives.adminInput} />
+                <input aria-label="input control" value={editorForm.topicTitle} onChange={(event) => setEditorForm((prev) => ({ ...prev, topicTitle: event.target.value }))} className={uiPrimitives.adminInput} />
+                <select aria-label="select control" value={editorForm.taskType} onChange={(event) => setEditorForm((prev) => ({ ...prev, taskType: event.target.value }))} className={uiPrimitives.adminSelect}>
                   <option value="tech_commentary">tech_commentary</option>
                   <option value="business_breakdown">business_breakdown</option>
                   <option value="experience_recap">experience_recap</option>
@@ -883,12 +2156,12 @@ export function AdminWritingEvalDatasetsClient({
                   <option value="medium">medium</option>
                   <option value="hard">hard</option>
                 </select>
-                <textarea value={editorForm.inputPayload} onChange={(event) => setEditorForm((prev) => ({ ...prev, inputPayload: event.target.value }))} className={`min-h-[110px] ${uiPrimitives.adminInput}`} />
-                <textarea value={editorForm.expectedConstraints} onChange={(event) => setEditorForm((prev) => ({ ...prev, expectedConstraints: event.target.value }))} className={`min-h-[110px] ${uiPrimitives.adminInput}`} />
-                <textarea value={editorForm.viralTargets} onChange={(event) => setEditorForm((prev) => ({ ...prev, viralTargets: event.target.value }))} className={`min-h-[110px] ${uiPrimitives.adminInput}`} />
-                <textarea value={editorForm.stageArtifactPayloads} onChange={(event) => setEditorForm((prev) => ({ ...prev, stageArtifactPayloads: event.target.value }))} className={`min-h-[150px] ${uiPrimitives.adminInput}`} />
-                <textarea value={editorForm.referenceBadPatterns} onChange={(event) => setEditorForm((prev) => ({ ...prev, referenceBadPatterns: event.target.value }))} className={`min-h-[90px] ${uiPrimitives.adminInput}`} />
-                <textarea value={editorForm.referenceGoodOutput} onChange={(event) => setEditorForm((prev) => ({ ...prev, referenceGoodOutput: event.target.value }))} className={`min-h-[90px] ${uiPrimitives.adminInput}`} />
+                <textarea aria-label="textarea control" value={editorForm.inputPayload} onChange={(event) => setEditorForm((prev) => ({ ...prev, inputPayload: event.target.value }))} className={`min-h-[110px] ${uiPrimitives.adminInput}`} />
+                <textarea aria-label="textarea control" value={editorForm.expectedConstraints} onChange={(event) => setEditorForm((prev) => ({ ...prev, expectedConstraints: event.target.value }))} className={`min-h-[110px] ${uiPrimitives.adminInput}`} />
+                <textarea aria-label="textarea control" value={editorForm.viralTargets} onChange={(event) => setEditorForm((prev) => ({ ...prev, viralTargets: event.target.value }))} className={`min-h-[110px] ${uiPrimitives.adminInput}`} />
+                <textarea aria-label="textarea control" value={editorForm.stageArtifactPayloads} onChange={(event) => setEditorForm((prev) => ({ ...prev, stageArtifactPayloads: event.target.value }))} className={`min-h-[150px] ${uiPrimitives.adminInput}`} />
+                <textarea aria-label="textarea control" value={editorForm.referenceBadPatterns} onChange={(event) => setEditorForm((prev) => ({ ...prev, referenceBadPatterns: event.target.value }))} className={`min-h-[90px] ${uiPrimitives.adminInput}`} />
+                <textarea aria-label="textarea control" value={editorForm.referenceGoodOutput} onChange={(event) => setEditorForm((prev) => ({ ...prev, referenceGoodOutput: event.target.value }))} className={`min-h-[90px] ${uiPrimitives.adminInput}`} />
                 <button className={uiPrimitives.primaryButton}>保存样本</button>
               </>
             ) : (

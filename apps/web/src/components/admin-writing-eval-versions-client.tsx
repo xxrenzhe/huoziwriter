@@ -8,6 +8,7 @@ import {
   buildAdminPromptVersionHref,
   buildAdminWritingEvalDatasetsHref,
   buildAdminWritingEvalRunsHref,
+  buildAdminWritingEvalVersionsHref,
 } from "@/lib/admin-writing-eval-links";
 import { formatWritingEvalDateTime, formatWritingEvalMetric, formatWritingEvalMonthDay } from "@/lib/writing-eval-format";
 
@@ -183,6 +184,15 @@ type SummaryStatItem = {
   href?: string;
   tone?: string;
   valueClassName?: string;
+};
+
+type ForkPromptCandidateResponse = {
+  success?: boolean;
+  error?: string;
+  data?: {
+    candidate?: { promptVersionRef?: string };
+    run?: { id?: number; runCode?: string };
+  };
 };
 
 function getNumber(value: unknown) {
@@ -406,7 +416,7 @@ function ToggleConfigCard({
 }) {
   return (
     <label className="flex items-center gap-3 border border-stone-800 bg-[#141414] px-4 py-3 text-sm text-stone-300">
-      <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} />
+      <input aria-label="input control" type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} />
       {label}
     </label>
   );
@@ -535,7 +545,34 @@ function isRolloutVersionType(value: string): value is RolloutAssetType {
   return ROLLOUT_VERSION_TYPES.includes(value as RolloutAssetType);
 }
 
+function isPromptBackedVersionType(value: string) {
+  return value === "prompt_version" || value === "fact_check" || value === "title_template" || value === "lead_template";
+}
+
+function getExperimentModeFromVersionType(versionType: string) {
+  if (versionType === "title_template") return "title_only";
+  if (versionType === "lead_template") return "lead_only";
+  return "full_article";
+}
+
+function buildPromptOptimizationGoalFromVersion(version: VersionItem) {
+  return [
+    `基于账本 #${version.id} 的结果继续优化 ${version.targetKey}。`,
+    `当前账本决策：${version.decision}。`,
+    version.decisionReason || "",
+    typeof getNumber(version.scoreSummary.deltaTotalScore) === "number"
+      ? `上一轮总分 Delta：${getNumber(version.scoreSummary.deltaTotalScore)!.toFixed(2)}。`
+      : "",
+    "要求延续已有输出契约，优先做小步、可归因、可回滚的 Prompt 调整。",
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
 function getVersionTypeLabel(versionType: string) {
+  if (versionType === "fact_check") return "fact_check（事实核查 Prompt）";
+  if (versionType === "title_template") return "title_template（标题模板 Prompt）";
+  if (versionType === "lead_template") return "lead_template（开头模板 Prompt）";
   if (versionType === "layout_strategy") return "layout_strategy（写作风格资产）";
   return versionType;
 }
@@ -873,13 +910,14 @@ export function AdminWritingEvalVersionsClient({
   const [versions, setVersions] = useState(initialVersions);
   const [message, setMessage] = useState("");
   const [rollingBackId, setRollingBackId] = useState<number | null>(null);
+  const [forkingVersionId, setForkingVersionId] = useState<number | null>(null);
   const [selectedVersionId, setSelectedVersionId] = useState<number | null>(initialSelectedVersionId ?? initialVersions[0]?.id ?? null);
   const [savingRollout, setSavingRollout] = useState(false);
   const displayedVersions = focusAsset
     ? versions.filter((item) => item.versionType === focusAsset.assetType && item.candidateContent === focusAsset.assetRef)
     : versions;
   const focusAssetPromptHref =
-    focusAsset?.assetType === "prompt_version" ? buildAdminPromptVersionHref(focusAsset.assetRef) : null;
+    focusAsset && isPromptBackedVersionType(focusAsset.assetType) ? buildAdminPromptVersionHref(focusAsset.assetRef) : null;
   const selectedVersion = displayedVersions.find((item) => item.id === selectedVersionId) ?? displayedVersions[0] ?? null;
   const selectedRolloutAdvisory = buildRolloutAdvisory(selectedVersion);
   const selectedRolloutPresets = buildRolloutPresets(selectedVersion, selectedRolloutAdvisory);
@@ -901,7 +939,7 @@ export function AdminWritingEvalVersionsClient({
     selectedRolloutAdvisory?.tone === "cinnabar" || (selectedPromptRolloutAssessment?.failedCaseCount ?? 0) > 0
       ? "回到 Runs 页排查"
       : "打开来源 Run";
-  const selectedPromptPageHref = selectedVersion
+  const selectedPromptPageHref = selectedVersion && isPromptBackedVersionType(selectedVersion.versionType)
     ? buildAdminPromptVersionHref(
         selectedPromptRolloutAssessment?.version || selectedVersion.candidateLabel,
         selectedPromptRolloutAssessment?.promptId || selectedVersion.targetKey,
@@ -917,7 +955,7 @@ export function AdminWritingEvalVersionsClient({
   const selectedRolloutAuditActionLinks = [
     selectedRolloutRunHref ? { key: "run", href: selectedRolloutRunHref, label: selectedRolloutRunLabel } : null,
     selectedRolloutDatasetHref ? { key: "dataset", href: selectedRolloutDatasetHref, label: "打开评测集" } : null,
-    selectedVersion?.versionType === "prompt_version" && selectedPromptPageHref
+    selectedVersion && isPromptBackedVersionType(selectedVersion.versionType) && selectedPromptPageHref
       ? { key: "prompt", href: selectedPromptPageHref, label: "打开 Prompts 页" }
       : null,
   ].filter((item): item is SecondaryActionLink => Boolean(item));
@@ -936,7 +974,9 @@ export function AdminWritingEvalVersionsClient({
     selectedPromptPageHref ? { key: "prompt", href: selectedPromptPageHref, label: "打开 Prompts 页" } : null,
   ].filter((item): item is SecondaryActionLink => Boolean(item));
   const selectedSourcePromptPageHref =
-    selectedVersion?.versionType === "prompt_version" ? buildAdminPromptVersionHref(selectedVersion.sourceVersion, selectedVersion.targetKey) : null;
+    selectedVersion && isPromptBackedVersionType(selectedVersion.versionType)
+      ? buildAdminPromptVersionHref(selectedVersion.sourceVersion, selectedVersion.targetKey)
+      : null;
   const selectedExperimentBasePromptHref = selectedVersion?.experimentSource?.baseVersionRef
     ? buildAdminPromptVersionHref(selectedVersion.experimentSource.baseVersionRef)
     : null;
@@ -961,6 +1001,14 @@ export function AdminWritingEvalVersionsClient({
   const selectedTargetPreviewActionLinks = [
     selectedPromptPageHref ? { key: "target-prompt", href: selectedPromptPageHref, label: "打开目标 Prompt" } : null,
   ].filter((item): item is SecondaryActionLink => Boolean(item));
+  const selectedCanForkPromptCandidate = Boolean(
+    selectedVersion
+    && isPromptBackedVersionType(selectedVersion.versionType)
+    && selectedVersion.experimentSource?.datasetId,
+  );
+  const selectedForkRunHref = selectedVersion?.experimentSource?.datasetId
+    ? buildAdminWritingEvalRunsHref({ datasetId: selectedVersion.experimentSource.datasetId })
+    : null;
   const canEditRollout = Boolean(
     selectedVersion
     && isRolloutVersionType(selectedVersion.versionType)
@@ -1006,6 +1054,58 @@ export function AdminWritingEvalVersionsClient({
       setMessage(error instanceof Error ? error.message : "回滚失败");
     } finally {
       setRollingBackId(null);
+    }
+  }
+
+  async function handleForkPromptCandidate(version: VersionItem) {
+    if (!isPromptBackedVersionType(version.versionType) || !version.experimentSource?.datasetId) {
+      setMessage("当前账本缺少可复用的数据集或不是 Prompt 类对象，无法继续迭代");
+      return;
+    }
+    setForkingVersionId(version.id);
+    setMessage("");
+    try {
+      const response = await fetch("/api/admin/writing-eval/runs/fork-prompt", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          datasetId: version.experimentSource.datasetId,
+          baseVersionType: version.versionType,
+          baseVersionRef: version.candidateContent,
+          experimentMode: getExperimentModeFromVersionType(version.versionType),
+          triggerMode: "manual",
+          decisionMode: "manual_review",
+          summary: [
+            `fork from ledger#${version.id}`,
+            `source:${version.candidateContent}`,
+            version.decisionReason || "",
+          ]
+            .filter(Boolean)
+            .join(" · "),
+          optimizationGoal: buildPromptOptimizationGoalFromVersion(version),
+        }),
+      });
+      const json = (await response.json().catch(() => ({}))) as ForkPromptCandidateResponse;
+      if (!response.ok || !json.success) {
+        throw new Error(json.error || "继续迭代并发起实验失败");
+      }
+      const nextRunId = Number(json.data?.run?.id);
+      const nextRunCode = String(json.data?.run?.runCode || "").trim();
+      const nextCandidateRef = String(json.data?.candidate?.promptVersionRef || "").trim();
+      setMessage(`已从 ${version.candidateContent} fork 候选 ${nextCandidateRef || ""} 并创建实验 ${nextRunCode || ""}`.trim());
+      if (Number.isInteger(nextRunId) && nextRunId > 0) {
+        startTransition(() => {
+          router.push(buildAdminWritingEvalRunsHref({ runId: nextRunId, datasetId: version.experimentSource?.datasetId ?? null }));
+        });
+        return;
+      }
+      startTransition(() => {
+        router.refresh();
+      });
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "继续迭代并发起实验失败");
+    } finally {
+      setForkingVersionId(null);
     }
   }
 
@@ -1118,7 +1218,7 @@ export function AdminWritingEvalVersionsClient({
       <div className="flex items-center justify-between gap-4">
         <div>
           <div className="text-xs uppercase tracking-[0.24em] text-stone-500">Version Ledger</div>
-          <h2 className="mt-3 font-serifCn text-2xl text-stone-100">保留、丢弃与回滚记录</h2>
+          <h2 className="mt-3 font-serifCn text-2xl text-stone-100 text-balance">保留、丢弃与回滚记录</h2>
         </div>
         <div className="text-sm text-stone-500">{displayedVersions.length} 条记录</div>
       </div>
@@ -1152,8 +1252,8 @@ export function AdminWritingEvalVersionsClient({
               (() => {
                 const advisory = buildRolloutAdvisory(item);
                 const primaryFeedbackSummary = getPrimaryFeedbackSummary(item);
-                const sourcePromptPageHref = item.versionType === "prompt_version" ? buildAdminPromptVersionHref(item.sourceVersion, item.targetKey) : null;
-                const promptPageHref = item.versionType === "prompt_version" ? buildAdminPromptVersionHref(item.candidateContent, item.targetKey) : null;
+                const sourcePromptPageHref = isPromptBackedVersionType(item.versionType) ? buildAdminPromptVersionHref(item.sourceVersion, item.targetKey) : null;
+                const promptPageHref = isPromptBackedVersionType(item.versionType) ? buildAdminPromptVersionHref(item.candidateContent, item.targetKey) : null;
                 return (
               <tr
                 key={item.id}
@@ -1231,11 +1331,21 @@ export function AdminWritingEvalVersionsClient({
                         className={uiPrimitives.adminSecondaryButton}
                         disabled={rollingBackId === item.id}
                       >
-                        {rollingBackId === item.id ? "回滚中..." : "回滚到来源版本"}
+                        {rollingBackId === item.id ? "回滚中…" : "回滚到来源版本"}
                       </button>
                     ) : (
                       <span className="text-xs text-stone-600">不可回滚</span>
                     )}
+                    {isPromptBackedVersionType(item.versionType) && item.experimentSource?.datasetId ? (
+                      <button
+                        type="button"
+                        onClick={() => void handleForkPromptCandidate(item)}
+                        className={uiPrimitives.adminSecondaryButton}
+                        disabled={forkingVersionId === item.id}
+                      >
+                        {forkingVersionId === item.id ? "创建中…" : "继续迭代并发起实验"}
+                      </button>
+                    ) : null}
                   </div>
                 </td>
               </tr>
@@ -1319,7 +1429,36 @@ export function AdminWritingEvalVersionsClient({
                 )}
               </div>
             </div>
-            <SecondaryActionLinks items={selectedExperimentActionLinks} />
+            <div className="flex flex-wrap gap-3">
+              <SecondaryActionLinks items={selectedExperimentActionLinks} />
+              {selectedVersion && selectedCanForkPromptCandidate ? (
+                <button
+                  type="button"
+                  className={uiPrimitives.primaryButton}
+                  onClick={() => void handleForkPromptCandidate(selectedVersion)}
+                  disabled={forkingVersionId === selectedVersion.id}
+                >
+                  {forkingVersionId === selectedVersion.id ? "创建中…" : "继续迭代并发起实验"}
+                </button>
+              ) : null}
+              {selectedVersion && isPromptBackedVersionType(selectedVersion.versionType) ? (
+                <Link
+                  href={buildAdminWritingEvalVersionsHref({
+                    assetType: selectedVersion.versionType,
+                    assetRef: selectedVersion.candidateContent,
+                    versionId: selectedVersion.id,
+                  })}
+                  className={uiPrimitives.adminSecondaryButton}
+                >
+                  聚焦当前资产账本
+                </Link>
+              ) : null}
+              {!selectedCanForkPromptCandidate && selectedForkRunHref ? (
+                <Link href={selectedForkRunHref} className={uiPrimitives.adminSecondaryButton}>
+                  去 Runs 手动发起
+                </Link>
+              ) : null}
+            </div>
           </div>
         </div>
 
@@ -1432,7 +1571,7 @@ export function AdminWritingEvalVersionsClient({
                   </Link>
                 ) : null}
                 <button type="button" className={uiPrimitives.adminSecondaryButton} onClick={() => void handleSaveRollout()} disabled={!canEditRollout || savingRollout || !selectedRolloutAdmission.canEnable}>
-                  {savingRollout ? "保存中..." : "保存灰度配置"}
+                  {savingRollout ? "保存中…" : "保存灰度配置"}
                 </button>
               </div>
             ) : null}
@@ -1453,7 +1592,7 @@ export function AdminWritingEvalVersionsClient({
                     onChange={(checked) => setRolloutForm((prev) => ({ ...prev, rolloutObserveOnly: checked }))}
                   />
                   <ConfigCard title="自动模式" compact>
-                    <select
+                    <select aria-label="select control"
                       value={rolloutForm.autoMode}
                       onChange={(event) => setRolloutForm((prev) => ({ ...prev, autoMode: event.target.value as RolloutAutoMode }))}
                       className={`mt-3 ${uiPrimitives.adminInput}`}
@@ -1463,7 +1602,7 @@ export function AdminWritingEvalVersionsClient({
                     </select>
                   </ConfigCard>
                   <ConfigCard title="命中比例" compact>
-                    <input
+                    <input aria-label="0-100"
                       value={rolloutForm.rolloutPercentage}
                       onChange={(event) => setRolloutForm((prev) => ({ ...prev, rolloutPercentage: event.target.value }))}
                       placeholder="0-100"
@@ -1478,7 +1617,7 @@ export function AdminWritingEvalVersionsClient({
                 </div>
                 <div className="mt-3 grid gap-3 xl:grid-cols-2">
                   <ConfigCard title="套餐白名单">
-                    <input
+                    <input aria-label="pro, ultra"
                       value={rolloutForm.rolloutPlanCodes}
                       onChange={(event) => setRolloutForm((prev) => ({ ...prev, rolloutPlanCodes: event.target.value }))}
                       placeholder="pro, ultra"
@@ -1489,7 +1628,7 @@ export function AdminWritingEvalVersionsClient({
                   <ConfigCard title={supportsRolloutNotes ? "备注" : "治理说明"}>
                     {supportsRolloutNotes ? (
                       <>
-                        <textarea
+                        <textarea aria-label="记录灰度目标、风险点或预计观察窗口"
                           value={rolloutForm.notes}
                           onChange={(event) => setRolloutForm((prev) => ({ ...prev, notes: event.target.value }))}
                           placeholder="记录灰度目标、风险点或预计观察窗口"

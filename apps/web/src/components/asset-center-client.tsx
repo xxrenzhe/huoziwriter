@@ -96,7 +96,7 @@ function formatBytes(value: number | null | undefined) {
 function summarizeText(value: string | null | undefined, maxLength = 68) {
   const text = String(value || "").trim();
   if (!text) return "暂无摘要";
-  return text.length > maxLength ? `${text.slice(0, maxLength).trimEnd()}...` : text;
+  return text.length > maxLength ? `${text.slice(0, maxLength).trimEnd()}…` : text;
 }
 
 export function WriterAssetCenterClient({
@@ -159,7 +159,7 @@ export function WriterAssetCenterClient({
           <div className="flex items-center justify-between gap-3">
             <div>
               <div className="text-xs uppercase tracking-[0.24em] text-cinnabar">素材库</div>
-              <div className="mt-2 font-serifCn text-2xl text-ink">最近素材</div>
+              <div className="mt-2 font-serifCn text-2xl text-ink text-balance">最近素材</div>
             </div>
             <div className="text-sm text-stone-500">{fragments.length} 条</div>
           </div>
@@ -201,7 +201,7 @@ export function WriterAssetCenterClient({
           <div className="flex items-center justify-between gap-3">
             <div>
               <div className="text-xs uppercase tracking-[0.24em] text-cinnabar">背景卡</div>
-              <div className="mt-2 font-serifCn text-2xl text-ink">最近背景卡</div>
+              <div className="mt-2 font-serifCn text-2xl text-ink text-balance">最近背景卡</div>
             </div>
             <div className="text-sm text-stone-500">{knowledgeCards.length} 张</div>
           </div>
@@ -244,7 +244,7 @@ export function WriterAssetCenterClient({
                       disabled={refreshingKnowledgeId === card.id}
                       className="border border-stone-300 bg-white px-3 py-2 text-xs text-stone-700 disabled:opacity-60"
                     >
-                      {refreshingKnowledgeId === card.id ? "刷新中..." : "刷新背景卡"}
+                      {refreshingKnowledgeId === card.id ? "刷新中…" : "刷新背景卡"}
                     </button>
                     <Link href="/articles" className="border border-stone-300 bg-white px-3 py-2 text-xs text-stone-700">
                       去稿件区调用
@@ -264,7 +264,7 @@ export function WriterAssetCenterClient({
           <div className="flex items-center justify-between gap-3">
             <div>
               <div className="text-xs uppercase tracking-[0.24em] text-cinnabar">图片资产</div>
-              <div className="mt-2 font-serifCn text-2xl text-ink">最近封面与配图</div>
+              <div className="mt-2 font-serifCn text-2xl text-ink text-balance">最近封面与配图</div>
             </div>
             <div className="text-sm text-stone-500">{imageAssets.length} 项</div>
           </div>
@@ -273,7 +273,7 @@ export function WriterAssetCenterClient({
               imageAssets.map((asset) => (
                 <article key={asset.id} className="border border-stone-300/40 bg-[#faf7f0] p-4">
                   {asset.publicUrl ? (
-                    <img src={asset.publicUrl} alt={asset.articleTitle || "图片资产"} className="aspect-[16/9] w-full border border-stone-300 object-cover" />
+                    <img src={asset.publicUrl} alt={asset.articleTitle || "图片资产"} width={800} height={450} className="aspect-[16/9] w-full border border-stone-300 object-cover" />
                   ) : (
                     <div className="flex aspect-[16/9] items-center justify-center border border-dashed border-stone-300 bg-white text-xs text-stone-500">
                       暂无可预览地址

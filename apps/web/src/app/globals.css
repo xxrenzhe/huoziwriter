@@ -48,8 +48,11 @@ a {
 button,
 input,
 textarea,
-select {
+select,
+a {
   font: inherit;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 
 ::selection {

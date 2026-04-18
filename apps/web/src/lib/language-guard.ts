@@ -21,8 +21,8 @@ const SYSTEM_LANGUAGE_GUARD_RULES: LanguageGuardRule[] = [
   { id: "system-token-5", scope: "system", source: "system", ruleKind: "token", matchMode: "contains", patternText: "某种意义上", rewriteHint: "删掉缓冲垫，直接说明成立条件。", isEnabled: true, createdAt: null },
   { id: "system-token-6", scope: "system", source: "system", ruleKind: "token", matchMode: "contains", patternText: "换句话说", rewriteHint: "只有在真的换一个层次解释时才保留，否则直接删掉。", isEnabled: true, createdAt: null },
   { id: "system-token-7", scope: "system", source: "system", ruleKind: "token", matchMode: "contains", patternText: "总而言之", rewriteHint: "直接收束观点，不要先喊总结口号。", isEnabled: true, createdAt: null },
-  { id: "system-pattern-1", scope: "system", source: "system", ruleKind: "pattern", matchMode: "template", patternText: "不是...而是...", rewriteHint: "只有在前后两部分都足够具体时才保留，否则改成直接判断。", isEnabled: true, createdAt: null },
-  { id: "system-pattern-2", scope: "system", source: "system", ruleKind: "pattern", matchMode: "template", patternText: "首先...其次...最后...", rewriteHint: "优先改成自然递进，不要用讲稿式编号。", isEnabled: true, createdAt: null },
+  { id: "system-pattern-1", scope: "system", source: "system", ruleKind: "pattern", matchMode: "template", patternText: "不是...而是…", rewriteHint: "只有在前后两部分都足够具体时才保留，否则改成直接判断。", isEnabled: true, createdAt: null },
+  { id: "system-pattern-2", scope: "system", source: "system", ruleKind: "pattern", matchMode: "template", patternText: "首先...其次...最后…", rewriteHint: "优先改成自然递进，不要用讲稿式编号。", isEnabled: true, createdAt: null },
 ];
 
 type LanguageGuardRuleRow = {
@@ -50,7 +50,7 @@ function normalizeRule(input: {
   if (!patternText) {
     throw new Error("规则内容不能为空");
   }
-  if (ruleKind === "pattern" && !patternText.includes("...")) {
+  if (ruleKind === "pattern" && !patternText.includes("…")) {
     throw new Error("句式规则请用 ... 表示可变片段，例如“不是...而是...”");
   }
   return {

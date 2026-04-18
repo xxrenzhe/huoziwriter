@@ -12,11 +12,11 @@ export async function getArticleAuthoringStyleContext(userId: number, articleId?
       throw new Error("稿件不存在");
     }
     if (!article.series_id) {
-      throw new Error("当前稿件未绑定系列，无法解析写作身份");
+      return buildArticleAuthoringStyleContext(defaultPersona, userId);
     }
     const series = await getSeriesById(userId, article.series_id);
     if (!series) {
-      throw new Error("稿件绑定系列不存在");
+      return buildArticleAuthoringStyleContext(defaultPersona, userId);
     }
     persona = {
       id: series.personaId,
@@ -37,6 +37,13 @@ export async function getArticleAuthoringStyleContext(userId: number, articleId?
       updatedAt: series.updatedAt,
     };
   }
+  return buildArticleAuthoringStyleContext(persona, userId);
+}
+
+async function buildArticleAuthoringStyleContext(
+  persona: Awaited<ReturnType<typeof assertPersonaReady>>,
+  userId: number,
+) {
   const writingStyleProfile = persona?.boundWritingStyleProfileId
     ? await getWritingStyleProfileById(userId, persona.boundWritingStyleProfileId)
     : null;

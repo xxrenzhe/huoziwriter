@@ -41,7 +41,7 @@ export function AdminImageAssetMaintenance() {
         对历史 `passthrough` / `passthrough-fallback` 资产执行一次重建，补齐真实压缩图和缩略图。单次建议先跑小批量。
       </div>
       <div className="mt-4 flex flex-wrap items-center gap-3">
-        <input
+        <input aria-label="20"
           value={limit}
           onChange={(event) => setLimit(event.target.value)}
           inputMode="numeric"
@@ -52,7 +52,7 @@ export function AdminImageAssetMaintenance() {
           disabled={running}
           className="border border-cinnabar bg-cinnabar px-4 py-2 text-sm text-white disabled:opacity-60"
         >
-          {running ? "重建中..." : "重建旧资产衍生"}
+          {running ? "重建中…" : "重建旧资产衍生"}
         </button>
       </div>
       {message ? (

@@ -349,7 +349,7 @@ export default async function AdminOverviewPage() {
       <section className="grid gap-4 xl:grid-cols-3">
         <article className="border border-stone-800 bg-[#171718] p-6">
           <div className="text-xs uppercase tracking-[0.28em] text-cinnabar">Celery 任务队列</div>
-          <h2 className="mt-4 font-serifCn text-3xl text-stone-100">后台任务运行态</h2>
+          <h2 className="mt-4 font-serifCn text-3xl text-stone-100 text-balance">后台任务运行态</h2>
           <div className="mt-6 grid gap-3 text-sm text-stone-300">
             <div className="flex items-center justify-between border border-stone-800 bg-stone-950 px-4 py-3">
               <span>Queued</span>
@@ -371,7 +371,7 @@ export default async function AdminOverviewPage() {
         </article>
         <article className="border border-stone-800 bg-[#171718] p-6">
           <div className="text-xs uppercase tracking-[0.28em] text-cinnabar">Token 刷新引擎状态</div>
-          <h2 className="mt-4 font-serifCn text-3xl text-stone-100">公众号连接健康度</h2>
+          <h2 className="mt-4 font-serifCn text-3xl text-stone-100 text-balance">公众号连接健康度</h2>
           <div className="mt-6 space-y-3 text-sm text-stone-300">
             <div className="border border-stone-800 bg-stone-950 px-4 py-3">即将过期（24h 内）：{expiringTokens?.count ?? 0}</div>
             <div className="border border-stone-800 bg-stone-950 px-4 py-3">已过期：{expiredTokens?.count ?? 0}</div>
@@ -383,7 +383,7 @@ export default async function AdminOverviewPage() {
         </article>
         <article className="border border-stone-800 bg-[#171718] p-6">
           <div className="text-xs uppercase tracking-[0.28em] text-cinnabar">System Pulse</div>
-          <h2 className="mt-4 font-serifCn text-3xl text-stone-100">运行提醒</h2>
+          <h2 className="mt-4 font-serifCn text-3xl text-stone-100 text-balance">运行提醒</h2>
           <ul className="mt-6 space-y-3 text-sm leading-7 text-stone-300">
             <li>失败任务 {failedJobs.length} 条，优先检查知识刷新与热点抓取。</li>
             <li>微信失败推送 {failedSyncs.length} 条，建议先排查 token 与草稿内容。</li>
@@ -394,7 +394,7 @@ export default async function AdminOverviewPage() {
       <section className="grid gap-4 xl:grid-cols-3">
         <article className="border border-stone-800 bg-[#171718] p-6">
           <div className="text-xs uppercase tracking-[0.28em] text-cinnabar">External Fetch</div>
-          <h2 className="mt-4 font-serifCn text-3xl text-stone-100">外采稳定性</h2>
+          <h2 className="mt-4 font-serifCn text-3xl text-stone-100 text-balance">外采稳定性</h2>
           <div className="mt-6 space-y-3 text-sm text-stone-300">
             <div className="border border-stone-800 bg-stone-950 px-4 py-3">抓取降级：{degradedCaptureJobs.length}</div>
             <div className="border border-stone-800 bg-stone-950 px-4 py-3">待重试 URL 采集：{pendingRetryCaptureJobs.length}</div>
@@ -403,7 +403,7 @@ export default async function AdminOverviewPage() {
         </article>
         <article className="border border-stone-800 bg-[#171718] p-6 xl:col-span-2">
           <div className="text-xs uppercase tracking-[0.24em] text-cinnabar">Fetch Incidents</div>
-          <h2 className="mt-4 font-serifCn text-3xl text-stone-100">最近外采异常</h2>
+          <h2 className="mt-4 font-serifCn text-3xl text-stone-100 text-balance">最近外采异常</h2>
           <div className="mt-5 space-y-3">
             {recentExternalIncidents.length === 0 ? (
               <div className="border border-stone-800 bg-stone-950 px-4 py-4 text-sm text-stone-400">最近没有新的外采异常，热点抓取与链接采集都处于正常区间。</div>
@@ -459,7 +459,7 @@ export default async function AdminOverviewPage() {
       <section className="grid gap-4 xl:grid-cols-2">
         <article className="border border-stone-800 bg-[#171718] p-6">
           <div className="text-xs uppercase tracking-[0.24em] text-cinnabar">Queue Errors</div>
-          <h2 className="mt-4 font-serifCn text-3xl text-stone-100">最近失败任务</h2>
+          <h2 className="mt-4 font-serifCn text-3xl text-stone-100 text-balance">最近失败任务</h2>
           <div className="mt-5 space-y-3">
             {failedJobs.length === 0 ? (
               <div className="border border-stone-800 bg-stone-950 px-4 py-4 text-sm text-stone-400">当前没有失败任务。</div>
@@ -479,7 +479,7 @@ export default async function AdminOverviewPage() {
         </article>
         <article className="border border-stone-800 bg-[#171718] p-6">
           <div className="text-xs uppercase tracking-[0.24em] text-cinnabar">Terminal Logs</div>
-          <h2 className="mt-4 font-serifCn text-3xl text-stone-100">最近异常与审计</h2>
+          <h2 className="mt-4 font-serifCn text-3xl text-stone-100 text-balance">最近异常与审计</h2>
           <div className="mt-5 border border-stone-800 bg-[#0b0b0c] p-4 font-mono text-xs leading-7 text-stone-300">
             {failedSyncs.length === 0 && recentAuditLogs.length === 0 ? (
               <div>[system] no recent logs</div>
@@ -503,7 +503,7 @@ export default async function AdminOverviewPage() {
       <section className="grid gap-4 xl:grid-cols-[320px_minmax(0,1fr)]">
         <article className="border border-stone-800 bg-[#171718] p-6">
           <div className="text-xs uppercase tracking-[0.24em] text-cinnabar">Image Assets</div>
-          <h2 className="mt-4 font-serifCn text-3xl text-stone-100">图片资产与存储健康</h2>
+          <h2 className="mt-4 font-serifCn text-3xl text-stone-100 text-balance">图片资产与存储健康</h2>
           <div className="mt-6 space-y-3 text-sm text-stone-300">
             <div className="border border-stone-800 bg-stone-950 px-4 py-3">固化封面：{coverImages?.count ?? 0}</div>
             <div className="border border-stone-800 bg-stone-950 px-4 py-3">候选图片：{coverImageCandidates?.count ?? 0}</div>
@@ -521,7 +521,7 @@ export default async function AdminOverviewPage() {
         </article>
         <article className="border border-stone-800 bg-[#171718] p-6">
           <div className="text-xs uppercase tracking-[0.24em] text-cinnabar">Recent Image Assets</div>
-          <h2 className="mt-4 font-serifCn text-3xl text-stone-100">最近图片资产记录</h2>
+          <h2 className="mt-4 font-serifCn text-3xl text-stone-100 text-balance">最近图片资产记录</h2>
           <AdminImageAssetMaintenance />
           <div className="mt-5 space-y-3">
             {recentImageAssets.length === 0 ? (
@@ -606,7 +606,7 @@ export default async function AdminOverviewPage() {
       </section>
       <section className="border border-stone-800 bg-[#171718] p-6">
         <div className="text-xs uppercase tracking-[0.24em] text-cinnabar">Default Sources</div>
-        <h2 className="mt-4 font-serifCn text-3xl text-stone-100">系统默认信息源</h2>
+        <h2 className="mt-4 font-serifCn text-3xl text-stone-100 text-balance">系统默认信息源</h2>
         <div className="mt-3 text-sm leading-7 text-stone-400">
           运营后台在这里维护全局默认信源，新增后会立即尝试同步一轮热点；普通作者只能在此基础上叠加自己的自定义源。
         </div>
@@ -644,7 +644,7 @@ export default async function AdminOverviewPage() {
       </section>
       <section className="border border-stone-800 bg-[#171718] p-6">
         <div className="text-xs uppercase tracking-[0.24em] text-cinnabar">Support Inbox</div>
-        <h2 className="mt-4 font-serifCn text-3xl text-stone-100">最近支持消息</h2>
+        <h2 className="mt-4 font-serifCn text-3xl text-stone-100 text-balance">最近支持消息</h2>
         <div className="mt-5 grid gap-3">
           {supportMessages.length === 0 ? (
             <div className="border border-stone-800 bg-stone-950 px-4 py-4 text-sm text-stone-400">当前还没有新的支持提交。</div>

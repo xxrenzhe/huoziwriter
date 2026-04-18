@@ -73,7 +73,7 @@ function stripMarkdown(markdown: string) {
 }
 
 function truncate(text: string, maxLength: number) {
-  return text.length > maxLength ? `${text.slice(0, maxLength)}...` : text;
+  return text.length > maxLength ? `${text.slice(0, maxLength)}…` : text;
 }
 
 function getPatternLabel(code: WritingPatternCode) {

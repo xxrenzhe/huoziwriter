@@ -161,7 +161,7 @@ export function AdminWritingEvalInsightsClient({
       <div className="flex items-start justify-between gap-4">
         <div>
           <div className="text-xs uppercase tracking-[0.24em] text-cinnabar">Online Calibration</div>
-          <h2 className="mt-3 font-serifCn text-2xl text-stone-100">线上回流校准面板</h2>
+          <h2 className="mt-3 font-serifCn text-2xl text-stone-100 text-balance">线上回流校准面板</h2>
         </div>
         <div className="text-sm text-stone-500">
           {onlineCalibration.feedbackCount} 条反馈 · {onlineCalibration.linkedResultCount} 条已绑定样本
@@ -266,7 +266,7 @@ export function AdminWritingEvalInsightsClient({
         <form onSubmit={handleCreateCalibratedProfile} className="border border-stone-800 bg-stone-950 px-4 py-4">
           <div className="text-xs uppercase tracking-[0.2em] text-stone-500">生成校准版画像</div>
           <div className="mt-4 space-y-3">
-            <select value={form.baseProfileId} onChange={(event) => setForm((prev) => ({ ...prev, baseProfileId: event.target.value }))} className={uiPrimitives.adminSelect}>
+            <select aria-label="select control" value={form.baseProfileId} onChange={(event) => setForm((prev) => ({ ...prev, baseProfileId: event.target.value }))} className={uiPrimitives.adminSelect}>
               <option value="">选择基线评分画像</option>
               {scoringProfiles.map((profile) => (
                 <option key={profile.id} value={String(profile.id)}>
@@ -275,17 +275,17 @@ export function AdminWritingEvalInsightsClient({
                 </option>
               ))}
             </select>
-            <input value={form.code} onChange={(event) => setForm((prev) => ({ ...prev, code: event.target.value }))} placeholder="新画像编码，可留空自动生成" className={uiPrimitives.adminInput} />
-            <input value={form.name} onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))} placeholder="新画像名称，可留空自动生成" className={uiPrimitives.adminInput} />
+            <input aria-label="新画像编码，可留空自动生成" value={form.code} onChange={(event) => setForm((prev) => ({ ...prev, code: event.target.value }))} placeholder="新画像编码，可留空自动生成" className={uiPrimitives.adminInput} />
+            <input aria-label="新画像名称，可留空自动生成" value={form.name} onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))} placeholder="新画像名称，可留空自动生成" className={uiPrimitives.adminInput} />
             <label className="flex items-center gap-2 text-sm text-stone-400">
-              <input type="checkbox" checked={form.isActive} onChange={(event) => setForm((prev) => ({ ...prev, isActive: event.target.checked }))} />
+              <input aria-label="input control" type="checkbox" checked={form.isActive} onChange={(event) => setForm((prev) => ({ ...prev, isActive: event.target.checked }))} />
               创建后立即设为 active
             </label>
             <div className="rounded border border-stone-800 bg-[#141414] px-3 py-3 text-sm leading-6 text-stone-400">
               当前会基于线上回流建议与原画像权重做 50% / 50% 混合，优先降低误判风险，再生成一个可回滚的新画像版本。
             </div>
             <button disabled={submitting || !form.baseProfileId} className={uiPrimitives.primaryButton}>
-              {submitting ? "生成中..." : "生成校准版评分画像"}
+              {submitting ? "生成中…" : "生成校准版评分画像"}
             </button>
             {message ? <div className="text-sm text-cinnabar">{message}</div> : null}
           </div>

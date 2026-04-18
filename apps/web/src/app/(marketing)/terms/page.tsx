@@ -67,13 +67,13 @@ export default function TermsPage() {
       <article className="border border-stone-300/40 bg-white px-6 py-10 shadow-ink md:px-10">
         <div className="border-b border-stone-200 pb-8">
           <div className="text-xs uppercase tracking-[0.3em] text-cinnabar">Terms of Service</div>
-          <h1 className="mt-4 font-serifCn text-4xl font-semibold text-ink md:text-5xl">服务条款</h1>
+          <h1 className="mt-4 font-serifCn text-4xl font-semibold text-ink md:text-5xl text-balance">服务条款</h1>
           <p className="mt-4 text-base leading-8 text-stone-700">最后更新：2026 年 4 月</p>
         </div>
         <div className="mt-8 space-y-10">
           {TERMS_SECTIONS.map((section) => (
             <section key={section.id} id={section.id} className="scroll-mt-28">
-              <h2 className="font-serifCn text-2xl font-semibold text-ink">{section.title}</h2>
+              <h2 className="font-serifCn text-2xl font-semibold text-ink text-balance">{section.title}</h2>
               <p className="mt-4 text-base leading-9 text-stone-700">{section.body}</p>
             </section>
           ))}

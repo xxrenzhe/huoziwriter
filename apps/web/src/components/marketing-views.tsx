@@ -25,7 +25,7 @@ export function MarketingHero() {
             <Sparkles size={14} />
             彻底反抗机器味的写作引擎
           </div>
-          <h1 className="mt-6 max-w-4xl font-serifCn text-5xl font-semibold leading-tight text-ink md:text-7xl">
+          <h1 className="mt-6 max-w-4xl font-serifCn text-5xl font-semibold leading-tight text-ink md:text-7xl text-balance">
             告别机器腔调，把素材、结构与语感重新装回中文写作。
           </h1>
           <p className="mt-6 max-w-3xl text-base leading-8 text-stone-700 md:text-lg">
@@ -85,14 +85,14 @@ export function EditorialFeatureGrid({
     <section className="mt-14">
       <div className="max-w-3xl">
         <div className="text-xs uppercase tracking-[0.3em] text-cinnabar">Core System</div>
-        <h2 className="mt-4 font-serifCn text-4xl font-semibold text-ink">{title}</h2>
+        <h2 className="mt-4 font-serifCn text-4xl font-semibold text-ink text-balance">{title}</h2>
         <p className="mt-4 text-base leading-8 text-stone-700">{description}</p>
       </div>
       <div className="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         {items.map((item) => (
           <article key={item.title} className="border border-stone-300/40 bg-white p-6 shadow-ink">
             <div className="text-xs uppercase tracking-[0.24em] text-stone-500">{item.meta ?? "核心模块"}</div>
-            <h3 className="mt-4 font-serifCn text-2xl font-semibold text-ink">{item.title}</h3>
+            <h3 className="mt-4 font-serifCn text-2xl font-semibold text-ink text-balance">{item.title}</h3>
             <p className="mt-4 text-sm leading-7 text-stone-700">{item.description}</p>
           </article>
         ))}
@@ -106,7 +106,7 @@ export function PricingMatrix({ plans }: { plans: PricingPlan[] }) {
     <section className="mt-14">
       <div className="max-w-3xl">
         <div className="text-xs uppercase tracking-[0.3em] text-cinnabar">Pricing</div>
-        <h2 className="mt-4 font-serifCn text-4xl font-semibold text-ink">把基础排版体验留给所有人，把高阶能力做成阶梯。</h2>
+        <h2 className="mt-4 font-serifCn text-4xl font-semibold text-ink text-balance">把基础排版体验留给所有人，把高阶能力做成阶梯。</h2>
       </div>
       <div className="mt-8 grid gap-4 lg:grid-cols-4">
         {plans.map((plan) => (
@@ -119,8 +119,8 @@ export function PricingMatrix({ plans }: { plans: PricingPlan[] }) {
             }`}
           >
             <div className="text-xs uppercase tracking-[0.26em] opacity-70">{plan.tagline}</div>
-            <h3 className="mt-4 font-serifCn text-3xl font-semibold">{plan.name}</h3>
-            <div className="mt-4 text-3xl">{plan.price}</div>
+            <h3 className="mt-4 font-serifCn text-3xl font-semibold text-balance">{plan.name}</h3>
+            <div className="mt-4 text-3xl text-balance">{plan.price}</div>
             <ul className="mt-6 space-y-3 text-sm leading-7">
               {plan.features.map((feature) => (
                 <li key={feature} className="flex gap-3">

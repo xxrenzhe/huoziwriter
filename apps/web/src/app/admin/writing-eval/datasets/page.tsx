@@ -1,7 +1,15 @@
 import { AdminWritingEvalDatasetsClient } from "@/components/admin-writing-eval-datasets-client";
 import { buildAdminWritingEvalDatasetsHref, getAdminWritingEvalHref } from "@/lib/admin-writing-eval-links";
+import { getAdminAuditLogs } from "@/lib/audit";
 import { requireAdminSession } from "@/lib/page-auth";
-import { getWritingEvalCases, getWritingEvalDatasets } from "@/lib/writing-eval";
+import {
+  getWritingEvalArticleImportOptions,
+  getWritingEvalCases,
+  getWritingEvalDatasets,
+  getWritingEvalFragmentImportOptions,
+  getWritingEvalKnowledgeCardImportOptions,
+  getWritingEvalTopicImportOptions,
+} from "@/lib/writing-eval";
 
 export default async function AdminWritingEvalDatasetsPage({
   searchParams,
@@ -10,7 +18,18 @@ export default async function AdminWritingEvalDatasetsPage({
 }) {
   await requireAdminSession();
   const resolvedSearchParams = (await searchParams) ?? {};
-  const datasets = await getWritingEvalDatasets();
+  const [datasets, articleImportOptions, knowledgeCardImportOptions, topicImportOptions, fragmentImportOptions, autoFillAuditLogs] = await Promise.all([
+    getWritingEvalDatasets(),
+    getWritingEvalArticleImportOptions(),
+    getWritingEvalKnowledgeCardImportOptions(),
+    getWritingEvalTopicImportOptions(),
+    getWritingEvalFragmentImportOptions(),
+    getAdminAuditLogs({
+      action: "writing_eval_dataset_auto_fill",
+      targetType: "writing_eval_dataset",
+      limit: 24,
+    }),
+  ]);
   const requestedDatasetId = Number(resolvedSearchParams.datasetId);
   const requestedCaseId = Number(resolvedSearchParams.caseId);
   const initialDataset =
@@ -27,6 +46,11 @@ export default async function AdminWritingEvalDatasetsPage({
     <AdminWritingEvalDatasetsClient
       initialDatasets={datasets}
       initialCases={initialCases}
+      articleImportOptions={articleImportOptions}
+      knowledgeCardImportOptions={knowledgeCardImportOptions}
+      topicImportOptions={topicImportOptions}
+      fragmentImportOptions={fragmentImportOptions}
+      initialAutoFillAuditLogs={autoFillAuditLogs}
       initialSelectedDatasetId={initialDataset?.id ?? null}
       initialSelectedCaseId={initialCase?.id ?? null}
       focusDataset={

@@ -61,31 +61,31 @@ export function GlobalCoverImageEngineSettings({
   return (
     <section className={`${uiPrimitives.adminPanel} p-5`}>
       <div className="text-xs uppercase tracking-[0.24em] text-cinnabar">Global Image Engine</div>
-      <h2 className="mt-4 font-serifCn text-3xl text-stone-100">全局生图 AI 引擎</h2>
+      <h2 className="mt-4 font-serifCn text-3xl text-stone-100 text-balance">全局生图 AI 引擎</h2>
       <p className="mt-4 text-sm leading-7 text-stone-400">
         这是运营后台统一维护的封面图生成引擎。用户不单独配置，所有封面图请求都读取这里的 Base_URL、API Key 和默认模型。
       </p>
       <form onSubmit={handleSubmit} className="mt-6 grid gap-4">
-        <input
+        <input aria-label="Base_URL，例如 http://127.0.0.1:3301/v1"
           value={baseUrl}
           onChange={(event) => setBaseUrl(event.target.value)}
           placeholder="Base_URL，例如 http://127.0.0.1:3301/v1"
           className={uiPrimitives.adminInput}
         />
-        <input
+        <input aria-label="模型名称"
           value={model}
           onChange={(event) => setModel(event.target.value)}
           placeholder="模型名称"
           className={uiPrimitives.adminInput}
         />
-        <input
+        <input aria-label="input control"
           value={apiKey}
           onChange={(event) => setApiKey(event.target.value)}
           placeholder={config.hasApiKey ? `API Key 已保存：${config.apiKeyPreview}` : "输入 API Key"}
           className={uiPrimitives.adminInput}
         />
         <button disabled={saving} className={uiPrimitives.primaryButton}>
-          {saving ? "保存中..." : "保存全局生图引擎"}
+          {saving ? "保存中…" : "保存全局生图引擎"}
         </button>
       </form>
       <div className="mt-5 grid gap-3 text-sm text-stone-400 md:grid-cols-2">
@@ -219,12 +219,12 @@ export function GlobalObjectStorageSettings({
   return (
     <section className={`${uiPrimitives.adminPanel} p-5`}>
       <div className="text-xs uppercase tracking-[0.24em] text-cinnabar">Global Object Storage</div>
-      <h2 className="mt-4 font-serifCn text-3xl text-stone-100">图片对象存储</h2>
+      <h2 className="mt-4 font-serifCn text-3xl text-stone-100 text-balance">图片对象存储</h2>
       <p className="mt-4 text-sm leading-7 text-stone-400">
         这里统一管理封面图与图片资产的对象存储。默认走本地存储，也可以按 AWS S3、Cloudflare R2、阿里云 OSS、腾讯云 COS、MinIO 或自定义 S3 兼容预设接入。
       </p>
       <form onSubmit={handleSubmit} className="mt-6 grid gap-4">
-        <select
+        <select aria-label="select control"
           value={providerPreset}
           onChange={(event) => applyProviderPreset(event.target.value as ObjectStorageProviderPreset)}
           className={uiPrimitives.adminSelect}
@@ -241,10 +241,10 @@ export function GlobalObjectStorageSettings({
           {selectedPreset.description}
         </div>
         <label className="flex items-center gap-3 border border-stone-800 bg-stone-950 px-4 py-3 text-sm text-stone-300">
-          <input type="checkbox" checked={isEnabled} onChange={(event) => setIsEnabled(event.target.checked)} />
+          <input aria-label="input control" type="checkbox" checked={isEnabled} onChange={(event) => setIsEnabled(event.target.checked)} />
           启用当前对象存储配置
         </label>
-        <input
+        <input aria-label="路径前缀，可选，例如 prod/assets"
           value={pathPrefix}
           onChange={(event) => setPathPrefix(event.target.value)}
           placeholder="路径前缀，可选，例如 prod/assets"
@@ -252,39 +252,39 @@ export function GlobalObjectStorageSettings({
         />
         {providerName === "s3-compatible" ? (
           <>
-            <input
+            <input aria-label="input control"
               value={endpoint}
               onChange={(event) => setEndpoint(event.target.value)}
               placeholder={`Endpoint，例如 ${selectedPreset.endpointPlaceholder}`}
               className={uiPrimitives.adminInput}
             />
             <div className="grid gap-4 md:grid-cols-2">
-              <input
+              <input aria-label="Bucket 名称"
                 value={bucketName}
                 onChange={(event) => setBucketName(event.target.value)}
                 placeholder="Bucket 名称"
                 className={uiPrimitives.adminInput}
               />
-              <input
+              <input aria-label="input control"
                 value={region}
                 onChange={(event) => setRegion(event.target.value)}
                 placeholder={`Region，例如 ${selectedPreset.regionPlaceholder}`}
                 className={uiPrimitives.adminInput}
               />
             </div>
-            <input
+            <input aria-label="Access Key ID"
               value={accessKeyId}
               onChange={(event) => setAccessKeyId(event.target.value)}
               placeholder="Access Key ID"
               className={uiPrimitives.adminInput}
             />
-            <input
+            <input aria-label="input control"
               value={secretAccessKey}
               onChange={(event) => setSecretAccessKey(event.target.value)}
               placeholder={config.hasSecretAccessKey ? `Secret 已保存：${config.secretAccessKeyPreview}` : "Secret Access Key"}
               className={uiPrimitives.adminInput}
             />
-            <input
+            <input aria-label="input control"
               value={publicBaseUrl}
               onChange={(event) => setPublicBaseUrl(event.target.value)}
               placeholder={`Public Base URL，可选，例如 ${selectedPreset.publicBaseUrlPlaceholder || "https://cdn.example.com"}`}
@@ -294,10 +294,10 @@ export function GlobalObjectStorageSettings({
         ) : null}
         <div className="grid gap-3 md:grid-cols-2">
           <button type="button" disabled={testing} onClick={handleTestConnection} className={uiPrimitives.adminSecondaryButton}>
-            {testing ? "测试中..." : "测试对象存储连通性"}
+            {testing ? "测试中…" : "测试对象存储连通性"}
           </button>
           <button disabled={saving} className={uiPrimitives.primaryButton}>
-            {saving ? "保存中..." : "保存对象存储配置"}
+            {saving ? "保存中…" : "保存对象存储配置"}
           </button>
         </div>
       </form>

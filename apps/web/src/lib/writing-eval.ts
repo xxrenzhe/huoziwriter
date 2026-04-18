@@ -1,7 +1,9 @@
 import { computeObservedOutcomeScore } from "./article-scorecard";
+import { normalizeWritingEvalRolloutAuditLogs } from "./admin-writing-eval-rollout-audits";
 import { getDatabase } from "./db";
-import { appendAuditLog } from "./audit";
+import { appendAuditLog, getWritingEvalRolloutAuditLogs } from "./audit";
 import { activatePromptVersion } from "./repositories";
+import { buildTopicAngleOptions, buildTopicJudgementShift, matchTopicToKnowledgeCards } from "./knowledge-match";
 import { ensureExtendedProductSchema } from "./schema-bootstrap";
 import { WRITING_EVAL_APPLY_COMMAND_TEMPLATES } from "./writing-eval-assets";
 import { WRITING_EVAL_AGENT_STRATEGY_PRESETS, normalizeWritingEvalAgentStrategyCode } from "./writing-eval-config";
@@ -52,6 +54,10 @@ type WritingEvalCaseRow = {
   task_code: string;
   task_type: string;
   topic_title: string;
+  source_type: string;
+  source_ref: string | null;
+  source_label: string | null;
+  source_url: string | null;
   input_payload_json: string | Record<string, unknown>;
   expected_constraints_json: string | Record<string, unknown>;
   viral_targets_json: string | Record<string, unknown>;
@@ -64,10 +70,129 @@ type WritingEvalCaseRow = {
   updated_at: string;
 };
 
+type WritingEvalArticleImportRow = {
+  id: number;
+  user_id: number;
+  title: string;
+  status: string;
+  markdown_content: string;
+  series_id: number | null;
+  updated_at: string;
+  series_name: string | null;
+};
+
+type WritingEvalArticleArtifactRow = {
+  article_id: number;
+  stage_code: string;
+  payload_json: string | Record<string, unknown> | null;
+};
+
+type WritingEvalKnowledgeCardImportRow = {
+  id: number;
+  user_id: number;
+  card_type: string;
+  title: string;
+  summary: string | null;
+  key_facts_json: string | string[] | null;
+  open_questions_json: string | string[] | null;
+  conflict_flags_json: string | string[] | null;
+  latest_change_summary: string | null;
+  confidence_score: number;
+  status: string;
+  last_compiled_at: string | null;
+  last_verified_at: string | null;
+  updated_at: string;
+  owner_username?: string | null;
+};
+
+type WritingEvalKnowledgeCardFragmentRow = {
+  knowledge_card_id: number;
+  fragment_id: number;
+  distilled_content: string;
+};
+
+type WritingEvalKnowledgeCardLinkRow = {
+  source_card_id: number;
+  target_card_id: number;
+  link_type: string;
+};
+
+type WritingEvalKnowledgeCardLinkedCardRow = {
+  id: number;
+  title: string;
+  summary: string | null;
+  card_type: string;
+  status: string;
+};
+
+type WritingEvalTopicImportRow = {
+  id: number;
+  owner_user_id: number | null;
+  source_name: string;
+  source_type: string | null;
+  source_priority: number | null;
+  title: string;
+  summary: string | null;
+  emotion_labels_json: string | string[] | null;
+  angle_options_json: string | string[] | null;
+  source_url: string | null;
+  published_at: string | null;
+};
+
+type WritingEvalTopicKnowledgeCandidateRow = {
+  id: number;
+  title: string;
+  summary: string | null;
+  latest_change_summary: string | null;
+  overturned_judgements_json: string | string[] | null;
+  card_type: string;
+  status: string;
+  confidence_score: number;
+  owner_username: string | null;
+};
+
+type WritingEvalFragmentImportRow = {
+  id: number;
+  user_id: number;
+  source_type: string;
+  title: string | null;
+  raw_content: string | null;
+  distilled_content: string;
+  source_url: string | null;
+  screenshot_path: string | null;
+  created_at: string;
+};
+
+type WritingEvalFragmentKnowledgeCardRow = {
+  fragment_id: number;
+  knowledge_card_id: number;
+  title: string;
+  summary: string | null;
+  card_type: string;
+  status: string;
+  confidence_score: number;
+};
+
+type WritingEvalImportRecommendationItem = {
+  sourceType: "article" | "knowledge_card" | "topic_item" | "fragment";
+  sourceId: number;
+  title: string;
+  subtitle: string | null;
+  suggestedTaskType: string;
+  suggestedDifficultyLevel: string;
+  sourceFactCount: number;
+  knowledgeCardCount: number;
+  historyReferenceCount: number;
+  referenceGoodOutput: boolean;
+  reasonTags: string[];
+  score: number;
+};
+
 type WritingOptimizationRunRow = {
   id: number;
   run_code: string;
   dataset_id: number;
+  source_schedule_id?: number | null;
   base_version_type: string;
   base_version_ref: string;
   candidate_version_type: string;
@@ -86,6 +211,7 @@ type WritingOptimizationRunRow = {
   created_by: number | null;
   created_at: string;
   dataset_name?: string;
+  source_schedule_name?: string | null;
 };
 
 type WritingEvalRunScheduleRow = {
@@ -115,6 +241,9 @@ type WritingEvalRunScheduleRow = {
   dataset_status?: string | null;
   last_run_code?: string | null;
   last_run_status?: string | null;
+  last_run_score_summary_json?: string | Record<string, unknown> | null;
+  last_run_started_at?: string | null;
+  last_run_finished_at?: string | null;
 };
 
 type WritingOptimizationResultRow = {
@@ -160,6 +289,79 @@ type WritingOptimizationVersionRow = {
   decision_reason: string | null;
   approved_by: number | null;
   created_at: string;
+};
+
+type WritingEvalJobQueueRow = {
+  id: number;
+  job_type: string;
+  status: string;
+  payload_json: string | Record<string, unknown> | null;
+  run_at: string | null;
+  attempts: number;
+  locked_at: string | null;
+  last_error: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+type WritingEvalRetryAuditRow = {
+  id: number;
+  username: string | null;
+  payload_json: string | Record<string, unknown> | null;
+  created_at: string;
+};
+
+type WritingEvalRetryAuditAggregateRow = {
+  id: number;
+  target_id: string | null;
+  username: string | null;
+  payload_json: string | Record<string, unknown> | null;
+  created_at: string;
+};
+
+type WritingEvalPromptVersionRolloutRow = {
+  prompt_id: string;
+  version: string;
+  auto_mode: string | null;
+  rollout_observe_only: number | boolean;
+  rollout_percentage: number;
+  rollout_plan_codes_json: string | null;
+  is_active: number | boolean;
+};
+
+type WritingEvalPromptRolloutObservationRow = {
+  prompt_id: string;
+  version: string;
+  unique_user_count: number;
+  total_hit_count: number;
+  last_hit_at: string | null;
+  observe_user_count: number;
+  plan_user_count: number;
+  percentage_user_count: number;
+  stable_user_count: number;
+};
+
+type WritingEvalAssetRolloutRow = {
+  asset_type: string;
+  asset_ref: string;
+  auto_mode: string | null;
+  rollout_observe_only: number | boolean;
+  rollout_percentage: number;
+  rollout_plan_codes_json: string | null;
+  is_enabled: number | boolean;
+  notes: string | null;
+};
+
+type WritingEvalAssetRolloutObservationRow = {
+  asset_type: string;
+  asset_ref: string;
+  unique_user_count: number;
+  total_hit_count: number;
+  last_hit_at: string | null;
+  observe_user_count: number;
+  plan_user_count: number;
+  percentage_user_count: number;
+  stable_user_count: number;
 };
 
 type WritingEvalOnlineFeedbackRow = {
@@ -303,9 +505,37 @@ function getRecord(value: unknown) {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }
 
+function getRecordArray(value: unknown) {
+  if (!Array.isArray(value)) return [] as Record<string, unknown>[];
+  return value.map((item) => getRecord(item)).filter((item) => Object.keys(item).length > 0);
+}
+
 function getStringArray(value: unknown, limit = 12) {
   if (!Array.isArray(value)) return [] as string[];
   return value.map((item) => String(item || "").trim()).filter(Boolean).slice(0, limit);
+}
+
+function parsePlanCodes(value: unknown) {
+  return parseJsonArray(typeof value === "string" ? value : null).map((item) => String(item || "").trim()).filter(Boolean);
+}
+
+function normalizeTextSnippet(value: unknown, limit = 96) {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  if (!text) return "";
+  return text.length > limit ? `${text.slice(0, Math.max(1, limit - 1)).trimEnd()}…` : text;
+}
+
+function uniqueStrings(values: unknown[], limit = 12) {
+  const items: string[] = [];
+  const seen = new Set<string>();
+  for (const value of values) {
+    const text = normalizeTextSnippet(value, 120);
+    if (!text || seen.has(text)) continue;
+    seen.add(text);
+    items.push(text);
+    if (items.length >= limit) break;
+  }
+  return items;
 }
 
 function hasFilledString(value: unknown) {
@@ -315,6 +545,736 @@ function hasFilledString(value: unknown) {
 function normalizeWritingEvalDatasetStatus(value: unknown) {
   const status = String(value || "").trim();
   return status === "archived" || status === "draft" ? status : "active";
+}
+
+function inferWritingEvalTaskTypeFromArticle(input: {
+  title: string;
+  seriesName?: string | null;
+  researchBrief?: Record<string, unknown>;
+  outlinePlanning?: Record<string, unknown>;
+}) {
+  const title = `${input.title} ${String(input.seriesName || "")}`.toLowerCase();
+  const comparisonCount = getRecordArray(input.researchBrief?.comparisonCards).length;
+  if (/(复盘|复习|总结|踩坑|经验|教训|回顾)/.test(title)) {
+    return "experience_recap";
+  }
+  if (/(系列|周报|观察|追踪|连载)/.test(title) || /(series|weekly|watch)/.test(title)) {
+    return "series_observation";
+  }
+  if (comparisonCount > 0 || /(商业|增长|竞争|拆解|市场|策略|公司)/.test(title)) {
+    return "business_breakdown";
+  }
+  if (hasFilledString(input.outlinePlanning?.centralThesis) || hasFilledString(input.researchBrief?.coreQuestion)) {
+    return "tech_commentary";
+  }
+  return "tech_commentary";
+}
+
+function inferWritingEvalDifficultyFromArticle(input: {
+  hasMarkdown: boolean;
+  stageCodes: string[];
+  sourceFactCount: number;
+  knowledgeCardCount: number;
+  historyReferenceCount: number;
+}) {
+  let score = 0;
+  if (input.hasMarkdown) score += 1;
+  score += Math.min(3, input.stageCodes.length);
+  if (input.sourceFactCount >= 4) score += 2;
+  else if (input.sourceFactCount >= 2) score += 1;
+  if (input.knowledgeCardCount >= 2) score += 1;
+  if (input.historyReferenceCount >= 2) score += 1;
+  if (score >= 6) return "hard";
+  if (score >= 3) return "medium";
+  return "light";
+}
+
+function inferWritingEvalTaskTypeFromKnowledgeCard(input: {
+  title: string;
+  summary?: string | null;
+  cardType?: string | null;
+}) {
+  const title = `${input.title} ${String(input.summary || "")}`.toLowerCase();
+  if (input.cardType === "company" || input.cardType === "product") {
+    return "business_breakdown";
+  }
+  if (/(复盘|回顾|经验|教训|踩坑|总结)/.test(title)) {
+    return "experience_recap";
+  }
+  if (/(趋势|观察|追踪|系列|连载|演化|时间线)/.test(title) || input.cardType === "event" || input.cardType === "topic") {
+    return "series_observation";
+  }
+  if (/(商业|增长|竞争|市场|策略|公司|产品)/.test(title)) {
+    return "business_breakdown";
+  }
+  return "tech_commentary";
+}
+
+function inferWritingEvalDifficultyFromKnowledgeCard(input: {
+  sourceFactCount: number;
+  knowledgeCardCount: number;
+  historyReferenceCount: number;
+  openQuestionCount: number;
+  conflictFlagCount: number;
+}) {
+  let score = 0;
+  if (input.sourceFactCount >= 4) score += 2;
+  else if (input.sourceFactCount >= 2) score += 1;
+  if (input.knowledgeCardCount >= 2) score += 1;
+  if (input.historyReferenceCount >= 2) score += 1;
+  if (input.openQuestionCount >= 2) score += 1;
+  if (input.conflictFlagCount > 0) score += 1;
+  if (score >= 5) return "hard";
+  if (score >= 2) return "medium";
+  return "light";
+}
+
+function inferWritingEvalTaskTypeFromTopic(input: {
+  title: string;
+  summary?: string | null;
+  sourceType?: string | null;
+}) {
+  const title = `${input.title} ${String(input.summary || "")}`.toLowerCase();
+  if (/(复盘|回顾|复习|经验|教训|踩坑|总结)/.test(title)) {
+    return "experience_recap";
+  }
+  if (/(系列|观察|追踪|连载|演化|时间线|热点)/.test(title) || input.sourceType === "news") {
+    return "series_observation";
+  }
+  if (/(商业|增长|竞争|市场|策略|公司|产品)/.test(title)) {
+    return "business_breakdown";
+  }
+  return "tech_commentary";
+}
+
+function inferWritingEvalDifficultyFromTopic(input: {
+  sourceFactCount: number;
+  knowledgeCardCount: number;
+  historyReferenceCount: number;
+  emotionLabelCount: number;
+  angleOptionCount: number;
+}) {
+  let score = 0;
+  if (input.sourceFactCount >= 4) score += 2;
+  else if (input.sourceFactCount >= 2) score += 1;
+  if (input.knowledgeCardCount >= 2) score += 1;
+  if (input.historyReferenceCount >= 2) score += 1;
+  if (input.emotionLabelCount >= 2) score += 1;
+  if (input.angleOptionCount >= 2) score += 1;
+  if (score >= 5) return "hard";
+  if (score >= 2) return "medium";
+  return "light";
+}
+
+function inferWritingEvalTaskTypeFromFragment(input: {
+  title?: string | null;
+  distilledContent: string;
+  sourceType?: string | null;
+}) {
+  const text = `${String(input.title || "")} ${input.distilledContent}`.toLowerCase();
+  if (/(复盘|总结|经验|教训|踩坑|回顾)/.test(text)) {
+    return "experience_recap";
+  }
+  if (/(商业|增长|竞争|市场|公司|产品|策略)/.test(text)) {
+    return "business_breakdown";
+  }
+  if (/(追踪|观察|时间线|变化|舆情|热点)/.test(text) || input.sourceType === "url" || input.sourceType === "screenshot") {
+    return "series_observation";
+  }
+  return "tech_commentary";
+}
+
+function inferWritingEvalDifficultyFromFragment(input: {
+  sourceFactCount: number;
+  knowledgeCardCount: number;
+  historyReferenceCount: number;
+  hasSourceUrl: boolean;
+  hasScreenshot: boolean;
+}) {
+  let score = 0;
+  if (input.sourceFactCount >= 3) score += 2;
+  else if (input.sourceFactCount >= 1) score += 1;
+  if (input.knowledgeCardCount >= 2) score += 1;
+  if (input.historyReferenceCount >= 2) score += 1;
+  if (input.hasSourceUrl) score += 1;
+  if (input.hasScreenshot) score += 1;
+  if (score >= 5) return "hard";
+  if (score >= 2) return "medium";
+  return "light";
+}
+
+function buildWritingEvalArticleCaseDraft(input: {
+  article: WritingEvalArticleImportRow;
+  artifactPayloads: Record<string, Record<string, unknown>>;
+  historyReferences?: string[];
+}) {
+  const researchBrief = getRecord(input.artifactPayloads.researchBrief);
+  const audienceAnalysis = getRecord(input.artifactPayloads.audienceAnalysis);
+  const outlinePlanning = getRecord(input.artifactPayloads.outlinePlanning);
+  const deepWriting = getRecord(input.artifactPayloads.deepWriting);
+  const researchWriteback = getRecord(researchBrief.strategyWriteback);
+  const timelineCards = getRecordArray(researchBrief.timelineCards);
+  const comparisonCards = getRecordArray(researchBrief.comparisonCards);
+  const intersectionInsights = getRecordArray(researchBrief.intersectionInsights);
+  const historyReferencePlan = getRecordArray(deepWriting.historyReferencePlan);
+  const historyReferences = uniqueStrings(
+    [
+      ...(input.historyReferences ?? []),
+      ...historyReferencePlan.map((item) => {
+        const title = String(item.title || "").trim();
+        const detail = String(item.useWhen || item.bridgeSentence || "").trim();
+        return title ? `《${title}》${detail ? `：${normalizeTextSnippet(detail, 42)}` : ""}` : "";
+      }),
+    ],
+    4,
+  );
+  const sourceFacts = uniqueStrings(
+    [
+      ...timelineCards.flatMap((item) => [item.summary, ...getStringArray(item.signals, 2)]),
+      ...comparisonCards.flatMap((item) => [item.position, ...getStringArray(item.differences, 2)]),
+      ...intersectionInsights.flatMap((item) => [item.insight, item.whyNow]),
+      researchWriteback.coreAssertion,
+      researchWriteback.marketPositionInsight,
+      researchWriteback.historicalTurningPoint,
+    ],
+    8,
+  );
+  const knowledgeCards = uniqueStrings(
+    [
+      ...timelineCards.flatMap((item) =>
+        getRecordArray(item.sources)
+          .filter((source) => String(source.sourceType || "").trim() === "knowledge")
+          .map((source) => source.label),
+      ),
+      ...comparisonCards.flatMap((item) =>
+        getRecordArray(item.sources)
+          .filter((source) => String(source.sourceType || "").trim() === "knowledge")
+          .map((source) => source.label),
+      ),
+      ...intersectionInsights.flatMap((item) =>
+        getRecordArray(item.sources)
+          .filter((source) => String(source.sourceType || "").trim() === "knowledge")
+          .map((source) => source.label),
+      ),
+    ],
+    6,
+  );
+  const mustUseFacts = uniqueStrings(
+    [
+      ...getStringArray(deepWriting.mustUseFacts, 6),
+      ...sourceFacts.slice(0, 3),
+    ],
+    5,
+  );
+  const contentWarnings = uniqueStrings(
+    [
+      ...getStringArray(audienceAnalysis.contentWarnings, 6),
+      ...getStringArray(researchBrief.forbiddenConclusions, 4),
+    ],
+    6,
+  );
+  const referenceBadPatterns = uniqueStrings(
+    [
+      ...getStringArray(researchBrief.forbiddenConclusions, 4),
+      ...comparisonCards.flatMap((item) => getStringArray(item.risks, 2)),
+      "空泛判断",
+      "没有把事实和判断绑紧",
+      "标题很强但正文兑现不足",
+    ],
+    8,
+  );
+  const stageCodes = Object.keys(input.artifactPayloads).filter(Boolean);
+  const hasMarkdown = hasFilledString(input.article.markdown_content);
+  const taskType = inferWritingEvalTaskTypeFromArticle({
+    title: input.article.title,
+    seriesName: input.article.series_name,
+    researchBrief,
+    outlinePlanning,
+  });
+  const difficultyLevel = inferWritingEvalDifficultyFromArticle({
+    hasMarkdown,
+    stageCodes,
+    sourceFactCount: sourceFacts.length,
+    knowledgeCardCount: knowledgeCards.length,
+    historyReferenceCount: historyReferences.length,
+  });
+
+  return {
+    taskCode: `article-${input.article.id}`,
+    taskType,
+    topicTitle: String(outlinePlanning.workingTitle || deepWriting.selectedTitle || input.article.title).trim() || input.article.title,
+    difficultyLevel,
+    inputPayload: {
+      readerProfile:
+        String(audienceAnalysis.coreReaderLabel || researchBrief.targetReader || researchWriteback.targetReader || "").trim()
+        || `${input.article.series_name ? `系列读者：${input.article.series_name}` : "关注写作与内容判断的读者"}`,
+      languageGuidance:
+        String(getStringArray(audienceAnalysis.languageGuidance, 1)[0] || "").trim()
+        || "短句、先下判断再补证据、避免机器腔。",
+      backgroundAwareness:
+        String(getStringArray(audienceAnalysis.backgroundAwarenessOptions, 1)[0] || "").trim()
+        || "默认读者知道表层新闻，但不一定知道前情和结构性差异。",
+      targetEmotion:
+        String(outlinePlanning.targetEmotion || deepWriting.targetEmotion || "").trim()
+        || "从表层现象转到结构性理解，并愿意继续传播这个判断。",
+      authorPersonaSnapshot:
+        String(researchBrief.authorHypothesis || researchWriteback.researchHypothesis || "").trim()
+        || (input.article.series_name ? `延续系列 ${input.article.series_name} 的持续观察口径。` : ""),
+      writingStyleTarget:
+        String(deepWriting.articlePrototypeLabel || outlinePlanning.writingAngle || "").trim()
+        || (input.article.series_name ? `延续 ${input.article.series_name} 的连载观察写法。` : "强调判断、证据和行动意义。"),
+      sourceFacts,
+      knowledgeCards,
+      historyReferences,
+    },
+    expectedConstraints: {
+      mustUseFacts,
+      contentWarnings,
+      bannedPatterns: uniqueStrings(getStringArray(deepWriting.bannedWordWatchlist, 8), 8),
+      callToAction:
+        String(audienceAnalysis.recommendedCallToAction || outlinePlanning.endingStrategy || "").trim() || null,
+      factCheckRisk: uniqueStrings(getStringArray(researchBrief.forbiddenConclusions, 3), 3),
+      importMeta: {
+        sourceType: "article",
+        articleId: input.article.id,
+        articleStatus: input.article.status,
+        seriesName: input.article.series_name,
+        artifactStages: stageCodes,
+        importedFromUpdatedAt: input.article.updated_at,
+      },
+    },
+    viralTargets: {
+      titleGoal:
+        String(outlinePlanning.workingTitle || "").trim()
+        || "标题要先给读者一个明确判断，再点出为什么这件事现在值得关心。",
+      hookGoal:
+        String(outlinePlanning.openingHook || "").trim()
+        || "开头三句内交代今天真正要讨论的变化，不先堆背景。",
+      shareTriggerGoal:
+        String(intersectionInsights[0]?.insight || researchWriteback.coreAssertion || "").trim()
+        || "正文里至少要产出一句值得转发的结构性判断。",
+    },
+    stageArtifactPayloads: Object.fromEntries(
+      Object.entries(input.artifactPayloads).filter(([, payload]) => Object.keys(payload).length > 0),
+    ),
+    referenceGoodOutput: hasMarkdown ? input.article.markdown_content : null,
+    referenceBadPatterns,
+    hasMarkdown,
+    stageCodes,
+    sourceFactCount: sourceFacts.length,
+    knowledgeCardCount: knowledgeCards.length,
+    historyReferenceCount: historyReferences.length,
+  };
+}
+
+function buildWritingEvalKnowledgeCardCaseDraft(input: {
+  card: WritingEvalKnowledgeCardImportRow;
+  sourceFragments?: Array<{ id: number; distilledContent: string }>;
+  relatedCards?: Array<{ id: number; title: string; summary: string | null; cardType: string; status: string; linkType: string }>;
+}) {
+  const keyFacts = uniqueStrings(getStringArray(input.card.key_facts_json, 12), 8);
+  const openQuestions = uniqueStrings(getStringArray(input.card.open_questions_json, 8), 6);
+  const conflictFlags = uniqueStrings(getStringArray(input.card.conflict_flags_json, 6), 4);
+  const sourceFacts = uniqueStrings(
+    [
+      ...keyFacts,
+      ...(input.sourceFragments ?? []).map((item) => item.distilledContent),
+      input.card.summary,
+    ],
+    8,
+  );
+  const knowledgeCards = uniqueStrings((input.relatedCards ?? []).map((item) => item.title), 6);
+  const historyReferences = uniqueStrings(
+    (input.relatedCards ?? []).flatMap((item) => [item.title, item.summary]),
+    6,
+  );
+  const taskType = inferWritingEvalTaskTypeFromKnowledgeCard({
+    title: input.card.title,
+    summary: input.card.summary,
+    cardType: input.card.card_type,
+  });
+  const difficultyLevel = inferWritingEvalDifficultyFromKnowledgeCard({
+    sourceFactCount: sourceFacts.length,
+    knowledgeCardCount: knowledgeCards.length,
+    historyReferenceCount: historyReferences.length,
+    openQuestionCount: openQuestions.length,
+    conflictFlagCount: conflictFlags.length,
+  });
+  const mustUseFacts = uniqueStrings([...keyFacts, ...sourceFacts.slice(0, 3)], 5);
+  const contentWarnings = uniqueStrings(
+    [
+      ...conflictFlags.map((item) => `注意冲突信号：${item}`),
+      ...(input.card.status === "stale" ? ["背景卡状态为 stale，引用前要补最新事实。"] : []),
+      ...(input.card.status === "conflicted" ? ["背景卡存在冲突，正文里不要把单一口径写成定论。"] : []),
+    ],
+    5,
+  );
+  const referenceBadPatterns = uniqueStrings(
+    [
+      "只复述知识卡摘要，没有形成新判断",
+      "忽略知识卡里的冲突信号",
+      "把开放问题写成确定结论",
+      ...conflictFlags.map((item) => `跳过冲突维度：${item}`),
+    ],
+    8,
+  );
+
+  return {
+    taskCode: `knowledge-card-${input.card.id}`,
+    taskType,
+    topicTitle: input.card.title,
+    difficultyLevel,
+    inputPayload: {
+      readerProfile: "希望快速建立背景理解、再进入结构性判断的中文内容读者",
+      languageGuidance: "短句、先讲判断再补证据、不要重复档案摘要。",
+      backgroundAwareness: input.card.summary || "默认读者知道表层事件，但不了解这张背景卡沉淀出的关键前情。",
+      targetEmotion:
+        input.card.status === "conflicted"
+          ? "先把冲突口径讲清，再给出暂时可信的判断边界。"
+          : "帮助读者快速建立背景坐标，并形成值得传播的解释框架。",
+      authorPersonaSnapshot:
+        input.card.latest_change_summary || `围绕 ${input.card.title} 做持续观察和结构化解释。`,
+      writingStyleTarget:
+        input.card.card_type === "company" || input.card.card_type === "product"
+          ? "商业拆解式写法，判断清楚、证据克制。"
+          : "背景梳理 + 结构判断并重，不只做资料汇编。",
+      sourceFacts,
+      knowledgeCards,
+      historyReferences,
+    },
+    expectedConstraints: {
+      mustUseFacts,
+      contentWarnings,
+      bannedPatterns: uniqueStrings(openQuestions.map((item) => `不要跳过这个未决问题：${item}`), 6),
+      callToAction: input.card.status === "conflicted" ? "明确告诉读者哪些点还要继续观察" : null,
+      factCheckRisk: uniqueStrings([...openQuestions, ...conflictFlags], 6),
+      importMeta: {
+        sourceType: "knowledge_card",
+        knowledgeCardId: input.card.id,
+        cardType: input.card.card_type,
+        cardStatus: input.card.status,
+        confidenceScore: input.card.confidence_score,
+        lastCompiledAt: input.card.last_compiled_at,
+        lastVerifiedAt: input.card.last_verified_at,
+      },
+    },
+    viralTargets: {
+      titleGoal:
+        input.card.status === "conflicted"
+          ? "标题要同时点出核心争议和这轮真正新增的判断。"
+          : "标题要把背景卡里的核心判断前置，不写成资料汇总标题。",
+      hookGoal:
+        input.card.latest_change_summary
+        || input.card.summary
+        || "开头三句内先交代这张背景卡为什么现在值得重新看。",
+      shareTriggerGoal:
+        keyFacts[0]
+        || input.card.summary
+        || "正文里至少产出一句能代表这张背景卡核心判断的句子。",
+    },
+    stageArtifactPayloads: {
+      deepWriting: {
+        sourceType: "knowledge_card",
+        knowledgeCardId: input.card.id,
+        knowledgeCardTitle: input.card.title,
+        cardType: input.card.card_type,
+        confidenceScore: Math.round((Number(input.card.confidence_score || 0) || 0) * 100),
+        status: input.card.status,
+        summary: input.card.summary,
+        keyFacts,
+        openQuestions,
+        conflictFlags,
+      },
+    },
+    referenceGoodOutput: null,
+    referenceBadPatterns,
+    sourceFactCount: sourceFacts.length,
+    knowledgeCardCount: knowledgeCards.length,
+    historyReferenceCount: historyReferences.length,
+    openQuestionCount: openQuestions.length,
+    conflictFlagCount: conflictFlags.length,
+  };
+}
+
+function buildWritingEvalTopicCaseDraft(input: {
+  topic: WritingEvalTopicImportRow;
+  matchedCards?: Array<{
+    id: number;
+    title: string;
+    cardType: string;
+    status: string;
+    confidenceScore: number;
+    summary: string | null;
+    latestChangeSummary: string | null;
+    overturnedJudgements: string[];
+    shared: boolean;
+    ownerUsername: string | null;
+  }>;
+}) {
+  const emotionLabels = uniqueStrings(parseJsonArray(input.topic.emotion_labels_json), 4);
+  const baseAngles = uniqueStrings(parseJsonArray(input.topic.angle_options_json), 3);
+  const matchedCards = input.matchedCards ?? [];
+  const angleOptions = uniqueStrings(buildTopicAngleOptions(input.topic.title, baseAngles, matchedCards), 3);
+  const judgementShift = buildTopicJudgementShift(input.topic.title, matchedCards);
+  const sourceFacts = uniqueStrings(
+    [
+      input.topic.summary,
+      input.topic.source_url ? `主信源：${input.topic.source_url}` : "",
+      ...emotionLabels.map((item) => `情绪线索：${item}`),
+      ...matchedCards.flatMap((item) => [item.summary, item.latestChangeSummary]),
+    ],
+    8,
+  );
+  const knowledgeCards = uniqueStrings(matchedCards.map((item) => item.title), 6);
+  const historyReferences = uniqueStrings(
+    matchedCards.flatMap((item) => [item.title, item.summary, item.latestChangeSummary, ...item.overturnedJudgements]),
+    6,
+  );
+  const taskType = inferWritingEvalTaskTypeFromTopic({
+    title: input.topic.title,
+    summary: input.topic.summary,
+    sourceType: input.topic.source_type,
+  });
+  const difficultyLevel = inferWritingEvalDifficultyFromTopic({
+    sourceFactCount: sourceFacts.length,
+    knowledgeCardCount: knowledgeCards.length,
+    historyReferenceCount: historyReferences.length,
+    emotionLabelCount: emotionLabels.length,
+    angleOptionCount: angleOptions.length,
+  });
+  const mustUseFacts = uniqueStrings([
+    ...sourceFacts.slice(0, 3),
+    judgementShift,
+  ], 4);
+  const contentWarnings = uniqueStrings(
+    [
+      input.topic.source_url ? "" : "缺少原始信源 URL，成文时不要把单条摘要写成定论。",
+      ...matchedCards
+        .filter((item) => item.status === "conflicted" || item.status === "stale")
+        .map((item) => `关联背景卡 ${item.title} 当前状态为 ${item.status}`),
+    ],
+    5,
+  );
+  const referenceBadPatterns = uniqueStrings(
+    [
+      "只复述热点摘要，没有给出新增判断",
+      "没有交代为什么这件事现在值得写",
+      "标题很热但正文缺少事实钩子",
+      ...matchedCards
+        .filter((item) => item.status === "conflicted")
+        .map((item) => `忽略关联背景卡冲突：${item.title}`),
+    ],
+    8,
+  );
+
+  return {
+    taskCode: `topic-item-${input.topic.id}`,
+    taskType,
+    topicTitle: input.topic.title,
+    difficultyLevel,
+    inputPayload: {
+      readerProfile: "知道表层热点，但希望快速建立判断框架的中文读者",
+      languageGuidance: "先给判断，再补事实，不要把热点摘要重写成空泛评论。",
+      backgroundAwareness: input.topic.summary || "默认读者知道新闻标题，但不知道这件事真正改变了什么。",
+      targetEmotion:
+        emotionLabels[0]
+        || "先感到压强，再愿意把这个判断转发给同样关注此事的人。",
+      authorPersonaSnapshot:
+        judgementShift
+        || `围绕 ${input.topic.title} 做一次“旧判断是否失效”的结构化解释。`,
+      writingStyleTarget:
+        angleOptions[0]
+        || "热点观察写法，强调新增变量、判断位移和读者收益。",
+      sourceFacts,
+      knowledgeCards,
+      historyReferences,
+    },
+    expectedConstraints: {
+      mustUseFacts,
+      contentWarnings,
+      bannedPatterns: uniqueStrings(angleOptions.map((item) => `不要绕开这个切角：${item}`), 4),
+      callToAction: "结尾要点明这条热点后续还要继续观察什么。",
+      factCheckRisk: uniqueStrings(
+        [
+          ...matchedCards.flatMap((item) => item.status === "conflicted" ? [item.title] : []),
+          ...matchedCards.flatMap((item) => item.overturnedJudgements),
+        ],
+        6,
+      ),
+      importMeta: {
+        sourceType: "topic_item",
+        topicItemId: input.topic.id,
+        sourceName: input.topic.source_name,
+        sourceTypeCode: input.topic.source_type,
+        sourcePriority: input.topic.source_priority,
+        sourceUrl: input.topic.source_url,
+        publishedAt: input.topic.published_at,
+      },
+    },
+    viralTargets: {
+      titleGoal: angleOptions[0] || "标题要先点明这次真正新增的判断，而不是重复新闻。",
+      hookGoal:
+        judgementShift
+        || input.topic.summary
+        || "开头三句内交代旧判断为什么不够用了。",
+      shareTriggerGoal:
+        angleOptions[1]
+        || "正文里至少要产出一句值得转发的判断位移句。",
+    },
+    stageArtifactPayloads: {
+      researchBrief: {
+        sourceType: "topic_item",
+        topicItemId: input.topic.id,
+        sourceName: input.topic.source_name,
+        sourceTypeCode: input.topic.source_type,
+        summary: input.topic.summary,
+        sourceUrl: input.topic.source_url,
+        publishedAt: input.topic.published_at,
+        emotionLabels,
+        angleOptions,
+        judgementShift,
+        matchedKnowledgeCards: matchedCards.map((item) => ({
+          id: item.id,
+          title: item.title,
+          status: item.status,
+          cardType: item.cardType,
+          summary: item.summary,
+          latestChangeSummary: item.latestChangeSummary,
+          confidenceScore: item.confidenceScore,
+        })),
+      },
+    },
+    referenceGoodOutput: null,
+    referenceBadPatterns,
+    sourceFactCount: sourceFacts.length,
+    knowledgeCardCount: knowledgeCards.length,
+    historyReferenceCount: historyReferences.length,
+    emotionLabelCount: emotionLabels.length,
+    angleOptionCount: angleOptions.length,
+  };
+}
+
+function buildWritingEvalFragmentCaseDraft(input: {
+  fragment: WritingEvalFragmentImportRow;
+  linkedCards?: Array<{ id: number; title: string; summary: string | null; cardType: string; status: string; confidenceScore: number }>;
+}) {
+  const linkedCards = input.linkedCards ?? [];
+  const fragmentTitle = String(input.fragment.title || "").trim() || `素材 #${input.fragment.id}`;
+  const sourceFacts = uniqueStrings(
+    [
+      input.fragment.distilled_content,
+      normalizeTextSnippet(input.fragment.raw_content, 120),
+      input.fragment.source_url ? `来源：${input.fragment.source_url}` : "",
+      ...linkedCards.flatMap((item) => [item.summary, item.title]),
+    ],
+    8,
+  );
+  const knowledgeCards = uniqueStrings(linkedCards.map((item) => item.title), 6);
+  const historyReferences = uniqueStrings(linkedCards.flatMap((item) => [item.title, item.summary]), 6);
+  const hasScreenshot = Boolean(input.fragment.screenshot_path) || input.fragment.source_type === "screenshot";
+  const taskType = inferWritingEvalTaskTypeFromFragment({
+    title: input.fragment.title,
+    distilledContent: input.fragment.distilled_content,
+    sourceType: input.fragment.source_type,
+  });
+  const difficultyLevel = inferWritingEvalDifficultyFromFragment({
+    sourceFactCount: sourceFacts.length,
+    knowledgeCardCount: knowledgeCards.length,
+    historyReferenceCount: historyReferences.length,
+    hasSourceUrl: Boolean(input.fragment.source_url),
+    hasScreenshot,
+  });
+  const mustUseFacts = uniqueStrings(sourceFacts.slice(0, 4), 4);
+  const contentWarnings = uniqueStrings(
+    [
+      hasScreenshot ? "如果引用截图素材，只能描述画面信息，不要伪造原文逐字引用。" : "",
+      input.fragment.source_url ? "" : "缺少外链来源，成文时要把事实边界写得更保守。",
+      ...linkedCards
+        .filter((item) => item.status === "conflicted" || item.status === "stale")
+        .map((item) => `关联背景卡 ${item.title} 当前状态为 ${item.status}`),
+    ],
+    5,
+  );
+  const referenceBadPatterns = uniqueStrings(
+    [
+      "只改写素材原句，没有形成判断",
+      "把截图或二手摘要写成确定事实",
+      "没有交代这条素材为什么值得进入正文",
+    ],
+    6,
+  );
+  const materialBundleItem = {
+    fragmentId: input.fragment.id,
+    title: fragmentTitle,
+    usageMode: hasScreenshot ? "image" : "rewrite",
+    sourceType: input.fragment.source_type,
+    summary: normalizeTextSnippet(input.fragment.distilled_content, 120),
+    screenshotPath: input.fragment.screenshot_path,
+    sourceUrl: input.fragment.source_url,
+  };
+
+  return {
+    taskCode: `fragment-${input.fragment.id}`,
+    taskType,
+    topicTitle: fragmentTitle,
+    difficultyLevel,
+    inputPayload: {
+      readerProfile: "对新事实敏感，希望快速看到判断和出处边界的中文读者",
+      languageGuidance: "短句、先讲这条素材意味着什么，再补来源和判断。",
+      backgroundAwareness: normalizeTextSnippet(input.fragment.raw_content || input.fragment.distilled_content, 140),
+      targetEmotion: "让读者觉得这条素材不只是线索，而是一个值得继续展开的判断入口。",
+      authorPersonaSnapshot: `围绕素材 ${fragmentTitle} 提炼最值得成文的判断。`,
+      writingStyleTarget: hasScreenshot ? "图证 + 判断并重，不要把截图抄写成流水账。" : "素材驱动写法，判断必须绑定事实。",
+      sourceFacts,
+      knowledgeCards,
+      historyReferences,
+    },
+    expectedConstraints: {
+      mustUseFacts,
+      contentWarnings,
+      bannedPatterns: [
+        "空泛扩写",
+        "跳过来源边界",
+      ],
+      callToAction: "结尾要说明这条素材下一步最值得补哪类证据。",
+      factCheckRisk: uniqueStrings(
+        [
+          input.fragment.source_url ? "" : "缺少原始信源链接",
+          hasScreenshot ? "截图素材需要明确来源边界" : "",
+        ],
+        3,
+      ),
+      importMeta: {
+        sourceType: "fragment",
+        fragmentId: input.fragment.id,
+        fragmentSourceType: input.fragment.source_type,
+        sourceUrl: input.fragment.source_url,
+        screenshotPath: input.fragment.screenshot_path,
+        createdAt: input.fragment.created_at,
+      },
+    },
+    viralTargets: {
+      titleGoal: "标题要点明这条素材真正值得关注的变化，而不是只报事实。",
+      hookGoal: input.fragment.distilled_content || "开头三句内交代这条素材为什么值得继续写。",
+      shareTriggerGoal: "正文里至少产出一句能概括这条素材判断价值的话。",
+    },
+    stageArtifactPayloads: {
+      deepWriting: {
+        sourceType: "fragment",
+        fragmentId: input.fragment.id,
+        fragmentTitle,
+        materialBundle: [materialBundleItem],
+        linkedKnowledgeCards: linkedCards,
+      },
+    },
+    referenceGoodOutput: null,
+    referenceBadPatterns,
+    sourceFactCount: sourceFacts.length,
+    knowledgeCardCount: knowledgeCards.length,
+    historyReferenceCount: historyReferences.length,
+    hasSourceUrl: Boolean(input.fragment.source_url),
+    hasScreenshot,
+  };
 }
 
 function getWritingEvalDatasetReadiness(cases: WritingEvalCaseRow[], datasetStatusInput?: string | null): WritingEvalDatasetReadiness {
@@ -587,6 +1547,56 @@ function parsePromptVersionRef(value: string) {
   return { promptId, version };
 }
 
+const TITLE_TEMPLATE_PROMPT_ID = "outline_planning" as const;
+const LEAD_TEMPLATE_PROMPT_ID = "prose_polish" as const;
+
+const PROMPT_BACKED_WRITING_EVAL_VERSION_TYPES = [
+  "prompt_version",
+  "fact_check",
+  "title_template",
+  "lead_template",
+] as const;
+const SUPPORTED_WRITING_EVAL_VERSION_TYPES = [
+  ...PROMPT_BACKED_WRITING_EVAL_VERSION_TYPES,
+  "scoring_profile",
+  "layout_strategy",
+  "apply_command_template",
+] as const;
+
+function isPromptBackedWritingEvalVersionType(value: string) {
+  return PROMPT_BACKED_WRITING_EVAL_VERSION_TYPES.includes(value as (typeof PROMPT_BACKED_WRITING_EVAL_VERSION_TYPES)[number]);
+}
+
+function getRequiredPromptIdForPromptBackedVersionType(versionType: string) {
+  if (versionType === "fact_check") return "fact_check";
+  if (versionType === "title_template") return TITLE_TEMPLATE_PROMPT_ID;
+  if (versionType === "lead_template") return LEAD_TEMPLATE_PROMPT_ID;
+  return null;
+}
+
+function resolvePromptBackedWritingEvalVersionRef(versionType: string, versionRef: string) {
+  const parsed = parsePromptVersionRef(versionRef);
+  const requiredPromptId = getRequiredPromptIdForPromptBackedVersionType(versionType);
+  if (requiredPromptId && parsed.promptId !== requiredPromptId) {
+    if (versionType === "fact_check") {
+      throw new Error("fact_check 实验必须使用 fact_check Prompt 版本");
+    }
+    if (versionType === "title_template") {
+      throw new Error("title_template 实验必须使用 outline_planning Prompt 版本");
+    }
+    if (versionType === "lead_template") {
+      throw new Error("lead_template 实验必须使用 prose_polish Prompt 版本");
+    }
+  }
+  return parsed;
+}
+
+function getWritingEvalVersionTargetKey(versionType: string, versionRef: string) {
+  return isPromptBackedWritingEvalVersionType(versionType)
+    ? resolvePromptBackedWritingEvalVersionRef(versionType, versionRef).promptId
+    : versionRef;
+}
+
 function normalizeWritingEvalExperimentMode(value: string | null | undefined) {
   const normalized = String(value || "").trim();
   return normalized === "title_only" || normalized === "lead_only" ? normalized : "full_article";
@@ -642,8 +1652,8 @@ function addHoursToIso(baseIso: string, hours: number) {
 }
 
 function getRequiredPromptTargetIdForExperimentMode(experimentMode: string) {
-  if (experimentMode === "title_only") return "outline_planning";
-  if (experimentMode === "lead_only") return "prose_polish";
+  if (experimentMode === "title_only") return TITLE_TEMPLATE_PROMPT_ID;
+  if (experimentMode === "lead_only") return LEAD_TEMPLATE_PROMPT_ID;
   return null;
 }
 
@@ -685,6 +1695,14 @@ function buildPromotionDecision(scoreSummary: Record<string, unknown>) {
   const baseFactualRiskPenalty = getNumber(scoreSummary.baseFactualRiskPenalty) ?? factualRiskPenalty;
   const aiNoisePenalty = getNumber(scoreSummary.aiNoisePenalty) ?? 0;
   const baseAiNoisePenalty = getNumber(scoreSummary.baseAiNoisePenalty) ?? aiNoisePenalty;
+  const historicalSimilarityRisk = getNumber(scoreSummary.historicalSimilarityRisk) ?? 0;
+  const baseHistoricalSimilarityRisk = getNumber(scoreSummary.baseHistoricalSimilarityRisk) ?? historicalSimilarityRisk;
+  const judgeAgreementRatio = getNumber(scoreSummary.judgeAgreementRatio) ?? 1;
+  const baseJudgeAgreementRatio = getNumber(scoreSummary.baseJudgeAgreementRatio) ?? judgeAgreementRatio;
+  const judgeScoreStddev = getNumber(scoreSummary.judgeScoreStddev) ?? 0;
+  const baseJudgeScoreStddev = getNumber(scoreSummary.baseJudgeScoreStddev) ?? judgeScoreStddev;
+  const judgeDisagreementRisk = getNumber(scoreSummary.judgeDisagreementRisk) ?? 0;
+  const baseJudgeDisagreementRisk = getNumber(scoreSummary.baseJudgeDisagreementRisk) ?? judgeDisagreementRisk;
   const improvedCaseCount = getNumber(scoreSummary.improvedCaseCount) ?? 0;
   const regressedCaseCount = getNumber(scoreSummary.regressedCaseCount) ?? 0;
   const qualityRegressions = PROMOTION_QUALITY_SIGNAL_DEFINITIONS
@@ -717,6 +1735,10 @@ function buildPromotionDecision(scoreSummary: Record<string, unknown>) {
   if (factualRiskPenalty > baseFactualRiskPenalty) blockers.push("事实风险上升");
   if (aiNoisePenalty > baseAiNoisePenalty) blockers.push("机器腔惩罚上升");
   if (improvedCaseCount < regressedCaseCount) blockers.push(`退化样本 ${regressedCaseCount} 条多于提分样本 ${improvedCaseCount} 条`);
+  if (historicalSimilarityRisk > Math.max(0.55, baseHistoricalSimilarityRisk + 0.08)) blockers.push("历史近重复风险过高");
+  if (judgeAgreementRatio < 0.66 || judgeAgreementRatio < baseJudgeAgreementRatio - 0.08) blockers.push("评审结论分歧扩大");
+  if (judgeDisagreementRisk > Math.max(0.45, baseJudgeDisagreementRisk + 0.08)) blockers.push("多评审分歧风险过高");
+  if (judgeScoreStddev > Math.max(8, baseJudgeScoreStddev + 2)) blockers.push("裁判打分波动过大");
   if (qualityRegressions.length > 0) blockers.push(`${qualityRegressions.map((item) => item.label).join("、")}退化`);
   if (viralRegressions.length > 0) blockers.push(`${viralRegressions.map((item) => item.label).join("、")}退化`);
   if (
@@ -741,7 +1763,7 @@ function buildPromotionDecision(scoreSummary: Record<string, unknown>) {
   return {
     suggestion: shouldKeep ? "keep" : "discard",
     reason: shouldKeep
-      ? `总分提升 ${deltaTotal.toFixed(2)}，提分样本 ${improvedCaseCount} 条；${signalHighlights.length ? `核心增益集中在 ${signalHighlights.join("、")}，` : ""}且事实风险、机器腔与组合风险守卫均未触发。`
+      ? `总分提升 ${deltaTotal.toFixed(2)}，提分样本 ${improvedCaseCount} 条；${signalHighlights.length ? `核心增益集中在 ${signalHighlights.join("、")}，` : ""}且事实风险、近重复、多评审分歧与组合风险守卫均未触发。`
       : `当前更适合 discard：${blockers.slice(0, 4).join("；")}。`,
   };
 }
@@ -798,6 +1820,10 @@ function mapCase(row: WritingEvalCaseRow) {
     taskCode: row.task_code,
     taskType: row.task_type,
     topicTitle: row.topic_title,
+    sourceType: row.source_type,
+    sourceRef: row.source_ref,
+    sourceLabel: row.source_label,
+    sourceUrl: row.source_url,
     inputPayload: parseJsonObject(row.input_payload_json),
     expectedConstraints: parseJsonObject(row.expected_constraints_json),
     viralTargets: parseJsonObject(row.viral_targets_json),
@@ -819,6 +1845,8 @@ function mapRun(row: WritingOptimizationRunRow) {
     runCode: row.run_code,
     datasetId: row.dataset_id,
     datasetName: row.dataset_name ?? null,
+    sourceScheduleId: typeof row.source_schedule_id === "number" ? row.source_schedule_id : null,
+    sourceScheduleName: row.source_schedule_name ?? null,
     baseVersionType: row.base_version_type,
     baseVersionRef: row.base_version_ref,
     candidateVersionType: row.candidate_version_type,
@@ -863,6 +1891,9 @@ function mapRunSchedule(row: WritingEvalRunScheduleRow, readiness: WritingEvalDa
     lastRunId: row.last_run_id,
     lastRunCode: row.last_run_code ?? null,
     lastRunStatus: row.last_run_status ?? null,
+    lastRunScoreSummary: parseJsonObject(row.last_run_score_summary_json),
+    lastRunStartedAt: row.last_run_started_at ?? null,
+    lastRunFinishedAt: row.last_run_finished_at ?? null,
     lastError: row.last_error,
     isEnabled: Boolean(row.is_enabled),
     summary: row.summary,
@@ -914,6 +1945,183 @@ function mapRunResult(row: WritingOptimizationResultRow) {
     totalScore: row.total_score,
     judgePayload: parseJsonObject(row.judge_payload_json),
     createdAt: row.created_at,
+  };
+}
+
+function getWritingEvalJobRunFilterSql(runId: number) {
+  const db = getDatabase();
+  if (db.type === "postgres") {
+    return {
+      clause: "payload_json ->> 'runId' = ?",
+      params: [String(runId)] as unknown[],
+    };
+  }
+
+  return {
+    clause: "(payload_json LIKE ? OR payload_json LIKE ?)",
+    params: [`%\"runId\":${runId}%`, `%\"runId\": ${runId}%`] as unknown[],
+  };
+}
+
+function getWritingEvalStageMetaForJobType(jobType: string) {
+  if (jobType === "writingEvalScore") {
+    return { stageKey: "scoring", stageLabel: "评分" };
+  }
+  if (jobType === "writingEvalPromote") {
+    return { stageKey: "promotion", stageLabel: "决议" };
+  }
+  return { stageKey: "generation", stageLabel: "生成" };
+}
+
+const WRITING_EVAL_DAY_MS = 24 * 60 * 60 * 1000;
+
+function getPositiveInteger(value: unknown) {
+  const resolved = typeof value === "string" ? Number(value) : value;
+  return typeof resolved === "number" && Number.isInteger(resolved) && resolved > 0 ? Number(resolved) : null;
+}
+
+function getTrimmedString(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function getWindowRange(days: number, offsetDays = 0, now = new Date()) {
+  const anchor = new Date(now);
+  anchor.setHours(0, 0, 0, 0);
+  const endMs = anchor.getTime() - offsetDays * WRITING_EVAL_DAY_MS + WRITING_EVAL_DAY_MS;
+  const startMs = endMs - days * WRITING_EVAL_DAY_MS;
+  return { startMs, endMs };
+}
+
+function isWithinWindow(value: string | null | undefined, startMs: number, endMs: number) {
+  if (!value) return false;
+  const ts = new Date(value).getTime();
+  return Number.isFinite(ts) && ts >= startMs && ts < endMs;
+}
+
+function getDurationSeconds(startValue: string | null | undefined, endValue: string | null | undefined) {
+  if (!startValue || !endValue) return null;
+  const startMs = new Date(startValue).getTime();
+  const endMs = new Date(endValue).getTime();
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs < startMs) return null;
+  return (endMs - startMs) / 1000;
+}
+
+function buildWritingEvalExecutionInsights(input: {
+  jobRows: WritingEvalJobQueueRow[];
+  retryAuditRows: WritingEvalRetryAuditAggregateRow[];
+}) {
+  const jobs = input.jobRows
+    .map((row) => {
+      const payload = parseJsonObject(row.payload_json);
+      const stage = getWritingEvalStageMetaForJobType(row.job_type);
+      const runId = getPositiveInteger(payload.runId);
+      const runCode = getTrimmedString(payload.runCode) || null;
+      const finishedAt = row.status === "completed" || row.status === "failed" ? row.updated_at : null;
+      return {
+        id: row.id,
+        jobType: row.job_type,
+        stageKey: stage.stageKey,
+        stageLabel: stage.stageLabel,
+        runId,
+        runCode,
+        status: row.status,
+        queuedAt: row.created_at,
+        startedAt: row.locked_at,
+        finishedAt,
+        updatedAt: row.updated_at,
+        lastError: row.last_error,
+        retryCount: Number(row.attempts || 0),
+        durationSeconds: getDurationSeconds(row.locked_at, finishedAt),
+      };
+    })
+    .filter((item) => item.runId !== null || item.runCode);
+
+  const retries = input.retryAuditRows.map((row) => {
+    const payload = parseJsonObject(row.payload_json);
+    return {
+      id: row.id,
+      runId: getPositiveInteger(row.target_id) ?? getPositiveInteger(payload.runId),
+      runCode: getTrimmedString(payload.runCode) || null,
+      username: row.username,
+      createdAt: row.created_at,
+      retriedAt: getTrimmedString(payload.retriedAt) || row.created_at,
+    };
+  });
+
+  function summarizeWindow(days: number, offsetDays = 0, now = new Date()) {
+    const { startMs, endMs } = getWindowRange(days, offsetDays, now);
+    const windowJobs = jobs.filter((item) => isWithinWindow(item.queuedAt, startMs, endMs));
+    const windowRetries = retries.filter((item) => isWithinWindow(item.retriedAt, startMs, endMs));
+    return {
+      jobCount: windowJobs.length,
+      failedJobCount: windowJobs.filter((item) => item.status === "failed").length,
+      runningJobCount: windowJobs.filter((item) => item.status === "running").length,
+      queuedJobCount: windowJobs.filter((item) => item.status === "queued").length,
+      retryCount: windowRetries.length,
+      averageDurationSeconds: averageNumbers(windowJobs.map((item) => item.durationSeconds)),
+      stageBreakdown: ["generation", "scoring", "promotion"].map((stageKey) => {
+        const stageJobs = windowJobs.filter((item) => item.stageKey === stageKey);
+        const stageLabel = stageJobs[0]?.stageLabel ?? getWritingEvalStageMetaForJobType(
+          stageKey === "generation" ? "writingEvalRun" : stageKey === "scoring" ? "writingEvalScore" : "writingEvalPromote",
+        ).stageLabel;
+        return {
+          stageKey,
+          stageLabel,
+          jobCount: stageJobs.length,
+          failedJobCount: stageJobs.filter((item) => item.status === "failed").length,
+          retryCount: stageJobs.reduce((sum, item) => sum + item.retryCount, 0),
+          averageDurationSeconds: averageNumbers(stageJobs.map((item) => item.durationSeconds)),
+        };
+      }),
+    };
+  }
+
+  const weeklyBuckets = Array.from({ length: 6 }, (_, index) => {
+    const offsetDays = (6 - index - 1) * 7;
+    const { startMs, endMs } = getWindowRange(7, offsetDays);
+    const windowJobs = jobs.filter((item) => isWithinWindow(item.queuedAt, startMs, endMs));
+    const windowRetries = retries.filter((item) => isWithinWindow(item.retriedAt, startMs, endMs));
+    const startKey = new Date(startMs).toISOString().slice(5, 10);
+    const endKey = new Date(endMs - 1).toISOString().slice(5, 10);
+    return {
+      label: `${startKey} - ${endKey}`,
+      jobCount: windowJobs.length,
+      failedJobCount: windowJobs.filter((item) => item.status === "failed").length,
+      retryCount: windowRetries.length,
+      averageDurationSeconds: averageNumbers(windowJobs.map((item) => item.durationSeconds)),
+      generationFailedCount: windowJobs.filter((item) => item.stageKey === "generation" && item.status === "failed").length,
+      scoringFailedCount: windowJobs.filter((item) => item.stageKey === "scoring" && item.status === "failed").length,
+      promotionFailedCount: windowJobs.filter((item) => item.stageKey === "promotion" && item.status === "failed").length,
+    };
+  });
+
+  const recentFailures = jobs
+    .filter((item) => item.status === "failed")
+    .sort((left, right) => new Date(right.finishedAt || right.updatedAt).getTime() - new Date(left.finishedAt || left.updatedAt).getTime())
+    .slice(0, 8)
+    .map((item) => ({
+      jobId: item.id,
+      runId: item.runId,
+      runCode: item.runCode,
+      stageKey: item.stageKey,
+      stageLabel: item.stageLabel,
+      failedAt: item.finishedAt || item.updatedAt,
+      queuedAt: item.queuedAt,
+      durationSeconds: item.durationSeconds,
+      lastError: item.lastError,
+    }));
+
+  const recentRetries = retries
+    .slice()
+    .sort((left, right) => new Date(right.retriedAt).getTime() - new Date(left.retriedAt).getTime())
+    .slice(0, 8);
+
+  return {
+    currentWindow: summarizeWindow(7),
+    previousWindow: summarizeWindow(7, 7),
+    weeklyBuckets,
+    recentFailures,
+    recentRetries,
   };
 }
 
@@ -1610,10 +2818,10 @@ async function resolveWritingEvalRunDefinition(input: {
     throw new Error("实验版本信息不完整");
   }
   if (
-    !["prompt_version", "scoring_profile", "layout_strategy", "apply_command_template"].includes(baseVersionType) ||
-    !["prompt_version", "scoring_profile", "layout_strategy", "apply_command_template"].includes(candidateVersionType)
+    !SUPPORTED_WRITING_EVAL_VERSION_TYPES.includes(baseVersionType as (typeof SUPPORTED_WRITING_EVAL_VERSION_TYPES)[number]) ||
+    !SUPPORTED_WRITING_EVAL_VERSION_TYPES.includes(candidateVersionType as (typeof SUPPORTED_WRITING_EVAL_VERSION_TYPES)[number])
   ) {
-    throw new Error("当前仅支持 prompt_version、scoring_profile、layout_strategy 与 apply_command_template 实验");
+    throw new Error("当前仅支持 prompt_version、fact_check、title_template、lead_template、scoring_profile、layout_strategy 与 apply_command_template 实验");
   }
   if (baseVersionType !== candidateVersionType) {
     throw new Error("一次实验只能比较同一类型的可变对象");
@@ -1624,9 +2832,9 @@ async function resolveWritingEvalRunDefinition(input: {
   if (!dataset) {
     throw new Error("评测集不存在");
   }
-  if (baseVersionType === "prompt_version") {
-    const basePromptRef = parsePromptVersionRef(baseVersionRef);
-    const candidatePromptRef = parsePromptVersionRef(candidateVersionRef);
+  if (isPromptBackedWritingEvalVersionType(baseVersionType)) {
+    const basePromptRef = resolvePromptBackedWritingEvalVersionRef(baseVersionType, baseVersionRef);
+    const candidatePromptRef = resolvePromptBackedWritingEvalVersionRef(candidateVersionType, candidateVersionRef);
     if (basePromptRef.promptId !== candidatePromptRef.promptId) {
       throw new Error("Prompt 实验必须在同一个 prompt 对象内比较不同版本");
     }
@@ -1634,8 +2842,8 @@ async function resolveWritingEvalRunDefinition(input: {
     if (requiredPromptTargetId && (basePromptRef.promptId !== requiredPromptTargetId || candidatePromptRef.promptId !== requiredPromptTargetId)) {
       throw new Error(
         experimentMode === "title_only"
-          ? "标题专项实验只能比较 outline_planning Prompt 版本"
-          : "开头专项实验只能比较 prose_polish Prompt 版本",
+          ? "标题专项实验只能比较 outline_planning / title_template 版本"
+          : "开头专项实验只能比较 prose_polish / lead_template 版本",
       );
     }
     const [basePrompt, candidatePrompt] = await Promise.all([
@@ -1710,7 +2918,8 @@ export async function getWritingEvalRunSchedules() {
     `SELECT s.id, s.name, s.dataset_id, s.base_version_type, s.base_version_ref, s.candidate_version_type, s.candidate_version_ref,
             s.experiment_mode, s.trigger_mode, s.agent_strategy, s.decision_mode, s.priority, s.cadence_hours, s.next_run_at, s.last_dispatched_at, s.last_run_id, s.last_error,
             s.is_enabled, s.summary, s.created_by, s.created_at, s.updated_at,
-            d.name AS dataset_name, d.status AS dataset_status, r.run_code AS last_run_code, r.status AS last_run_status
+            d.name AS dataset_name, d.status AS dataset_status, r.run_code AS last_run_code, r.status AS last_run_status,
+            r.score_summary_json AS last_run_score_summary_json, r.started_at AS last_run_started_at, r.finished_at AS last_run_finished_at
      FROM writing_eval_run_schedules s
      INNER JOIN writing_eval_datasets d ON d.id = s.dataset_id
      LEFT JOIN writing_optimization_runs r ON r.id = s.last_run_id
@@ -1728,7 +2937,8 @@ export async function getWritingEvalRunScheduleById(scheduleId: number) {
     `SELECT s.id, s.name, s.dataset_id, s.base_version_type, s.base_version_ref, s.candidate_version_type, s.candidate_version_ref,
             s.experiment_mode, s.trigger_mode, s.agent_strategy, s.decision_mode, s.priority, s.cadence_hours, s.next_run_at, s.last_dispatched_at, s.last_run_id, s.last_error,
             s.is_enabled, s.summary, s.created_by, s.created_at, s.updated_at,
-            d.name AS dataset_name, d.status AS dataset_status, r.run_code AS last_run_code, r.status AS last_run_status
+            d.name AS dataset_name, d.status AS dataset_status, r.run_code AS last_run_code, r.status AS last_run_status,
+            r.score_summary_json AS last_run_score_summary_json, r.started_at AS last_run_started_at, r.finished_at AS last_run_finished_at
      FROM writing_eval_run_schedules s
      INNER JOIN writing_eval_datasets d ON d.id = s.dataset_id
      LEFT JOIN writing_optimization_runs r ON r.id = s.last_run_id
@@ -1957,6 +3167,7 @@ export async function dispatchWritingEvalRunSchedule(input: { scheduleId: number
   try {
     const run = await createWritingEvalRun({
       datasetId: schedule.dataset_id,
+      sourceScheduleId: schedule.id,
       baseVersionType: schedule.base_version_type,
       baseVersionRef: schedule.base_version_ref,
       candidateVersionType: schedule.candidate_version_type,
@@ -2503,7 +3714,7 @@ export async function getWritingEvalCases(datasetId: number) {
   await ensureExtendedProductSchema();
   const db = getDatabase();
   const rows = await db.query<WritingEvalCaseRow>(
-    `SELECT id, dataset_id, task_code, task_type, topic_title, input_payload_json, expected_constraints_json,
+    `SELECT id, dataset_id, task_code, task_type, topic_title, source_type, source_ref, source_label, source_url, input_payload_json, expected_constraints_json,
             viral_targets_json, stage_artifact_payloads_json, reference_good_output, reference_bad_patterns_json, difficulty_level, is_enabled,
             created_at, updated_at
      FROM writing_eval_cases
@@ -2514,11 +3725,1489 @@ export async function getWritingEvalCases(datasetId: number) {
   return rows.map(mapCase);
 }
 
+export async function getWritingEvalArticleImportOptions(limit = 24) {
+  await ensureExtendedProductSchema();
+  const db = getDatabase();
+  const candidateRows = await db.query<WritingEvalArticleImportRow>(
+    `SELECT a.id, a.user_id, a.title, a.status, a.markdown_content, a.series_id, a.updated_at, s.name AS series_name
+     FROM articles a
+     LEFT JOIN series s ON s.id = a.series_id
+     ORDER BY a.updated_at DESC, a.id DESC
+     LIMIT ?`,
+    [Math.max(limit * 3, limit)],
+  );
+  if (candidateRows.length === 0) {
+    return [];
+  }
+
+  const articleIds = candidateRows.map((row) => row.id);
+  const taskCodes = articleIds.map((articleId) => `article-${articleId}`);
+  const articlePlaceholders = articleIds.map(() => "?").join(", ");
+  const taskCodePlaceholders = taskCodes.map(() => "?").join(", ");
+  const [artifactRows, importedRows] = await Promise.all([
+    db.query<WritingEvalArticleArtifactRow>(
+      `SELECT article_id, stage_code, payload_json
+       FROM article_stage_artifacts
+       WHERE article_id IN (${articlePlaceholders})
+       ORDER BY updated_at DESC, id DESC`,
+      articleIds,
+    ),
+    db.query<{ dataset_id: number; task_code: string }>(
+      `SELECT dataset_id, task_code
+       FROM writing_eval_cases
+       WHERE task_code IN (${taskCodePlaceholders})`,
+      taskCodes,
+    ),
+  ]);
+
+  const artifactRowsByArticleId = new Map<number, WritingEvalArticleArtifactRow[]>();
+  for (const row of artifactRows) {
+    const current = artifactRowsByArticleId.get(row.article_id) ?? [];
+    current.push(row);
+    artifactRowsByArticleId.set(row.article_id, current);
+  }
+  const importedDatasetIdsByTaskCode = new Map<string, number[]>();
+  for (const row of importedRows) {
+    const current = importedDatasetIdsByTaskCode.get(row.task_code) ?? [];
+    current.push(row.dataset_id);
+    importedDatasetIdsByTaskCode.set(row.task_code, current);
+  }
+
+  return candidateRows
+    .map((row) => {
+      const articleArtifactRows = artifactRowsByArticleId.get(row.id) ?? [];
+      const artifactPayloads = Object.fromEntries(
+        articleArtifactRows.map((item) => [item.stage_code, parseJsonObject(item.payload_json)]),
+      );
+      const draft = buildWritingEvalArticleCaseDraft({
+        article: row,
+        artifactPayloads,
+      });
+      if (!draft.hasMarkdown && draft.stageCodes.length === 0) {
+        return null;
+      }
+      return {
+        id: row.id,
+        title: row.title,
+        status: row.status,
+        seriesName: row.series_name,
+        updatedAt: row.updated_at,
+        hasMarkdown: draft.hasMarkdown,
+        stageCodes: draft.stageCodes,
+        suggestedTaskType: draft.taskType,
+        suggestedDifficultyLevel: draft.difficultyLevel,
+        sourceFactCount: draft.sourceFactCount,
+        knowledgeCardCount: draft.knowledgeCardCount,
+        historyReferenceCount: draft.historyReferenceCount,
+        alreadyImportedDatasetIds: importedDatasetIdsByTaskCode.get(draft.taskCode) ?? [],
+      };
+    })
+    .filter(
+      (
+        item,
+      ): item is {
+        id: number;
+        title: string;
+        status: string;
+        seriesName: string | null;
+        updatedAt: string;
+        hasMarkdown: boolean;
+        stageCodes: string[];
+        suggestedTaskType: string;
+        suggestedDifficultyLevel: string;
+        sourceFactCount: number;
+        knowledgeCardCount: number;
+        historyReferenceCount: number;
+        alreadyImportedDatasetIds: number[];
+      } => Boolean(item),
+    )
+    .slice(0, limit);
+}
+
+export async function getWritingEvalKnowledgeCardImportOptions(limit = 24) {
+  await ensureExtendedProductSchema();
+  const db = getDatabase();
+  const candidateRows = await db.query<WritingEvalKnowledgeCardImportRow>(
+    `SELECT kc.id, kc.user_id, kc.card_type, kc.title, kc.summary, kc.key_facts_json, kc.open_questions_json,
+            kc.conflict_flags_json, kc.latest_change_summary, kc.confidence_score, kc.status,
+            kc.last_compiled_at, kc.last_verified_at, kc.updated_at, u.username AS owner_username
+     FROM knowledge_cards kc
+     LEFT JOIN users u ON u.id = kc.user_id
+     WHERE kc.status <> 'archived'
+     ORDER BY
+       CASE kc.status
+         WHEN 'conflicted' THEN 0
+         WHEN 'stale' THEN 1
+         WHEN 'draft' THEN 2
+         ELSE 3
+       END ASC,
+       kc.updated_at DESC,
+       kc.id DESC
+     LIMIT ?`,
+    [Math.max(limit * 3, limit)],
+  );
+  if (candidateRows.length === 0) {
+    return [];
+  }
+
+  const cardIds = candidateRows.map((row) => row.id);
+  const taskCodes = cardIds.map((cardId) => `knowledge-card-${cardId}`);
+  const cardPlaceholders = cardIds.map(() => "?").join(", ");
+  const taskCodePlaceholders = taskCodes.map(() => "?").join(", ");
+  const [fragmentRows, linkRows, importedRows] = await Promise.all([
+    db.query<WritingEvalKnowledgeCardFragmentRow>(
+      `SELECT k.knowledge_card_id, k.fragment_id, f.distilled_content
+       FROM knowledge_card_fragments k
+       INNER JOIN fragments f ON f.id = k.fragment_id
+       WHERE k.knowledge_card_id IN (${cardPlaceholders})
+       ORDER BY k.knowledge_card_id ASC, k.id ASC`,
+      cardIds,
+    ),
+    db.query<WritingEvalKnowledgeCardLinkRow>(
+      `SELECT source_card_id, target_card_id, link_type
+       FROM knowledge_card_links
+       WHERE source_card_id IN (${cardPlaceholders}) OR target_card_id IN (${cardPlaceholders})
+       ORDER BY id ASC`,
+      [...cardIds, ...cardIds],
+    ),
+    db.query<{ dataset_id: number; task_code: string }>(
+      `SELECT dataset_id, task_code
+       FROM writing_eval_cases
+       WHERE task_code IN (${taskCodePlaceholders})`,
+      taskCodes,
+    ),
+  ]);
+  const linkedCardIds = Array.from(new Set(linkRows.flatMap((item) => [item.source_card_id, item.target_card_id]).filter((id) => !cardIds.includes(id))));
+  const linkedCards = linkedCardIds.length > 0
+    ? await db.query<WritingEvalKnowledgeCardLinkedCardRow>(
+        `SELECT id, title, summary, card_type, status
+         FROM knowledge_cards
+         WHERE id IN (${linkedCardIds.map(() => "?").join(", ")})`,
+        linkedCardIds,
+      )
+    : [];
+  const linkedCardMap = new Map(linkedCards.map((item) => [item.id, item]));
+  const sourceFragmentsByCardId = new Map<number, Array<{ id: number; distilledContent: string }>>();
+  for (const row of fragmentRows) {
+    const current = sourceFragmentsByCardId.get(row.knowledge_card_id) ?? [];
+    current.push({ id: row.fragment_id, distilledContent: row.distilled_content });
+    sourceFragmentsByCardId.set(row.knowledge_card_id, current);
+  }
+  const relatedCardsByCardId = new Map<number, Array<{ id: number; title: string; summary: string | null; cardType: string; status: string; linkType: string }>>();
+  for (const row of linkRows) {
+    if (cardIds.includes(row.source_card_id)) {
+      const linked = linkedCardMap.get(row.target_card_id);
+      if (linked) {
+        const current = relatedCardsByCardId.get(row.source_card_id) ?? [];
+        current.push({ id: linked.id, title: linked.title, summary: linked.summary, cardType: linked.card_type, status: linked.status, linkType: row.link_type });
+        relatedCardsByCardId.set(row.source_card_id, current);
+      }
+    }
+    if (cardIds.includes(row.target_card_id)) {
+      const linked = linkedCardMap.get(row.source_card_id);
+      if (linked) {
+        const current = relatedCardsByCardId.get(row.target_card_id) ?? [];
+        current.push({ id: linked.id, title: linked.title, summary: linked.summary, cardType: linked.card_type, status: linked.status, linkType: row.link_type });
+        relatedCardsByCardId.set(row.target_card_id, current);
+      }
+    }
+  }
+  const importedDatasetIdsByTaskCode = new Map<string, number[]>();
+  for (const row of importedRows) {
+    const current = importedDatasetIdsByTaskCode.get(row.task_code) ?? [];
+    current.push(row.dataset_id);
+    importedDatasetIdsByTaskCode.set(row.task_code, current);
+  }
+
+  return candidateRows
+    .map((row) => {
+      const draft = buildWritingEvalKnowledgeCardCaseDraft({
+        card: row,
+        sourceFragments: sourceFragmentsByCardId.get(row.id) ?? [],
+        relatedCards: relatedCardsByCardId.get(row.id) ?? [],
+      });
+      if (draft.sourceFactCount === 0 && !hasFilledString(row.summary)) {
+        return null;
+      }
+      return {
+        id: row.id,
+        title: row.title,
+        cardType: row.card_type,
+        status: row.status,
+        ownerUsername: row.owner_username ?? null,
+        updatedAt: row.updated_at,
+        confidenceScore: row.confidence_score,
+        suggestedTaskType: draft.taskType,
+        suggestedDifficultyLevel: draft.difficultyLevel,
+        sourceFactCount: draft.sourceFactCount,
+        knowledgeCardCount: draft.knowledgeCardCount,
+        historyReferenceCount: draft.historyReferenceCount,
+        openQuestionCount: draft.openQuestionCount,
+        conflictFlagCount: draft.conflictFlagCount,
+        alreadyImportedDatasetIds: importedDatasetIdsByTaskCode.get(draft.taskCode) ?? [],
+      };
+    })
+    .filter((item): item is {
+      id: number;
+      title: string;
+      cardType: string;
+      status: string;
+      ownerUsername: string | null;
+      updatedAt: string;
+      confidenceScore: number;
+      suggestedTaskType: string;
+      suggestedDifficultyLevel: string;
+      sourceFactCount: number;
+      knowledgeCardCount: number;
+      historyReferenceCount: number;
+      openQuestionCount: number;
+      conflictFlagCount: number;
+      alreadyImportedDatasetIds: number[];
+    } => Boolean(item))
+    .slice(0, limit);
+}
+
+async function getWritingEvalTopicKnowledgeCandidates(limit = 160) {
+  const db = getDatabase();
+  const rows = await db.query<WritingEvalTopicKnowledgeCandidateRow>(
+    `SELECT kc.id, kc.title, kc.summary, kc.latest_change_summary, kc.overturned_judgements_json,
+            kc.card_type, kc.status, kc.confidence_score, u.username AS owner_username
+     FROM knowledge_cards kc
+     LEFT JOIN users u ON u.id = kc.user_id
+     WHERE kc.status <> 'archived'
+     ORDER BY kc.updated_at DESC, kc.id DESC
+     LIMIT ?`,
+    [limit],
+  );
+  return rows.map((item) => ({
+    id: item.id,
+    title: item.title,
+    summary: item.summary,
+    latestChangeSummary: item.latest_change_summary,
+    overturnedJudgements: parseJsonArray(item.overturned_judgements_json),
+    cardType: item.card_type,
+    status: item.status,
+    confidenceScore: item.confidence_score,
+    ownerUsername: item.owner_username,
+  }));
+}
+
+export async function getWritingEvalTopicImportOptions(limit = 24) {
+  await ensureExtendedProductSchema();
+  const db = getDatabase();
+  const candidateRows = await db.query<WritingEvalTopicImportRow>(
+    `SELECT ti.id, ti.owner_user_id, ti.source_name, ti.title, ti.summary, ti.emotion_labels_json,
+            ti.angle_options_json, ti.source_url, ti.published_at, ts.source_type, ts.priority AS source_priority
+     FROM topic_items ti
+     LEFT JOIN topic_sources ts
+       ON ts.name = ti.source_name
+      AND (
+        (ti.owner_user_id IS NULL AND ts.owner_user_id IS NULL)
+        OR ti.owner_user_id = ts.owner_user_id
+      )
+     ORDER BY COALESCE(ti.published_at, ti.created_at) DESC, ti.id DESC
+     LIMIT ?`,
+    [Math.max(limit * 3, limit)],
+  );
+  if (candidateRows.length === 0) {
+    return [];
+  }
+
+  const topicIds = candidateRows.map((row) => row.id);
+  const taskCodes = topicIds.map((topicId) => `topic-item-${topicId}`);
+  const taskCodePlaceholders = taskCodes.map(() => "?").join(", ");
+  const [knowledgeCandidates, importedRows] = await Promise.all([
+    getWritingEvalTopicKnowledgeCandidates(),
+    db.query<{ dataset_id: number; task_code: string }>(
+      `SELECT dataset_id, task_code
+       FROM writing_eval_cases
+       WHERE task_code IN (${taskCodePlaceholders})`,
+      taskCodes,
+    ),
+  ]);
+  const importedDatasetIdsByTaskCode = new Map<string, number[]>();
+  for (const row of importedRows) {
+    const current = importedDatasetIdsByTaskCode.get(row.task_code) ?? [];
+    current.push(row.dataset_id);
+    importedDatasetIdsByTaskCode.set(row.task_code, current);
+  }
+
+  return candidateRows
+    .map((row) => {
+      const matchedCards = matchTopicToKnowledgeCards(row.title, knowledgeCandidates, 3);
+      const draft = buildWritingEvalTopicCaseDraft({
+        topic: row,
+        matchedCards,
+      });
+      if (draft.sourceFactCount === 0 && !hasFilledString(row.summary)) {
+        return null;
+      }
+      return {
+        id: row.id,
+        title: row.title,
+        sourceName: row.source_name,
+        sourceType: row.source_type ?? "news",
+        sourcePriority: row.source_priority ?? null,
+        publishedAt: row.published_at,
+        suggestedTaskType: draft.taskType,
+        suggestedDifficultyLevel: draft.difficultyLevel,
+        sourceFactCount: draft.sourceFactCount,
+        knowledgeCardCount: draft.knowledgeCardCount,
+        historyReferenceCount: draft.historyReferenceCount,
+        emotionLabelCount: draft.emotionLabelCount,
+        angleOptionCount: draft.angleOptionCount,
+        alreadyImportedDatasetIds: importedDatasetIdsByTaskCode.get(draft.taskCode) ?? [],
+      };
+    })
+    .filter((item): item is {
+      id: number;
+      title: string;
+      sourceName: string;
+      sourceType: string;
+      sourcePriority: number | null;
+      publishedAt: string | null;
+      suggestedTaskType: string;
+      suggestedDifficultyLevel: string;
+      sourceFactCount: number;
+      knowledgeCardCount: number;
+      historyReferenceCount: number;
+      emotionLabelCount: number;
+      angleOptionCount: number;
+      alreadyImportedDatasetIds: number[];
+    } => Boolean(item))
+    .slice(0, limit);
+}
+
+export async function getWritingEvalFragmentImportOptions(limit = 24) {
+  await ensureExtendedProductSchema();
+  const db = getDatabase();
+  const candidateRows = await db.query<WritingEvalFragmentImportRow>(
+    `SELECT id, user_id, source_type, title, raw_content, distilled_content, source_url, screenshot_path, created_at
+     FROM fragments
+     WHERE TRIM(COALESCE(distilled_content, '')) <> ''
+     ORDER BY created_at DESC, id DESC
+     LIMIT ?`,
+    [Math.max(limit * 3, limit)],
+  );
+  if (candidateRows.length === 0) {
+    return [];
+  }
+
+  const fragmentIds = candidateRows.map((row) => row.id);
+  const taskCodes = fragmentIds.map((fragmentId) => `fragment-${fragmentId}`);
+  const fragmentPlaceholders = fragmentIds.map(() => "?").join(", ");
+  const taskCodePlaceholders = taskCodes.map(() => "?").join(", ");
+  const [linkedCardRows, importedRows] = await Promise.all([
+    db.query<WritingEvalFragmentKnowledgeCardRow>(
+      `SELECT k.fragment_id, kc.id AS knowledge_card_id, kc.title, kc.summary, kc.card_type, kc.status, kc.confidence_score
+       FROM knowledge_card_fragments k
+       INNER JOIN knowledge_cards kc ON kc.id = k.knowledge_card_id
+       WHERE k.fragment_id IN (${fragmentPlaceholders})
+       ORDER BY k.fragment_id ASC, kc.updated_at DESC, kc.id DESC`,
+      fragmentIds,
+    ),
+    db.query<{ dataset_id: number; task_code: string }>(
+      `SELECT dataset_id, task_code
+       FROM writing_eval_cases
+       WHERE task_code IN (${taskCodePlaceholders})`,
+      taskCodes,
+    ),
+  ]);
+  const linkedCardsByFragmentId = new Map<number, Array<{ id: number; title: string; summary: string | null; cardType: string; status: string; confidenceScore: number }>>();
+  for (const row of linkedCardRows) {
+    const current = linkedCardsByFragmentId.get(row.fragment_id) ?? [];
+    current.push({
+      id: row.knowledge_card_id,
+      title: row.title,
+      summary: row.summary,
+      cardType: row.card_type,
+      status: row.status,
+      confidenceScore: row.confidence_score,
+    });
+    linkedCardsByFragmentId.set(row.fragment_id, current);
+  }
+  const importedDatasetIdsByTaskCode = new Map<string, number[]>();
+  for (const row of importedRows) {
+    const current = importedDatasetIdsByTaskCode.get(row.task_code) ?? [];
+    current.push(row.dataset_id);
+    importedDatasetIdsByTaskCode.set(row.task_code, current);
+  }
+
+  return candidateRows
+    .map((row) => {
+      const draft = buildWritingEvalFragmentCaseDraft({
+        fragment: row,
+        linkedCards: linkedCardsByFragmentId.get(row.id) ?? [],
+      });
+      return {
+        id: row.id,
+        title: String(row.title || "").trim() || `素材 #${row.id}`,
+        sourceType: row.source_type,
+        sourceUrl: row.source_url,
+        hasScreenshot: Boolean(row.screenshot_path) || row.source_type === "screenshot",
+        createdAt: row.created_at,
+        suggestedTaskType: draft.taskType,
+        suggestedDifficultyLevel: draft.difficultyLevel,
+        sourceFactCount: draft.sourceFactCount,
+        knowledgeCardCount: draft.knowledgeCardCount,
+        historyReferenceCount: draft.historyReferenceCount,
+        alreadyImportedDatasetIds: importedDatasetIdsByTaskCode.get(draft.taskCode) ?? [],
+      };
+    })
+    .slice(0, limit);
+}
+
+function buildWritingEvalDatasetRecommendationTargets(input: {
+  readiness: WritingEvalDatasetReadiness;
+  cases: WritingEvalCaseRow[];
+}) {
+  const enabledCases = input.cases.filter((item) => Boolean(item.is_enabled));
+  const enabledCaseCount = input.readiness.enabledCaseCount;
+  const taskTypes = new Set(enabledCases.map((item) => String(item.task_type || "").trim()).filter(Boolean));
+  const difficultyLevels = {
+    light: enabledCases.filter((item) => String(item.difficulty_level || "").trim() === "light").length,
+    medium: enabledCases.filter((item) => String(item.difficulty_level || "").trim() === "medium").length,
+    hard: enabledCases.filter((item) => String(item.difficulty_level || "").trim() === "hard").length,
+  };
+  const coverageRatio = (value: number) => (enabledCaseCount > 0 ? value / enabledCaseCount : 0);
+  const targetTaskTypes = ["tech_commentary", "business_breakdown", "experience_recap", "series_observation"];
+  const missingTaskTypes = targetTaskTypes.filter((item) => !taskTypes.has(item));
+  const missingDifficultyLevels = (Object.entries(difficultyLevels) as Array<["light" | "medium" | "hard", number]>)
+    .filter(([, count]) => count === 0)
+    .map(([level]) => level);
+  const gapFlags = {
+    readerProfile: coverageRatio(input.readiness.coverage.readerProfile) < 0.7,
+    targetEmotion: coverageRatio(input.readiness.coverage.targetEmotion) < 0.7,
+    sourceFacts: coverageRatio(input.readiness.coverage.sourceFacts) < 0.7,
+    knowledgeCards: coverageRatio(input.readiness.coverage.knowledgeCards) < 0.4,
+    historyReferences: coverageRatio(input.readiness.coverage.historyReferences) < 0.3,
+    titleGoal: coverageRatio(input.readiness.coverage.titleGoal) < 0.7,
+    hookGoal: coverageRatio(input.readiness.coverage.hookGoal) < 0.7,
+    shareTriggerGoal: coverageRatio(input.readiness.coverage.shareTriggerGoal) < 0.7,
+    referenceGoodOutput: coverageRatio(input.readiness.qualityTargets.referenceGoodOutputCount) < 0.5,
+    referenceBadPatterns: coverageRatio(input.readiness.qualityTargets.referenceBadPatternsCount) < 0.5,
+    mustUseFacts: coverageRatio(input.readiness.qualityTargets.mustUseFactsCount) < 0.7,
+  };
+  const targetSummary = uniqueStrings(
+    [
+      enabledCaseCount < 20 ? `样本总量仍偏低（当前 ${enabledCaseCount}/20）` : "",
+      missingTaskTypes.length > 0 ? `缺少题型：${missingTaskTypes.join(" / ")}` : "",
+      missingDifficultyLevels.length > 0 ? `缺少难度层级：${missingDifficultyLevels.join(" / ")}` : "",
+      gapFlags.sourceFacts ? "事实素材覆盖不足" : "",
+      gapFlags.knowledgeCards ? "知识卡覆盖偏低" : "",
+      gapFlags.historyReferences ? "历史参考覆盖偏低" : "",
+      gapFlags.referenceGoodOutput ? "referenceGoodOutput 覆盖不足" : "",
+      gapFlags.mustUseFacts ? "mustUseFacts 覆盖不足" : "",
+    ],
+    8,
+  );
+  return {
+    enabledCaseCount,
+    taskTypes,
+    missingTaskTypes,
+    missingDifficultyLevels,
+    gapFlags,
+    targetSummary,
+  };
+}
+
+function scoreWritingEvalImportRecommendationCandidate(input: {
+  candidate: WritingEvalImportRecommendationItem;
+  targetState: ReturnType<typeof buildWritingEvalDatasetRecommendationTargets>;
+}) {
+  const { candidate, targetState } = input;
+  const reasons = new Set<string>();
+  let score = 0;
+  if (targetState.enabledCaseCount < 20) {
+    score += 10;
+    reasons.add(`补样本总量（当前 ${targetState.enabledCaseCount}/20）`);
+  }
+  if (targetState.missingTaskTypes.includes(candidate.suggestedTaskType)) {
+    score += 36;
+    reasons.add(`补题型 ${candidate.suggestedTaskType}`);
+  } else if (!targetState.taskTypes.has(candidate.suggestedTaskType) && targetState.taskTypes.size < 4) {
+    score += 18;
+    reasons.add(`扩题型覆盖 ${candidate.suggestedTaskType}`);
+  }
+  if (targetState.missingDifficultyLevels.includes(candidate.suggestedDifficultyLevel as "light" | "medium" | "hard")) {
+    score += 30;
+    reasons.add(`补难度 ${candidate.suggestedDifficultyLevel}`);
+  }
+  if (targetState.gapFlags.sourceFacts && candidate.sourceFactCount > 0) {
+    score += 10 + Math.min(candidate.sourceFactCount, 4);
+    reasons.add("补事实素材覆盖");
+  }
+  if (targetState.gapFlags.knowledgeCards && candidate.knowledgeCardCount > 0) {
+    score += 8 + Math.min(candidate.knowledgeCardCount, 3);
+    reasons.add("补知识卡覆盖");
+  }
+  if (targetState.gapFlags.historyReferences && candidate.historyReferenceCount > 0) {
+    score += 7 + Math.min(candidate.historyReferenceCount, 3);
+    reasons.add("补历史参考覆盖");
+  }
+  if (targetState.gapFlags.referenceGoodOutput && candidate.referenceGoodOutput) {
+    score += 18;
+    reasons.add("补 referenceGoodOutput");
+  }
+  if (targetState.gapFlags.mustUseFacts && candidate.sourceFactCount >= 2) {
+    score += 8;
+    reasons.add("补 mustUseFacts 命中潜力");
+  }
+  if (targetState.gapFlags.referenceBadPatterns) {
+    score += 4;
+    reasons.add("补反例模式覆盖");
+  }
+  if (targetState.gapFlags.titleGoal) score += 3;
+  if (targetState.gapFlags.hookGoal) score += 3;
+  if (targetState.gapFlags.shareTriggerGoal) score += 3;
+  if (targetState.gapFlags.readerProfile) score += 2;
+  if (targetState.gapFlags.targetEmotion) score += 2;
+  score += Math.min(candidate.sourceFactCount, 4);
+  score += Math.min(candidate.knowledgeCardCount, 2);
+  score += Math.min(candidate.historyReferenceCount, 2);
+  if (candidate.referenceGoodOutput) score += 4;
+  return {
+    ...candidate,
+    score,
+    reasonTags: Array.from(reasons),
+  };
+}
+
+export async function getWritingEvalDatasetImportRecommendations(input: {
+  datasetId: number;
+  limit?: number;
+  candidatePoolLimit?: number;
+}) {
+  await ensureExtendedProductSchema();
+  if (!Number.isInteger(input.datasetId) || input.datasetId <= 0) throw new Error("数据集无效");
+  const db = getDatabase();
+  const dataset = await db.queryOne<WritingEvalDatasetRow>(
+    `SELECT id, code, name, description, status, sample_count, created_by, created_at, updated_at
+     FROM writing_eval_datasets
+     WHERE id = ?`,
+    [input.datasetId],
+  );
+  if (!dataset) throw new Error("评测集不存在");
+
+  const cases = await db.query<WritingEvalCaseRow>(
+    `SELECT id, dataset_id, task_code, task_type, topic_title, input_payload_json, expected_constraints_json,
+            viral_targets_json, stage_artifact_payloads_json, reference_good_output, reference_bad_patterns_json, difficulty_level, is_enabled,
+            created_at, updated_at
+     FROM writing_eval_cases
+     WHERE dataset_id = ?`,
+    [input.datasetId],
+  );
+  const readiness = getWritingEvalDatasetReadiness(cases, dataset.status);
+  const targetState = buildWritingEvalDatasetRecommendationTargets({
+    readiness,
+    cases,
+  });
+  const candidatePoolLimit = Math.max(Number(input.candidatePoolLimit ?? 24) || 24, 12);
+  const [articleOptions, knowledgeCardOptions, topicOptions, fragmentOptions] = await Promise.all([
+    getWritingEvalArticleImportOptions(candidatePoolLimit),
+    getWritingEvalKnowledgeCardImportOptions(candidatePoolLimit),
+    getWritingEvalTopicImportOptions(candidatePoolLimit),
+    getWritingEvalFragmentImportOptions(candidatePoolLimit),
+  ]);
+  const recommendations = [
+    ...articleOptions.map<WritingEvalImportRecommendationItem>((item) => ({
+      sourceType: "article",
+      sourceId: item.id,
+      title: item.title,
+      subtitle: uniqueStrings([item.status, item.seriesName], 2).join(" · ") || null,
+      suggestedTaskType: item.suggestedTaskType,
+      suggestedDifficultyLevel: item.suggestedDifficultyLevel,
+      sourceFactCount: item.sourceFactCount,
+      knowledgeCardCount: item.knowledgeCardCount,
+      historyReferenceCount: item.historyReferenceCount,
+      referenceGoodOutput: item.hasMarkdown,
+      reasonTags: [],
+      score: 0,
+    })),
+    ...knowledgeCardOptions.map<WritingEvalImportRecommendationItem>((item) => ({
+      sourceType: "knowledge_card",
+      sourceId: item.id,
+      title: item.title,
+      subtitle: uniqueStrings([item.cardType, item.status, item.ownerUsername], 3).join(" · ") || null,
+      suggestedTaskType: item.suggestedTaskType,
+      suggestedDifficultyLevel: item.suggestedDifficultyLevel,
+      sourceFactCount: item.sourceFactCount,
+      knowledgeCardCount: item.knowledgeCardCount,
+      historyReferenceCount: item.historyReferenceCount,
+      referenceGoodOutput: false,
+      reasonTags: [],
+      score: 0,
+    })),
+    ...topicOptions.map<WritingEvalImportRecommendationItem>((item) => ({
+      sourceType: "topic_item",
+      sourceId: item.id,
+      title: item.title,
+      subtitle: uniqueStrings([item.sourceName, item.sourceType, item.publishedAt], 3).join(" · ") || null,
+      suggestedTaskType: item.suggestedTaskType,
+      suggestedDifficultyLevel: item.suggestedDifficultyLevel,
+      sourceFactCount: item.sourceFactCount,
+      knowledgeCardCount: item.knowledgeCardCount,
+      historyReferenceCount: item.historyReferenceCount,
+      referenceGoodOutput: false,
+      reasonTags: [],
+      score: 0,
+    })),
+    ...fragmentOptions.map<WritingEvalImportRecommendationItem>((item) => ({
+      sourceType: "fragment",
+      sourceId: item.id,
+      title: item.title,
+      subtitle: uniqueStrings([item.sourceType, item.sourceUrl, item.hasScreenshot ? "screenshot" : ""], 3).join(" · ") || null,
+      suggestedTaskType: item.suggestedTaskType,
+      suggestedDifficultyLevel: item.suggestedDifficultyLevel,
+      sourceFactCount: item.sourceFactCount,
+      knowledgeCardCount: item.knowledgeCardCount,
+      historyReferenceCount: item.historyReferenceCount,
+      referenceGoodOutput: false,
+      reasonTags: [],
+      score: 0,
+    })),
+  ]
+    .filter((item) => !cases.some((existing) => existing.task_code === `${item.sourceType === "knowledge_card" ? "knowledge-card" : item.sourceType === "topic_item" ? "topic-item" : item.sourceType}-${item.sourceId}`))
+    .map((item) => scoreWritingEvalImportRecommendationCandidate({
+      candidate: item,
+      targetState,
+    }))
+    .filter((item) => item.score > 0)
+    .sort((left, right) => right.score - left.score || right.sourceFactCount - left.sourceFactCount || Number(right.referenceGoodOutput) - Number(left.referenceGoodOutput) || right.sourceId - left.sourceId)
+    .slice(0, Math.max(Number(input.limit ?? 8) || 8, 1));
+
+  return {
+    datasetId: input.datasetId,
+    readiness,
+    targetSummary: targetState.targetSummary,
+    recommendations,
+  };
+}
+
+export async function autoFillWritingEvalDatasetImports(input: {
+  datasetId: number;
+  maxImports?: number;
+  operatorUserId?: number | null;
+}) {
+  await ensureExtendedProductSchema();
+  if (!Number.isInteger(input.datasetId) || input.datasetId <= 0) throw new Error("数据集无效");
+  const maxImports = Math.min(Math.max(Number(input.maxImports ?? 4) || 4, 1), 12);
+  const plan = await getWritingEvalDatasetImportRecommendations({
+    datasetId: input.datasetId,
+    limit: Math.max(maxImports * 2, 6),
+    candidatePoolLimit: 36,
+  });
+  if (plan.recommendations.length === 0) {
+    return {
+      datasetId: input.datasetId,
+      targetSummary: plan.targetSummary,
+      recommendations: [],
+      createdCases: [],
+      importedItems: [],
+      skipped: [],
+    };
+  }
+
+  const createdCases: Array<Awaited<
+    | ReturnType<typeof importWritingEvalCaseFromArticle>
+    | ReturnType<typeof importWritingEvalCaseFromKnowledgeCard>
+    | ReturnType<typeof importWritingEvalCaseFromTopicItem>
+    | ReturnType<typeof importWritingEvalCaseFromFragment>
+  >> = [];
+  const importedItems: Array<{ sourceType: WritingEvalImportRecommendationItem["sourceType"]; sourceId: number }> = [];
+  const skipped: Array<{ sourceType: string; sourceId: number; reason: string }> = [];
+  for (const recommendation of plan.recommendations) {
+    if (createdCases.length >= maxImports) break;
+    try {
+      const created =
+        recommendation.sourceType === "article"
+          ? await importWritingEvalCaseFromArticle({
+              datasetId: input.datasetId,
+              articleId: recommendation.sourceId,
+              operatorUserId: input.operatorUserId,
+            })
+          : recommendation.sourceType === "knowledge_card"
+            ? await importWritingEvalCaseFromKnowledgeCard({
+                datasetId: input.datasetId,
+                knowledgeCardId: recommendation.sourceId,
+                operatorUserId: input.operatorUserId,
+              })
+            : recommendation.sourceType === "topic_item"
+              ? await importWritingEvalCaseFromTopicItem({
+                  datasetId: input.datasetId,
+                  topicItemId: recommendation.sourceId,
+                  operatorUserId: input.operatorUserId,
+                })
+              : await importWritingEvalCaseFromFragment({
+                  datasetId: input.datasetId,
+                  fragmentId: recommendation.sourceId,
+                  operatorUserId: input.operatorUserId,
+                });
+      createdCases.push(created);
+      importedItems.push({
+        sourceType: recommendation.sourceType,
+        sourceId: recommendation.sourceId,
+      });
+    } catch (error) {
+      skipped.push({
+        sourceType: recommendation.sourceType,
+        sourceId: recommendation.sourceId,
+        reason: error instanceof Error ? error.message : "自动导入失败",
+      });
+    }
+  }
+  return {
+    datasetId: input.datasetId,
+    targetSummary: plan.targetSummary,
+    recommendations: plan.recommendations,
+    createdCases,
+    importedItems,
+    skipped,
+  };
+}
+
+export async function autoFillWritingEvalDatasets(input: {
+  limit?: number;
+  maxImportsPerDataset?: number;
+  cooldownHours?: number;
+  force?: boolean;
+  statuses?: string[];
+  operatorUserId?: number | null;
+} = {}) {
+  await ensureExtendedProductSchema();
+  const limit = Math.min(Math.max(Math.round(Number(input.limit ?? 3)) || 3, 1), 12);
+  const scanLimit = Math.min(Math.max(limit * 4, limit), 48);
+  const maxImportsPerDataset = Math.min(Math.max(Math.round(Number(input.maxImportsPerDataset ?? 4)) || 4, 1), 12);
+  const cooldownHours = Math.min(Math.max(Number(input.cooldownHours ?? 6) || 6, 1), 168);
+  const statuses = Array.from(
+    new Set(
+      (Array.isArray(input.statuses) && input.statuses.length > 0 ? input.statuses : ["active", "draft"])
+        .map((item) => normalizeWritingEvalDatasetStatus(item))
+        .filter((item) => item !== "archived"),
+    ),
+  );
+  if (statuses.length === 0) {
+    statuses.push("active");
+  }
+
+  const db = getDatabase();
+  const cutoffIso = new Date(Date.now() - cooldownHours * 60 * 60 * 1000).toISOString();
+  const statusPlaceholders = statuses.map(() => "?").join(", ");
+  const params: Array<string | number> = [...statuses];
+  const conditions = [`status IN (${statusPlaceholders})`];
+  if (!input.force) {
+    conditions.push("updated_at <= ?");
+    params.push(cutoffIso);
+  }
+  params.push(scanLimit);
+
+  const rows = await db.query<WritingEvalDatasetRow>(
+    `SELECT id, code, name, description, status, sample_count, created_by, created_at, updated_at
+     FROM writing_eval_datasets
+     WHERE ${conditions.join(" AND ")}
+     ORDER BY CASE status WHEN 'active' THEN 0 WHEN 'draft' THEN 1 ELSE 2 END, updated_at ASC, id ASC
+     LIMIT ?`,
+    params,
+  );
+
+  const readinessMap = await getWritingEvalDatasetReadinessMap(rows.map((row) => ({ id: row.id, status: row.status })));
+  const items: Array<{
+    datasetId: number;
+    datasetCode: string;
+    datasetName: string;
+    datasetStatus: string;
+    readinessStatus: WritingEvalDatasetReadiness["status"];
+    targetSummary: string[];
+    importedCount: number;
+    importedItems: Array<{ sourceType: WritingEvalImportRecommendationItem["sourceType"]; sourceId: number }>;
+    skipped: Array<{ sourceType: string; sourceId: number; reason: string }>;
+  }> = [];
+  const skipped: Array<{
+    datasetId: number;
+    datasetCode: string;
+    datasetName: string;
+    datasetStatus: string;
+    reason: string;
+    readinessStatus?: WritingEvalDatasetReadiness["status"];
+    targetSummary?: string[];
+  }> = [];
+
+  for (const row of rows) {
+    if (items.length >= limit) break;
+    const readiness = readinessMap.get(row.id) ?? getWritingEvalDatasetReadiness([], row.status);
+    if (readiness.status === "ready") {
+      skipped.push({
+        datasetId: row.id,
+        datasetCode: row.code,
+        datasetName: row.name,
+        datasetStatus: row.status,
+        readinessStatus: readiness.status,
+        reason: "当前数据集已达到 readiness=ready，无需自动补桶",
+      });
+      continue;
+    }
+
+    const plan = await getWritingEvalDatasetImportRecommendations({
+      datasetId: row.id,
+      limit: Math.max(maxImportsPerDataset * 2, 6),
+      candidatePoolLimit: 36,
+    });
+    if (plan.targetSummary.length === 0) {
+      skipped.push({
+        datasetId: row.id,
+        datasetCode: row.code,
+        datasetName: row.name,
+        datasetStatus: row.status,
+        readinessStatus: readiness.status,
+        reason: "当前数据集没有明确补桶缺口",
+      });
+      continue;
+    }
+    if (plan.recommendations.length === 0) {
+      skipped.push({
+        datasetId: row.id,
+        datasetCode: row.code,
+        datasetName: row.name,
+        datasetStatus: row.status,
+        readinessStatus: readiness.status,
+        targetSummary: plan.targetSummary,
+        reason: "当前数据集存在缺口，但没有可导入候选",
+      });
+      continue;
+    }
+
+    const result = await autoFillWritingEvalDatasetImports({
+      datasetId: row.id,
+      maxImports: maxImportsPerDataset,
+      operatorUserId: input.operatorUserId,
+    });
+    if (result.createdCases.length === 0) {
+      skipped.push({
+        datasetId: row.id,
+        datasetCode: row.code,
+        datasetName: row.name,
+        datasetStatus: row.status,
+        readinessStatus: readiness.status,
+        targetSummary: result.targetSummary,
+        reason: result.skipped[0]?.reason || "自动补桶未产生新样本",
+      });
+      continue;
+    }
+
+    items.push({
+      datasetId: row.id,
+      datasetCode: row.code,
+      datasetName: row.name,
+      datasetStatus: row.status,
+      readinessStatus: readiness.status,
+      targetSummary: result.targetSummary,
+      importedCount: result.createdCases.length,
+      importedItems: result.importedItems,
+      skipped: result.skipped,
+    });
+    await appendAuditLog({
+      userId: input.operatorUserId ?? null,
+      action: "writing_eval_dataset_auto_fill",
+      targetType: "writing_eval_dataset",
+      targetId: row.id,
+      payload: {
+        datasetCode: row.code,
+        datasetStatus: row.status,
+        readinessStatus: readiness.status,
+        targetSummary: result.targetSummary,
+        importedCount: result.createdCases.length,
+        importedItems: result.importedItems,
+        skipped: result.skipped,
+        force: Boolean(input.force),
+      },
+    });
+  }
+
+  return {
+    limit,
+    scanLimit,
+    cooldownHours,
+    statuses,
+    force: Boolean(input.force),
+    scannedCount: rows.length,
+    appliedCount: items.length,
+    createdCaseCount: items.reduce((sum, item) => sum + item.importedCount, 0),
+    items,
+    skippedCount: skipped.length,
+    skipped,
+  };
+}
+
+export async function importWritingEvalCaseFromArticle(input: {
+  datasetId: number;
+  articleId: number;
+  operatorUserId?: number | null;
+}) {
+  await ensureExtendedProductSchema();
+  if (!Number.isInteger(input.datasetId) || input.datasetId <= 0) throw new Error("数据集无效");
+  if (!Number.isInteger(input.articleId) || input.articleId <= 0) throw new Error("历史稿件无效");
+  const db = getDatabase();
+  const [dataset, article] = await Promise.all([
+    db.queryOne<{ id: number }>("SELECT id FROM writing_eval_datasets WHERE id = ?", [input.datasetId]),
+    db.queryOne<WritingEvalArticleImportRow>(
+      `SELECT a.id, a.user_id, a.title, a.status, a.markdown_content, a.series_id, a.updated_at, s.name AS series_name
+       FROM articles a
+       LEFT JOIN series s ON s.id = a.series_id
+       WHERE a.id = ?`,
+      [input.articleId],
+    ),
+  ]);
+  if (!dataset) throw new Error("评测集不存在");
+  if (!article) throw new Error("历史稿件不存在");
+
+  const taskCode = `article-${article.id}`;
+  const existing = await db.queryOne<{ id: number }>(
+    "SELECT id FROM writing_eval_cases WHERE dataset_id = ? AND task_code = ?",
+    [input.datasetId, taskCode],
+  );
+  if (existing) {
+    throw new Error("该历史稿件已导入当前评测集");
+  }
+
+  const [artifactRows, referencedRows, seriesRows] = await Promise.all([
+    db.query<WritingEvalArticleArtifactRow>(
+      `SELECT article_id, stage_code, payload_json
+       FROM article_stage_artifacts
+       WHERE article_id = ?
+       ORDER BY updated_at DESC, id DESC`,
+      [article.id],
+    ),
+    db.query<{ title: string }>(
+      `SELECT a.title
+       FROM article_reference_articles r
+       INNER JOIN articles a ON a.id = r.referenced_article_id
+       WHERE r.article_id = ?
+       ORDER BY r.id DESC
+       LIMIT 4`,
+      [article.id],
+    ),
+    article.series_id
+      ? db.query<{ title: string }>(
+          `SELECT title
+           FROM articles
+           WHERE series_id = ? AND id <> ?
+           ORDER BY updated_at DESC, id DESC
+           LIMIT 4`,
+          [article.series_id, article.id],
+        )
+      : Promise.resolve([] as Array<{ title: string }>),
+  ]);
+
+  const artifactPayloads = Object.fromEntries(
+    artifactRows.map((item) => [item.stage_code, parseJsonObject(item.payload_json)]),
+  );
+  const draft = buildWritingEvalArticleCaseDraft({
+    article,
+    artifactPayloads,
+    historyReferences: [...referencedRows.map((item) => item.title), ...seriesRows.map((item) => item.title)],
+  });
+  const created = await createWritingEvalCase({
+    datasetId: input.datasetId,
+    taskCode: draft.taskCode,
+    taskType: draft.taskType,
+    topicTitle: draft.topicTitle,
+    sourceType: "article",
+    sourceRef: `article:${article.id}`,
+    sourceLabel: article.title,
+    inputPayload: draft.inputPayload,
+    expectedConstraints: draft.expectedConstraints,
+    viralTargets: draft.viralTargets,
+    stageArtifactPayloads: draft.stageArtifactPayloads,
+    referenceGoodOutput: draft.referenceGoodOutput,
+    referenceBadPatterns: draft.referenceBadPatterns,
+    difficultyLevel: draft.difficultyLevel,
+    isEnabled: true,
+  });
+
+  await appendAuditLog({
+    userId: input.operatorUserId ?? null,
+    action: "writing_eval_case_import_article",
+    targetType: "writing_eval_case",
+    targetId: created.id,
+    payload: {
+      datasetId: input.datasetId,
+      articleId: article.id,
+      taskCode: created.taskCode,
+      taskType: created.taskType,
+      difficultyLevel: created.difficultyLevel,
+      sourceFactCount: draft.sourceFactCount,
+      knowledgeCardCount: draft.knowledgeCardCount,
+      historyReferenceCount: draft.historyReferenceCount,
+    },
+  });
+
+  return created;
+}
+
+export async function importWritingEvalCasesFromArticles(input: {
+  datasetId: number;
+  articleIds: number[];
+  operatorUserId?: number | null;
+}) {
+  await ensureExtendedProductSchema();
+  if (!Number.isInteger(input.datasetId) || input.datasetId <= 0) throw new Error("数据集无效");
+  if (!Array.isArray(input.articleIds) || input.articleIds.length === 0) throw new Error("请至少提供一篇历史稿件");
+  const uniqueArticleIds = Array.from(
+    new Set(
+      input.articleIds
+        .map((item) => Number(item))
+        .filter((item) => Number.isInteger(item) && item > 0),
+    ),
+  );
+  if (uniqueArticleIds.length === 0) throw new Error("历史稿件列表无效");
+  const createdCases: Awaited<ReturnType<typeof importWritingEvalCaseFromArticle>>[] = [];
+  const skipped: Array<{ articleId: number; reason: string }> = [];
+
+  for (const articleId of uniqueArticleIds) {
+    try {
+      const created = await importWritingEvalCaseFromArticle({
+        datasetId: input.datasetId,
+        articleId,
+        operatorUserId: input.operatorUserId,
+      });
+      createdCases.push(created);
+    } catch (error) {
+      skipped.push({
+        articleId,
+        reason: error instanceof Error ? error.message : "导入失败",
+      });
+    }
+  }
+
+  return {
+    datasetId: input.datasetId,
+    requestedArticleIds: uniqueArticleIds,
+    createdCases,
+    skipped,
+  };
+}
+
+export async function importWritingEvalCaseFromKnowledgeCard(input: {
+  datasetId: number;
+  knowledgeCardId: number;
+  operatorUserId?: number | null;
+}) {
+  await ensureExtendedProductSchema();
+  if (!Number.isInteger(input.datasetId) || input.datasetId <= 0) throw new Error("数据集无效");
+  if (!Number.isInteger(input.knowledgeCardId) || input.knowledgeCardId <= 0) throw new Error("知识卡无效");
+  const db = getDatabase();
+  const [dataset, card] = await Promise.all([
+    db.queryOne<{ id: number }>("SELECT id FROM writing_eval_datasets WHERE id = ?", [input.datasetId]),
+    db.queryOne<WritingEvalKnowledgeCardImportRow>(
+      `SELECT kc.id, kc.user_id, kc.card_type, kc.title, kc.summary, kc.key_facts_json, kc.open_questions_json,
+              kc.conflict_flags_json, kc.latest_change_summary, kc.confidence_score, kc.status,
+              kc.last_compiled_at, kc.last_verified_at, kc.updated_at, u.username AS owner_username
+       FROM knowledge_cards kc
+       LEFT JOIN users u ON u.id = kc.user_id
+       WHERE kc.id = ?`,
+      [input.knowledgeCardId],
+    ),
+  ]);
+  if (!dataset) throw new Error("评测集不存在");
+  if (!card) throw new Error("知识卡不存在");
+
+  const taskCode = `knowledge-card-${card.id}`;
+  const existing = await db.queryOne<{ id: number }>(
+    "SELECT id FROM writing_eval_cases WHERE dataset_id = ? AND task_code = ?",
+    [input.datasetId, taskCode],
+  );
+  if (existing) throw new Error("该知识卡已导入当前评测集");
+
+  const [fragmentRows, linkRows] = await Promise.all([
+    db.query<WritingEvalKnowledgeCardFragmentRow>(
+      `SELECT k.knowledge_card_id, k.fragment_id, f.distilled_content
+       FROM knowledge_card_fragments k
+       INNER JOIN fragments f ON f.id = k.fragment_id
+       WHERE k.knowledge_card_id = ?
+       ORDER BY k.id ASC`,
+      [card.id],
+    ),
+    db.query<WritingEvalKnowledgeCardLinkRow>(
+      `SELECT source_card_id, target_card_id, link_type
+       FROM knowledge_card_links
+       WHERE source_card_id = ? OR target_card_id = ?
+       ORDER BY id ASC`,
+      [card.id, card.id],
+    ),
+  ]);
+  const relatedCardIds = Array.from(new Set(linkRows.map((item) => (item.source_card_id === card.id ? item.target_card_id : item.source_card_id))));
+  const relatedCards = relatedCardIds.length > 0
+    ? await db.query<WritingEvalKnowledgeCardLinkedCardRow>(
+        `SELECT id, title, summary, card_type, status
+         FROM knowledge_cards
+         WHERE id IN (${relatedCardIds.map(() => "?").join(", ")})`,
+        relatedCardIds,
+      )
+    : [];
+  const relatedCardMap = new Map(relatedCards.map((item) => [item.id, item]));
+  const draft = buildWritingEvalKnowledgeCardCaseDraft({
+    card,
+    sourceFragments: fragmentRows.map((item) => ({ id: item.fragment_id, distilledContent: item.distilled_content })),
+    relatedCards: relatedCardIds.map((relatedCardId) => {
+      const relatedCard = relatedCardMap.get(relatedCardId);
+      if (!relatedCard) return null;
+      const matchedLink = linkRows.find((item) => item.source_card_id === relatedCardId || item.target_card_id === relatedCardId);
+      return {
+        id: relatedCard.id,
+        title: relatedCard.title,
+        summary: relatedCard.summary,
+        cardType: relatedCard.card_type,
+        status: relatedCard.status,
+        linkType: matchedLink?.link_type || "mentions",
+      };
+    }).filter((item): item is { id: number; title: string; summary: string | null; cardType: string; status: string; linkType: string } => Boolean(item)),
+  });
+  const created = await createWritingEvalCase({
+    datasetId: input.datasetId,
+    taskCode: draft.taskCode,
+    taskType: draft.taskType,
+    topicTitle: draft.topicTitle,
+    sourceType: "knowledge_card",
+    sourceRef: `knowledge_card:${card.id}`,
+    sourceLabel: card.title,
+    inputPayload: draft.inputPayload,
+    expectedConstraints: draft.expectedConstraints,
+    viralTargets: draft.viralTargets,
+    stageArtifactPayloads: draft.stageArtifactPayloads,
+    referenceGoodOutput: draft.referenceGoodOutput,
+    referenceBadPatterns: draft.referenceBadPatterns,
+    difficultyLevel: draft.difficultyLevel,
+    isEnabled: true,
+  });
+
+  await appendAuditLog({
+    userId: input.operatorUserId ?? null,
+    action: "writing_eval_case_import_knowledge_card",
+    targetType: "writing_eval_case",
+    targetId: created.id,
+    payload: {
+      datasetId: input.datasetId,
+      knowledgeCardId: card.id,
+      taskCode: created.taskCode,
+      taskType: created.taskType,
+      difficultyLevel: created.difficultyLevel,
+      sourceFactCount: draft.sourceFactCount,
+      knowledgeCardCount: draft.knowledgeCardCount,
+      historyReferenceCount: draft.historyReferenceCount,
+      openQuestionCount: draft.openQuestionCount,
+      conflictFlagCount: draft.conflictFlagCount,
+    },
+  });
+
+  return created;
+}
+
+export async function importWritingEvalCasesFromKnowledgeCards(input: {
+  datasetId: number;
+  knowledgeCardIds: number[];
+  operatorUserId?: number | null;
+}) {
+  await ensureExtendedProductSchema();
+  if (!Number.isInteger(input.datasetId) || input.datasetId <= 0) throw new Error("数据集无效");
+  if (!Array.isArray(input.knowledgeCardIds) || input.knowledgeCardIds.length === 0) throw new Error("请至少提供一张知识卡");
+  const uniqueKnowledgeCardIds = Array.from(
+    new Set(
+      input.knowledgeCardIds
+        .map((item) => Number(item))
+        .filter((item) => Number.isInteger(item) && item > 0),
+    ),
+  );
+  if (uniqueKnowledgeCardIds.length === 0) throw new Error("知识卡列表无效");
+  const createdCases: Awaited<ReturnType<typeof importWritingEvalCaseFromKnowledgeCard>>[] = [];
+  const skipped: Array<{ knowledgeCardId: number; reason: string }> = [];
+  for (const knowledgeCardId of uniqueKnowledgeCardIds) {
+    try {
+      const created = await importWritingEvalCaseFromKnowledgeCard({
+        datasetId: input.datasetId,
+        knowledgeCardId,
+        operatorUserId: input.operatorUserId,
+      });
+      createdCases.push(created);
+    } catch (error) {
+      skipped.push({
+        knowledgeCardId,
+        reason: error instanceof Error ? error.message : "导入失败",
+      });
+    }
+  }
+  return {
+    datasetId: input.datasetId,
+    requestedKnowledgeCardIds: uniqueKnowledgeCardIds,
+    createdCases,
+    skipped,
+  };
+}
+
+export async function importWritingEvalCaseFromTopicItem(input: {
+  datasetId: number;
+  topicItemId: number;
+  operatorUserId?: number | null;
+}) {
+  await ensureExtendedProductSchema();
+  if (!Number.isInteger(input.datasetId) || input.datasetId <= 0) throw new Error("数据集无效");
+  if (!Number.isInteger(input.topicItemId) || input.topicItemId <= 0) throw new Error("主题档案无效");
+  const db = getDatabase();
+  const [dataset, topic, knowledgeCandidates] = await Promise.all([
+    db.queryOne<{ id: number }>("SELECT id FROM writing_eval_datasets WHERE id = ?", [input.datasetId]),
+    db.queryOne<WritingEvalTopicImportRow>(
+      `SELECT ti.id, ti.owner_user_id, ti.source_name, ti.title, ti.summary, ti.emotion_labels_json,
+              ti.angle_options_json, ti.source_url, ti.published_at, ts.source_type, ts.priority AS source_priority
+       FROM topic_items ti
+       LEFT JOIN topic_sources ts
+         ON ts.name = ti.source_name
+        AND (
+          (ti.owner_user_id IS NULL AND ts.owner_user_id IS NULL)
+          OR ti.owner_user_id = ts.owner_user_id
+        )
+       WHERE ti.id = ?`,
+      [input.topicItemId],
+    ),
+    getWritingEvalTopicKnowledgeCandidates(),
+  ]);
+  if (!dataset) throw new Error("评测集不存在");
+  if (!topic) throw new Error("主题档案不存在");
+
+  const taskCode = `topic-item-${topic.id}`;
+  const existing = await db.queryOne<{ id: number }>(
+    "SELECT id FROM writing_eval_cases WHERE dataset_id = ? AND task_code = ?",
+    [input.datasetId, taskCode],
+  );
+  if (existing) throw new Error("该主题档案已导入当前评测集");
+
+  const matchedCards = matchTopicToKnowledgeCards(topic.title, knowledgeCandidates, 3);
+  const draft = buildWritingEvalTopicCaseDraft({
+    topic,
+    matchedCards,
+  });
+  const created = await createWritingEvalCase({
+    datasetId: input.datasetId,
+    taskCode: draft.taskCode,
+    taskType: draft.taskType,
+    topicTitle: draft.topicTitle,
+    sourceType: "topic_item",
+    sourceRef: `topic_item:${topic.id}`,
+    sourceLabel: topic.source_name || topic.title,
+    sourceUrl: topic.source_url,
+    inputPayload: draft.inputPayload,
+    expectedConstraints: draft.expectedConstraints,
+    viralTargets: draft.viralTargets,
+    stageArtifactPayloads: draft.stageArtifactPayloads,
+    referenceGoodOutput: draft.referenceGoodOutput,
+    referenceBadPatterns: draft.referenceBadPatterns,
+    difficultyLevel: draft.difficultyLevel,
+    isEnabled: true,
+  });
+
+  await appendAuditLog({
+    userId: input.operatorUserId ?? null,
+    action: "writing_eval_case_import_topic_item",
+    targetType: "writing_eval_case",
+    targetId: created.id,
+    payload: {
+      datasetId: input.datasetId,
+      topicItemId: topic.id,
+      taskCode: created.taskCode,
+      taskType: created.taskType,
+      difficultyLevel: created.difficultyLevel,
+      sourceFactCount: draft.sourceFactCount,
+      knowledgeCardCount: draft.knowledgeCardCount,
+      historyReferenceCount: draft.historyReferenceCount,
+      emotionLabelCount: draft.emotionLabelCount,
+      angleOptionCount: draft.angleOptionCount,
+    },
+  });
+
+  return created;
+}
+
+export async function importWritingEvalCasesFromTopicItems(input: {
+  datasetId: number;
+  topicItemIds: number[];
+  operatorUserId?: number | null;
+}) {
+  await ensureExtendedProductSchema();
+  if (!Number.isInteger(input.datasetId) || input.datasetId <= 0) throw new Error("数据集无效");
+  if (!Array.isArray(input.topicItemIds) || input.topicItemIds.length === 0) throw new Error("请至少提供一个主题档案");
+  const uniqueTopicItemIds = Array.from(
+    new Set(
+      input.topicItemIds
+        .map((item) => Number(item))
+        .filter((item) => Number.isInteger(item) && item > 0),
+    ),
+  );
+  if (uniqueTopicItemIds.length === 0) throw new Error("主题档案列表无效");
+  const createdCases: Awaited<ReturnType<typeof importWritingEvalCaseFromTopicItem>>[] = [];
+  const skipped: Array<{ topicItemId: number; reason: string }> = [];
+
+  for (const topicItemId of uniqueTopicItemIds) {
+    try {
+      const created = await importWritingEvalCaseFromTopicItem({
+        datasetId: input.datasetId,
+        topicItemId,
+        operatorUserId: input.operatorUserId,
+      });
+      createdCases.push(created);
+    } catch (error) {
+      skipped.push({
+        topicItemId,
+        reason: error instanceof Error ? error.message : "导入失败",
+      });
+    }
+  }
+
+  return {
+    datasetId: input.datasetId,
+    requestedTopicItemIds: uniqueTopicItemIds,
+    createdCases,
+    skipped,
+  };
+}
+
+export async function importWritingEvalCaseFromFragment(input: {
+  datasetId: number;
+  fragmentId: number;
+  operatorUserId?: number | null;
+}) {
+  await ensureExtendedProductSchema();
+  if (!Number.isInteger(input.datasetId) || input.datasetId <= 0) throw new Error("数据集无效");
+  if (!Number.isInteger(input.fragmentId) || input.fragmentId <= 0) throw new Error("素材无效");
+  const db = getDatabase();
+  const [dataset, fragment] = await Promise.all([
+    db.queryOne<{ id: number }>("SELECT id FROM writing_eval_datasets WHERE id = ?", [input.datasetId]),
+    db.queryOne<WritingEvalFragmentImportRow>(
+      `SELECT id, user_id, source_type, title, raw_content, distilled_content, source_url, screenshot_path, created_at
+       FROM fragments
+       WHERE id = ?`,
+      [input.fragmentId],
+    ),
+  ]);
+  if (!dataset) throw new Error("评测集不存在");
+  if (!fragment) throw new Error("素材不存在");
+
+  const taskCode = `fragment-${fragment.id}`;
+  const existing = await db.queryOne<{ id: number }>(
+    "SELECT id FROM writing_eval_cases WHERE dataset_id = ? AND task_code = ?",
+    [input.datasetId, taskCode],
+  );
+  if (existing) throw new Error("该素材已导入当前评测集");
+
+  const linkedCards = await db.query<WritingEvalFragmentKnowledgeCardRow>(
+    `SELECT k.fragment_id, kc.id AS knowledge_card_id, kc.title, kc.summary, kc.card_type, kc.status, kc.confidence_score
+     FROM knowledge_card_fragments k
+     INNER JOIN knowledge_cards kc ON kc.id = k.knowledge_card_id
+     WHERE k.fragment_id = ?
+     ORDER BY kc.updated_at DESC, kc.id DESC`,
+    [fragment.id],
+  );
+  const draft = buildWritingEvalFragmentCaseDraft({
+    fragment,
+    linkedCards: linkedCards.map((item) => ({
+      id: item.knowledge_card_id,
+      title: item.title,
+      summary: item.summary,
+      cardType: item.card_type,
+      status: item.status,
+      confidenceScore: item.confidence_score,
+    })),
+  });
+  const created = await createWritingEvalCase({
+    datasetId: input.datasetId,
+    taskCode: draft.taskCode,
+    taskType: draft.taskType,
+    topicTitle: draft.topicTitle,
+    sourceType: "fragment",
+    sourceRef: `fragment:${fragment.id}`,
+    sourceLabel: fragment.title || `fragment-${fragment.id}`,
+    sourceUrl: fragment.source_url,
+    inputPayload: draft.inputPayload,
+    expectedConstraints: draft.expectedConstraints,
+    viralTargets: draft.viralTargets,
+    stageArtifactPayloads: draft.stageArtifactPayloads,
+    referenceGoodOutput: draft.referenceGoodOutput,
+    referenceBadPatterns: draft.referenceBadPatterns,
+    difficultyLevel: draft.difficultyLevel,
+    isEnabled: true,
+  });
+
+  await appendAuditLog({
+    userId: input.operatorUserId ?? null,
+    action: "writing_eval_case_import_fragment",
+    targetType: "writing_eval_case",
+    targetId: created.id,
+    payload: {
+      datasetId: input.datasetId,
+      fragmentId: fragment.id,
+      taskCode: created.taskCode,
+      taskType: created.taskType,
+      difficultyLevel: created.difficultyLevel,
+      sourceFactCount: draft.sourceFactCount,
+      knowledgeCardCount: draft.knowledgeCardCount,
+      historyReferenceCount: draft.historyReferenceCount,
+      hasSourceUrl: draft.hasSourceUrl,
+      hasScreenshot: draft.hasScreenshot,
+    },
+  });
+
+  return created;
+}
+
+export async function importWritingEvalCasesFromFragments(input: {
+  datasetId: number;
+  fragmentIds: number[];
+  operatorUserId?: number | null;
+}) {
+  await ensureExtendedProductSchema();
+  if (!Number.isInteger(input.datasetId) || input.datasetId <= 0) throw new Error("数据集无效");
+  if (!Array.isArray(input.fragmentIds) || input.fragmentIds.length === 0) throw new Error("请至少提供一条素材");
+  const uniqueFragmentIds = Array.from(
+    new Set(
+      input.fragmentIds
+        .map((item) => Number(item))
+        .filter((item) => Number.isInteger(item) && item > 0),
+    ),
+  );
+  if (uniqueFragmentIds.length === 0) throw new Error("素材列表无效");
+  const createdCases: Awaited<ReturnType<typeof importWritingEvalCaseFromFragment>>[] = [];
+  const skipped: Array<{ fragmentId: number; reason: string }> = [];
+
+  for (const fragmentId of uniqueFragmentIds) {
+    try {
+      const created = await importWritingEvalCaseFromFragment({
+        datasetId: input.datasetId,
+        fragmentId,
+        operatorUserId: input.operatorUserId,
+      });
+      createdCases.push(created);
+    } catch (error) {
+      skipped.push({
+        fragmentId,
+        reason: error instanceof Error ? error.message : "导入失败",
+      });
+    }
+  }
+
+  return {
+    datasetId: input.datasetId,
+    requestedFragmentIds: uniqueFragmentIds,
+    createdCases,
+    skipped,
+  };
+}
+
 export async function createWritingEvalCase(input: {
   datasetId: number;
   taskCode: string;
   taskType: string;
   topicTitle: string;
+  sourceType?: string | null;
+  sourceRef?: string | null;
+  sourceLabel?: string | null;
+  sourceUrl?: string | null;
   inputPayload: Record<string, unknown>;
   expectedConstraints?: Record<string, unknown>;
   viralTargets?: Record<string, unknown>;
@@ -2540,14 +5229,18 @@ export async function createWritingEvalCase(input: {
   const now = new Date().toISOString();
   const result = await db.exec(
     `INSERT INTO writing_eval_cases (
-      dataset_id, task_code, task_type, topic_title, input_payload_json, expected_constraints_json,
+      dataset_id, task_code, task_type, topic_title, source_type, source_ref, source_label, source_url, input_payload_json, expected_constraints_json,
       viral_targets_json, stage_artifact_payloads_json, reference_good_output, reference_bad_patterns_json, difficulty_level, is_enabled, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       input.datasetId,
       taskCode,
       taskType,
       topicTitle,
+      String(input.sourceType || "").trim() || "manual",
+      String(input.sourceRef || "").trim() || null,
+      String(input.sourceLabel || "").trim() || null,
+      String(input.sourceUrl || "").trim() || null,
       input.inputPayload,
       input.expectedConstraints ?? {},
       input.viralTargets ?? {},
@@ -2562,7 +5255,7 @@ export async function createWritingEvalCase(input: {
   );
   await refreshDatasetSampleCount(input.datasetId);
   const created = await db.queryOne<WritingEvalCaseRow>(
-    `SELECT id, dataset_id, task_code, task_type, topic_title, input_payload_json, expected_constraints_json,
+    `SELECT id, dataset_id, task_code, task_type, topic_title, source_type, source_ref, source_label, source_url, input_payload_json, expected_constraints_json,
             viral_targets_json, stage_artifact_payloads_json, reference_good_output, reference_bad_patterns_json, difficulty_level, is_enabled,
             created_at, updated_at
      FROM writing_eval_cases
@@ -2581,6 +5274,10 @@ export async function updateWritingEvalCase(input: {
   taskCode?: string;
   taskType?: string;
   topicTitle?: string;
+  sourceType?: string | null;
+  sourceRef?: string | null;
+  sourceLabel?: string | null;
+  sourceUrl?: string | null;
   inputPayload?: Record<string, unknown>;
   expectedConstraints?: Record<string, unknown>;
   viralTargets?: Record<string, unknown>;
@@ -2593,7 +5290,7 @@ export async function updateWritingEvalCase(input: {
   await ensureExtendedProductSchema();
   const db = getDatabase();
   const current = await db.queryOne<WritingEvalCaseRow>(
-    `SELECT id, dataset_id, task_code, task_type, topic_title, input_payload_json, expected_constraints_json,
+    `SELECT id, dataset_id, task_code, task_type, topic_title, source_type, source_ref, source_label, source_url, input_payload_json, expected_constraints_json,
             viral_targets_json, stage_artifact_payloads_json, reference_good_output, reference_bad_patterns_json, difficulty_level, is_enabled,
             created_at, updated_at
      FROM writing_eval_cases
@@ -2605,7 +5302,7 @@ export async function updateWritingEvalCase(input: {
   }
   await db.exec(
     `UPDATE writing_eval_cases
-     SET task_code = ?, task_type = ?, topic_title = ?, input_payload_json = ?, expected_constraints_json = ?,
+     SET task_code = ?, task_type = ?, topic_title = ?, source_type = ?, source_ref = ?, source_label = ?, source_url = ?, input_payload_json = ?, expected_constraints_json = ?,
          viral_targets_json = ?, stage_artifact_payloads_json = ?, reference_good_output = ?, reference_bad_patterns_json = ?, difficulty_level = ?,
          is_enabled = ?, updated_at = ?
      WHERE id = ?`,
@@ -2613,6 +5310,10 @@ export async function updateWritingEvalCase(input: {
       String(input.taskCode ?? current.task_code).trim(),
       String(input.taskType ?? current.task_type).trim(),
       String(input.topicTitle ?? current.topic_title).trim(),
+      String(input.sourceType ?? (current.source_type || "")).trim() || "manual",
+      String(input.sourceRef ?? (current.source_ref || "")).trim() || null,
+      String(input.sourceLabel ?? (current.source_label || "")).trim() || null,
+      String(input.sourceUrl ?? (current.source_url || "")).trim() || null,
       input.inputPayload ?? parseJsonObject(current.input_payload_json),
       input.expectedConstraints ?? parseJsonObject(current.expected_constraints_json),
       input.viralTargets ?? parseJsonObject(current.viral_targets_json),
@@ -2627,7 +5328,7 @@ export async function updateWritingEvalCase(input: {
   );
   await refreshDatasetSampleCount(current.dataset_id);
   const updated = await db.queryOne<WritingEvalCaseRow>(
-    `SELECT id, dataset_id, task_code, task_type, topic_title, input_payload_json, expected_constraints_json,
+    `SELECT id, dataset_id, task_code, task_type, topic_title, source_type, source_ref, source_label, source_url, input_payload_json, expected_constraints_json,
             viral_targets_json, stage_artifact_payloads_json, reference_good_output, reference_bad_patterns_json, difficulty_level, is_enabled,
             created_at, updated_at
      FROM writing_eval_cases
@@ -2644,14 +5345,306 @@ export async function getWritingEvalRuns() {
   await ensureExtendedProductSchema();
   const db = getDatabase();
   const rows = await db.query<WritingOptimizationRunRow>(
-    `SELECT r.id, r.run_code, r.dataset_id, r.base_version_type, r.base_version_ref, r.candidate_version_type,
+    `SELECT r.id, r.run_code, r.dataset_id, r.source_schedule_id, r.base_version_type, r.base_version_ref, r.candidate_version_type,
             r.candidate_version_ref, r.experiment_mode, r.trigger_mode, r.decision_mode, r.resolution_status, r.status, r.summary, r.score_summary_json, r.error_message,
-            r.started_at, r.finished_at, r.resolved_at, r.created_by, r.created_at, d.name AS dataset_name
+            r.started_at, r.finished_at, r.resolved_at, r.created_by, r.created_at, d.name AS dataset_name, s.name AS source_schedule_name
      FROM writing_optimization_runs r
      INNER JOIN writing_eval_datasets d ON d.id = r.dataset_id
+     LEFT JOIN writing_eval_run_schedules s ON s.id = r.source_schedule_id
      ORDER BY r.created_at DESC, r.id DESC`,
   );
   return rows.map(mapRun);
+}
+
+async function getLatestWritingEvalVersionLedgerByRef(
+  versionType: string,
+  candidateContent: string,
+) {
+  const db = getDatabase();
+  return db.queryOne<WritingOptimizationVersionRow>(
+    `SELECT id, version_type, target_key, source_version, candidate_content, score_summary_json, decision, decision_reason, approved_by, created_at
+     FROM writing_optimization_versions
+     WHERE version_type = ? AND candidate_content = ?
+     ORDER BY created_at DESC, id DESC
+     LIMIT 1`,
+    [versionType, candidateContent],
+  );
+}
+
+async function getWritingEvalRunRolloutAuditSummaries(input: {
+  rolloutKind: "prompt" | "asset";
+  focusVersionType: string;
+  focusVersionRef: string;
+}) {
+  const audits = await getWritingEvalRolloutAuditLogs(60);
+  const items =
+    input.rolloutKind === "prompt"
+      ? audits.promptRolloutAuditLogs.filter((item) => {
+          const payload = getRecord(item.payload);
+          const promptId = String(payload.promptId || "").trim();
+          const version = String(payload.version || "").trim();
+          return `${promptId}@${version}` === input.focusVersionRef;
+        })
+      : audits.rolloutAuditLogs.filter((item) => {
+          const payload = getRecord(item.payload);
+          return String(payload.assetType || "").trim() === input.focusVersionType && String(payload.assetRef || "").trim() === input.focusVersionRef;
+        });
+
+  return items.slice(0, 6).map((item) => {
+    const payload = getRecord(item.payload);
+    const signals = getRecord(payload.signals);
+    return {
+      id: item.id,
+      createdAt: item.createdAt,
+      action: item.action,
+      username: item.username,
+      reason: String(payload.reason || "").trim() || null,
+      riskLevel: String(payload.riskLevel || "").trim() || "stone",
+      changes: getStringArray(payload.changes, 6),
+      signals: {
+        feedbackCount: getNumber(signals.feedbackCount),
+        uniqueUsers: getNumber(signals.uniqueUsers),
+        totalHitCount: getNumber(signals.totalHitCount),
+        deltaTotalScore: getNumber(signals.deltaTotalScore),
+        observedViralScore: getNumber(signals.observedViralScore),
+        openRate: getNumber(signals.openRate),
+        readCompletionRate: getNumber(signals.readCompletionRate),
+      },
+    };
+  });
+}
+
+async function buildWritingEvalRunPostDecisionOps(runDetail: ReturnType<typeof mapRun>) {
+  const focusVersionType =
+    runDetail.resolutionStatus === "keep"
+      ? runDetail.candidateVersionType
+      : runDetail.resolutionStatus === "discard" || runDetail.resolutionStatus === "rollback"
+        ? runDetail.baseVersionType
+        : runDetail.recommendation === "keep"
+          ? runDetail.candidateVersionType
+          : runDetail.baseVersionType;
+  const focusVersionRef =
+    runDetail.resolutionStatus === "keep"
+      ? runDetail.candidateVersionRef
+      : runDetail.resolutionStatus === "discard" || runDetail.resolutionStatus === "rollback"
+        ? runDetail.baseVersionRef
+        : runDetail.recommendation === "keep"
+          ? runDetail.candidateVersionRef
+          : runDetail.baseVersionRef;
+  const focusTargetKey = getWritingEvalVersionTargetKey(focusVersionType, focusVersionRef);
+  const focusSource: "candidate" | "base" =
+    focusVersionRef === runDetail.candidateVersionRef && focusVersionType === runDetail.candidateVersionType ? "candidate" : "base";
+
+  const [baseLedgerRow, candidateLedgerRow, outcomeSummary] = await Promise.all([
+    getLatestWritingEvalVersionLedgerByRef(runDetail.baseVersionType, runDetail.baseVersionRef),
+    getLatestWritingEvalVersionLedgerByRef(runDetail.candidateVersionType, runDetail.candidateVersionRef),
+    (await getArticleOutcomeVersionSummaries([{ versionType: focusVersionType, candidateContent: focusVersionRef }]))[0] ?? null,
+  ]);
+
+  const focusLedgerRow =
+    focusVersionType === runDetail.candidateVersionType && focusVersionRef === runDetail.candidateVersionRef
+      ? candidateLedgerRow
+      : focusVersionType === runDetail.baseVersionType && focusVersionRef === runDetail.baseVersionRef
+        ? baseLedgerRow
+        : await getLatestWritingEvalVersionLedgerByRef(focusVersionType, focusVersionRef);
+
+  if (isPromptBackedWritingEvalVersionType(focusVersionType)) {
+    const { promptId, version } = resolvePromptBackedWritingEvalVersionRef(focusVersionType, focusVersionRef);
+    const db = getDatabase();
+    const [promptVersionRow, promptRolloutStats, rolloutAuditLogs] = await Promise.all([
+      db.queryOne<WritingEvalPromptVersionRolloutRow>(
+        `SELECT prompt_id, version, auto_mode, rollout_observe_only, rollout_percentage, rollout_plan_codes_json, is_active
+         FROM prompt_versions
+         WHERE prompt_id = ? AND version = ?
+         LIMIT 1`,
+        [promptId, version],
+      ),
+      db.queryOne<WritingEvalPromptRolloutObservationRow>(
+        `SELECT prompt_id, version,
+                COUNT(DISTINCT user_id) AS unique_user_count,
+                COALESCE(SUM(hit_count), 0) AS total_hit_count,
+                MAX(last_hit_at) AS last_hit_at,
+                COUNT(DISTINCT CASE WHEN resolution_reason LIKE 'observe%' THEN user_id END) AS observe_user_count,
+                COUNT(DISTINCT CASE WHEN resolution_reason LIKE 'plan:%' THEN user_id END) AS plan_user_count,
+                COUNT(DISTINCT CASE WHEN resolution_reason LIKE 'percentage:%' THEN user_id END) AS percentage_user_count,
+                COUNT(DISTINCT CASE WHEN resolution_reason = 'stable' THEN user_id END) AS stable_user_count
+         FROM prompt_rollout_observations
+         WHERE prompt_id = ? AND version = ?
+         GROUP BY prompt_id, version`,
+        [promptId, version],
+      ),
+      getWritingEvalRunRolloutAuditSummaries({
+        rolloutKind: "prompt",
+        focusVersionType,
+        focusVersionRef,
+      }),
+    ]);
+    return {
+      focusVersionType,
+      focusVersionRef,
+      focusTargetKey,
+      focusSource,
+      candidateLedgerId: candidateLedgerRow?.id ?? null,
+      baseLedgerId: baseLedgerRow?.id ?? null,
+      focusLedgerId: focusLedgerRow?.id ?? null,
+      focusLedgerDecision: focusLedgerRow?.decision ?? null,
+      focusLedgerCreatedAt: focusLedgerRow?.created_at ?? null,
+      canRollbackFocusLedger: focusLedgerRow?.decision === "keep",
+      rolloutKind: "prompt" as const,
+      isFocusActive: promptVersionRow ? Boolean(promptVersionRow.is_active) : false,
+      rolloutConfig: promptVersionRow
+        ? {
+            autoMode: String(promptVersionRow.auto_mode || "").trim() || "manual",
+            rolloutObserveOnly: Boolean(promptVersionRow.rollout_observe_only),
+            rolloutPercentage: Number(promptVersionRow.rollout_percentage || 0),
+            rolloutPlanCodes: parsePlanCodes(promptVersionRow.rollout_plan_codes_json),
+            isEnabled:
+              Boolean(promptVersionRow.rollout_observe_only)
+              || Number(promptVersionRow.rollout_percentage || 0) > 0
+              || parsePlanCodes(promptVersionRow.rollout_plan_codes_json).length > 0,
+            notes: null,
+          }
+        : null,
+      rolloutStats: promptRolloutStats
+        ? {
+            uniqueUserCount: promptRolloutStats.unique_user_count,
+            totalHitCount: promptRolloutStats.total_hit_count,
+            lastHitAt: promptRolloutStats.last_hit_at,
+            observeUserCount: promptRolloutStats.observe_user_count,
+            planUserCount: promptRolloutStats.plan_user_count,
+            percentageUserCount: promptRolloutStats.percentage_user_count,
+            stableUserCount: promptRolloutStats.stable_user_count,
+          }
+        : null,
+      feedbackSummary: {
+        feedbackCount: outcomeSummary?.feedbackCount ?? 0,
+        averageObservedViralScore: outcomeSummary?.averageObservedViralScore ?? null,
+        averageOpenRate: outcomeSummary?.averageOpenRate ?? null,
+        averageReadCompletionRate: outcomeSummary?.averageReadCompletionRate ?? null,
+      },
+      rolloutAuditLogs,
+    };
+  }
+
+  if (focusVersionType === "layout_strategy" || focusVersionType === "apply_command_template" || focusVersionType === "scoring_profile") {
+    const db = getDatabase();
+    const [assetRolloutRow, assetRolloutStats, activeAssetRow, activeScoringProfile, rolloutAuditLogs] = await Promise.all([
+      db.queryOne<WritingEvalAssetRolloutRow>(
+        `SELECT asset_type, asset_ref, auto_mode, rollout_observe_only, rollout_percentage, rollout_plan_codes_json, is_enabled, notes
+         FROM writing_asset_rollouts
+         WHERE asset_type = ? AND asset_ref = ?
+         LIMIT 1`,
+        [focusVersionType, focusVersionRef],
+      ),
+      db.queryOne<WritingEvalAssetRolloutObservationRow>(
+        `SELECT asset_type, asset_ref,
+                COUNT(DISTINCT user_id) AS unique_user_count,
+                COALESCE(SUM(hit_count), 0) AS total_hit_count,
+                MAX(last_hit_at) AS last_hit_at,
+                COUNT(DISTINCT CASE WHEN resolution_reason LIKE 'observe%' THEN user_id END) AS observe_user_count,
+                COUNT(DISTINCT CASE WHEN resolution_reason LIKE 'plan:%' THEN user_id END) AS plan_user_count,
+                COUNT(DISTINCT CASE WHEN resolution_reason LIKE 'percentage:%' THEN user_id END) AS percentage_user_count,
+                COUNT(DISTINCT CASE WHEN resolution_reason = 'stable' THEN user_id END) AS stable_user_count
+         FROM writing_asset_rollout_observations
+         WHERE asset_type = ? AND asset_ref = ?
+         GROUP BY asset_type, asset_ref`,
+        [focusVersionType, focusVersionRef],
+      ),
+      focusVersionType === "layout_strategy" || focusVersionType === "apply_command_template"
+        ? db.queryOne<{ asset_ref: string }>(
+            `SELECT asset_ref
+             FROM writing_active_assets
+             WHERE asset_type = ?
+             LIMIT 1`,
+            [focusVersionType],
+          )
+        : Promise.resolve(null),
+      focusVersionType === "scoring_profile"
+        ? db.queryOne<{ code: string }>(
+            `SELECT code
+             FROM writing_eval_scoring_profiles
+             WHERE is_active = ?
+             ORDER BY updated_at DESC, id DESC
+             LIMIT 1`,
+            [true],
+          )
+        : Promise.resolve(null),
+      getWritingEvalRunRolloutAuditSummaries({
+        rolloutKind: "asset",
+        focusVersionType,
+        focusVersionRef,
+      }),
+    ]);
+    return {
+      focusVersionType,
+      focusVersionRef,
+      focusTargetKey,
+      focusSource,
+      candidateLedgerId: candidateLedgerRow?.id ?? null,
+      baseLedgerId: baseLedgerRow?.id ?? null,
+      focusLedgerId: focusLedgerRow?.id ?? null,
+      focusLedgerDecision: focusLedgerRow?.decision ?? null,
+      focusLedgerCreatedAt: focusLedgerRow?.created_at ?? null,
+      canRollbackFocusLedger: focusLedgerRow?.decision === "keep",
+      rolloutKind: "asset" as const,
+      isFocusActive:
+        focusVersionType === "scoring_profile"
+          ? activeScoringProfile?.code === focusVersionRef
+          : activeAssetRow?.asset_ref === focusVersionRef,
+      rolloutConfig: assetRolloutRow
+        ? {
+            autoMode: String(assetRolloutRow.auto_mode || "").trim() || "manual",
+            rolloutObserveOnly: Boolean(assetRolloutRow.rollout_observe_only),
+            rolloutPercentage: Number(assetRolloutRow.rollout_percentage || 0),
+            rolloutPlanCodes: parsePlanCodes(assetRolloutRow.rollout_plan_codes_json),
+            isEnabled: Boolean(assetRolloutRow.is_enabled),
+            notes: String(assetRolloutRow.notes || "").trim() || null,
+          }
+        : null,
+      rolloutStats: assetRolloutStats
+        ? {
+            uniqueUserCount: assetRolloutStats.unique_user_count,
+            totalHitCount: assetRolloutStats.total_hit_count,
+            lastHitAt: assetRolloutStats.last_hit_at,
+            observeUserCount: assetRolloutStats.observe_user_count,
+            planUserCount: assetRolloutStats.plan_user_count,
+            percentageUserCount: assetRolloutStats.percentage_user_count,
+            stableUserCount: assetRolloutStats.stable_user_count,
+          }
+        : null,
+      feedbackSummary: {
+        feedbackCount: outcomeSummary?.feedbackCount ?? 0,
+        averageObservedViralScore: outcomeSummary?.averageObservedViralScore ?? null,
+        averageOpenRate: outcomeSummary?.averageOpenRate ?? null,
+        averageReadCompletionRate: outcomeSummary?.averageReadCompletionRate ?? null,
+      },
+      rolloutAuditLogs,
+    };
+  }
+
+  return {
+    focusVersionType,
+    focusVersionRef,
+    focusTargetKey,
+    focusSource,
+    candidateLedgerId: candidateLedgerRow?.id ?? null,
+    baseLedgerId: baseLedgerRow?.id ?? null,
+    focusLedgerId: focusLedgerRow?.id ?? null,
+    focusLedgerDecision: focusLedgerRow?.decision ?? null,
+    focusLedgerCreatedAt: focusLedgerRow?.created_at ?? null,
+    canRollbackFocusLedger: focusLedgerRow?.decision === "keep",
+    rolloutKind: "unsupported" as const,
+    isFocusActive: null,
+    rolloutConfig: null,
+    rolloutStats: null,
+    feedbackSummary: {
+      feedbackCount: outcomeSummary?.feedbackCount ?? 0,
+      averageObservedViralScore: outcomeSummary?.averageObservedViralScore ?? null,
+      averageOpenRate: outcomeSummary?.averageOpenRate ?? null,
+      averageReadCompletionRate: outcomeSummary?.averageReadCompletionRate ?? null,
+    },
+    rolloutAuditLogs: [],
+  };
 }
 
 export async function getWritingEvalRunDetail(runId: number) {
@@ -2659,32 +5652,93 @@ export async function getWritingEvalRunDetail(runId: number) {
   if (!Number.isInteger(runId) || runId <= 0) throw new Error("实验运行无效");
   const db = getDatabase();
   const run = await db.queryOne<WritingOptimizationRunRow>(
-    `SELECT r.id, r.run_code, r.dataset_id, r.base_version_type, r.base_version_ref, r.candidate_version_type,
+    `SELECT r.id, r.run_code, r.dataset_id, r.source_schedule_id, r.base_version_type, r.base_version_ref, r.candidate_version_type,
             r.candidate_version_ref, r.experiment_mode, r.trigger_mode, r.decision_mode, r.resolution_status, r.status, r.summary, r.score_summary_json, r.error_message,
-            r.started_at, r.finished_at, r.resolved_at, r.created_by, r.created_at, d.name AS dataset_name
+            r.started_at, r.finished_at, r.resolved_at, r.created_by, r.created_at, d.name AS dataset_name, s.name AS source_schedule_name
      FROM writing_optimization_runs r
      INNER JOIN writing_eval_datasets d ON d.id = r.dataset_id
+     LEFT JOIN writing_eval_run_schedules s ON s.id = r.source_schedule_id
      WHERE r.id = ?`,
     [runId],
   );
   if (!run) {
     throw new Error("实验运行不存在");
   }
-  const results = await db.query<WritingOptimizationResultRow>(
-    `SELECT r.id, r.run_id, r.case_id, r.generated_title, r.generated_lead, r.generated_markdown,
-            r.style_score, r.language_score, r.density_score, r.emotion_score, r.structure_score, r.topic_momentum_score,
-            r.headline_score, r.hook_score, r.shareability_score, r.reader_value_score, r.novelty_score, r.platform_fit_score,
-            r.quality_score, r.viral_score, r.factual_risk_penalty, r.ai_noise_penalty, r.total_score, r.judge_payload_json,
-            r.created_at, c.task_code, c.task_type, c.topic_title, c.difficulty_level
-     FROM writing_optimization_results r
-     INNER JOIN writing_eval_cases c ON c.id = r.case_id
-     WHERE r.run_id = ?
-     ORDER BY r.total_score DESC, r.id ASC`,
-    [runId],
-  );
+  const jobRunFilter = getWritingEvalJobRunFilterSql(runId);
+  const [results, jobRows, retryAuditRows] = await Promise.all([
+    db.query<WritingOptimizationResultRow>(
+      `SELECT r.id, r.run_id, r.case_id, r.generated_title, r.generated_lead, r.generated_markdown,
+              r.style_score, r.language_score, r.density_score, r.emotion_score, r.structure_score, r.topic_momentum_score,
+              r.headline_score, r.hook_score, r.shareability_score, r.reader_value_score, r.novelty_score, r.platform_fit_score,
+              r.quality_score, r.viral_score, r.factual_risk_penalty, r.ai_noise_penalty, r.total_score, r.judge_payload_json,
+              r.created_at, c.task_code, c.task_type, c.topic_title, c.difficulty_level
+       FROM writing_optimization_results r
+       INNER JOIN writing_eval_cases c ON c.id = r.case_id
+       WHERE r.run_id = ?
+       ORDER BY r.total_score DESC, r.id ASC`,
+      [runId],
+    ),
+    db.query<WritingEvalJobQueueRow>(
+      `SELECT id, job_type, status, payload_json, run_at, attempts, locked_at, last_error, created_at, updated_at
+       FROM job_queue
+       WHERE job_type IN (?, ?, ?)
+         AND ${jobRunFilter.clause}
+       ORDER BY id ASC`,
+      ["writingEvalRun", "writingEvalScore", "writingEvalPromote", ...jobRunFilter.params],
+    ),
+    db.query<WritingEvalRetryAuditRow>(
+      `SELECT a.id, u.username, a.payload_json, a.created_at
+       FROM audit_logs a
+       LEFT JOIN users u ON u.id = a.user_id
+       WHERE a.action = ?
+         AND a.target_type = ?
+         AND a.target_id = ?
+       ORDER BY a.id ASC`,
+      ["writing_eval_retry", "writing_optimization_run", String(runId)],
+    ),
+  ]);
+  const mappedRun = mapRun(run);
+  const stageAttemptMap = new Map<string, number>();
+  const jobHistory = jobRows.map((row) => {
+    const stageMeta = getWritingEvalStageMetaForJobType(row.job_type);
+    const attemptIndex = (stageAttemptMap.get(stageMeta.stageKey) ?? 0) + 1;
+    stageAttemptMap.set(stageMeta.stageKey, attemptIndex);
+    const payload = parseJsonObject(row.payload_json);
+    return {
+      id: row.id,
+      jobType: row.job_type,
+      stageKey: stageMeta.stageKey,
+      stageLabel: stageMeta.stageLabel,
+      attemptIndex,
+      status: row.status,
+      runAt: row.run_at,
+      queuedAt: row.created_at,
+      startedAt: row.locked_at,
+      finishedAt: row.status === "completed" || row.status === "failed" ? row.updated_at : null,
+      updatedAt: row.updated_at,
+      lastError: row.last_error,
+      retryCount: Number(row.attempts || 0),
+      runCode: String(payload.runCode || "").trim() || null,
+    };
+  });
+  const retryHistory = retryAuditRows.map((row) => {
+    const payload = parseJsonObject(row.payload_json);
+    const retriedAt = String(payload.retriedAt || "").trim() || null;
+    const runCode = String(payload.runCode || "").trim() || null;
+    return {
+      id: row.id,
+      username: row.username,
+      createdAt: row.created_at,
+      retriedAt,
+      runCode,
+    };
+  });
   return {
-    ...mapRun(run),
+    ...mappedRun,
     results: results.map(mapRunResult),
+    jobHistory,
+    retryHistory,
+    postDecisionOps: await buildWritingEvalRunPostDecisionOps(mappedRun),
   };
 }
 
@@ -2724,7 +5778,7 @@ export async function retryWritingEvalRun(input: { runId: number; operatorUserId
   return getWritingEvalRunDetail(input.runId);
 }
 
-export async function promoteWritingEvalRun(input: { runId: number; operatorUserId?: number | null }) {
+export async function promoteWritingEvalRun(input: { runId: number; reason?: string | null; operatorUserId?: number | null }) {
   await ensureExtendedProductSchema();
   if (!Number.isInteger(input.runId) || input.runId <= 0) throw new Error("实验运行无效");
   const db = getDatabase();
@@ -2736,10 +5790,15 @@ export async function promoteWritingEvalRun(input: { runId: number; operatorUser
     throw new Error("当前实验已完成决议，不能重复保留");
   }
   const decision = buildPromotionDecision(runDetail.scoreSummary);
+  const approvalReason = String(input.reason || "").trim();
+  const isRiskOverride = decision.suggestion !== "keep";
+  if (isRiskOverride && !approvalReason) {
+    throw new Error("当前 run 命中风险守卫，keep 前必须填写审批理由");
+  }
   const sourceVersion = runDetail.baseVersionRef;
   let promotionTarget: Record<string, unknown> = {};
-  if (runDetail.candidateVersionType === "prompt_version") {
-    const { promptId, version } = parsePromptVersionRef(runDetail.candidateVersionRef);
+  if (isPromptBackedWritingEvalVersionType(runDetail.candidateVersionType)) {
+    const { promptId, version } = resolvePromptBackedWritingEvalVersionRef(runDetail.candidateVersionType, runDetail.candidateVersionRef);
     await activatePromptVersion(promptId, version);
     promotionTarget = {
       promotedPromptId: promptId,
@@ -2772,7 +5831,7 @@ export async function promoteWritingEvalRun(input: { runId: number; operatorUser
       promotedApplyCommandTemplateCode: runDetail.candidateVersionRef,
     };
   } else {
-    throw new Error("当前仅支持保留 prompt_version、scoring_profile、layout_strategy 与 apply_command_template 类型");
+    throw new Error("当前仅支持保留 prompt_version、fact_check、title_template、lead_template、scoring_profile、layout_strategy 与 apply_command_template 类型");
   }
   const resolvedAt = new Date().toISOString();
   await db.transaction(async () => {
@@ -2782,7 +5841,7 @@ export async function promoteWritingEvalRun(input: { runId: number; operatorUser
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         runDetail.candidateVersionType,
-        runDetail.candidateVersionType === "prompt_version" ? parsePromptVersionRef(runDetail.candidateVersionRef).promptId : runDetail.candidateVersionRef,
+        getWritingEvalVersionTargetKey(runDetail.candidateVersionType, runDetail.candidateVersionRef),
         sourceVersion,
         runDetail.candidateVersionRef,
         {
@@ -2790,9 +5849,12 @@ export async function promoteWritingEvalRun(input: { runId: number; operatorUser
           runId: runDetail.id,
           runCode: runDetail.runCode,
           recommendation: runDetail.recommendation,
+          riskOverrideApprovalRequired: isRiskOverride,
+          riskOverrideApprovalReason: isRiskOverride ? approvalReason : null,
+          riskOverrideApprovedBy: isRiskOverride ? input.operatorUserId ?? null : null,
         },
         "keep",
-        decision.reason,
+        approvalReason || decision.reason,
         input.operatorUserId ?? null,
         resolvedAt,
       ],
@@ -2814,6 +5876,8 @@ export async function promoteWritingEvalRun(input: { runId: number; operatorUser
       candidateVersionRef: runDetail.candidateVersionRef,
       baseVersionRef: runDetail.baseVersionRef,
       recommendation: runDetail.recommendation,
+      approvalMode: isRiskOverride ? "risk_override" : "normal_keep",
+      approvalReason: approvalReason || null,
       scoreSummary: runDetail.scoreSummary,
     },
   });
@@ -2835,10 +5899,7 @@ export async function discardWritingEvalRun(input: { runId: number; reason?: str
     throw new Error("当前实验已完成决议，不能重复 discard");
   }
   const decision = buildPromotionDecision(runDetail.scoreSummary);
-  const targetKey =
-    runDetail.candidateVersionType === "prompt_version"
-      ? parsePromptVersionRef(runDetail.candidateVersionRef).promptId
-      : runDetail.candidateVersionRef;
+  const targetKey = getWritingEvalVersionTargetKey(runDetail.candidateVersionType, runDetail.candidateVersionRef);
   const resolvedAt = new Date().toISOString();
   await db.transaction(async () => {
     await db.exec(
@@ -2899,6 +5960,20 @@ export async function autoResolveWritingEvalRun(input: {
   const decision = String(input.decision || "").trim() || runDetail.recommendation || "discard";
   if (decision === "keep") {
     const resolved = await promoteWritingEvalRun({ runId: input.runId, operatorUserId: input.operatorUserId });
+    await appendAuditLog({
+      userId: input.operatorUserId ?? null,
+      action: "writing_eval_auto_resolve",
+      targetType: "writing_optimization_run",
+      targetId: input.runId,
+      payload: {
+        runCode: runDetail.runCode,
+        decision: "keep",
+        recommendation: runDetail.recommendation,
+        recommendationReason: runDetail.recommendationReason,
+        decisionMode: runDetail.decisionMode,
+        reason: String(input.reason || "").trim() || null,
+      },
+    });
     return {
       action: "keep",
       ...resolved,
@@ -2909,10 +5984,124 @@ export async function autoResolveWritingEvalRun(input: {
     operatorUserId: input.operatorUserId,
     reason: String(input.reason || "").trim() || runDetail.recommendationReason || "自动 discard",
   });
+  await appendAuditLog({
+    userId: input.operatorUserId ?? null,
+    action: "writing_eval_auto_resolve",
+    targetType: "writing_optimization_run",
+    targetId: input.runId,
+    payload: {
+      runCode: runDetail.runCode,
+      decision: "discard",
+      recommendation: runDetail.recommendation,
+      recommendationReason: runDetail.recommendationReason,
+      decisionMode: runDetail.decisionMode,
+      reason: String(input.reason || "").trim() || runDetail.recommendationReason || "自动 discard",
+    },
+  });
   return {
     action: "discard",
     run: discarded,
   };
+}
+
+export async function autoResolveWritingEvalRuns(input?: {
+  operatorUserId?: number | null;
+  limit?: number;
+  dryRun?: boolean;
+}) {
+  const limit = Math.min(Math.max(Math.round(Number(input?.limit ?? 6)), 1), 24);
+  const runs = await getWritingEvalRuns();
+  const candidates = runs
+    .filter((run) => run.status === "succeeded" && run.resolutionStatus === "pending")
+    .filter((run) => {
+      if (run.decisionMode === "auto_keep") {
+        return run.recommendation === "keep";
+      }
+      if (run.decisionMode === "auto_keep_or_discard") {
+        return run.recommendation === "keep" || run.recommendation === "discard";
+      }
+      return false;
+    })
+    .slice(0, limit);
+
+  if (input?.dryRun) {
+    return {
+      dryRun: true,
+      scannedCount: candidates.length,
+      resolvedCount: 0,
+      keepCount: 0,
+      discardCount: 0,
+      noopCount: 0,
+      failureCount: 0,
+      items: candidates.map((run) => ({
+        runId: run.id,
+        runCode: run.runCode,
+        decisionMode: run.decisionMode,
+        recommendation: run.recommendation,
+        recommendationReason: run.recommendationReason,
+      })),
+    };
+  }
+
+  const results: Array<{
+    runId: number;
+    runCode: string;
+    action: "keep" | "discard" | "noop" | "failed";
+    decisionMode: string;
+    recommendation: string;
+    message: string;
+  }> = [];
+
+  for (const run of candidates) {
+    try {
+      const resolved = await autoResolveWritingEvalRun({
+        runId: run.id,
+        operatorUserId: input?.operatorUserId ?? null,
+      });
+      results.push({
+        runId: run.id,
+        runCode: run.runCode,
+        action: resolved.action === "keep" || resolved.action === "discard" ? resolved.action : "noop",
+        decisionMode: run.decisionMode,
+        recommendation: run.recommendation,
+        message:
+          resolved.action === "keep"
+            ? "已自动 keep"
+            : resolved.action === "discard"
+              ? "已自动 discard"
+              : "无需处理",
+      });
+    } catch (error) {
+      results.push({
+        runId: run.id,
+        runCode: run.runCode,
+        action: "failed",
+        decisionMode: run.decisionMode,
+        recommendation: run.recommendation,
+        message: error instanceof Error ? error.message : "自动决议失败",
+      });
+    }
+  }
+
+  const summary = {
+    dryRun: false,
+    scannedCount: candidates.length,
+    resolvedCount: results.filter((item) => item.action === "keep" || item.action === "discard").length,
+    keepCount: results.filter((item) => item.action === "keep").length,
+    discardCount: results.filter((item) => item.action === "discard").length,
+    noopCount: results.filter((item) => item.action === "noop").length,
+    failureCount: results.filter((item) => item.action === "failed").length,
+    items: results,
+  };
+
+  await appendAuditLog({
+    userId: input?.operatorUserId ?? null,
+    action: "writing_eval_auto_resolve_batch",
+    targetType: "writing_optimization_run",
+    payload: summary,
+  });
+
+  return summary;
 }
 
 export async function rollbackWritingEvalVersion(input: { versionId: number; reason?: string | null; operatorUserId?: number | null }) {
@@ -2940,8 +6129,8 @@ export async function rollbackWritingEvalVersion(input: { versionId: number; rea
   let previousVersion = "";
   const now = new Date().toISOString();
 
-  if (versionRow.version_type === "prompt_version") {
-    const target = parsePromptVersionRef(rollbackTarget);
+  if (isPromptBackedWritingEvalVersionType(versionRow.version_type)) {
+    const target = resolvePromptBackedWritingEvalVersionRef(versionRow.version_type, rollbackTarget);
     if (target.promptId !== versionRow.target_key) {
       throw new Error("账本中的 prompt 回滚目标与对象不一致");
     }
@@ -2987,7 +6176,7 @@ export async function rollbackWritingEvalVersion(input: { versionId: number; rea
       operatorUserId: input.operatorUserId ?? null,
     });
   } else {
-    throw new Error("当前仅支持 prompt_version、scoring_profile、layout_strategy 与 apply_command_template 的回滚");
+    throw new Error("当前仅支持 prompt_version、fact_check、title_template、lead_template、scoring_profile、layout_strategy 与 apply_command_template 的回滚");
   }
 
   await db.exec(
@@ -3045,6 +6234,234 @@ export async function getWritingEvalVersions(limit = 100) {
      LIMIT ${Math.min(Math.max(limit, 1), 200)}`,
   );
   return rows.map(mapVersion);
+}
+
+export type WritingEvalInsightsRiskLedgerItem = {
+  key: string;
+  tone: "cinnabar" | "amber";
+  source: "execution" | "rollout" | "calibration" | "sample";
+  title: string;
+  detail: string;
+  meta: string;
+  occurredAt: string;
+  runId: number | null;
+  resultId: number | null;
+  datasetId: number | null;
+  caseId: number | null;
+  assetType: string | null;
+  assetRef: string | null;
+  recommendedAction: {
+    actionType: "retry_run" | "set_rollout_observe" | "set_rollout_trial" | "pause_rollout";
+    label: string;
+    reason: string;
+    priorityHint?: number | null;
+    strategyTags?: string[] | null;
+    runId: number | null;
+    assetType: string | null;
+    assetRef: string | null;
+  } | null;
+};
+
+export type WritingEvalInsightsRiskLedger = {
+  generatedAt: string;
+  windowDays: number;
+  totalCount: number;
+  highPriorityCount: number;
+  summary: {
+    failedJobCount: number;
+    retryCount: number;
+    highRiskRolloutCount: number;
+    shrinkActionCount: number;
+    falsePositiveCount: number;
+    linkedFeedbackCount: number;
+  };
+  sourceBreakdown: Array<{
+    key: "execution" | "rollout" | "calibration" | "sample";
+    label: string;
+    tone: "cinnabar" | "amber";
+    value: number;
+  }>;
+  items: WritingEvalInsightsRiskLedgerItem[];
+};
+
+export function buildWritingEvalInsightsRiskLedger(input: {
+  insights: Awaited<ReturnType<typeof getWritingEvalInsights>>;
+  combinedRolloutAuditLogs: Awaited<ReturnType<typeof getWritingEvalRolloutAuditLogs>>["combinedRolloutAuditLogs"];
+  recentWindowDays?: number;
+  maxItems?: number;
+}) {
+  const recentWindowDays = Math.min(Math.max(Math.round(Number(input.recentWindowDays ?? 7)), 1), 30);
+  const maxItems = Math.min(Math.max(Math.round(Number(input.maxItems ?? 12)), 1), 48);
+  const now = new Date();
+  const generatedAt = now.toISOString();
+  const cutoffMs = now.getTime() - recentWindowDays * 24 * 60 * 60 * 1000;
+  const onlineCalibration = input.insights.onlineCalibration as ReturnType<typeof buildOnlineCalibrationInsights>;
+  const executionInsights = input.insights.executionInsights as ReturnType<typeof buildWritingEvalExecutionInsights>;
+  const falsePositiveCases = Array.isArray(onlineCalibration.falsePositiveCases) ? onlineCalibration.falsePositiveCases : [];
+  const recentAutoRolloutTrend = normalizeWritingEvalRolloutAuditLogs(input.combinedRolloutAuditLogs)
+    .map((item) => ({
+      ...item,
+      assetType: item.assetType || null,
+      assetRef: item.assetRef || null,
+      reason: item.reason || "无原因",
+    }))
+    .filter((item) => {
+      const ts = new Date(item.createdAt).getTime();
+      return Number.isFinite(ts) && ts >= cutoffMs;
+    });
+  const rolloutLogsByAsset = new Map<string, typeof recentAutoRolloutTrend>();
+  for (const item of recentAutoRolloutTrend) {
+    const assetKey = item.assetType && item.assetRef ? `${item.assetType}:${item.assetRef}` : null;
+    if (!assetKey) continue;
+    const current = rolloutLogsByAsset.get(assetKey) ?? [];
+    current.push(item);
+    rolloutLogsByAsset.set(assetKey, current);
+  }
+  const rolloutRiskItems: WritingEvalInsightsRiskLedgerItem[] = recentAutoRolloutTrend
+    .filter((item) => item.riskLevel === "cinnabar")
+    .slice(0, 6)
+    .map((item) => {
+      const assetKey = item.assetType && item.assetRef ? `${item.assetType}:${item.assetRef}` : null;
+      const assetLogs = assetKey ? (rolloutLogsByAsset.get(assetKey) ?? []) : [];
+      const recentAssetLogs = assetLogs
+        .slice()
+        .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
+        .slice(0, 3);
+      const recentCinnabarCount = recentAssetLogs.filter((log) => log.riskLevel === "cinnabar").length;
+      const recentShrinkCount = recentAssetLogs.filter((log) => log.direction === "shrink").length;
+      const shouldPause =
+        recentCinnabarCount >= 2
+        || recentShrinkCount >= 2
+        || (item.deltaTotalScore ?? 0) <= -3
+        || ((item.feedbackCount ?? 0) >= 3 && (((item.openRate ?? 100) < 8) || ((item.readCompletionRate ?? 100) < 15)));
+      const strategyTags = [
+        recentCinnabarCount >= 2 ? "repeat_cinnabar" : null,
+        recentShrinkCount >= 2 ? "repeat_shrink" : null,
+        (item.deltaTotalScore ?? 0) <= -3 ? "negative_delta" : null,
+        ((item.feedbackCount ?? 0) >= 3 && ((item.openRate ?? 100) < 8 || (item.readCompletionRate ?? 100) < 15)) ? "weak_feedback" : null,
+      ].filter((tag): tag is string => Boolean(tag));
+      return {
+        key: `rollout-${item.id}`,
+        tone: "cinnabar",
+        source: "rollout",
+        title: `${item.directionLabel} · ${item.assetType || "asset"} · ${item.assetRef || "--"}`,
+        detail: item.reason,
+        meta: `高风险自动放量 · ${item.createdAt}`,
+        occurredAt: item.createdAt,
+        runId: null,
+        resultId: null,
+        datasetId: null,
+        caseId: null,
+        assetType: item.assetType,
+        assetRef: item.assetRef,
+        recommendedAction:
+          item.assetType && item.assetRef
+            ? {
+                actionType: shouldPause ? "pause_rollout" : "set_rollout_observe",
+                label: shouldPause ? "暂停灰度" : "切回观察",
+                reason: shouldPause
+                  ? "该对象近期连续出现高风险放量/收缩信号，且收益边际不足，先暂停灰度避免继续消耗样本。"
+                  : "高风险自动放量后，先切回观察流量，避免继续扩量。",
+                priorityHint: shouldPause ? 520 : 340,
+                strategyTags,
+                runId: null,
+                assetType: item.assetType,
+                assetRef: item.assetRef,
+              }
+            : null,
+      };
+    });
+  const executionRiskItems: WritingEvalInsightsRiskLedgerItem[] = executionInsights.recentFailures.slice(0, 6).map((item) => ({
+    key: `execution-${item.jobId}`,
+    tone: "cinnabar",
+    source: "execution",
+    title: `${item.stageLabel} 失败 · ${item.runCode || `run#${item.runId ?? "--"}`}`,
+    detail: item.lastError || "该阶段执行失败，建议优先查看 run 详情和 worker 日志。",
+    meta: `stage job #${item.jobId} · ${item.failedAt}`,
+    occurredAt: item.failedAt,
+    runId: item.runId,
+    resultId: null,
+    datasetId: null,
+    caseId: null,
+    assetType: null,
+    assetRef: null,
+    recommendedAction:
+      item.runId
+        ? {
+            actionType: "retry_run",
+            label: "重试 Run",
+            reason: "当前 run 出现阶段失败，优先拉起一次重试验证是否为瞬时异常。",
+            priorityHint: 220,
+            strategyTags: [item.stageKey, "stage_failure"],
+            runId: item.runId,
+            assetType: null,
+            assetRef: null,
+          }
+        : null,
+  }));
+  const calibrationRiskItems: WritingEvalInsightsRiskLedgerItem[] = falsePositiveCases.slice(0, 6).map((item, index) => ({
+    key: `calibration-${item.runId ?? item.feedbackId ?? index}`,
+    tone: "amber",
+    source: "calibration",
+    title: `线上误判 · ${item.topicTitle || item.articleTitle || item.taskCode || "未命名样本"}`,
+    detail: `离线 ${formatMetricNumber(item.predictedViralScore)} -> 线上 ${formatMetricNumber(item.observedViralScore)}，校准偏差 ${formatMetricNumber(item.calibrationGap)}。`,
+    meta: item.sourceLabel || item.taskCode || "回流校准样本",
+    occurredAt: generatedAt,
+    runId: item.runId,
+    resultId: item.resultId,
+    datasetId: null,
+    caseId: null,
+    assetType: null,
+    assetRef: null,
+    recommendedAction: null,
+  }));
+  const sampleRiskItems: WritingEvalInsightsRiskLedgerItem[] = input.insights.failingCases
+    .slice(0, 6)
+    .map((item) => ({
+      key: `sample-${item.runId}-${item.caseId}`,
+      tone: "amber",
+      source: "sample",
+      title: `失败样本 · ${item.taskCode}`,
+      detail: item.reason,
+      meta: item.runCode,
+      occurredAt: generatedAt,
+      runId: item.runId,
+      resultId: item.resultId,
+      datasetId: item.datasetId,
+      caseId: item.caseId,
+      assetType: null,
+      assetRef: null,
+      recommendedAction: null,
+    }));
+  const items = [...executionRiskItems, ...rolloutRiskItems, ...calibrationRiskItems, ...sampleRiskItems]
+    .sort((left, right) => {
+      const toneRank = left.tone === right.tone ? 0 : left.tone === "cinnabar" ? -1 : 1;
+      if (toneRank !== 0) return toneRank;
+      return new Date(right.occurredAt).getTime() - new Date(left.occurredAt).getTime();
+    })
+    .slice(0, maxItems);
+
+  return {
+    generatedAt,
+    windowDays: recentWindowDays,
+    totalCount: items.length,
+    highPriorityCount: items.filter((item) => item.tone === "cinnabar").length,
+    summary: {
+      failedJobCount: executionInsights.currentWindow.failedJobCount,
+      retryCount: executionInsights.currentWindow.retryCount,
+      highRiskRolloutCount: rolloutRiskItems.length,
+      shrinkActionCount: recentAutoRolloutTrend.filter((item) => item.direction === "shrink").length,
+      falsePositiveCount: falsePositiveCases.length,
+      linkedFeedbackCount: Number(onlineCalibration.linkedResultCount ?? 0),
+    },
+    sourceBreakdown: [
+      { key: "execution", label: "执行失败", value: executionRiskItems.length, tone: "cinnabar" },
+      { key: "rollout", label: "高风险放量", value: rolloutRiskItems.length, tone: "cinnabar" },
+      { key: "calibration", label: "线上误判", value: calibrationRiskItems.length, tone: "amber" },
+      { key: "sample", label: "失败样本", value: sampleRiskItems.length, tone: "amber" },
+    ],
+    items,
+  } satisfies WritingEvalInsightsRiskLedger;
 }
 
 export async function getWritingEvalInsights(limit = 24) {
@@ -3138,7 +6555,7 @@ export async function getWritingEvalInsights(limit = 24) {
     }
   }
 
-  const [onlineFeedbackRows, articleOutcomeItems] = await Promise.all([
+  const [onlineFeedbackRows, articleOutcomeItems, executionJobRows, retryAuditRows] = await Promise.all([
     db.query<WritingEvalOnlineFeedbackRow>(
       `${getWritingEvalFeedbackSelectSql()}
        WHERE f.result_id IS NOT NULL
@@ -3146,11 +6563,33 @@ export async function getWritingEvalInsights(limit = 24) {
        LIMIT 240`,
     ),
     getArticleOutcomeCalibrationItems(240),
+    db.query<WritingEvalJobQueueRow>(
+      `SELECT id, job_type, status, payload_json, run_at, attempts, locked_at, last_error, created_at, updated_at
+       FROM job_queue
+       WHERE job_type IN (?, ?, ?)
+       ORDER BY created_at DESC, id DESC
+       LIMIT 480`,
+      ["writingEvalRun", "writingEvalScore", "writingEvalPromote"],
+    ),
+    db.query<WritingEvalRetryAuditAggregateRow>(
+      `SELECT a.id, a.target_id, u.username, a.payload_json, a.created_at
+       FROM audit_logs a
+       LEFT JOIN users u ON u.id = a.user_id
+       WHERE a.action = ?
+         AND a.target_type = ?
+       ORDER BY a.created_at DESC, a.id DESC
+       LIMIT 240`,
+      ["writing_eval_retry", "writing_optimization_run"],
+    ),
   ]);
   const onlineCalibration = buildOnlineCalibrationInsights([
     ...onlineFeedbackRows.map(mapFeedback),
     ...articleOutcomeItems,
   ]);
+  const executionInsights = buildWritingEvalExecutionInsights({
+    jobRows: executionJobRows,
+    retryAuditRows,
+  });
   const topRegressionReasons = [...reasons.entries()]
     .sort((left, right) => right[1].count - left[1].count)
     .slice(0, 8)
@@ -3174,6 +6613,7 @@ export async function getWritingEvalInsights(limit = 24) {
     failingCases: failingCases.slice(0, 8),
     onlineCalibration,
     strategyRecommendations,
+    executionInsights,
   };
 }
 
@@ -3345,7 +6785,7 @@ export async function getArticleOutcomeVersionSummaries(
     .filter(
       (item) =>
         item.candidateContent
-        && ["prompt_version", "scoring_profile", "layout_strategy", "apply_command_template"].includes(item.versionType),
+        && SUPPORTED_WRITING_EVAL_VERSION_TYPES.includes(item.versionType as (typeof SUPPORTED_WRITING_EVAL_VERSION_TYPES)[number]),
     );
   if (requested.length === 0) {
     return [];
@@ -3430,7 +6870,7 @@ async function getArticleOutcomeVersionFeedback(input: {
   ]);
   const versionType = String(input.versionType || "").trim();
   const candidateContent = String(input.candidateContent || "").trim();
-  const supported = ["prompt_version", "scoring_profile", "layout_strategy", "apply_command_template"].includes(versionType);
+  const supported = SUPPORTED_WRITING_EVAL_VERSION_TYPES.includes(versionType as (typeof SUPPORTED_WRITING_EVAL_VERSION_TYPES)[number]);
   const limit = Number.isInteger(input.limit) && Number(input.limit) > 0 ? Number(input.limit) : 12;
   if (!supported || !candidateContent) {
     return {
@@ -3483,7 +6923,7 @@ async function getArticleOutcomeVersionFeedback(input: {
       const layoutStrategyId = getNumber(attribution.layoutStrategyId);
       const applyCommandTemplateCode = String(attribution.applyCommandTemplateCode || "").trim();
       const matched =
-        (versionType === "prompt_version" && promptVersionRefs.includes(candidateContent))
+        (isPromptBackedWritingEvalVersionType(versionType) && promptVersionRefs.includes(candidateContent))
         || (versionType === "scoring_profile" && scoringProfileCode === candidateContent)
         || (versionType === "layout_strategy" && layoutStrategyId !== null && String(layoutStrategyId) === candidateContent)
         || (versionType === "apply_command_template" && applyCommandTemplateCode === candidateContent);
@@ -3666,6 +7106,7 @@ export async function createArticleWritingEvalRunFeedback(input: {
 
 export async function createWritingEvalRun(input: {
   datasetId: number;
+  sourceScheduleId?: number | null;
   baseVersionType: string;
   baseVersionRef: string;
   candidateVersionType: string;
@@ -3678,6 +7119,13 @@ export async function createWritingEvalRun(input: {
 }) {
   await ensureExtendedProductSchema();
   const resolved = await resolveWritingEvalRunDefinition(input);
+  if (
+    input.sourceScheduleId !== undefined
+    && input.sourceScheduleId !== null
+    && (!Number.isInteger(input.sourceScheduleId) || input.sourceScheduleId <= 0)
+  ) {
+    throw new Error("来源调度规则无效");
+  }
   const db = getDatabase();
   const runCode = buildRunCode();
   const now = new Date().toISOString();
@@ -3693,12 +7141,13 @@ export async function createWritingEvalRun(input: {
   await db.transaction(async () => {
     const inserted = await db.exec(
       `INSERT INTO writing_optimization_runs (
-        run_code, dataset_id, base_version_type, base_version_ref, candidate_version_type, candidate_version_ref,
+        run_code, dataset_id, source_schedule_id, base_version_type, base_version_ref, candidate_version_type, candidate_version_ref,
         experiment_mode, trigger_mode, decision_mode, resolution_status, status, summary, score_summary_json, created_by, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         runCode,
         resolved.datasetId,
+        input.sourceScheduleId ?? null,
         resolved.baseVersionType,
         resolved.baseVersionRef,
         resolved.candidateVersionType,
@@ -3719,11 +7168,12 @@ export async function createWritingEvalRun(input: {
   });
 
   const created = await db.queryOne<WritingOptimizationRunRow>(
-    `SELECT r.id, r.run_code, r.dataset_id, r.base_version_type, r.base_version_ref, r.candidate_version_type,
+    `SELECT r.id, r.run_code, r.dataset_id, r.source_schedule_id, r.base_version_type, r.base_version_ref, r.candidate_version_type,
             r.candidate_version_ref, r.experiment_mode, r.trigger_mode, r.decision_mode, r.resolution_status, r.status, r.summary, r.score_summary_json, r.error_message,
-            r.started_at, r.finished_at, r.resolved_at, r.created_by, r.created_at, d.name AS dataset_name
+            r.started_at, r.finished_at, r.resolved_at, r.created_by, r.created_at, d.name AS dataset_name, s.name AS source_schedule_name
      FROM writing_optimization_runs r
      INNER JOIN writing_eval_datasets d ON d.id = r.dataset_id
+     LEFT JOIN writing_eval_run_schedules s ON s.id = r.source_schedule_id
      WHERE r.id = ?`,
     [createdId],
   );

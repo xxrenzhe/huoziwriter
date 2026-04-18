@@ -19,6 +19,10 @@ function parsePromptRef(value: string) {
   return promptId && version ? { promptId, version } : null;
 }
 
+function isPromptBackedVersionType(value: string) {
+  return value === "prompt_version" || value === "fact_check" || value === "title_template" || value === "lead_template";
+}
+
 function getRecord(value: unknown) {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }
@@ -324,7 +328,7 @@ export default async function AdminWritingEvalVersionsPage({
         <div className="flex items-center justify-between gap-4">
           <div>
             <div className="text-xs uppercase tracking-[0.28em] text-cinnabar">Writing Eval Versions</div>
-            <h1 className="mt-4 font-serifCn text-4xl text-stone-100">保留与回滚账本</h1>
+            <h1 className="mt-4 font-serifCn text-4xl text-stone-100 text-balance">保留与回滚账本</h1>
           </div>
           <AdminWritingEvalNav sections={["overview", "datasets", "runs"]} className="flex gap-3" />
         </div>
@@ -376,7 +380,7 @@ export default async function AdminWritingEvalVersionsPage({
           return {
             ...item,
             sourcePreview:
-              item.versionType === "prompt_version"
+              isPromptBackedVersionType(item.versionType)
                 ? promptContentMap.get(item.sourceVersion) ?? null
                 : item.versionType === "scoring_profile"
                   ? scoringProfileMap.get(item.sourceVersion) ?? null
@@ -386,7 +390,7 @@ export default async function AdminWritingEvalVersionsPage({
                       ? applyCommandTemplateMap.get(item.sourceVersion) ?? null
                       : null,
             candidatePreview:
-              item.versionType === "prompt_version"
+              isPromptBackedVersionType(item.versionType)
                 ? promptContentMap.get(item.candidateContent) ?? null
                 : item.versionType === "scoring_profile"
                   ? scoringProfileMap.get(item.candidateContent) ?? null
@@ -396,11 +400,11 @@ export default async function AdminWritingEvalVersionsPage({
                       ? applyCommandTemplateMap.get(item.candidateContent) ?? null
                       : null,
             sourceLabel:
-              item.versionType === "prompt_version"
+              isPromptBackedVersionType(item.versionType)
                 ? parsePromptRef(item.sourceVersion)?.version || item.sourceVersion
                 : item.sourceVersion,
             candidateLabel:
-              item.versionType === "prompt_version"
+              isPromptBackedVersionType(item.versionType)
                 ? parsePromptRef(item.candidateContent)?.version || item.candidateContent
                 : item.candidateContent,
             rolloutStats:
@@ -496,7 +500,7 @@ export default async function AdminWritingEvalVersionsPage({
                   }
                 : null,
             isCurrentActive:
-              item.versionType === "prompt_version"
+              isPromptBackedVersionType(item.versionType)
                 ? activePromptMap.get(item.targetKey) === item.candidateContent
                 : item.versionType === "scoring_profile"
                   ? activeScoringProfileCode === item.candidateContent

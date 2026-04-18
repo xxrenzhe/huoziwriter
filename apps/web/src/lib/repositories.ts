@@ -16,6 +16,25 @@ import { normalizeArticleStatus, toStoredArticleStatus } from "./article-status-
 import { resolveArticleSeriesId } from "./series";
 import { resolvePlanFeatureSnapshot, type PlanFeatureSourceRecord } from "./plan-entitlements";
 
+let articleSnapshotsArticleColumnPromise: Promise<"article_id" | "document_id"> | null = null;
+
+async function getArticleSnapshotsArticleColumn() {
+  articleSnapshotsArticleColumnPromise ??= (async () => {
+    const db = getDatabase();
+    if (db.type === "sqlite") {
+      const columns = await db.query<{ name: string }>("PRAGMA table_info(article_snapshots)");
+      return columns.some((item) => item.name === "article_id") ? "article_id" : "document_id";
+    }
+    const articleColumn = await db.queryOne<{ column_name: string }>(
+      `SELECT column_name
+       FROM information_schema.columns
+       WHERE table_schema = 'public' AND table_name = 'article_snapshots' AND column_name = 'article_id'`,
+    );
+    return articleColumn ? "article_id" : "document_id";
+  })();
+  return articleSnapshotsArticleColumnPromise;
+}
+
 const DEFAULT_PROMPT_SEEDS = [
   {
     promptId: "research_brief",
@@ -644,8 +663,9 @@ export async function createArticleSnapshot(articleId: number, note?: string) {
   if (!article) {
     throw new Error("稿件不存在");
   }
+  const articleColumn = await getArticleSnapshotsArticleColumn();
   const result = await db.exec(
-    `INSERT INTO article_snapshots (article_id, markdown_content, html_content, snapshot_note, created_at)
+    `INSERT INTO article_snapshots (${articleColumn}, markdown_content, html_content, snapshot_note, created_at)
      VALUES (?, ?, ?, ?, ?)`,
     [articleId, article.markdown_content, article.html_content, note ?? null, new Date().toISOString()],
   );
@@ -665,6 +685,7 @@ export async function getArticleSnapshots(articleId: number, options?: { retenti
     retentionDays != null
       ? new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000).toISOString()
       : null;
+  const articleColumn = await getArticleSnapshotsArticleColumn();
   return db.query<{
     id: number;
     markdown_content: string;
@@ -673,18 +694,19 @@ export async function getArticleSnapshots(articleId: number, options?: { retenti
     created_at: string;
   }>(
     cutoff
-      ? "SELECT * FROM article_snapshots WHERE article_id = ? AND created_at >= ? ORDER BY id DESC"
-      : "SELECT * FROM article_snapshots WHERE article_id = ? ORDER BY id DESC",
+      ? `SELECT * FROM article_snapshots WHERE ${articleColumn} = ? AND created_at >= ? ORDER BY id DESC`
+      : `SELECT * FROM article_snapshots WHERE ${articleColumn} = ? ORDER BY id DESC`,
     cutoff ? [articleId, cutoff] : [articleId],
   );
 }
 
 export async function restoreArticleSnapshot(articleId: number, snapshotId: number, userId: number) {
   const db = getDatabase();
+  const articleColumn = await getArticleSnapshotsArticleColumn();
   const snapshot = await db.queryOne<{
     markdown_content: string;
     html_content: string | null;
-  }>("SELECT markdown_content, html_content FROM article_snapshots WHERE id = ? AND article_id = ?", [
+  }>(`SELECT markdown_content, html_content FROM article_snapshots WHERE id = ? AND ${articleColumn} = ?`, [
     snapshotId,
     articleId,
   ]);

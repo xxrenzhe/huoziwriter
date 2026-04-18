@@ -54,10 +54,10 @@ export function AdminUsersClient({
   return (
     <div className="space-y-6">
       <form onSubmit={handleSubmit} className={`grid gap-3 p-5 md:grid-cols-5 ${uiPrimitives.adminPanel}`}>
-        <input value={username} onChange={(event) => setUsername(event.target.value)} placeholder="用户名" className={uiPrimitives.adminInput} />
-        <input value={email} onChange={(event) => setEmail(event.target.value)} placeholder="邮箱" className={uiPrimitives.adminInput} />
-        <input value={displayName} onChange={(event) => setDisplayName(event.target.value)} placeholder="显示名" className={uiPrimitives.adminInput} />
-        <select value={planCode} onChange={(event) => setPlanCode(event.target.value)} className={uiPrimitives.adminSelect}>
+        <input aria-label="用户名" value={username} onChange={(event) => setUsername(event.target.value)} placeholder="用户名" className={uiPrimitives.adminInput} />
+        <input aria-label="邮箱" type="email" inputMode="email" spellCheck={false} value={email} onChange={(event) => setEmail(event.target.value)} placeholder="邮箱" className={uiPrimitives.adminInput} />
+        <input aria-label="显示名" value={displayName} onChange={(event) => setDisplayName(event.target.value)} placeholder="显示名" className={uiPrimitives.adminInput} />
+        <select aria-label="select control" value={planCode} onChange={(event) => setPlanCode(event.target.value)} className={uiPrimitives.adminSelect}>
           {MANAGED_PLAN_OPTIONS.map((option) => (
             <option key={option.code} value={option.code}>{option.label}</option>
           ))}
@@ -118,13 +118,13 @@ function AdminUserRow({
     <tr className="border-t border-stone-800">
       <td className="px-6 py-4 text-stone-100">{user.username}</td>
       <td className="px-6 py-4 text-stone-400">
-        <select value={role} onChange={(event) => setRole(event.target.value)} className={uiPrimitives.adminCompactSelect}>
+        <select aria-label="select control" value={role} onChange={(event) => setRole(event.target.value)} className={uiPrimitives.adminCompactSelect}>
           <option value="user">user</option>
           <option value="admin">admin</option>
         </select>
       </td>
       <td className="px-6 py-4 text-stone-400">
-        <select value={planCode} onChange={(event) => setPlanCode(event.target.value)} className={uiPrimitives.adminCompactSelect}>
+        <select aria-label="select control" value={planCode} onChange={(event) => setPlanCode(event.target.value)} className={uiPrimitives.adminCompactSelect}>
           {MANAGED_PLAN_OPTIONS.map((option) => (
             <option key={option.code} value={option.code}>{option.label}</option>
           ))}
@@ -291,11 +291,11 @@ export function PromptManagerClient({
     <div className="space-y-6">
       <form onSubmit={handleCreate} className={`grid gap-3 p-5 ${uiPrimitives.adminPanel}`}>
         <div className="grid gap-3 md:grid-cols-2">
-          <input value={form.promptId} onChange={(e) => setForm((prev) => ({ ...prev, promptId: e.target.value }))} placeholder="promptId" className={uiPrimitives.adminInput} />
-          <input value={form.version} onChange={(e) => setForm((prev) => ({ ...prev, version: e.target.value }))} placeholder="版本号" className={uiPrimitives.adminInput} />
-          <input value={form.category} onChange={(e) => setForm((prev) => ({ ...prev, category: e.target.value }))} placeholder="分类" className={uiPrimitives.adminInput} />
-          <input value={form.name} onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))} placeholder="名称" className={uiPrimitives.adminInput} />
-          <select value={form.publishMode} onChange={(e) => setForm((prev) => ({ ...prev, publishMode: e.target.value }))} className={uiPrimitives.adminSelect}>
+          <input aria-label="promptId" value={form.promptId} onChange={(e) => setForm((prev) => ({ ...prev, promptId: e.target.value }))} placeholder="promptId" className={uiPrimitives.adminInput} />
+          <input aria-label="版本号" value={form.version} onChange={(e) => setForm((prev) => ({ ...prev, version: e.target.value }))} placeholder="版本号" className={uiPrimitives.adminInput} />
+          <input aria-label="分类" value={form.category} onChange={(e) => setForm((prev) => ({ ...prev, category: e.target.value }))} placeholder="分类" className={uiPrimitives.adminInput} />
+          <input aria-label="名称" value={form.name} onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))} placeholder="名称" className={uiPrimitives.adminInput} />
+          <select aria-label="select control" value={form.publishMode} onChange={(e) => setForm((prev) => ({ ...prev, publishMode: e.target.value }))} className={uiPrimitives.adminSelect}>
             <option value="active">全量激活</option>
             <option value="rollout">灰度发布</option>
           </select>
@@ -303,20 +303,20 @@ export function PromptManagerClient({
             <option value="recommendation">自动治理</option>
             <option value="manual">手动治理</option>
           </select>
-          <input
+          <input aria-label="灰度百分比 0-100"
             value={form.rolloutPercentage}
             onChange={(e) => setForm((prev) => ({ ...prev, rolloutPercentage: e.target.value }))}
             placeholder="灰度百分比 0-100"
             className={uiPrimitives.adminInput}
           />
-          <input
+          <input aria-label="灰度计划，用逗号分隔，如 pro,ultra"
             value={form.rolloutPlanCodes}
             onChange={(e) => setForm((prev) => ({ ...prev, rolloutPlanCodes: e.target.value }))}
             placeholder="灰度计划，用逗号分隔，如 pro,ultra"
             className={uiPrimitives.adminInput}
           />
           <label className="flex items-center gap-2 text-sm text-stone-400">
-            <input
+            <input aria-label="Prompt 内容"
               type="checkbox"
               checked={form.rolloutObserveOnly}
               onChange={(e) => setForm((prev) => ({ ...prev, rolloutObserveOnly: e.target.checked }))}
@@ -324,7 +324,7 @@ export function PromptManagerClient({
             观察流量优先
           </label>
         </div>
-        <textarea value={form.promptContent} onChange={(e) => setForm((prev) => ({ ...prev, promptContent: e.target.value }))} placeholder="Prompt 内容" className={`min-h-[160px] ${uiPrimitives.adminInput}`} />
+        <textarea aria-label="Prompt 内容" value={form.promptContent} onChange={(e) => setForm((prev) => ({ ...prev, promptContent: e.target.value }))} placeholder="Prompt 内容" className={`min-h-[160px] ${uiPrimitives.adminInput}`} />
         <button className={uiPrimitives.primaryButton}>{form.publishMode === "active" ? "创建并激活版本" : "创建灰度版本"}</button>
       </form>
       {focusPrompt ? (
@@ -354,7 +354,7 @@ export function PromptManagerClient({
                 <>
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <div className="font-serifCn text-2xl text-stone-100">{prompt.name}</div>
+                <div className="font-serifCn text-2xl text-stone-100 text-balance">{prompt.name}</div>
                 <div className="mt-2 text-sm text-stone-400">{prompt.promptId} · {prompt.version} · {prompt.category}</div>
                 <div className="mt-2 flex flex-wrap gap-2 text-[11px] uppercase tracking-[0.12em] text-stone-500">
                   <span className="rounded-full border border-stone-700 px-2 py-1">
@@ -591,17 +591,17 @@ function PromptCandidateGenerator({
           </div>
         </div>
         <button type="submit" className={uiPrimitives.adminSecondaryButton} disabled={isCreating}>
-          {isCreating ? "生成中..." : "AI 生成候选版"}
+          {isCreating ? "生成中…" : "AI 生成候选版"}
         </button>
       </div>
       <div className="mt-4 grid gap-3 md:grid-cols-[240px_minmax(0,1fr)]">
-        <input
+        <input aria-label="候选版本号，可留空自动生成"
           value={candidateVersion}
           onChange={(event) => setCandidateVersion(event.target.value)}
           placeholder="候选版本号，可留空自动生成"
           className={uiPrimitives.adminInput}
         />
-        <textarea
+        <textarea aria-label="这次候选版想优化什么"
           value={optimizationGoal}
           onChange={(event) => setOptimizationGoal(event.target.value)}
           className={`min-h-[88px] ${uiPrimitives.adminInput}`}
@@ -813,12 +813,12 @@ export function AdminTopicSourcesClient({
           需要临时补抓一轮时，可直接手动触发全局同步，不必等待 06:00 / 18:00 主窗口或 06:15 / 06:45 / 18:15 / 18:45 补偿窗口。
         </div>
         <button onClick={runTopicSync} disabled={syncing} className={uiPrimitives.primaryButton}>
-          {syncing ? "同步中..." : "立即同步热点"}
+          {syncing ? "同步中…" : "立即同步热点"}
         </button>
       </div>
       <form onSubmit={handleSubmit} className={`grid gap-3 p-5 md:grid-cols-[200px_minmax(0,1fr)_140px_120px_160px] ${uiPrimitives.adminPanel}`}>
-        <input value={name} onChange={(event) => setName(event.target.value)} placeholder="系统源名称" className={uiPrimitives.adminInput} />
-        <input value={homepageUrl} onChange={(event) => setHomepageUrl(event.target.value)} placeholder="https://example.com 或 RSS 地址" className={uiPrimitives.adminInput} />
+        <input aria-label="系统源名称" value={name} onChange={(event) => setName(event.target.value)} placeholder="系统源名称" className={uiPrimitives.adminInput} />
+        <input aria-label="https://example.com 或 RSS 地址" value={homepageUrl} onChange={(event) => setHomepageUrl(event.target.value)} placeholder="https://example.com 或 RSS 地址" className={uiPrimitives.adminInput} />
         <select value={sourceType} onChange={(event) => setSourceType(event.target.value)} className={uiPrimitives.adminSelect}>
           <option value="youtube">YouTube</option>
           <option value="reddit">Reddit</option>
@@ -828,9 +828,9 @@ export function AdminTopicSourcesClient({
           <option value="blog">Blog</option>
           <option value="rss">RSS</option>
         </select>
-        <input value={priority} onChange={(event) => setPriority(event.target.value)} placeholder="优先级" className={uiPrimitives.adminInput} />
+        <input aria-label="优先级" value={priority} onChange={(event) => setPriority(event.target.value)} placeholder="优先级" className={uiPrimitives.adminInput} />
         <button disabled={submitting} className={uiPrimitives.primaryButton}>
-          {submitting ? "创建中..." : "新增系统源"}
+          {submitting ? "创建中…" : "新增系统源"}
         </button>
       </form>
       <div className="space-y-3">
@@ -839,7 +839,7 @@ export function AdminTopicSourcesClient({
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
                 <div className="text-xs uppercase tracking-[0.24em] text-stone-500">System Source</div>
-                <div className="mt-2 font-serifCn text-2xl text-stone-100">{source.name}</div>
+                <div className="mt-2 font-serifCn text-2xl text-stone-100 text-balance">{source.name}</div>
                 <div className="mt-2 text-sm text-stone-400">{source.homepageUrl || "未配置主页地址"}</div>
                 <div className="mt-3 text-xs text-stone-500">
                   创建于 {new Date(source.createdAt).toLocaleString("zh-CN")} · 最近更新 {new Date(source.updatedAt).toLocaleString("zh-CN")}
@@ -868,7 +868,7 @@ export function AdminTopicSourcesClient({
                 </div>
               </div>
               <div className="flex flex-col gap-2">
-                <select
+                <select aria-label="select control"
                   defaultValue={source.sourceType}
                   onChange={(event) => updateSource(source.id, { sourceType: event.target.value })}
                   disabled={togglingId === source.id}
@@ -898,14 +898,14 @@ export function AdminTopicSourcesClient({
                   disabled={syncingSourceId === source.id || togglingId === source.id}
                   className={uiPrimitives.adminSecondaryButton}
                 >
-                  {syncingSourceId === source.id ? "重抓中..." : "重抓该信源"}
+                  {syncingSourceId === source.id ? "重抓中…" : "重抓该信源"}
                 </button>
                 <button
                   onClick={() => updateSource(source.id, { isActive: !source.isActive })}
                   disabled={togglingId === source.id}
                   className={uiPrimitives.adminSecondaryButton}
                 >
-                  {togglingId === source.id ? "处理中..." : source.isActive ? "停用" : "启用"}
+                  {togglingId === source.id ? "处理中…" : source.isActive ? "停用" : "启用"}
                 </button>
               </div>
             </div>
@@ -942,7 +942,7 @@ export function AdminTopicSourcesClient({
                           disabled={retryingRunId !== null}
                           className={uiPrimitives.adminSecondaryButton}
                         >
-                          {retryingRunId === run.id ? "重试中..." : "重试失败源"}
+                          {retryingRunId === run.id ? "重试中…" : "重试失败源"}
                         </button>
                       ) : null}
                     </div>
@@ -1028,19 +1028,19 @@ export function AdminFinanceClient({
   return (
     <div className="space-y-6">
       <form onSubmit={handleCreatePlan} className={`grid gap-3 p-5 md:grid-cols-3 ${uiPrimitives.adminPanel}`}>
-        <input value={planForm.code} onChange={(event) => setPlanForm((prev) => ({ ...prev, code: event.target.value }))} placeholder="套餐 code" className={uiPrimitives.adminInput} />
-        <input value={planForm.name} onChange={(event) => setPlanForm((prev) => ({ ...prev, name: event.target.value }))} placeholder="套餐名称" className={uiPrimitives.adminInput} />
-        <input value={planForm.priceCny} onChange={(event) => setPlanForm((prev) => ({ ...prev, priceCny: event.target.value }))} placeholder="价格" className={uiPrimitives.adminInput} />
-        <input value={planForm.dailyGenerationLimit} onChange={(event) => setPlanForm((prev) => ({ ...prev, dailyGenerationLimit: event.target.value }))} placeholder="每日生成次数" className={uiPrimitives.adminInput} />
-        <input value={planForm.fragmentLimit} onChange={(event) => setPlanForm((prev) => ({ ...prev, fragmentLimit: event.target.value }))} placeholder="碎片上限" className={uiPrimitives.adminInput} />
-        <input value={planForm.languageGuardRuleLimit} onChange={(event) => setPlanForm((prev) => ({ ...prev, languageGuardRuleLimit: event.target.value }))} placeholder="语言守卫规则上限" className={uiPrimitives.adminInput} />
-        <input value={planForm.maxWechatConnections} onChange={(event) => setPlanForm((prev) => ({ ...prev, maxWechatConnections: event.target.value }))} placeholder="公众号连接上限" className={uiPrimitives.adminInput} />
+        <input aria-label="套餐 code" value={planForm.code} onChange={(event) => setPlanForm((prev) => ({ ...prev, code: event.target.value }))} placeholder="套餐 code" className={uiPrimitives.adminInput} />
+        <input aria-label="套餐名称" value={planForm.name} onChange={(event) => setPlanForm((prev) => ({ ...prev, name: event.target.value }))} placeholder="套餐名称" className={uiPrimitives.adminInput} />
+        <input aria-label="价格" value={planForm.priceCny} onChange={(event) => setPlanForm((prev) => ({ ...prev, priceCny: event.target.value }))} placeholder="价格" className={uiPrimitives.adminInput} />
+        <input aria-label="每日生成次数" value={planForm.dailyGenerationLimit} onChange={(event) => setPlanForm((prev) => ({ ...prev, dailyGenerationLimit: event.target.value }))} placeholder="每日生成次数" className={uiPrimitives.adminInput} />
+        <input aria-label="碎片上限" value={planForm.fragmentLimit} onChange={(event) => setPlanForm((prev) => ({ ...prev, fragmentLimit: event.target.value }))} placeholder="碎片上限" className={uiPrimitives.adminInput} />
+        <input aria-label="语言守卫规则上限" value={planForm.languageGuardRuleLimit} onChange={(event) => setPlanForm((prev) => ({ ...prev, languageGuardRuleLimit: event.target.value }))} placeholder="语言守卫规则上限" className={uiPrimitives.adminInput} />
+        <input aria-label="公众号连接上限" value={planForm.maxWechatConnections} onChange={(event) => setPlanForm((prev) => ({ ...prev, maxWechatConnections: event.target.value }))} placeholder="公众号连接上限" className={uiPrimitives.adminInput} />
         <label className="flex items-center gap-3 border border-stone-800 bg-stone-950 px-4 py-3 text-sm text-stone-300">
-          <input type="checkbox" checked={planForm.canGenerateCoverImage} onChange={(event) => setPlanForm((prev) => ({ ...prev, canGenerateCoverImage: event.target.checked }))} />
+          <input aria-label="input control" type="checkbox" checked={planForm.canGenerateCoverImage} onChange={(event) => setPlanForm((prev) => ({ ...prev, canGenerateCoverImage: event.target.checked }))} />
           允许封面图生成
         </label>
         <label className="flex items-center gap-3 border border-stone-800 bg-stone-950 px-4 py-3 text-sm text-stone-300">
-          <input type="checkbox" checked={planForm.canExportPdf} onChange={(event) => setPlanForm((prev) => ({ ...prev, canExportPdf: event.target.checked }))} />
+          <input aria-label="input control" type="checkbox" checked={planForm.canExportPdf} onChange={(event) => setPlanForm((prev) => ({ ...prev, canExportPdf: event.target.checked }))} />
           允许 PDF 导出
         </label>
         <button className={`md:col-span-3 ${uiPrimitives.primaryButton}`}>创建套餐</button>
@@ -1052,8 +1052,8 @@ export function AdminFinanceClient({
             className={`border p-6 ${plan.code === "pro" ? "border-cinnabar bg-cinnabar text-white" : "border-stone-800 bg-[#171718] text-stone-100"}`}
           >
             <div className="text-xs uppercase tracking-[0.24em] opacity-70">Plan</div>
-            <h1 className="mt-4 font-serifCn text-3xl">{plan.name}</h1>
-            <div className="mt-4 text-3xl">￥{plan.priceCny}</div>
+            <h1 className="mt-4 font-serifCn text-3xl text-balance">{plan.name}</h1>
+            <div className="mt-4 text-3xl text-balance">￥{plan.priceCny}</div>
             <p className="mt-4 text-sm leading-7 opacity-80">
               每日生成：{plan.dailyGenerationLimit ?? "不限"}<br />
               碎片上限：{plan.fragmentLimit ?? "不限"}<br />
@@ -1142,14 +1142,14 @@ function SubscriptionRow({
         <div className="mt-1 text-xs text-stone-500">{subscription.username}</div>
       </td>
       <td className="px-6 py-4 text-stone-400">
-        <select value={planCode} onChange={(event) => setPlanCode(event.target.value)} className={uiPrimitives.adminCompactSelect}>
+        <select aria-label="select control" value={planCode} onChange={(event) => setPlanCode(event.target.value)} className={uiPrimitives.adminCompactSelect}>
           {plans.map((plan) => (
             <option key={plan.code} value={plan.code}>{plan.name}</option>
           ))}
         </select>
       </td>
       <td className="px-6 py-4 text-stone-400">
-        <select value={status} onChange={(event) => setStatus(event.target.value)} className={uiPrimitives.adminCompactSelect}>
+        <select aria-label="select control" value={status} onChange={(event) => setStatus(event.target.value)} className={uiPrimitives.adminCompactSelect}>
           <option value="active">active</option>
           <option value="inactive">inactive</option>
           <option value="ended">ended</option>
@@ -1157,7 +1157,7 @@ function SubscriptionRow({
       </td>
       <td className="px-6 py-4 text-stone-400">{subscription.startAt ? new Date(subscription.startAt).toLocaleDateString("zh-CN") : "未记录"}</td>
       <td className="px-6 py-4 text-stone-400">
-        <input type="date" value={endAt} onChange={(event) => setEndAt(event.target.value)} className={uiPrimitives.adminCompactSelect} />
+        <input aria-label="input control" type="date" value={endAt} onChange={(event) => setEndAt(event.target.value)} className={uiPrimitives.adminCompactSelect} />
       </td>
       <td className="px-6 py-4">
         <button onClick={handleSave} className={uiPrimitives.adminSecondaryButton}>保存</button>
@@ -1180,9 +1180,9 @@ function RouteRow({
   return (
     <div className={`grid gap-3 p-5 md:grid-cols-[180px_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_120px] ${uiPrimitives.adminPanel}`}>
       <div className="flex items-center text-sm text-stone-100">{route.sceneCode}</div>
-      <input value={primaryModel} onChange={(event) => setPrimaryModel(event.target.value)} className={uiPrimitives.adminInput} />
-      <input value={fallbackModel} onChange={(event) => setFallbackModel(event.target.value)} className={uiPrimitives.adminInput} />
-      <input value={description} onChange={(event) => setDescription(event.target.value)} className={uiPrimitives.adminInput} />
+      <input aria-label="input control" value={primaryModel} onChange={(event) => setPrimaryModel(event.target.value)} className={uiPrimitives.adminInput} />
+      <input aria-label="input control" value={fallbackModel} onChange={(event) => setFallbackModel(event.target.value)} className={uiPrimitives.adminInput} />
+      <input aria-label="input control" value={description} onChange={(event) => setDescription(event.target.value)} className={uiPrimitives.adminInput} />
       <button onClick={() => onSave(route.sceneCode, primaryModel, fallbackModel || null, description || null)} className={uiPrimitives.primaryButton}>保存</button>
     </div>
   );

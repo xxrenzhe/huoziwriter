@@ -56,7 +56,7 @@ export default async function WorkspaceLayout({ children }: { children: ReactNod
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
                 <div className="text-xs uppercase tracking-[0.24em] text-cinnabar">起步引导</div>
-                <h2 className="mt-3 font-serifCn text-3xl text-ink">先完成第一篇可发布文章，再扩展更复杂的打法。</h2>
+                <h2 className="mt-3 font-serifCn text-3xl text-ink text-balance">先完成第一篇可发布文章，再扩展更复杂的打法。</h2>
                 <div className="mt-3 max-w-3xl text-sm leading-7 text-stone-700">
                   当前默认人设是 {defaultPersona ? `「${defaultPersona.name}」` : "未配置"}。建议按最短路径完成一次真实发布：补最小素材集，选一个热点或参考链接，生成大纲并过核查，再进微信草稿箱。
                 </div>
@@ -116,7 +116,7 @@ export default async function WorkspaceLayout({ children }: { children: ReactNod
         ) : (
           <section className="border border-dashed border-stone-300/50 bg-[#fbf7ef] p-8 shadow-ink">
             <div className="text-xs uppercase tracking-[0.24em] text-cinnabar">先完成人设配置</div>
-            <h2 className="mt-3 font-serifCn text-3xl text-ink">先配置你的写作身份，再进入系统。</h2>
+            <h2 className="mt-3 font-serifCn text-3xl text-ink text-balance">先配置你的写作身份，再进入系统。</h2>
             <p className="mt-4 max-w-3xl text-sm leading-7 text-stone-700">
               当前写作区内容已被锁定。先完成 1 个默认作者人设，系统才会开放作战台、稿件区和一键发布链路。
             </p>

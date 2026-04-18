@@ -37,26 +37,33 @@ export function LoginForm() {
     <form onSubmit={handleSubmit} className="space-y-5">
       <div className="space-y-2">
         <label className="text-sm text-stone-600">用户名</label>
-        <input
+        <input aria-label="输入用户名"
           value={username}
           onChange={(event) => setUsername(event.target.value)}
           className={uiPrimitives.input}
           placeholder="输入用户名"
+          spellCheck={false}
+          autoCapitalize="none"
+          autoCorrect="off"
+          autoComplete="username"
         />
       </div>
       <div className="space-y-2">
         <label className="text-sm text-stone-600">密码</label>
-        <input
+        <input aria-label="输入管理账号或已分配账号密码"
           type="password"
           value={password}
           onChange={(event) => setPassword(event.target.value)}
           className={uiPrimitives.input}
           placeholder="输入管理账号或已分配账号密码"
+          autoComplete="current-password"
         />
       </div>
-      {error ? <div className="text-sm text-cinnabar">{error}</div> : null}
+      <div aria-live="polite">
+        {error ? <div className="text-sm text-cinnabar">{error}</div> : null}
+      </div>
       <button disabled={loading} className={uiPrimitives.primaryButtonFull}>
-        {loading ? "登录中..." : "进入系统"}
+        {loading ? "登录中…" : "进入系统"}
       </button>
     </form>
   );
@@ -105,19 +112,21 @@ export function ChangePasswordForm({
       </div>
       <div className="space-y-2">
         <label className="text-sm text-stone-600">当前密码</label>
-        <input type="password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} className={uiPrimitives.input} />
+        <input aria-label="input control" type="password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} className={uiPrimitives.input} autoComplete="current-password" />
       </div>
       <div className="space-y-2">
         <label className="text-sm text-stone-600">新密码</label>
-        <input type="password" value={nextPassword} onChange={(event) => setNextPassword(event.target.value)} className={uiPrimitives.input} />
+        <input aria-label="input control" type="password" value={nextPassword} onChange={(event) => setNextPassword(event.target.value)} className={uiPrimitives.input} autoComplete="new-password" />
       </div>
       <div className="space-y-2">
         <label className="text-sm text-stone-600">确认新密码</label>
-        <input type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} className={uiPrimitives.input} />
+        <input aria-label="input control" type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} className={uiPrimitives.input} autoComplete="new-password" />
       </div>
-      {error ? <div className="text-sm text-cinnabar">{error}</div> : null}
+      <div aria-live="polite">
+        {error ? <div className="text-sm text-cinnabar">{error}</div> : null}
+      </div>
       <button disabled={loading} className={uiPrimitives.primaryButtonFull}>
-        {loading ? "提交中..." : "更新密码"}
+        {loading ? "提交中…" : "更新密码"}
       </button>
     </form>
   );

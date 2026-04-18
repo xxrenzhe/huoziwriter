@@ -11,7 +11,7 @@ import {
 } from "@/app/(writer)/writer-actions";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ChangeEvent, FormEvent, startTransition, useEffect, useMemo, useRef, useState } from "react";
+import { ChangeEvent, FormEvent, type ReactNode, startTransition, useEffect, useMemo, useRef, useState } from "react";
 import type { ReviewSeriesPlaybook } from "@/lib/article-outcomes";
 import { analyzeAiNoise } from "@/lib/ai-noise-scan";
 import { buildSuggestedEvidenceItems, formatEvidenceResearchTagLabel, formatEvidenceRoleLabel, getArticleEvidenceStats } from "@/lib/article-evidence";
@@ -27,7 +27,7 @@ import {
 } from "@/lib/article-strategy";
 import type { ImageAuthoringStyleContext } from "@/lib/image-authoring-context";
 import { buildNodeVisualSuggestion, buildVisualSuggestion } from "@/lib/image-prompting";
-import { collectLanguageGuardHits, type LanguageGuardRule } from "@/lib/language-guard-core";
+import { collectLanguageGuardHits, type LanguageGuardHit, type LanguageGuardRule } from "@/lib/language-guard-core";
 import { formatPlanDisplayName } from "@/lib/plan-labels";
 import { summarizeTemplateRenderConfig } from "@/lib/template-rendering";
 import {
@@ -39,6 +39,8 @@ import { buildWritingDiversityReport } from "@/lib/writing-diversity";
 import { buildWritingQualityPanel } from "@/lib/writing-quality";
 import type { ArticleStatus } from "@/lib/domain";
 import { ArticleOutlineClient } from "./article-outline-client";
+import { WechatNativePreview } from "./wechat-native-preview";
+import { SentenceRhythmMap } from "./sentence-rhythm-map";
 
 function escapeHtml(text: string) {
   return text
@@ -53,23 +55,139 @@ function escapeRegex(text: string) {
   return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-function buildBannedWordMarkup(markdown: string, bannedWords: string[]) {
-  const words = Array.from(new Set(bannedWords.map((item) => item.trim()).filter(Boolean))).sort((left, right) => right.length - left.length);
-  if (!words.length) {
-    return escapeHtml(markdown);
+type EditorialAnnotation = {
+  id: string;
+  order: number;
+  ruleId: string;
+  ruleKind: LanguageGuardHit["ruleKind"];
+  severity: LanguageGuardHit["severity"];
+  scope: LanguageGuardHit["scope"];
+  matchedText: string;
+  patternText: string;
+  rewriteHint: string | null;
+  count: number;
+  sampleContext: string;
+};
+
+const CLASSIC_OPENING_PATTERNS: Array<{ title: string; detail: string }> = [
+  {
+    title: "先从一个异样场景切进去",
+    detail: "别先讲道理，先写一个看似平常却明显不对劲的现场，让读者先被拉进问题里。",
+  },
+  {
+    title: "先落一个反直觉判断",
+    detail: "开头先给结论，但别给满。只落最关键的判断，把解释留到下一段继续展开。",
+  },
+  {
+    title: "先追问一个真正的问题",
+    detail: "好开头不是把背景讲完，而是把读者也会追问的那个问题准准地提出来。",
+  },
+  {
+    title: "先写你为什么被刺到",
+    detail: "如果这件事确实让你起了反应，先写触发你的那一下，文章会比模板开场更像人写。",
+  },
+];
+
+function buildEditorialReview(markdown: string, hits: LanguageGuardHit[]) {
+  const text = String(markdown || "");
+  if (!text.trim() || hits.length === 0) {
+    return {
+      html: escapeHtml(text),
+      annotations: [] as EditorialAnnotation[],
+    };
   }
 
-  const regex = new RegExp(words.map((item) => escapeRegex(item)).join("|"), "g");
-  let html = "";
-  let lastIndex = 0;
-  for (const match of markdown.matchAll(regex)) {
-    const index = match.index ?? 0;
-    html += escapeHtml(markdown.slice(lastIndex, index));
-    html += `<span style="color:#A73032;background:rgba(167,48,50,0.08);text-decoration-line:underline line-through;text-decoration-style:wavy;text-decoration-color:#A73032;text-decoration-thickness:1.5px;">${escapeHtml(match[0])}</span>`;
-    lastIndex = index + match[0].length;
+  const ranges: Array<{ start: number; end: number; annotationId: string; order: number; severity: LanguageGuardHit["severity"] }> = [];
+  const annotations: EditorialAnnotation[] = [];
+  const sortedHits = [...hits]
+    .map((hit) => ({
+      ...hit,
+      matched: String(hit.matchedText || hit.patternText || "").trim(),
+    }))
+    .filter((hit) => hit.matched)
+    .sort((left, right) => right.matched.length - left.matched.length);
+
+  function overlaps(start: number, end: number) {
+    return ranges.some((range) => start < range.end && end > range.start);
   }
-  html += escapeHtml(markdown.slice(lastIndex));
-  return html;
+
+  function buildContext(start: number, end: number) {
+    const prefix = text.slice(Math.max(0, start - 18), start).trimStart();
+    const suffix = text.slice(end, Math.min(text.length, end + 24)).trimEnd();
+    return `${prefix}${prefix ? "" : ""}${text.slice(start, end)}${suffix}`;
+  }
+
+  sortedHits.forEach((hit, index) => {
+    const annotationId = `${hit.ruleId}-${index}`;
+    let count = 0;
+    let searchIndex = 0;
+    let sampleContext = hit.matched;
+
+    while (searchIndex < text.length) {
+      const foundAt = text.indexOf(hit.matched, searchIndex);
+      if (foundAt === -1) {
+        break;
+      }
+      const rangeEnd = foundAt + hit.matched.length;
+      if (!overlaps(foundAt, rangeEnd)) {
+        count += 1;
+        if (count === 1) {
+          sampleContext = buildContext(foundAt, rangeEnd);
+        }
+        ranges.push({
+          start: foundAt,
+          end: rangeEnd,
+          annotationId,
+          order: index + 1,
+          severity: hit.severity,
+        });
+      }
+      searchIndex = rangeEnd;
+    }
+
+    if (count > 0) {
+      annotations.push({
+        id: annotationId,
+        order: index + 1,
+        ruleId: hit.ruleId,
+        ruleKind: hit.ruleKind,
+        severity: hit.severity,
+        scope: hit.scope,
+        matchedText: hit.matched,
+        patternText: hit.patternText,
+        rewriteHint: hit.rewriteHint,
+        count,
+        sampleContext,
+      });
+    }
+  });
+
+  if (ranges.length === 0) {
+    return {
+      html: escapeHtml(text),
+      annotations,
+    };
+  }
+
+  const orderedRanges = ranges.sort((left, right) => left.start - right.start);
+  let html = "";
+  let cursor = 0;
+  for (const range of orderedRanges) {
+    html += escapeHtml(text.slice(cursor, range.start));
+    const matchedText = escapeHtml(text.slice(range.start, range.end));
+    const tone =
+      range.severity === "high"
+        ? "color:#7f1d1d;background:rgba(167,48,50,0.10);text-decoration-line:underline;text-decoration-style:wavy;text-decoration-color:#a73032;text-decoration-thickness:1.5px;box-shadow:inset 0 -1px 0 rgba(167,48,50,0.18);"
+        : "color:#7d6430;background:rgba(196,138,58,0.14);text-decoration-line:underline;text-decoration-style:wavy;text-decoration-color:#c48a3a;text-decoration-thickness:1.5px;";
+    html += `<span style="${tone}">${matchedText}<sup style="margin-left:2px;color:${range.severity === "high" ? "#a73032" : "#8a651e"};font-size:10px;font-weight:700;">${range.order}</sup></span>`;
+    cursor = range.end;
+  }
+  html += escapeHtml(text.slice(cursor));
+
+  return {
+    html,
+    annotations,
+  };
 }
 
 function refreshRouter(router: ReturnType<typeof useRouter>) {
@@ -312,6 +430,8 @@ export function WechatConnectionsManager({
   }
 
   async function handleDelete(id: number) {
+    if (!window.confirm("确定要删除吗？")) return;
+
     if (!canManage) {
       setMessage(`${displayPlanName}暂不支持管理微信公众号连接。`);
       return;
@@ -383,7 +503,7 @@ export function WechatConnectionsManager({
           <div className="text-xs uppercase tracking-[0.24em] text-cinnabar">当前默认连接</div>
           {defaultConnection ? (
             <div className="mt-3 space-y-2 text-sm leading-7 text-stone-700">
-              <div className="font-serifCn text-2xl text-ink">{defaultConnection.accountName || "未命名公众号"}</div>
+              <div className="font-serifCn text-2xl text-ink text-balance">{defaultConnection.accountName || "未命名公众号"}</div>
               <div>原始 ID：{defaultConnection.originalId || "未填写"}</div>
               <div>状态：{formatConnectionStatus(defaultConnection.status)}</div>
               <div>{defaultConnection.accessTokenExpiresAt ? `访问令牌到期：${new Date(defaultConnection.accessTokenExpiresAt).toLocaleString("zh-CN")}` : "尚未记录访问令牌到期时间"}</div>
@@ -406,16 +526,16 @@ export function WechatConnectionsManager({
             </button>
           ) : null}
         </div>
-        <input value={accountName} disabled={!canManage} onChange={(event) => setAccountName(event.target.value)} placeholder="公众号名称" className="border border-stone-300 px-4 py-3 text-sm disabled:bg-stone-100 disabled:text-stone-400" />
-        <input value={originalId} disabled={!canManage} onChange={(event) => setOriginalId(event.target.value)} placeholder="原始 ID" className="border border-stone-300 px-4 py-3 text-sm disabled:bg-stone-100 disabled:text-stone-400" />
-        <input value={appId} disabled={!canManage} onChange={(event) => setAppId(event.target.value)} placeholder="公众号 AppID" className="border border-stone-300 px-4 py-3 text-sm disabled:bg-stone-100 disabled:text-stone-400" />
-        <input value={appSecret} disabled={!canManage} onChange={(event) => setAppSecret(event.target.value)} placeholder={editingId ? "公众号 AppSecret（仅轮换密钥时填写）" : "公众号 AppSecret"} type="password" className="border border-stone-300 px-4 py-3 text-sm disabled:bg-stone-100 disabled:text-stone-400" />
+        <input aria-label="公众号名称" value={accountName} disabled={!canManage} onChange={(event) => setAccountName(event.target.value)} placeholder="公众号名称" className="border border-stone-300 px-4 py-3 text-sm disabled:bg-stone-100 disabled:text-stone-400" />
+        <input aria-label="原始 ID" value={originalId} disabled={!canManage} onChange={(event) => setOriginalId(event.target.value)} placeholder="原始 ID" className="border border-stone-300 px-4 py-3 text-sm disabled:bg-stone-100 disabled:text-stone-400" />
+        <input aria-label="公众号 AppID" value={appId} disabled={!canManage} onChange={(event) => setAppId(event.target.value)} placeholder="公众号 AppID" className="border border-stone-300 px-4 py-3 text-sm disabled:bg-stone-100 disabled:text-stone-400" />
+        <input aria-label="input control" value={appSecret} disabled={!canManage} onChange={(event) => setAppSecret(event.target.value)} placeholder={editingId ? "公众号 AppSecret（仅轮换密钥时填写）" : "公众号 AppSecret"} type="password" className="border border-stone-300 px-4 py-3 text-sm disabled:bg-stone-100 disabled:text-stone-400" />
         <label className="flex items-center gap-3 border border-stone-300 px-4 py-3 text-sm text-stone-700">
-          <input type="checkbox" checked={isDefault} disabled={!canManage} onChange={(event) => setIsDefault(event.target.checked)} />
+          <input aria-label="input control" type="checkbox" checked={isDefault} disabled={!canManage} onChange={(event) => setIsDefault(event.target.checked)} />
           保存后设为默认公众号
         </label>
         <button disabled={loading || !canManage} className="bg-cinnabar px-5 py-3 text-sm text-white disabled:opacity-60">
-          {!canManage ? "当前套餐不可绑定公众号" : loading ? (editingId ? "更新中..." : "校验中...") : editingId ? "保存公众号连接" : "添加公众号连接"}
+          {!canManage ? "当前套餐不可绑定公众号" : loading ? (editingId ? "更新中…" : "校验中…") : editingId ? "保存公众号连接" : "添加公众号连接"}
         </button>
       </form>
       {message ? <div className="text-sm text-cinnabar">{message}</div> : null}
@@ -440,7 +560,7 @@ export function WechatConnectionsManager({
                   disabled={switchingDefaultId === connection.id || !canManage}
                   className="border border-cinnabar px-4 py-2 text-sm text-cinnabar disabled:opacity-60"
                 >
-                  {switchingDefaultId === connection.id ? "切换中..." : "设为默认"}
+                  {switchingDefaultId === connection.id ? "切换中…" : "设为默认"}
                 </button>
               ) : null}
               <button onClick={() => handleEdit(connection)} disabled={!canManage} className="border border-stone-300 px-4 py-2 text-sm text-stone-700 disabled:text-stone-400">
@@ -853,6 +973,50 @@ const OUTCOME_WINDOWS: Array<{ code: "24h" | "72h" | "7d"; label: string }> = [
   { code: "24h", label: "24 小时" },
   { code: "72h", label: "72 小时" },
   { code: "7d", label: "7 天" },
+];
+
+type AuthoringPhaseCode = "collect" | "think" | "write" | "polish";
+
+const AUTHORING_PHASES: Array<{
+  code: AuthoringPhaseCode;
+  title: string;
+  summary: string;
+  supportLabel: string;
+  targetStageCode: string;
+  defaultView: "workspace" | "edit" | "preview" | "audit";
+}> = [
+  {
+    code: "collect",
+    title: "采集",
+    summary: "先把题目、线索和素材抓到手里，再动判断。",
+    supportLabel: "研究简报 / 证据包 / 大纲挂材",
+    targetStageCode: "researchBrief",
+    defaultView: "workspace",
+  },
+  {
+    code: "think",
+    title: "构思",
+    summary: "把读者、论点和章节推进顺序定清楚。",
+    supportLabel: "受众分析 / 大纲规划 / 策略卡",
+    targetStageCode: "outlinePlanning",
+    defaultView: "workspace",
+  },
+  {
+    code: "write",
+    title: "写作",
+    summary: "只留稿纸与执行卡，把注意力放回句子本身。",
+    supportLabel: "写作执行卡 / Markdown / 节奏图",
+    targetStageCode: "deepWriting",
+    defaultView: "edit",
+  },
+  {
+    code: "polish",
+    title: "润色",
+    summary: "用红笔和微信真机视角清掉机器味，再决定是否交付。",
+    supportLabel: "语言守卫 / 事实核查 / 微信预览",
+    targetStageCode: "prosePolish",
+    defaultView: "audit",
+  },
 ];
 
 const GENERATABLE_STAGE_ACTIONS: Record<string, { label: string; helper: string }> = {
@@ -1411,6 +1575,15 @@ function getArticleMainStepByStageCode(stageCode: string) {
   return getArticleMainStepDefinitionByStageCode(stageCode);
 }
 
+function getAuthoringPhaseCode(stepCode: string, stageCode?: string): AuthoringPhaseCode {
+  const normalizedStageCode = String(stageCode || "").trim();
+  if (["factCheck", "prosePolish", "coverImage", "layout", "publish"].includes(normalizedStageCode)) return "polish";
+  if (normalizedStageCode === "deepWriting" || stepCode === "draft") return "write";
+  if (["audienceAnalysis", "outlinePlanning"].includes(normalizedStageCode) || stepCode === "strategy") return "think";
+  if (stepCode === "publish" || stepCode === "result") return "polish";
+  return "collect";
+}
+
 function formatArticleMainStepStatus(status: ArticleMainStepStatus) {
   if (status === "completed") return "已完成";
   if (status === "current") return "当前步骤";
@@ -1534,6 +1707,255 @@ function getStageApplyButtonLabel(stageCode: string) {
   return "一键应用回正文";
 }
 
+function extractPlainText(value: string) {
+  return String(value || "")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function formatWorkspaceViewLabel(view: "workspace" | "edit" | "preview" | "audit") {
+  if (view === "workspace") return "阶段工作台";
+  if (view === "preview") return "微信预览";
+  if (view === "audit") return "红笔校阅";
+  return "稿纸";
+}
+
+function hashSeed(value: string) {
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash * 33 + value.charCodeAt(index)) >>> 0;
+  }
+  return hash;
+}
+
+function pickSeededItems<T>(items: T[], count: number, seedSource: string) {
+  if (items.length <= count) return items;
+  const pool = [...items];
+  const selected: T[] = [];
+  let seed = hashSeed(seedSource);
+  while (pool.length > 0 && selected.length < count) {
+    const index = seed % pool.length;
+    const [item] = pool.splice(index, 1);
+    if (item) {
+      selected.push(item);
+    }
+    seed = (seed * 1103515245 + 12345) >>> 0;
+  }
+  return selected;
+}
+
+function getDraftStarterOptions(phase: AuthoringPhaseCode, title: string) {
+  const subject = String(title || "这件事").trim() || "这件事";
+  if (phase === "collect") {
+    return [
+      {
+        label: "先记线索",
+        text: `我先记下一个线索：${subject} 表面上看是 ______，但真正值得追下去的是 ______。`,
+      },
+      {
+        label: "先记疑问",
+        text: `这篇稿子先不急着下判断。我现在最想弄清楚的，其实只有一个问题：${subject} 为什么会走到今天这一步？`,
+      },
+    ];
+  }
+  if (phase === "think") {
+    return [
+      {
+        label: "先写论点",
+        text: `如果只能先写一句中心判断，我会这样落笔：${subject} 真正改变行业节奏的，不是 ______，而是 ______。`,
+      },
+      {
+        label: "先写读者",
+        text: `如果你也在盯着 ${subject}，这篇稿子想先回答一个更底层的问题：我们到底该把注意力放在哪个变化上？`,
+      },
+    ];
+  }
+  if (phase === "polish") {
+    return [
+      {
+        label: "贴一段待修稿",
+        text: "把最需要润色的一段先贴进来：\n\n______",
+      },
+      {
+        label: "先改首段",
+        text: `先把首段写得更像人说话：关于 ${subject}，我最近越来越确信一件事：______。`,
+      },
+    ];
+  }
+  return [
+    {
+      label: "先写结论",
+      text: `关于 ${subject}，我越来越确信，真正值得注意的不是 ______，而是 ______。`,
+    },
+    {
+      label: "先写场景",
+      text: `上周我在 ______ 的时候，突然意识到：${subject} 这件事最容易被忽略的，其实是 ______。`,
+    },
+  ];
+}
+
+function buildBlankSlateInspirationCards(input: {
+  fragments: Array<{ id: number; title?: string | null; distilledContent: string; shared?: boolean }>;
+  phase: AuthoringPhaseCode;
+  articleId: number;
+  title: string;
+}) {
+  const seedSource = `${input.articleId}:${input.title}:${input.phase}`;
+  const fragmentCards = pickSeededItems(
+    input.fragments
+      .filter((fragment) => String(fragment.distilledContent || "").trim())
+      .map((fragment) => ({
+        key: `fragment-${fragment.id}`,
+        kind: "fragment" as const,
+        title: fragment.title ? `素材灵感 · ${fragment.title}` : `素材灵感 · 片段 ${fragment.id}`,
+        detail: String(fragment.distilledContent || "").trim(),
+        meta: fragment.shared ? "来自共用素材池" : "来自当前稿件素材池",
+      })),
+    2,
+    `${seedSource}:fragment`,
+  );
+  const classicCards = pickSeededItems(CLASSIC_OPENING_PATTERNS, 2, `${seedSource}:classic`).map((item, index) => ({
+    key: `classic-${index}-${item.title}`,
+    kind: "classic" as const,
+    title: `经典起手法 · ${item.title}`,
+    detail: item.detail,
+    meta: "适合空白稿纸时借来破冰",
+  }));
+  return [...fragmentCards, ...classicCards].slice(0, 4);
+}
+
+function getAuthoringBlankSlateCopy(input: {
+  phase: AuthoringPhaseCode;
+  surface: "paper" | "workspace" | "review" | "knowledge";
+  stepTitle: string;
+}) {
+  const { phase, surface, stepTitle } = input;
+  if (surface === "paper") {
+    if (phase === "collect") {
+      return {
+        eyebrow: "案头起笔",
+        title: "这页稿纸先不用急着写满",
+        detail: "采集阶段先抓线索、记事实锚点、标出疑问。哪怕只写下一句“我真正想追的问题是什么”，空白感也会立刻下降。",
+        prompts: ["先写问题，不急着写答案", "把最关键的一条事实先钉住", "素材不足时，优先回左侧继续挂材"],
+      };
+    }
+    if (phase === "think") {
+      return {
+        eyebrow: "案头起笔",
+        title: "先把论点写出来，正文可以稍后再长",
+        detail: "构思阶段最怕一直在脑子里转。先落一条判断、一类读者或一个段落推进顺序，后面的句子自然会跟上。",
+        prompts: ["先写中心判断", "先写读者真正关心的冲突", "先决定开头要从场景还是结论切入"],
+      };
+    }
+    if (phase === "polish") {
+      return {
+        eyebrow: "待修稿纸",
+        title: "先把要修的那一段贴上来",
+        detail: "润色不是在空白页上完成的。先放进一段已有正文，再看节奏图、红笔批注和微信预览，判断会更稳。",
+        prompts: ["先修首段，再修转折", "机器味通常藏在过整齐的句式里", "要交付前，至少过一遍红笔和真机预览"],
+      };
+    }
+    return {
+      eyebrow: "案头起笔",
+      title: "先落一句判断，整篇就不会再那么空",
+      detail: "写作阶段不要求一口气写完。只要先写出第一句结论、一个真实场景或一段读者困惑，稿纸就开始有重量了。",
+      prompts: ["别等完整结构，先落第一句", "一段只解决一个判断", "写完 3 到 5 句后再看节奏图更准"],
+    };
+  }
+
+  if (surface === "review") {
+    return {
+      eyebrow: "主编红笔",
+      title: "红笔暂时还没有落点",
+      detail: "校阅模式更适合处理已经成形的段落。先写出几句可读正文，红笔才会帮你指出哪里像模板、哪里该拆句。",
+      prompts: ["先写能读的一小段", "先看节奏，再看语言守卫", "正文出现后，批注编号会直接落在稿纸上"],
+    };
+  }
+
+  if (surface === "knowledge") {
+    return {
+      eyebrow: "相关背景卡",
+      title: "这篇稿子还没召回可复用的背景卡",
+      detail: "通常不是系统无卡，而是当前标题、正文和已挂素材还不足以把它们拉到眼前。先补线索，再回来会更准。",
+      prompts: ["优先补具体名词、时间点和案例", "标题和正文越明确，背景卡越容易命中", "刷新背景卡前，先保存当前稿件"],
+    };
+  }
+
+  if (phase === "collect") {
+    return {
+      eyebrow: "阶段工作台",
+      title: `先把「${stepTitle}」这张工作卡立起来`,
+      detail: "采集阶段的工作台不是为了展示成稿，而是为了沉淀研究底座。先把事实、时间线和素材关系整理出来，后续写作会轻很多。",
+      prompts: ["先补齐研究和证据", "先保存关键快照", "先让每个大纲节点都有挂材"],
+    };
+  }
+  if (phase === "think") {
+    return {
+      eyebrow: "阶段工作台",
+      title: `「${stepTitle}」还没生成，但判断已经可以先收束`,
+      detail: "构思阶段最重要的是把读者、段落推进和文章角度定清楚。先生成阶段卡，会比在空白页里反复琢磨更稳。",
+      prompts: ["先明确这篇是写给谁的", "先定文章角度，再补段落顺序", "策略卡和大纲卡最好互相校准"],
+    };
+  }
+  if (phase === "polish") {
+    return {
+      eyebrow: "阶段工作台",
+      title: `「${stepTitle}」还没落下，先别急着交稿`,
+      detail: "润色阶段的结构化结果更像最后一道门。先生成这张卡，再决定哪些句子该拆、哪些判断该收、哪些地方该补证。",
+      prompts: ["先让系统给出高风险句提示", "先看首段和转折段是否太像模板", "交付前再走一遍真机预览"],
+    };
+  }
+  return {
+    eyebrow: "阶段工作台",
+    title: `「${stepTitle}」还没生成，写作会少一张地图`,
+    detail: "写作阶段可以直接起笔，但有了执行卡后，文章原型、状态切换和节奏安排会更清楚，白纸感也会明显下降。",
+    prompts: ["先生成执行卡，再决定怎么起笔", "不确定时，先看推荐原型与状态", "正文写出一段后，再回来刷新会更贴稿子"],
+  };
+}
+
+function AuthoringBlankSlate({
+  eyebrow,
+  title,
+  detail,
+  prompts,
+  compact = false,
+  children,
+}: {
+  eyebrow: string;
+  title: string;
+  detail: string;
+  prompts?: string[];
+  compact?: boolean;
+  children?: ReactNode;
+}) {
+  return (
+    <div className={`relative overflow-hidden border border-stone-300/70 bg-[radial-gradient(circle_at_top_left,rgba(196,138,58,0.14),transparent_30%),linear-gradient(180deg,#fffdfa_0%,#faf7f0_100%)] ${compact ? "px-4 py-4" : "px-6 py-6"}`}>
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-20 bg-[linear-gradient(180deg,rgba(255,255,255,0.72),rgba(255,255,255,0))]" />
+      <div className="relative">
+        <div className="inline-flex items-center border border-stone-300/70 bg-white/80 px-3 py-1 text-[11px] uppercase tracking-[0.24em] text-stone-500">
+          {eyebrow}
+        </div>
+        <div className={`mt-4 font-serifCn text-ink text-balance ${compact ? "text-2xl" : "text-3xl"}`}>{title}</div>
+        <div className={`mt-3 max-w-3xl text-stone-700 ${compact ? "text-sm leading-7" : "text-sm leading-8"}`}>{detail}</div>
+        {prompts && prompts.length > 0 ? (
+          <div className={`mt-4 grid gap-2 ${compact ? "" : "md:grid-cols-3"}`}>
+            {prompts.map((prompt) => (
+              <div key={prompt} className="border border-stone-300/60 bg-white/80 px-3 py-3 text-xs leading-6 text-stone-600">
+                {prompt}
+              </div>
+            ))}
+          </div>
+        ) : null}
+        {children ? <div className="mt-5 flex flex-wrap gap-3">{children}</div> : null}
+      </div>
+    </div>
+  );
+}
+
 export function ArticleEditorClient({
   article,
   seriesOptions,
@@ -1655,7 +2077,13 @@ export function ArticleEditorClient({
   const [knowledgeCardItems, setKnowledgeCardItems] = useState(knowledgeCards);
   const [workflow, setWorkflow] = useState(initialWorkflow);
   const [stageArtifacts, setStageArtifacts] = useState(initialStageArtifacts);
-  const [view, setView] = useState<"edit" | "preview" | "audit">("edit");
+  const [view, setView] = useState<"workspace" | "edit" | "preview" | "audit">(() => {
+    if (["deepWriting", "refine"].includes(initialWorkflow.currentStageCode)) return "edit";
+    if (initialWorkflow.currentStageCode === "prosePolish") return "audit";
+    if (initialWorkflow.currentStageCode === "publish") return "preview";
+    return "workspace";
+  });
+  const [isFocusMode, setIsFocusMode] = useState(false);
   const [selectedConnectionId, setSelectedConnectionId] = useState(() => {
     const preferred = initialConnections.find((connection) => connection.isDefault) ?? initialConnections[0];
     return preferred?.id ? String(preferred.id) : "";
@@ -1892,10 +2320,9 @@ export function ArticleEditorClient({
     }),
     [liveLanguageGuardHits],
   );
-
-  const bannedWordMarkup = useMemo(
-    () => buildBannedWordMarkup(markdown, bannedWords),
-    [bannedWords, markdown],
+  const editorialReview = useMemo(
+    () => buildEditorialReview(markdown, liveLanguageGuardHits),
+    [liveLanguageGuardHits, markdown],
   );
   const selectedTemplate = useMemo(() => templates.find((template) => template.id === wechatTemplateId) ?? null, [templates, wechatTemplateId]);
   const selectedSeries = useMemo(() => seriesOptions.find((item) => item.id === seriesId) ?? null, [seriesId, seriesOptions]);
@@ -2406,6 +2833,117 @@ export function ArticleEditorClient({
       };
     });
   }, [currentArticleMainStep.code, editorStageChecklist]);
+  const currentArticleMainStepDisplay = useMemo(
+    () => articleMainSteps.find((step) => step.code === currentArticleMainStep.code) ?? null,
+    [articleMainSteps, currentArticleMainStep.code],
+  );
+  const currentAuthoringPhase = useMemo(
+    () => AUTHORING_PHASES.find((phase) => phase.code === getAuthoringPhaseCode(currentArticleMainStep.code, workflow.currentStageCode)) ?? AUTHORING_PHASES[0],
+    [currentArticleMainStep.code, workflow.currentStageCode],
+  );
+  const authoringPhases = useMemo(() => {
+    const currentPhaseIndex = AUTHORING_PHASES.findIndex((phase) => phase.code === currentAuthoringPhase.code);
+    return AUTHORING_PHASES.map((phase, index) => {
+      const steps = articleMainSteps.filter((step) => getAuthoringPhaseCode(step.code, step.primaryStageCode) === phase.code);
+      const isCurrent = phase.code === currentAuthoringPhase.code;
+      const hasNeedsAttention = steps.some((step) => step.statusLabel === "needs_attention");
+      const isCompleted = steps.length > 0 && steps.every((step) => step.statusLabel === "completed");
+      return {
+        ...phase,
+        statusLabel: isCurrent ? "current" : isCompleted ? "completed" : hasNeedsAttention || index < currentPhaseIndex ? "needs_attention" : "pending",
+        steps,
+      };
+    });
+  }, [articleMainSteps, currentAuthoringPhase.code]);
+  const currentAuthoringPhaseHint = useMemo(() => {
+    if (currentAuthoringPhase.code === "collect") {
+      return "先把研究、素材和证据挂齐，再考虑漂亮句子。";
+    }
+    if (currentAuthoringPhase.code === "think") {
+      return "这一段只看论点、读者和结构，减少正文噪音。";
+    }
+    if (currentAuthoringPhase.code === "write") {
+      return "进入写作后，优先留在稿纸和节奏图里，不必频繁切预览。";
+    }
+    return liveLanguageGuardHits.length > 0
+      ? `当前还命中 ${liveLanguageGuardHits.length} 条语言守卫，先清红笔，再看微信预览。`
+      : "正文已进入收口区，先用红笔检查，再用微信预览确认最终体感。";
+  }, [currentAuthoringPhase.code, liveLanguageGuardHits.length]);
+  const hasDraftContent = markdown.trim().length > 0;
+  const hasPreviewContent = useMemo(() => {
+    const plainText = extractPlainText(htmlPreview);
+    return plainText.length > 0 || /<(img|blockquote|h[1-6])\b/i.test(String(htmlPreview || ""));
+  }, [htmlPreview]);
+  const draftStarterOptions = useMemo(
+    () => getDraftStarterOptions(currentAuthoringPhase.code, title),
+    [currentAuthoringPhase.code, title],
+  );
+  const draftBlankSlate = useMemo(
+    () =>
+      getAuthoringBlankSlateCopy({
+        phase: currentAuthoringPhase.code,
+        surface: "paper",
+        stepTitle: currentArticleMainStep.title,
+      }),
+    [currentArticleMainStep.title, currentAuthoringPhase.code],
+  );
+  const draftBlankSlateInspirations = useMemo(
+    () =>
+      buildBlankSlateInspirationCards({
+        fragments: fragmentPool,
+        phase: currentAuthoringPhase.code,
+        articleId: article.id,
+        title,
+      }),
+    [article.id, currentAuthoringPhase.code, fragmentPool, title],
+  );
+  const workspaceBlankSlate = useMemo(
+    () =>
+      getAuthoringBlankSlateCopy({
+        phase: currentAuthoringPhase.code,
+        surface: "workspace",
+        stepTitle: currentArticleMainStep.title,
+      }),
+    [currentArticleMainStep.title, currentAuthoringPhase.code],
+  );
+  const reviewBlankSlate = useMemo(
+    () =>
+      getAuthoringBlankSlateCopy({
+        phase: currentAuthoringPhase.code,
+        surface: "review",
+        stepTitle: currentArticleMainStep.title,
+      }),
+    [currentArticleMainStep.title, currentAuthoringPhase.code],
+  );
+  const knowledgeBlankSlate = useMemo(
+    () =>
+      getAuthoringBlankSlateCopy({
+        phase: currentAuthoringPhase.code,
+        surface: "knowledge",
+        stepTitle: currentArticleMainStep.title,
+      }),
+    [currentArticleMainStep.title, currentAuthoringPhase.code],
+  );
+  const isCollectPhase = currentAuthoringPhase.code === "collect";
+  const isThinkPhase = currentAuthoringPhase.code === "think";
+  const isWritePhase = currentAuthoringPhase.code === "write";
+  const isPolishPhase = currentAuthoringPhase.code === "polish";
+  const showLeftWorkspaceRail = !isFocusMode && (isCollectPhase || isThinkPhase);
+  const showResearchChecklistRail = isCollectPhase || isThinkPhase;
+  const showKnowledgeCardsRail = isCollectPhase || isThinkPhase;
+  const showLanguageGuardRail = isWritePhase || isPolishPhase;
+  const showVisualEngineRail = isCollectPhase || isThinkPhase || isWritePhase;
+  const showDeliveryRail = isPolishPhase;
+  const showCompactSixStepRail = !showResearchChecklistRail;
+  const workspaceGridClass = useMemo(() => {
+    if (isFocusMode) {
+      return "xl:grid-cols-1";
+    }
+    if (isWritePhase || isPolishPhase) {
+      return "xl:grid-cols-[minmax(0,1fr)_340px]";
+    }
+    return "xl:grid-cols-[260px_minmax(0,1fr)_360px]";
+  }, [isFocusMode, isPolishPhase, isWritePhase]);
   const planCapabilityHints = useMemo(
     () =>
       [
@@ -2534,7 +3072,7 @@ export function ArticleEditorClient({
       : imageAssetStorageLimitReached
         ? "图片资产空间不足"
       : generatingCover
-        ? "封面图生成中..."
+        ? "封面图生成中…"
         : "生成 16:9 封面图";
   const nodeVisualSuggestions = useMemo(
     () =>
@@ -3454,7 +3992,7 @@ export function ArticleEditorClient({
       return;
     }
 
-    setSaveState("自动保存中...");
+    setSaveState("自动保存中…");
     const timer = window.setTimeout(() => {
       void saveArticleDraft(undefined, undefined, true);
     }, 1200);
@@ -3565,7 +4103,7 @@ export function ArticleEditorClient({
     setGenerating(true);
     setMessage("");
     setStatus("generating");
-    setSaveState("流式生成中...");
+    setSaveState("流式生成中…");
     setView("edit");
 
     const response = await fetch(`/api/articles/${article.id}/generate/stream`);
@@ -4626,7 +5164,17 @@ export function ArticleEditorClient({
         throw new Error(json.error || "稿件步骤更新失败");
       }
       setWorkflow(json.data);
-    } catch (error) {
+      if (action === "set" || action === "complete") {
+        if (["deepWriting", "refine"].includes(stageCode)) {
+          setView("edit");
+        } else if (stageCode === "prosePolish") {
+          setView("audit");
+        } else if (stageCode === "publish") {
+          setView("preview");
+        } else {
+          setView("workspace");
+        }
+      }    } catch (error) {
       if (!silent) {
         setMessage(error instanceof Error ? error.message : "稿件步骤更新失败");
       }
@@ -4752,8 +5300,7 @@ export function ArticleEditorClient({
                   {sourceUrl ? (
                     <a
                       href={sourceUrl}
-                      target="_blank"
-                      rel="noreferrer"
+                      target="_blank" rel="noreferrer"
                       className="mt-2 inline-block text-xs text-cinnabar underline"
                     >
                       打开原始来源
@@ -4772,7 +5319,7 @@ export function ArticleEditorClient({
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <div className="text-xs uppercase tracking-[0.18em] text-stone-500">Research Workspace</div>
-            <div className="mt-2 font-serifCn text-2xl text-ink">hv-analysis 轻量研究面板</div>
+            <div className="mt-2 font-serifCn text-2xl text-ink text-balance">hv-analysis 轻量研究面板</div>
             <div className="mt-2 text-sm leading-7 text-stone-700">
               先把时间脉络、横向比较和交汇洞察补齐，再让策略卡、大纲和正文判断吃到这层研究底座。
             </div>
@@ -4790,7 +5337,7 @@ export function ArticleEditorClient({
               className="bg-cinnabar px-4 py-2 text-sm text-white disabled:opacity-60"
             >
               {generatingStageArtifactCode === "researchBrief"
-                ? "生成中..."
+                ? "生成中…"
                 : researchArtifact
                   ? "刷新研究简报"
                   : researchAction.label}
@@ -4841,7 +5388,7 @@ export function ArticleEditorClient({
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <div className="text-xs uppercase tracking-[0.16em]">Source Sufficiency</div>
-                    <div className="mt-2 font-serifCn text-2xl">{formatResearchCoverageSufficiencyLabel(researchCoverageSufficiency)}</div>
+                    <div className="mt-2 font-serifCn text-2xl text-balance">{formatResearchCoverageSufficiencyLabel(researchCoverageSufficiency)}</div>
                   </div>
                   <div className="text-xs leading-6">
                     {researchCoverageItems.filter((item) => item.signals.length > 0).length} / {researchCoverageItems.length} 类来源已覆盖
@@ -5037,7 +5584,7 @@ export function ArticleEditorClient({
                         disabled={savingStrategyCard}
                         className="border border-cinnabar bg-white px-3 py-2 text-xs text-cinnabar"
                       >
-                        {savingStrategyCard ? "写回中..." : "一键写回策略卡"}
+                        {savingStrategyCard ? "写回中…" : "一键写回策略卡"}
                       </button>
                     ) : null}
                     {currentArticleMainStep.code === "evidence" && suggestedEvidenceItems.length > 0 ? (
@@ -5047,7 +5594,7 @@ export function ArticleEditorClient({
                         disabled={savingEvidenceItems}
                         className="border border-stone-300 bg-white px-3 py-2 text-xs text-stone-700"
                       >
-                        {savingEvidenceItems ? "写回中..." : "一键写回证据包"}
+                        {savingEvidenceItems ? "写回中…" : "一键写回证据包"}
                       </button>
                     ) : null}
                   </div>
@@ -5235,7 +5782,7 @@ export function ArticleEditorClient({
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <div className="text-xs uppercase tracking-[0.18em] text-stone-500">Strategy Card</div>
-            <div className="mt-2 font-serifCn text-2xl text-ink">发布前必须确认的策略卡</div>
+            <div className="mt-2 font-serifCn text-2xl text-ink text-balance">发布前必须确认的策略卡</div>
             <div className="mt-2 text-sm leading-7 text-stone-700">
               这六项会直接进入发布守门。系统会先按受众分析、大纲和系列洞察给你预填建议，但只有手动保存后才算正式确认。
             </div>
@@ -5271,7 +5818,7 @@ export function ArticleEditorClient({
                     className="mt-3 min-h-[104px] w-full border border-stone-300 px-3 py-2 text-sm leading-7"
                   />
                 ) : (
-                  <input
+                  <input aria-label="input control"
                     value={field.value}
                     onChange={(event) => field.setValue(event.target.value)}
                     placeholder={field.placeholder}
@@ -5313,7 +5860,7 @@ export function ArticleEditorClient({
             {strategyResearchFields.map((field) => (
               <label key={field.key} className="block border border-stone-300 bg-[#fffdfa] px-4 py-4 text-sm text-stone-700">
                 <div className="text-xs uppercase tracking-[0.16em] text-stone-500">{field.label}</div>
-                <textarea
+                <textarea aria-label="textarea control"
                   value={field.value}
                   onChange={(event) => field.setValue(event.target.value)}
                   placeholder={field.placeholder}
@@ -5395,7 +5942,7 @@ export function ArticleEditorClient({
                       {isConfirmed ? "已填写" : "建议填写"}
                     </div>
                   </div>
-                  <textarea
+                  <textarea aria-label="textarea control"
                     value={field.value}
                     onChange={(event) => field.setValue(event.target.value)}
                     placeholder={field.placeholder}
@@ -5414,7 +5961,7 @@ export function ArticleEditorClient({
             disabled={savingStrategyCard}
             className="bg-cinnabar px-4 py-3 text-sm text-white disabled:opacity-60"
           >
-            {savingStrategyCard ? "保存中..." : "确认并保存策略卡"}
+            {savingStrategyCard ? "保存中…" : "确认并保存策略卡"}
           </button>
           <div className="text-xs leading-6 text-stone-500">
             保存后，发布预检和正式推送都会按这张卡判断是否放行。
@@ -5438,7 +5985,7 @@ export function ArticleEditorClient({
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <div className="text-xs uppercase tracking-[0.18em] text-stone-500">Evidence Package</div>
-            <div className="mt-2 font-serifCn text-2xl text-ink">发布前必须确认的证据包</div>
+            <div className="mt-2 font-serifCn text-2xl text-ink text-balance">发布前必须确认的证据包</div>
             <div className="mt-2 text-sm leading-7 text-stone-700">
               证据步骤不再只看素材挂载数量。这里需要明确保存一组真正用于发布守门的证据条目，至少 3 条，且至少 1 条外部来源或截图证据。
             </div>
@@ -5463,19 +6010,19 @@ export function ArticleEditorClient({
         <div className="grid gap-3 md:grid-cols-4">
           <div className="border border-stone-300 bg-white px-4 py-3">
             <div className="text-xs uppercase tracking-[0.16em] text-stone-500">已选证据</div>
-            <div className="mt-2 font-serifCn text-2xl text-ink">{evidenceDraftStats.itemCount}</div>
+            <div className="mt-2 font-serifCn text-2xl text-ink text-balance">{evidenceDraftStats.itemCount}</div>
           </div>
           <div className="border border-stone-300 bg-white px-4 py-3">
             <div className="text-xs uppercase tracking-[0.16em] text-stone-500">外部来源</div>
-            <div className="mt-2 font-serifCn text-2xl text-ink">{evidenceDraftStats.externalEvidenceCount}</div>
+            <div className="mt-2 font-serifCn text-2xl text-ink text-balance">{evidenceDraftStats.externalEvidenceCount}</div>
           </div>
           <div className="border border-stone-300 bg-white px-4 py-3">
             <div className="text-xs uppercase tracking-[0.16em] text-stone-500">截图证据</div>
-            <div className="mt-2 font-serifCn text-2xl text-ink">{evidenceDraftStats.screenshotEvidenceCount}</div>
+            <div className="mt-2 font-serifCn text-2xl text-ink text-balance">{evidenceDraftStats.screenshotEvidenceCount}</div>
           </div>
           <div className="border border-stone-300 bg-white px-4 py-3">
             <div className="text-xs uppercase tracking-[0.16em] text-stone-500">来源类型</div>
-            <div className="mt-2 font-serifCn text-2xl text-ink">{evidenceDraftStats.uniqueSourceTypeCount}</div>
+            <div className="mt-2 font-serifCn text-2xl text-ink text-balance">{evidenceDraftStats.uniqueSourceTypeCount}</div>
           </div>
         </div>
 
@@ -5533,8 +6080,7 @@ export function ArticleEditorClient({
                   {item.sourceUrl ? (
                     <a
                       href={item.sourceUrl}
-                      target="_blank"
-                      rel="noreferrer"
+                      target="_blank" rel="noreferrer"
                       className="mt-3 inline-block border border-stone-300 bg-white px-3 py-2 text-xs text-stone-700"
                     >
                       打开原始链接
@@ -5590,7 +6136,7 @@ export function ArticleEditorClient({
             disabled={savingEvidenceItems}
             className="bg-cinnabar px-4 py-3 text-sm text-white disabled:opacity-60"
           >
-            {savingEvidenceItems ? "保存中..." : "确认并保存证据包"}
+            {savingEvidenceItems ? "保存中…" : "确认并保存证据包"}
           </button>
           <div className="text-xs leading-6 text-stone-500">
             发布预检只看已保存的证据包，不看临时草稿。
@@ -5616,7 +6162,7 @@ export function ArticleEditorClient({
           <div className="mt-2 grid gap-3 md:grid-cols-4">
             <div className="border border-stone-300/60 bg-white px-4 py-3">
               <div className="text-xs uppercase tracking-[0.18em] text-stone-500">当前判定</div>
-              <div className="mt-2 font-serifCn text-2xl text-ink">{formatOutcomeHitStatus(currentArticleOutcome?.hitStatus ?? "pending")}</div>
+              <div className="mt-2 font-serifCn text-2xl text-ink text-balance">{formatOutcomeHitStatus(currentArticleOutcome?.hitStatus ?? "pending")}</div>
             </div>
             <div className="border border-stone-300/60 bg-white px-4 py-3">
               <div className="text-xs uppercase tracking-[0.18em] text-stone-500">目标包</div>
@@ -5903,7 +6449,7 @@ export function ArticleEditorClient({
             <div className="space-y-3">
               <label className="block text-sm text-stone-700">
                 <div className="mb-2 text-xs uppercase tracking-[0.16em] text-stone-500">时间窗</div>
-                <select
+                <select aria-label="select control"
                   value={selectedOutcomeWindowCode}
                   onChange={(event) => setSelectedOutcomeWindowCode(event.target.value as "24h" | "72h" | "7d")}
                   className="w-full border border-stone-300 bg-white px-3 py-2"
@@ -5916,15 +6462,15 @@ export function ArticleEditorClient({
               <div className="grid gap-3 md:grid-cols-3">
                 <label className="block text-sm text-stone-700">
                   <div className="mb-2 text-xs uppercase tracking-[0.16em] text-stone-500">阅读</div>
-                  <input value={outcomeReadCount} onChange={(event) => setOutcomeReadCount(event.target.value)} inputMode="numeric" className="w-full border border-stone-300 px-3 py-2" />
+                  <input aria-label="input control" value={outcomeReadCount} onChange={(event) => setOutcomeReadCount(event.target.value)} inputMode="numeric" className="w-full border border-stone-300 px-3 py-2" />
                 </label>
                 <label className="block text-sm text-stone-700">
                   <div className="mb-2 text-xs uppercase tracking-[0.16em] text-stone-500">分享</div>
-                  <input value={outcomeShareCount} onChange={(event) => setOutcomeShareCount(event.target.value)} inputMode="numeric" className="w-full border border-stone-300 px-3 py-2" />
+                  <input aria-label="input control" value={outcomeShareCount} onChange={(event) => setOutcomeShareCount(event.target.value)} inputMode="numeric" className="w-full border border-stone-300 px-3 py-2" />
                 </label>
                 <label className="block text-sm text-stone-700">
                   <div className="mb-2 text-xs uppercase tracking-[0.16em] text-stone-500">在看 / 点赞</div>
-                  <input value={outcomeLikeCount} onChange={(event) => setOutcomeLikeCount(event.target.value)} inputMode="numeric" className="w-full border border-stone-300 px-3 py-2" />
+                  <input aria-label="input control" value={outcomeLikeCount} onChange={(event) => setOutcomeLikeCount(event.target.value)} inputMode="numeric" className="w-full border border-stone-300 px-3 py-2" />
                 </label>
               </div>
               <label className="block text-sm text-stone-700">
@@ -5936,11 +6482,11 @@ export function ArticleEditorClient({
             <div className="space-y-3">
               <label className="block text-sm text-stone-700">
                 <div className="mb-2 text-xs uppercase tracking-[0.16em] text-stone-500">目标包</div>
-                <input value={outcomeTargetPackage} onChange={(event) => setOutcomeTargetPackage(event.target.value)} placeholder="例如：5k / 10w+" className="w-full border border-stone-300 px-3 py-2" />
+                <input aria-label="例如：5k / 10w+" value={outcomeTargetPackage} onChange={(event) => setOutcomeTargetPackage(event.target.value)} placeholder="例如：5k / 10w+" className="w-full border border-stone-300 px-3 py-2" />
               </label>
               <label className="block text-sm text-stone-700">
                 <div className="mb-2 text-xs uppercase tracking-[0.16em] text-stone-500">命中判定</div>
-                <select
+                <select aria-label="select control"
                   value={outcomeHitStatus}
                   onChange={(event) => setOutcomeHitStatus(event.target.value as "pending" | "hit" | "near_miss" | "miss")}
                   className="w-full border border-stone-300 bg-white px-3 py-2"
@@ -5953,7 +6499,7 @@ export function ArticleEditorClient({
               </label>
               <label className="block text-sm text-stone-700">
                 <div className="mb-2 text-xs uppercase tracking-[0.16em] text-stone-500">复盘结论</div>
-                <textarea value={outcomeReviewSummary} onChange={(event) => setOutcomeReviewSummary(event.target.value)} className="min-h-[96px] w-full border border-stone-300 px-3 py-2" />
+                <textarea aria-label="textarea control" value={outcomeReviewSummary} onChange={(event) => setOutcomeReviewSummary(event.target.value)} className="min-h-[96px] w-full border border-stone-300 px-3 py-2" />
               </label>
               <label className="block text-sm text-stone-700">
                 <div className="mb-2 text-xs uppercase tracking-[0.16em] text-stone-500">下一步动作</div>
@@ -5961,7 +6507,7 @@ export function ArticleEditorClient({
               </label>
               <label className="block text-sm text-stone-700">
                 <div className="mb-2 text-xs uppercase tracking-[0.16em] text-stone-500">打法标签</div>
-                <input value={outcomePlaybookTagsInput} onChange={(event) => setOutcomePlaybookTagsInput(event.target.value)} placeholder="用逗号分隔，例如：反直觉开头，案例拆解，强结论收束" className="w-full border border-stone-300 px-3 py-2" />
+                <input aria-label="用逗号分隔，例如：反直觉开头，案例拆解，强结论收束" value={outcomePlaybookTagsInput} onChange={(event) => setOutcomePlaybookTagsInput(event.target.value)} placeholder="用逗号分隔，例如：反直觉开头，案例拆解，强结论收束" className="w-full border border-stone-300 px-3 py-2" />
               </label>
               <button
                 type="button"
@@ -5969,7 +6515,7 @@ export function ArticleEditorClient({
                 disabled={savingOutcomeSnapshot}
                 className="bg-cinnabar px-4 py-3 text-sm text-white disabled:opacity-60"
               >
-                {savingOutcomeSnapshot ? "保存中..." : "保存结果快照"}
+                {savingOutcomeSnapshot ? "保存中…" : "保存结果快照"}
               </button>
             </div>
           </div>
@@ -5987,8 +6533,16 @@ export function ArticleEditorClient({
       );
     }
     if (!currentStage) {
-      return <div className="mt-4 text-sm leading-7 text-stone-600">当前还没有可展示的稿件步骤。</div>;
+      return (
+        <AuthoringBlankSlate
+          eyebrow={workspaceBlankSlate.eyebrow}
+          title="先把当前链路走到一个明确步骤"
+          detail="阶段工作台会跟着六步链路展示对应产物。只要当前步骤尚未落定，这里就不该强行塞一张空卡片。"
+          prompts={["先在右侧链路里确认当前步骤", "研究与写作会映射到不同工作台", "步骤明确后，这里会自动切到对应结构化产物"]}
+        />
+      );
     }
+    const currentStageAction = GENERATABLE_STAGE_ACTIONS[currentStage.code];
     if (currentStage.code === "deepWriting") {
       const selectedReferenceIds = new Set(selectedHistoryReferences.map((item) => item.referencedArticleId));
       const deepWritingSections = currentStageArtifact ? getPayloadRecordArray(currentStageArtifact.payload, "sectionBlueprint") : [];
@@ -6099,7 +6653,7 @@ export function ArticleEditorClient({
                   disabled={Boolean(deepWritingOpeningPreviewLoadingKey) || Boolean(generatingStageArtifactCode) || Boolean(updatingWorkflowCode)}
                   className="border border-stone-300 bg-white px-3 py-2 text-xs text-stone-700 disabled:opacity-60"
                 >
-                  {deepWritingOpeningPreviewLoadingKey === "prototype-batch" ? "采样中..." : "一键采样 3 个原型开头"}
+                  {deepWritingOpeningPreviewLoadingKey === "prototype-batch" ? "采样中…" : "一键采样 3 个原型开头"}
                 </button>
               </div>
               <div className="mt-3 grid gap-3 md:grid-cols-3">
@@ -6180,7 +6734,7 @@ export function ArticleEditorClient({
                           disabled={Boolean(deepWritingOpeningPreviewLoadingKey) || Boolean(generatingStageArtifactCode) || Boolean(updatingWorkflowCode)}
                           className="border border-stone-300 bg-white px-3 py-2 text-xs text-stone-700 disabled:opacity-60"
                         >
-                          {deepWritingOpeningPreviewLoadingKey === previewKey ? "生成中..." : "看开头预览"}
+                          {deepWritingOpeningPreviewLoadingKey === previewKey ? "生成中…" : "看开头预览"}
                         </button>
                       </div>
                       {String(deepWritingOpeningPreviews[previewKey] || "").trim() ? (
@@ -6260,7 +6814,7 @@ export function ArticleEditorClient({
                   disabled={Boolean(deepWritingOpeningPreviewLoadingKey) || Boolean(generatingStageArtifactCode) || Boolean(updatingWorkflowCode)}
                   className="border border-stone-300 bg-white px-3 py-2 text-xs text-stone-700 disabled:opacity-60"
                 >
-                  {deepWritingOpeningPreviewLoadingKey === "state-batch" ? "采样中..." : "一键采样 3 个状态开头"}
+                  {deepWritingOpeningPreviewLoadingKey === "state-batch" ? "采样中…" : "一键采样 3 个状态开头"}
                 </button>
               </div>
               <div className="mt-3 grid gap-3 md:grid-cols-3">
@@ -6349,7 +6903,7 @@ export function ArticleEditorClient({
                           disabled={Boolean(deepWritingOpeningPreviewLoadingKey) || Boolean(generatingStageArtifactCode) || Boolean(updatingWorkflowCode)}
                           className="border border-stone-300 bg-white px-3 py-2 text-xs text-stone-700 disabled:opacity-60"
                         >
-                          {deepWritingOpeningPreviewLoadingKey === previewKey ? "生成中..." : "看开头预览"}
+                          {deepWritingOpeningPreviewLoadingKey === previewKey ? "生成中…" : "看开头预览"}
                         </button>
                       </div>
                       {String(deepWritingOpeningPreviews[previewKey] || "").trim() ? (
@@ -6403,7 +6957,7 @@ export function ArticleEditorClient({
             className="bg-cinnabar px-4 py-3 text-sm text-white disabled:opacity-60"
           >
             {generatingStageArtifactCode === "deepWriting"
-              ? "生成中..."
+              ? "生成中…"
               : deepWritingPrototypeOverride || deepWritingStateVariantOverride
                 ? `按「${[
                     String(deepWritingSelectedPrototypeOption?.label || deepWritingPrototypeOverride || "").trim(),
@@ -6417,7 +6971,7 @@ export function ArticleEditorClient({
             <div className="space-y-4 border border-stone-300 bg-white p-4">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <div className="font-serifCn text-2xl text-ink">{currentStageArtifact.title}</div>
+                  <div className="font-serifCn text-2xl text-ink text-balance">{currentStageArtifact.title}</div>
                   <div className="mt-1 text-xs text-stone-500">
                     {currentStageArtifact.updatedAt ? `更新于 ${new Date(currentStageArtifact.updatedAt).toLocaleString("zh-CN")}` : "暂无更新时间"}
                   </div>
@@ -6775,7 +7329,7 @@ export function ArticleEditorClient({
                 disabled={loadingHistoryReferences || savingHistoryReferences}
                 className="border border-stone-300 px-3 py-2 text-sm text-stone-700 disabled:opacity-60"
               >
-                {loadingHistoryReferences ? "刷新中..." : "刷新建议"}
+                {loadingHistoryReferences ? "刷新中…" : "刷新建议"}
               </button>
             </div>
             {selectedHistoryReferences.length > 0 ? (
@@ -6796,13 +7350,13 @@ export function ArticleEditorClient({
                         移除
                       </button>
                     </div>
-                    <textarea
+                    <textarea aria-label="这篇旧文和当前文章的关系，例如：之前谈过供给端，这次补需求端。"
                       value={item.relationReason || ""}
                       onChange={(event) => updateHistoryReferenceField(item.referencedArticleId, "relationReason", event.target.value)}
                       placeholder="这篇旧文和当前文章的关系，例如：之前谈过供给端，这次补需求端。"
                       className="mt-3 min-h-[72px] w-full border border-stone-300 bg-white px-3 py-2 text-sm leading-7"
                     />
-                    <textarea
+                    <textarea aria-label="可选：给 AI 一个更自然的衔接句"
                       value={item.bridgeSentence || ""}
                       onChange={(event) => updateHistoryReferenceField(item.referencedArticleId, "bridgeSentence", event.target.value)}
                       placeholder="可选：给 AI 一个更自然的衔接句"
@@ -6816,13 +7370,13 @@ export function ArticleEditorClient({
                   disabled={savingHistoryReferences}
                   className="border border-cinnabar px-4 py-2 text-sm text-cinnabar disabled:opacity-60"
                 >
-                  {savingHistoryReferences ? "保存中..." : "保存自然引用设置"}
+                  {savingHistoryReferences ? "保存中…" : "保存自然引用设置"}
                 </button>
               </div>
             ) : null}
             <div className="mt-4 space-y-3">
               {loadingHistoryReferences ? (
-                <div className="text-sm text-stone-600">正在加载历史文章建议...</div>
+                <div className="text-sm text-stone-600">正在加载历史文章建议…</div>
               ) : historyReferenceSuggestions.length > 0 ? (
                 historyReferenceSuggestions.map((item) => {
                   const selected = selectedReferenceIds.has(item.referencedArticleId);
@@ -6861,7 +7415,7 @@ export function ArticleEditorClient({
           </div>
           ) : null}
           <button onClick={generate} disabled={generating || generateBlockedByResearch} className="bg-cinnabar px-4 py-3 text-sm text-white disabled:opacity-60">
-            {generating ? "生成中..." : generateBlockedByResearch ? "先补研究信源" : "开始深度写作"}
+            {generating ? "生成中…" : generateBlockedByResearch ? "先补研究信源" : "开始深度写作"}
           </button>
         </div>
       );
@@ -6877,7 +7431,7 @@ export function ArticleEditorClient({
               <div className="text-xs uppercase tracking-[0.18em] text-stone-500">
                 {selectedTemplate.meta || "模板"} · {selectedTemplate.version} · {formatTemplateAssetOwner(selectedTemplate)}
               </div>
-              <div className="mt-2 font-serifCn text-2xl text-ink">{selectedTemplate.name}</div>
+              <div className="mt-2 font-serifCn text-2xl text-ink text-balance">{selectedTemplate.name}</div>
               <div className="mt-2 text-sm leading-7 text-stone-700">{selectedTemplate.description || "当前模板未填写说明。"} </div>
               <div className="mt-2 text-xs leading-6 text-stone-500">来源：{formatTemplateSourceSummary(selectedTemplate)}</div>
               <div className="mt-3 flex flex-wrap gap-2">
@@ -6894,7 +7448,7 @@ export function ArticleEditorClient({
             </div>
           )}
           <button onClick={applyLayoutTemplate} disabled={applyingLayout} className="bg-cinnabar px-4 py-3 text-sm text-white disabled:opacity-60">
-            {applyingLayout ? "应用中..." : "应用排版并查看 HTML"}
+            {applyingLayout ? "应用中…" : "应用排版并查看 HTML"}
           </button>
         </div>
       );
@@ -6918,7 +7472,7 @@ export function ArticleEditorClient({
           disabled={Boolean(generatingStageArtifactCode) || Boolean(updatingWorkflowCode) || Boolean(applyingStageArtifactCode)}
           className="bg-cinnabar px-4 py-3 text-sm text-white disabled:opacity-60"
         >
-          {generatingStageArtifactCode === currentStage.code ? "生成中..." : currentStageArtifact ? "刷新阶段产物" : currentStageAction.label}
+          {generatingStageArtifactCode === currentStage.code ? "生成中…" : currentStageArtifact ? "刷新阶段产物" : currentStageAction.label}
         </button>
         {currentArticleMainStep.code === "strategy" || currentArticleMainStep.code === "evidence" ? renderResearchWorkspacePanel() : null}
         {currentArticleMainStep.code === "strategy" ? renderStrategyCardPanel() : null}
@@ -6927,7 +7481,7 @@ export function ArticleEditorClient({
           <div className="space-y-4 border border-stone-300 bg-white p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <div className="font-serifCn text-2xl text-ink">{currentStageArtifact.title}</div>
+                <div className="font-serifCn text-2xl text-ink text-balance">{currentStageArtifact.title}</div>
                 <div className="mt-1 text-xs text-stone-500">
                   {currentStageArtifact.updatedAt ? `更新于 ${new Date(currentStageArtifact.updatedAt).toLocaleString("zh-CN")}` : "暂无更新时间"}
                 </div>
@@ -6950,7 +7504,7 @@ export function ArticleEditorClient({
                 disabled={Boolean(applyingStageArtifactCode) || Boolean(generatingStageArtifactCode)}
                 className="border border-cinnabar px-4 py-2 text-sm text-cinnabar disabled:opacity-60"
               >
-                {applyingStageArtifactCode === currentStage.code ? "应用中..." : getStageApplyButtonLabel(currentStage.code)}
+                {applyingStageArtifactCode === currentStage.code ? "应用中…" : getStageApplyButtonLabel(currentStage.code)}
               </button>
               {currentStage.code === "outlinePlanning" ? (
                 <button
@@ -6958,7 +7512,7 @@ export function ArticleEditorClient({
                   disabled={syncingOutlineArtifact || Boolean(generatingStageArtifactCode) || Boolean(applyingStageArtifactCode)}
                   className="border border-stone-300 px-4 py-2 text-sm text-stone-700 disabled:opacity-60"
                 >
-                  {syncingOutlineArtifact ? "同步中..." : "同步到大纲树"}
+                  {syncingOutlineArtifact ? "同步中…" : "同步到大纲树"}
                 </button>
               ) : null}
             </div>
@@ -7074,7 +7628,7 @@ export function ArticleEditorClient({
                       </button>
                     ))}
                   </div>
-                  <textarea
+                  <textarea aria-label="也可以手动补充你希望文末收束成什么动作"
                     value={audienceSelectionDraft.selectedCallToAction}
                     onChange={(event) => setAudienceSelectionDraft((current) => ({ ...current, selectedCallToAction: event.target.value }))}
                     placeholder="也可以手动补充你希望文末收束成什么动作"
@@ -7094,7 +7648,7 @@ export function ArticleEditorClient({
                   disabled={savingAudienceSelection}
                   className="border border-cinnabar px-4 py-2 text-sm text-cinnabar disabled:opacity-60"
                 >
-                  {savingAudienceSelection ? "保存中..." : "确认这组受众选择"}
+                  {savingAudienceSelection ? "保存中…" : "确认这组受众选择"}
                 </button>
                 {getPayloadStringArray(currentStageArtifact.payload, "contentWarnings").length > 0 ? (
                   <div>
@@ -7125,7 +7679,7 @@ export function ArticleEditorClient({
                       disabled={loadingOutlineMaterials || savingOutlineMaterials}
                       className="border border-stone-300 px-3 py-2 text-sm text-stone-700 disabled:opacity-60"
                     >
-                      {loadingOutlineMaterials ? "刷新中..." : "刷新素材面板"}
+                      {loadingOutlineMaterials ? "刷新中…" : "刷新素材面板"}
                     </button>
                   </div>
                 <div className={`border px-4 py-4 text-sm leading-7 ${
@@ -7136,7 +7690,7 @@ export function ArticleEditorClient({
                         : "border-[#d8b0b2] bg-[#fff7f7] text-[#8f3136]"
                   }`}>
                     <div className="text-xs uppercase tracking-[0.18em]">素材可用性评分</div>
-                    <div className="mt-2 font-serifCn text-2xl">{outlineMaterialReadiness.score}</div>
+                    <div className="mt-2 font-serifCn text-2xl text-balance">{outlineMaterialReadiness.score}</div>
                     <div className="mt-2">{outlineMaterialReadiness.detail}</div>
                     <div className="mt-2 text-xs">
                       挂载素材 {outlineMaterialReadiness.fragmentCount} 条 · 来源类型 {outlineMaterialReadiness.sourceTypeCount} 类 · 截图证据 {outlineMaterialReadiness.screenshotCount} 条
@@ -7196,7 +7750,7 @@ export function ArticleEditorClient({
                   </div>
                   <div className="grid gap-3">
                     {Array.from({ length: 3 }).map((_, index) => (
-                      <textarea
+                      <textarea aria-label="textarea control"
                         key={`viewpoint-${index}`}
                         value={supplementalViewpointsDraft[index] || ""}
                         onChange={(event) =>
@@ -7217,12 +7771,12 @@ export function ArticleEditorClient({
                     disabled={savingOutlineMaterials}
                     className="border border-cinnabar px-4 py-2 text-sm text-cinnabar disabled:opacity-60"
                   >
-                    {savingOutlineMaterials ? "保存中..." : "保存补充观点"}
+                    {savingOutlineMaterials ? "保存中…" : "保存补充观点"}
                   </button>
                   <div className="grid gap-4 lg:grid-cols-2">
                     <div className="border border-stone-300 bg-white px-4 py-4">
                       <div className="text-xs uppercase tracking-[0.18em] text-stone-500">挂载已有素材</div>
-                      <select
+                      <select aria-label="select control"
                         value={outlineMaterialNodeId}
                         onChange={(event) => setOutlineMaterialNodeId(event.target.value)}
                         className="mt-3 w-full border border-stone-300 bg-[#faf7f0] px-3 py-2 text-sm"
@@ -7234,7 +7788,7 @@ export function ArticleEditorClient({
                           </option>
                         ))}
                       </select>
-                      <select
+                      <select aria-label="select control"
                         value={outlineMaterialUsageMode}
                         onChange={(event) => setOutlineMaterialUsageMode(event.target.value === "image" ? "image" : "rewrite")}
                         className="mt-3 w-full border border-stone-300 bg-[#faf7f0] px-3 py-2 text-sm"
@@ -7242,7 +7796,7 @@ export function ArticleEditorClient({
                         <option value="rewrite">作为可改写素材</option>
                         <option value="image">作为原样截图插入</option>
                       </select>
-                      <select
+                      <select aria-label="select control"
                         value={outlineMaterialFragmentId}
                         onChange={(event) => setOutlineMaterialFragmentId(event.target.value)}
                         className="mt-3 w-full border border-stone-300 bg-[#faf7f0] px-3 py-2 text-sm"
@@ -7267,7 +7821,7 @@ export function ArticleEditorClient({
                         disabled={savingOutlineMaterials}
                         className="mt-3 border border-cinnabar px-4 py-2 text-sm text-cinnabar disabled:opacity-60"
                       >
-                        {savingOutlineMaterials ? "处理中..." : "挂到当前节点"}
+                        {savingOutlineMaterials ? "处理中…" : "挂到当前节点"}
                       </button>
                     </div>
                     <div className="border border-stone-300 bg-white px-4 py-4">
@@ -7294,7 +7848,7 @@ export function ArticleEditorClient({
                           新建截图素材
                         </button>
                       </div>
-                      <input
+                      <input aria-label="素材标题，可选"
                         value={outlineMaterialTitle}
                         onChange={(event) => setOutlineMaterialTitle(event.target.value)}
                         placeholder="素材标题，可选"
@@ -7308,15 +7862,15 @@ export function ArticleEditorClient({
                           className="mt-3 min-h-[120px] w-full border border-stone-300 bg-[#faf7f0] px-3 py-2 text-sm leading-7"
                         />
                       ) : outlineMaterialCreateMode === "url" ? (
-                        <input
+                        <input aria-label="https://…"
                           value={outlineMaterialUrl}
                           onChange={(event) => setOutlineMaterialUrl(event.target.value)}
-                          placeholder="https://..."
+                          placeholder="https://…"
                           className="mt-3 w-full border border-stone-300 bg-[#faf7f0] px-3 py-2 text-sm"
                         />
                       ) : (
                         <div className="mt-3 space-y-3">
-                          <input
+                          <input aria-label="input control"
                             ref={outlineMaterialScreenshotInputRef}
                             type="file"
                             accept="image/png,image/jpeg,image/webp"
@@ -7328,7 +7882,7 @@ export function ArticleEditorClient({
                               ? `已选择截图：${outlineMaterialScreenshotFileName}。创建后会自动以“原样截图插入”挂到当前节点。`
                               : "支持 png/jpg/webp，上传后会直接创建截图素材并挂到当前节点。"}
                           </div>
-                          <textarea
+                          <textarea aria-label="可选：补一句截图上下文，帮助后续视觉理解和节点归位。"
                             value={outlineMaterialContent}
                             onChange={(event) => setOutlineMaterialContent(event.target.value)}
                             placeholder="可选：补一句截图上下文，帮助后续视觉理解和节点归位。"
@@ -7350,7 +7904,7 @@ export function ArticleEditorClient({
                         disabled={savingOutlineMaterials}
                         className="mt-3 border border-cinnabar px-4 py-2 text-sm text-cinnabar disabled:opacity-60"
                       >
-                        {savingOutlineMaterials ? "处理中..." : "创建并挂到节点"}
+                        {savingOutlineMaterials ? "处理中…" : "创建并挂到节点"}
                       </button>
                     </div>
                   </div>
@@ -7621,7 +8175,7 @@ export function ArticleEditorClient({
                   disabled={savingAudienceSelection || !outlineSelectionDraft.selectedTitle.trim()}
                   className="border border-cinnabar px-4 py-2 text-sm text-cinnabar disabled:opacity-60"
                 >
-                  {savingAudienceSelection ? "保存中..." : "确认这组大纲选择"}
+                  {savingAudienceSelection ? "保存中…" : "确认这组大纲选择"}
                 </button>
                 {String(currentStageArtifact.payload?.endingStrategy || "").trim() ? (
                   <div className="text-sm leading-7 text-stone-700">结尾策略：{String(currentStageArtifact.payload?.endingStrategy)}</div>
@@ -7692,10 +8246,10 @@ export function ArticleEditorClient({
                     输入一篇报道、公告或原始资料链接，系统会自动抓取、提纯并挂到当前稿件，再立即刷新事实核查结果。
                   </div>
                   <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-                    <input
+                    <input aria-label="https://…"
                       value={factCheckEvidenceUrl}
                       onChange={(event) => setFactCheckEvidenceUrl(event.target.value)}
-                      placeholder="https://..."
+                      placeholder="https://…"
                       className="min-w-0 flex-1 border border-stone-300 bg-white px-3 py-2 text-sm"
                     />
                     <button
@@ -7704,7 +8258,7 @@ export function ArticleEditorClient({
                       disabled={addingFactCheckEvidence}
                       className="bg-cinnabar px-4 py-2 text-sm text-white disabled:opacity-60"
                     >
-                      {addingFactCheckEvidence ? "抓取中..." : "抓取补证并刷新核查"}
+                      {addingFactCheckEvidence ? "抓取中…" : "抓取补证并刷新核查"}
                     </button>
                   </div>
                   {factCheckEvidenceIssue ? (
@@ -7720,7 +8274,7 @@ export function ArticleEditorClient({
                             disabled={addingFactCheckEvidence}
                             className="border border-cinnabar bg-white px-4 py-2 text-sm text-cinnabar disabled:opacity-60"
                           >
-                            {addingFactCheckEvidence ? "重试中..." : "重试补证抓取"}
+                            {addingFactCheckEvidence ? "重试中…" : "重试补证抓取"}
                           </button>
                         ) : null}
                         <button
@@ -7772,7 +8326,7 @@ export function ArticleEditorClient({
                                 disabled={addingFactCheckEvidence}
                                 className="border border-cinnabar bg-white px-3 py-2 text-sm text-cinnabar disabled:opacity-60"
                               >
-                                {addingFactCheckEvidence ? "重试中..." : "再次重试"}
+                                {addingFactCheckEvidence ? "重试中…" : "再次重试"}
                               </button>
                             ) : null}
                             <button
@@ -7830,7 +8384,7 @@ export function ArticleEditorClient({
                                 </button>
                               ))}
                             </div>
-                            <textarea
+                            <textarea aria-label="可选：补充处理备注，例如“等官方公告出来再补数据”"
                               value={currentDecision.note}
                               onChange={(event) => updateFactCheckDecision(claim, status, { note: event.target.value })}
                               placeholder="可选：补充处理备注，例如“等官方公告出来再补数据”"
@@ -7910,8 +8464,7 @@ export function ArticleEditorClient({
                                               {String(item.sourceUrl || "").trim() ? (
                                                 <a
                                                   href={String(item.sourceUrl)}
-                                                  target="_blank"
-                                                  rel="noreferrer"
+                                                  target="_blank" rel="noreferrer"
                                                   className="mt-3 inline-block border border-stone-300 bg-white px-3 py-2 text-xs text-stone-700"
                                                 >
                                                   打开原始链接
@@ -7950,7 +8503,7 @@ export function ArticleEditorClient({
                   disabled={savingAudienceSelection}
                   className="border border-cinnabar px-4 py-2 text-sm text-cinnabar disabled:opacity-60"
                 >
-                  {savingAudienceSelection ? "保存中..." : "确认这组核查处置"}
+                  {savingAudienceSelection ? "保存中…" : "确认这组核查处置"}
                 </button>
                 {String(currentStageArtifact.payload?.personaAlignment || "").trim() ? (
                   <div className="text-sm leading-7 text-stone-700">人设匹配：{String(currentStageArtifact.payload?.personaAlignment)}</div>
@@ -8118,57 +8671,92 @@ export function ArticleEditorClient({
             ) : null}
           </div>
         ) : (
-          <div className="border border-dashed border-stone-300 bg-white px-4 py-4 text-sm leading-7 text-stone-600">
-            当前稿件还没有生成这张洞察卡。建议先保存正文，再生成对应洞察卡。
-          </div>
+          <AuthoringBlankSlate
+            eyebrow={workspaceBlankSlate.eyebrow}
+            title={workspaceBlankSlate.title}
+            detail={currentStageAction?.helper || workspaceBlankSlate.detail}
+            prompts={workspaceBlankSlate.prompts}
+          >
+            {currentStageAction ? (
+              <button
+                type="button"
+                onClick={() => {
+                  void generateStageArtifact(currentStage.code);
+                }}
+                disabled={Boolean(generatingStageArtifactCode) || Boolean(updatingWorkflowCode) || Boolean(applyingStageArtifactCode)}
+                className="bg-cinnabar px-4 py-3 text-sm text-white disabled:opacity-60"
+              >
+                {generatingStageArtifactCode === currentStage.code ? `${currentStageAction.label}中…` : currentStageAction.label}
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => setView(currentAuthoringPhase.defaultView)}
+              className="border border-stone-300 bg-white px-4 py-3 text-sm text-stone-700"
+            >
+              先回到{formatWorkspaceViewLabel(currentAuthoringPhase.defaultView)}
+            </button>
+          </AuthoringBlankSlate>
         )}
       </div>
     );
   }
 
   return (
-    <div className="grid gap-4 xl:grid-cols-[260px_minmax(0,1fr)_360px]">
-      <aside className="space-y-4 border border-stone-300/40 bg-[#f4efe6] p-5">
-        <div>
-          <div className="text-xs uppercase tracking-[0.24em] text-stone-500">大纲树与素材挂载</div>
-          <div className="mt-4">
-            <ArticleOutlineClient articleId={article.id} nodes={nodes} fragments={fragmentPool} onChange={reloadArticleMeta} />
+    <div className={`grid min-w-0 gap-4 transition-all duration-500 ${workspaceGridClass}`}>
+      {showLeftWorkspaceRail ? (
+        <aside className="min-w-0 space-y-4 border border-stone-300/40 bg-[#f4efe6] p-5">
+          <div className="border border-stone-300/50 bg-white/70 px-4 py-4 text-sm leading-7 text-stone-700">
+            <div className="text-xs uppercase tracking-[0.18em] text-cinnabar">
+              {isCollectPhase ? "采集阶段" : "构思阶段"}
+            </div>
+            <div className="mt-2">
+              {isCollectPhase
+                ? "先在这里挂素材、整理节点和保存关键快照。当前阶段不强调成稿句子。"
+                : "当前优先看节点之间怎么推进、哪些素材该挂到哪一段，不急着追求完整正文。"}
+            </div>
           </div>
-        </div>
-        <div className="border-t border-stone-300/60 pt-4">
-          <div className="text-xs uppercase tracking-[0.24em] text-stone-500">快照管理</div>
-          <div className="mt-3 flex gap-2">
-            <input
-              value={snapshotNote}
-              onChange={(event) => setSnapshotNote(event.target.value)}
-              placeholder="快照备注"
-              className="min-w-0 flex-1 border border-stone-300 bg-white px-3 py-2 text-sm"
-            />
-            <button onClick={createSnapshot} className="bg-cinnabar px-3 py-2 text-sm text-white">
-              存档
-            </button>
+          <div>
+            <div className="text-xs uppercase tracking-[0.24em] text-stone-500">大纲树与素材挂载</div>
+            <div className="mt-4">
+              <ArticleOutlineClient articleId={article.id} nodes={nodes} fragments={fragmentPool} onChange={reloadArticleMeta} />
+            </div>
           </div>
-          <div className="mt-3 space-y-2">
-            {snapshots.slice(0, 6).map((snapshot) => (
-              <div key={snapshot.id} className="border border-stone-300 bg-white p-3">
-                <div className="text-sm text-ink">{snapshot.snapshotNote || "未命名快照"}</div>
-                <div className="mt-1 text-xs text-stone-500">{new Date(snapshot.createdAt).toLocaleString("zh-CN")}</div>
-                <div className="mt-3 flex gap-2 text-xs">
-                  <button onClick={() => loadDiff(snapshot.id)} className="border border-stone-300 px-2 py-1 text-stone-700">
-                    {loadingDiffId === snapshot.id ? "对比中..." : "差异"}
-                  </button>
-                  <button onClick={() => restoreSnapshot(snapshot.id)} className="border border-stone-300 px-2 py-1 text-stone-700">
-                    回滚
-                  </button>
+          <div className="border-t border-stone-300/60 pt-4">
+            <div className="text-xs uppercase tracking-[0.24em] text-stone-500">快照管理</div>
+            <div className="mt-3 flex gap-2">
+              <input aria-label="快照备注"
+                value={snapshotNote}
+                onChange={(event) => setSnapshotNote(event.target.value)}
+                placeholder="快照备注"
+                className="min-w-0 flex-1 border border-stone-300 bg-white px-3 py-2 text-sm"
+              />
+              <button onClick={createSnapshot} className="bg-cinnabar px-3 py-2 text-sm text-white">
+                存档
+              </button>
+            </div>
+            <div className="mt-3 space-y-2">
+              {snapshots.slice(0, 6).map((snapshot) => (
+                <div key={snapshot.id} className="border border-stone-300 bg-white p-3">
+                  <div className="text-sm text-ink">{snapshot.snapshotNote || "未命名快照"}</div>
+                  <div className="mt-1 text-xs text-stone-500">{new Date(snapshot.createdAt).toLocaleString("zh-CN")}</div>
+                  <div className="mt-3 flex gap-2 text-xs">
+                    <button onClick={() => loadDiff(snapshot.id)} className="border border-stone-300 px-2 py-1 text-stone-700">
+                      {loadingDiffId === snapshot.id ? "对比中…" : "差异"}
+                    </button>
+                    <button onClick={() => restoreSnapshot(snapshot.id)} className="border border-stone-300 px-2 py-1 text-stone-700">
+                      回滚
+                    </button>
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
-        </div>
-      </aside>
+        </aside>
+      ) : null}
 
-      <section className="border border-stone-300/40 bg-white p-6 shadow-ink">
-        <div className="border-b border-stone-200 pb-4">
+      <section className="min-w-0 border border-stone-300/40 bg-white p-6 shadow-ink">
+        <div className={`border-b border-stone-200 pb-4 ${isFocusMode || isWritePhase || isPolishPhase ? "hidden" : ""}`}>
           <div className="text-xs uppercase tracking-[0.24em] text-cinnabar">稿件六步链路</div>
           <div className="mt-3 grid gap-3 xl:grid-cols-6">
             {articleMainSteps.map((step, index) => (
@@ -8208,12 +8796,11 @@ export function ArticleEditorClient({
               </button>
             ))}
           </div>
-          <div className="mt-3 text-sm leading-7 text-stone-600">
+          <div className={`mt-3 text-sm leading-7 text-stone-600`}>
             当前稿件停留在「{currentArticleMainStep.title}」。底层仍沿用现有执行阶段，但作者视角固定只看这 6 步。
           </div>
           <div className={`mt-4 border px-4 py-4 ${
-            researchStepSummary.status === "ready"
-              ? "border-emerald-200 bg-emerald-50"
+            researchStepSummary.status === "ready"              ? "border-emerald-200 bg-emerald-50"
               : researchStepSummary.status === "blocked"
                 ? "border-[#d8b0b2] bg-[#fff7f7]"
                 : "border-[#dfd2b0] bg-[#fff8e8]"
@@ -8257,9 +8844,64 @@ export function ArticleEditorClient({
           </div>
         </div>
         {currentArticleMainStep.code === "result" ? renderOutcomeWorkspace() : null}
+        <div className="mt-4 border border-stone-300/60 bg-[#fcfaf5] p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <div className="text-xs uppercase tracking-[0.24em] text-cinnabar">作者阶段</div>
+              <div className="mt-2 text-sm leading-7 text-stone-700">
+                把复杂控制项折叠成写作者真正关心的 4 个阶段，只在当前阶段强调必要动作。
+              </div>
+            </div>
+            <div className="border border-stone-300 bg-white px-3 py-2 text-xs text-stone-700">
+              当前：{currentAuthoringPhase.title}
+            </div>
+          </div>
+          <div className="mt-4 grid gap-3 xl:grid-cols-4">
+            {authoringPhases.map((phase) => (
+              <button
+                key={phase.code}
+                type="button"
+                onClick={() => {
+                  setView(phase.defaultView);
+                  void updateWorkflow(phase.targetStageCode as typeof workflow.currentStageCode, "set");
+                }}
+                disabled={updatingWorkflowCode !== null}
+                className={`border px-4 py-4 text-left transition-colors disabled:opacity-60 ${
+                  phase.statusLabel === "current"
+                    ? "border-cinnabar bg-[#fff4f1]"
+                    : phase.statusLabel === "completed"
+                      ? "border-stone-300 bg-white"
+                      : phase.statusLabel === "needs_attention"
+                        ? "border-[#dfd2b0] bg-[#fff8e8]"
+                        : "border-stone-300/60 bg-white"
+                }`}
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <div className="font-serifCn text-2xl text-ink">{phase.title}</div>
+                  <div className={`text-xs ${
+                    phase.statusLabel === "current"
+                      ? "text-cinnabar"
+                      : phase.statusLabel === "completed"
+                        ? "text-emerald-700"
+                        : phase.statusLabel === "needs_attention"
+                          ? "text-[#7d6430]"
+                          : "text-stone-500"
+                  }`}>
+                    {formatArticleMainStepStatus(phase.statusLabel as ArticleMainStepStatus)}
+                  </div>
+                </div>
+                <div className="mt-2 text-sm leading-7 text-stone-700">{phase.summary}</div>
+                <div className="mt-3 text-xs text-stone-500">{phase.supportLabel}</div>
+              </button>
+            ))}
+          </div>
+          <div className="mt-4 border border-stone-300/70 bg-white px-4 py-4 text-sm leading-7 text-stone-700">
+            {currentAuthoringPhaseHint}
+          </div>
+        </div>
         <div className="flex flex-wrap gap-3">
-          <input value={title} onChange={(event) => setTitle(event.target.value)} className="min-w-[240px] flex-1 border border-stone-300 px-4 py-3 text-sm" />
-          <select
+          <input aria-label="input control" value={title} onChange={(event) => setTitle(event.target.value)} className="min-w-[240px] flex-1 border border-stone-300 px-4 py-3 text-sm" />
+          <select aria-label="select control"
             value={seriesId ?? ""}
             onChange={(event) => setSeriesId(event.target.value ? Number(event.target.value) : null)}
             className="min-w-[220px] border border-stone-300 bg-white px-4 py-3 text-sm"
@@ -8276,7 +8918,7 @@ export function ArticleEditorClient({
           </button>
           <button onClick={generate} disabled={generating || generateBlockedByResearch} className="bg-cinnabar px-4 py-3 text-sm text-white disabled:opacity-60">
             {generating
-              ? "生成中..."
+              ? "生成中…"
               : generateBlockedByResearch
                 ? "先补研究信源"
                 : deepWritingPrototypeOverride || deepWritingStateVariantOverride
@@ -8285,27 +8927,44 @@ export function ArticleEditorClient({
           </button>
         </div>
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-b border-stone-200 pb-3">
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => setView("workspace")}
+              className={`border px-3 py-2 text-sm ${view === "workspace" ? "border-cinnabar bg-cinnabar text-white" : "border-stone-300 bg-white text-stone-700"}`}
+            >
+              阶段工作台
+            </button>
             <button
               onClick={() => setView("edit")}
               className={`border px-3 py-2 text-sm ${view === "edit" ? "border-cinnabar bg-cinnabar text-white" : "border-stone-300 bg-white text-stone-700"}`}
             >
-              Markdown
+              稿纸
             </button>
             <button
               onClick={() => setView("preview")}
               className={`border px-3 py-2 text-sm ${view === "preview" ? "border-cinnabar bg-cinnabar text-white" : "border-stone-300 bg-white text-stone-700"}`}
             >
-              HTML 预览
+              微信预览
             </button>
             <button
               onClick={() => setView("audit")}
               className={`border px-3 py-2 text-sm ${view === "audit" ? "border-cinnabar bg-cinnabar text-white" : "border-stone-300 bg-white text-stone-700"}`}
             >
-              污染标记
+              红笔校阅
             </button>
           </div>
-          <div className="text-sm text-stone-500">{saveState}</div>
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="text-sm text-stone-500">{saveState}</div>
+            <button
+              onClick={() => setIsFocusMode(!isFocusMode)}
+              className={`border px-3 py-2 text-sm transition-colors ${isFocusMode ? "border-stone-800 bg-stone-800 text-white" : "border-stone-300 bg-white text-stone-700"}`}
+            >
+              <span className="flex items-center gap-1">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
+                {isFocusMode ? "退出沉浸" : "沉浸模式"}
+              </span>
+            </button>
+          </div>
         </div>
         {selectedSeries ? (
           <div className="mt-4 border border-stone-300/40 bg-[#faf7f0] px-4 py-4 text-sm leading-7 text-stone-700">
@@ -8318,67 +8977,249 @@ export function ArticleEditorClient({
             当前稿件还没有绑定系列。请先完成系列绑定，再继续推进策略、证据和发布步骤。
           </div>
         )}
-        {view === "edit" ? (
-          <textarea value={markdown} onChange={(event) => setMarkdown(event.target.value)} className="mt-4 min-h-[560px] w-full border border-stone-300 px-4 py-4 text-sm leading-8" />
+        {view === "workspace" ? (
+          <div className="mt-4 min-h-[560px] border border-stone-300 bg-white p-6">
+            <div className="text-xs uppercase tracking-[0.24em] text-stone-500 mb-4">阶段配置与执行产物</div>
+            {renderCurrentStageArtifact()}
+          </div>
+        ) : view === "edit" ? (
+          <>
+            {!hasDraftContent ? (
+              <div className="mt-4">
+                <div className="space-y-4">
+                  <AuthoringBlankSlate
+                    eyebrow={draftBlankSlate.eyebrow}
+                    title={draftBlankSlate.title}
+                    detail={draftBlankSlate.detail}
+                    prompts={draftBlankSlate.prompts}
+                  >
+                    {draftStarterOptions.map((option) => (
+                      <button
+                        key={option.label}
+                        type="button"
+                        onClick={() => setMarkdown(option.text)}
+                        className="border border-stone-300 bg-white px-4 py-3 text-sm text-stone-700"
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => setView("workspace")}
+                      className="border border-cinnabar bg-white px-4 py-3 text-sm text-cinnabar"
+                    >
+                      先看阶段工作台
+                    </button>
+                  </AuthoringBlankSlate>
+                  {draftBlankSlateInspirations.length > 0 ? (
+                    <div className="border border-stone-300 bg-[radial-gradient(circle_at_top_left,rgba(196,138,58,0.10),transparent_32%),linear-gradient(180deg,#fffdfa_0%,#faf7f0_100%)] p-5">
+                      <div className="text-xs uppercase tracking-[0.2em] text-stone-500">灵感启发</div>
+                      <div className="mt-2 text-sm leading-7 text-stone-700">
+                        白页不只给提示，也直接给你几张可借的起手卡。可以拿素材切口起笔，也可以借经典开场方式破冰。
+                      </div>
+                      <div className="mt-4 grid gap-3 md:grid-cols-2">
+                        {draftBlankSlateInspirations.map((item) => (
+                          <div key={item.key} className="border border-stone-300/70 bg-white/85 px-4 py-4">
+                            <div className="text-xs uppercase tracking-[0.16em] text-cinnabar">{item.title}</div>
+                            <div className="mt-3 text-sm leading-7 text-stone-700">{item.detail}</div>
+                            <div className="mt-3 text-xs leading-6 text-stone-500">{item.meta}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
+            <textarea
+              aria-label="草稿编辑区"
+              value={markdown}
+              onChange={(event) => setMarkdown(event.target.value)}
+              placeholder="铺开稿纸，落笔生花。&#10;&#10;「文章千古事，得失寸心知。」&#10;—— 在这里写下你的第一段草稿，或从左侧素材板中汲取灵感..."
+              className="mt-4 min-h-[560px] w-full resize-y border border-stone-300 bg-[#fffdfa] px-6 py-8 text-base leading-8 text-ink bg-[linear-gradient(transparent_31px,rgba(27,28,26,0.04)_32px)] bg-[length:100%_32px]"
+            />
+            <div className="mt-4">
+              <SentenceRhythmMap text={markdown} />
+            </div>
+          </>
         ) : view === "preview" ? (
-          <div className="mt-4 min-h-[560px] border border-stone-300 bg-[#fffdfa] p-6" dangerouslySetInnerHTML={{ __html: htmlPreview || "<p>暂无预览</p>" }} />
+          <div className="mt-4 border border-stone-300 bg-[#fffdfa]">
+            <WechatNativePreview
+              html={hasPreviewContent ? htmlPreview : ""}
+              title={title}
+              authorName={selectedSeries?.personaName || undefined}
+              accountName={selectedConnection?.accountName || initialConnections.find((connection) => connection.isDefault)?.accountName || undefined}
+            />
+          </div>
         ) : (
           <div className="mt-4 min-h-[560px] border border-stone-300 bg-[#fff8f7] p-6">
-            <div className="mb-4 border border-[#ead3d5] bg-white px-4 py-3 text-sm leading-7 text-stone-600">
-              命中语言守卫词会以朱砂红波浪线和删除线标出，方便你在正式保存或继续生成前先清掉机器味。
+            <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+              <div className="border border-[#ead3d5] bg-white p-5">
+                <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[#f0d7d8] pb-4">
+                  <div>
+                    <div className="text-xs uppercase tracking-[0.18em] text-cinnabar">主编红笔</div>
+                    <div className="mt-2 text-sm leading-7 text-stone-700">
+                      命中语言守卫后，不再只给规则列表，而是直接在稿纸上标出问题位置和批注编号。
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-2 text-xs">
+                    <span className="border border-[#d8b0b2] bg-[#fff7f7] px-3 py-2 text-[#8f3136]">高风险 {liveLanguageGuardSummary.highSeverityCount}</span>
+                    <span className="border border-stone-300 bg-[#faf7f0] px-3 py-2 text-stone-700">词语 {liveLanguageGuardSummary.tokenCount}</span>
+                    <span className="border border-stone-300 bg-[#faf7f0] px-3 py-2 text-stone-700">句式 {liveLanguageGuardSummary.patternCount}</span>
+                  </div>
+                </div>
+                {hasDraftContent && editorialReview.annotations.length === 0 ? (
+                  <div className="mt-4 border border-dashed border-stone-300 bg-[#fcfbf8] px-4 py-4 text-sm leading-7 text-stone-600">
+                    当前正文未命中语言守卫，可以切去微信预览看最终阅读体感。
+                  </div>
+                ) : null}
+                {hasDraftContent ? (
+                  <div
+                    className="mt-4 whitespace-pre-wrap break-words bg-[linear-gradient(transparent_31px,rgba(167,48,50,0.05)_32px)] bg-[length:100%_32px] px-2 text-sm leading-8 text-ink"
+                    dangerouslySetInnerHTML={{ __html: editorialReview.html }}
+                  />
+                ) : (
+                  <div className="mt-4">
+                    <AuthoringBlankSlate
+                      eyebrow={reviewBlankSlate.eyebrow}
+                      title={reviewBlankSlate.title}
+                      detail={reviewBlankSlate.detail}
+                      prompts={reviewBlankSlate.prompts}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => setView("edit")}
+                        className="border border-cinnabar bg-white px-4 py-3 text-sm text-cinnabar"
+                      >
+                        先回稿纸起笔
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setView("workspace")}
+                        className="border border-stone-300 bg-white px-4 py-3 text-sm text-stone-700"
+                      >
+                        先看阶段工作台
+                      </button>
+                    </AuthoringBlankSlate>
+                  </div>
+                )}
+              </div>
+              <div className="space-y-4">
+                <SentenceRhythmMap text={markdown} />
+                <div className="border border-[#ead3d5] bg-white p-4">
+                  <div className="text-xs uppercase tracking-[0.18em] text-stone-500">批注清单</div>
+                  {!hasDraftContent ? (
+                    <div className="mt-3 text-sm leading-7 text-stone-600">等正文出现后，这里会按编号列出每条红笔批注。</div>
+                  ) : editorialReview.annotations.length === 0 ? (
+                    <div className="mt-3 text-sm leading-7 text-stone-600">没有需要批注的语言守卫命中。</div>
+                  ) : (
+                    <div className="mt-3 space-y-3">
+                      {editorialReview.annotations.map((annotation) => (
+                        <div
+                          key={annotation.id}
+                          className={`border px-4 py-4 ${
+                            annotation.severity === "high"
+                              ? "border-[#d8b0b2] bg-[#fff7f7]"
+                              : "border-[#dcc8a6] bg-[#fff8eb]"
+                          }`}
+                        >
+                          <div className="flex flex-wrap items-center gap-2 text-xs">
+                            <span className="border border-current/20 bg-white/80 px-2 py-1 text-cinnabar">#{annotation.order}</span>
+                            <span className="border border-current/20 bg-white/80 px-2 py-1 text-stone-700">
+                              {annotation.ruleKind === "pattern" ? "句式" : "词语"}
+                            </span>
+                            <span className="border border-current/20 bg-white/80 px-2 py-1 text-stone-700">
+                              {annotation.scope === "system" ? "系统规则" : "自定义规则"}
+                            </span>
+                          </div>
+                          <div className="mt-3 text-sm leading-7 text-ink">
+                            命中：<span className="font-medium">{annotation.matchedText}</span>
+                            {annotation.count > 1 ? ` · 共 ${annotation.count} 处` : ""}
+                          </div>
+                          <div className="mt-2 text-xs leading-6 text-stone-500">上下文：{annotation.sampleContext}</div>
+                          {annotation.rewriteHint ? (
+                            <div className="mt-2 text-sm leading-7 text-stone-700">改写建议：{annotation.rewriteHint}</div>
+                          ) : null}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
-            <div className="whitespace-pre-wrap break-words text-sm leading-8 text-ink" dangerouslySetInnerHTML={{ __html: bannedWordMarkup || "<p>暂无内容</p>" }} />
           </div>
         )}
         {message ? <div className="mt-4 text-sm text-cinnabar">{message}</div> : null}
       </section>
 
-      <aside className="space-y-4">
-        <div className="border border-stone-300/40 bg-[#faf7f0] p-5">
-          <div className="text-xs uppercase tracking-[0.24em] text-stone-500">稿件六步</div>
-          <div className="mt-4 space-y-2">
-            {articleMainSteps.map((step, index) => (
-              <button
-                key={step.code}
-                type="button"
-                onClick={() => {
-                  if (step.code === "result") return;
-                  void updateWorkflow(step.primaryStageCode as typeof workflow.currentStageCode, "set");
-                }}
-                disabled={updatingWorkflowCode !== null || step.code === "result"}
-                className={`block w-full border px-4 py-3 text-left transition-colors ${
-                  step.statusLabel === "current"
-                    ? "border-cinnabar bg-white"
-                    : step.statusLabel === "completed"
-                      ? "border-stone-300 bg-white"
-                      : step.statusLabel === "needs_attention"
-                        ? "border-[#dfd2b0] bg-[#fff8e8]"
-                        : "border-stone-300/40 bg-white/70"
-                } ${step.code === "result" ? "cursor-default" : "disabled:opacity-60"}`}
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <div className="text-xs uppercase tracking-[0.2em] text-stone-500">
-                    步骤 {String(index + 1).padStart(2, "0")}
-                  </div>
-                  <div className={`text-xs ${
+      <aside className={`${isFocusMode ? "hidden" : "min-w-0 space-y-4"}`}>
+        {showCompactSixStepRail ? (
+          <div className="border border-stone-300/40 bg-[#faf7f0] p-5">
+            <div className="text-xs uppercase tracking-[0.24em] text-stone-500">当前链路</div>
+            <div className="mt-3 border border-stone-300 bg-white px-4 py-4">
+              <div className="font-serifCn text-2xl text-ink">{currentArticleMainStep.title}</div>
+              <div className="mt-2 text-sm leading-7 text-stone-700">{currentArticleMainStepDisplay?.detail || "当前步骤说明暂未生成。"}</div>
+            </div>
+            <div className="mt-3 grid gap-2">
+              {articleMainSteps.map((step) => (
+                <button
+                  key={step.code}
+                  type="button"
+                  onClick={() => {
+                    if (step.code === "result") return;
+                    void updateWorkflow(step.primaryStageCode as typeof workflow.currentStageCode, "set");
+                  }}
+                  disabled={updatingWorkflowCode !== null || step.code === "result"}
+                  className={`flex items-center justify-between border px-3 py-3 text-left text-sm disabled:opacity-60 ${
                     step.statusLabel === "current"
-                      ? "text-cinnabar"
+                      ? "border-cinnabar bg-white text-cinnabar"
                       : step.statusLabel === "completed"
-                        ? "text-emerald-700"
+                        ? "border-stone-300 bg-white text-stone-700"
                         : step.statusLabel === "needs_attention"
-                          ? "text-[#7d6430]"
-                          : "text-stone-500"
-                  }`}>
-                    {formatArticleMainStepStatus(step.statusLabel)}
+                          ? "border-[#dfd2b0] bg-[#fff8e8] text-[#7d6430]"
+                          : "border-stone-300/50 bg-white/70 text-stone-500"
+                  }`}
+                >
+                  <span>{step.title}</span>
+                  <span className="text-xs">{formatArticleMainStepStatus(step.statusLabel)}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
+        {!showLeftWorkspaceRail ? (
+          <div className="border border-stone-300/40 bg-[#faf7f0] p-5">
+            <div className="text-xs uppercase tracking-[0.24em] text-stone-500">快照管理</div>
+            <div className="mt-3 flex gap-2">
+              <input aria-label="快照备注"
+                value={snapshotNote}
+                onChange={(event) => setSnapshotNote(event.target.value)}
+                placeholder="快照备注"
+                className="min-w-0 flex-1 border border-stone-300 bg-white px-3 py-2 text-sm"
+              />
+              <button onClick={createSnapshot} className="bg-cinnabar px-3 py-2 text-sm text-white">
+                存档
+              </button>
+            </div>
+            <div className="mt-3 space-y-2">
+              {snapshots.slice(0, 4).map((snapshot) => (
+                <div key={snapshot.id} className="border border-stone-300 bg-white p-3">
+                  <div className="text-sm text-ink">{snapshot.snapshotNote || "未命名快照"}</div>
+                  <div className="mt-1 text-xs text-stone-500">{new Date(snapshot.createdAt).toLocaleString("zh-CN")}</div>
+                  <div className="mt-3 flex gap-2 text-xs">
+                    <button onClick={() => loadDiff(snapshot.id)} className="border border-stone-300 px-2 py-1 text-stone-700">
+                      {loadingDiffId === snapshot.id ? "对比中…" : "差异"}
+                    </button>
+                    <button onClick={() => restoreSnapshot(snapshot.id)} className="border border-stone-300 px-2 py-1 text-stone-700">
+                      回滚
+                    </button>
                   </div>
                 </div>
-                <div className="mt-2 font-serifCn text-xl text-ink">{step.title}</div>
-                <div className="mt-1 text-xs text-stone-500">{step.supportLabel}</div>
-              </button>
-            ))}
+              ))}
+            </div>
           </div>
-          <div className="mt-3 text-xs leading-6 text-stone-500">结果步现在承接 24h / 72h / 7d 快照、命中判定和复盘标签；其余步骤仍可随时切回继续编辑。</div>
-        </div>
+        ) : null}
+        {showResearchChecklistRail ? (
         <div className="border border-stone-300/40 bg-[#faf7f0] p-5">
           <div className="text-xs uppercase tracking-[0.24em] text-stone-500">六步完成定义</div>
           <div className={`mt-3 border px-4 py-4 ${
@@ -8420,6 +9261,7 @@ export function ArticleEditorClient({
             ))}
           </div>
         </div>
+        ) : null}
         {planCapabilityHints.length > 0 ? (
           <div className="border border-stone-300/40 bg-[#faf7f0] p-5">
             <div className="text-xs uppercase tracking-[0.24em] text-stone-500">权限前置提示</div>
@@ -8443,13 +9285,14 @@ export function ArticleEditorClient({
             </div>
             <span className="border border-stone-300 bg-white px-3 py-1 text-xs text-stone-600">{stageArtifacts.length} 条</span>
           </div>
-          {renderCurrentStageArtifact()}
+          <div className="mt-4 text-sm leading-7 text-stone-600">请在中间主工作区的“阶段工作台”标签页中查看。</div>
         </div>
         <div className="border border-stone-300/40 bg-[#faf7f0] p-5">
           <div className="text-xs uppercase tracking-[0.24em] text-stone-500">稿件状态</div>
-          <div className="mt-3 font-serifCn text-3xl text-ink">{status === "generating" ? "生成中" : formatArticleStatusLabel(status)}</div>
+          <div className="mt-3 font-serifCn text-3xl text-ink text-balance">{status === "generating" ? "生成中" : formatArticleStatusLabel(status)}</div>
         </div>
 
+        {showKnowledgeCardsRail ? (
         <div className="border border-stone-300/40 bg-[#faf7f0] p-5">
           <div className="flex items-start justify-between gap-3">
             <div>
@@ -8459,8 +9302,14 @@ export function ArticleEditorClient({
             <span className="border border-stone-300 bg-white px-3 py-1 text-xs text-stone-600">{knowledgeCardItems.length} 张</span>
           </div>
           {knowledgeCardItems.length === 0 ? (
-            <div className="mt-4 border border-dashed border-stone-300 bg-white px-4 py-4 text-sm leading-7 text-stone-600">
-              当前稿件还没有命中可引用的背景卡。继续挂载素材或更新背景卡后，这里会优先出现可复用摘要与证据。
+            <div className="mt-4">
+              <AuthoringBlankSlate
+                eyebrow={knowledgeBlankSlate.eyebrow}
+                title={knowledgeBlankSlate.title}
+                detail={knowledgeBlankSlate.detail}
+                prompts={knowledgeBlankSlate.prompts}
+                compact
+              />
             </div>
           ) : (
             <div className="mt-4 space-y-3">
@@ -8488,7 +9337,7 @@ export function ArticleEditorClient({
                             disabled={refreshingKnowledgeId === card.id}
                             className="border border-cinnabar px-3 py-2 text-xs text-cinnabar disabled:opacity-60"
                           >
-                            {refreshingKnowledgeId === card.id ? "刷新中..." : "刷新背景卡"}
+                            {refreshingKnowledgeId === card.id ? "刷新中…" : "刷新背景卡"}
                           </button>
                         ) : null}
                         <button
@@ -8602,7 +9451,9 @@ export function ArticleEditorClient({
             </div>
           )}
         </div>
+        ) : null}
 
+        {showLanguageGuardRail ? (
         <div className="border border-stone-300/40 bg-[#faf7f0] p-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="text-xs uppercase tracking-[0.24em] text-stone-500">即时语言守卫命中</div>
@@ -8659,7 +9510,9 @@ export function ArticleEditorClient({
             </div>
           )}
         </div>
+        ) : null}
 
+        {showVisualEngineRail ? (
         <div className="border border-dashed border-[#d0cfcb] bg-[#faf7f0] p-5">
           <div className="text-xs uppercase tracking-[0.24em] text-stone-500">视觉联想引擎</div>
           <div className="mt-3 text-sm leading-7 text-stone-700">{visualSuggestion}</div>
@@ -8672,7 +9525,7 @@ export function ArticleEditorClient({
                   disabled={savingImagePrompts}
                   className="border border-stone-300 bg-white px-3 py-2 text-xs text-stone-700 disabled:opacity-60"
                 >
-                  {savingImagePrompts ? "保存中..." : "保存为资产"}
+                  {savingImagePrompts ? "保存中…" : "保存为资产"}
                 </button>
               </div>
               {nodeVisualSuggestions.map((item) => (
@@ -8695,7 +9548,7 @@ export function ArticleEditorClient({
           {canUseCoverImageReference ? (
             <div className="mt-3 border border-dashed border-stone-300 bg-white px-4 py-4">
               <div className="text-xs uppercase tracking-[0.18em] text-stone-500">参考图垫图</div>
-              <input
+              <input aria-label="input control"
                 type="file"
                 accept="image/png,image/jpeg,image/webp"
                 onChange={handleCoverReferenceFileChange}
@@ -8703,7 +9556,7 @@ export function ArticleEditorClient({
               />
               <div className="mt-2 text-xs leading-6 text-stone-500">藏锋套餐可上传参考图，封面生成会尽量继承主体、构图或风格线索。</div>
               {coverImageReferenceDataUrl ? (
-                <img src={coverImageReferenceDataUrl} alt="封面图参考图" className="mt-3 aspect-[16/9] w-full border border-stone-300 object-cover" />
+                <img src={coverImageReferenceDataUrl} alt="封面图参考图" width={800} height={450} className="mt-3 aspect-[16/9] w-full border border-stone-300 object-cover" />
               ) : null}
             </div>
           ) : canGenerateCoverImage ? (
@@ -8736,7 +9589,7 @@ export function ArticleEditorClient({
               <div className="grid gap-3">
                 {coverImageCandidates.map((candidate) => (
                   <div key={candidate.id} className="border border-stone-300 bg-white p-3">
-                    <img src={candidate.imageUrl} alt={candidate.variantLabel} className="aspect-[16/9] w-full border border-stone-300 object-cover" />
+                    <img src={candidate.imageUrl} alt={candidate.variantLabel} width={800} height={450} className="aspect-[16/9] w-full border border-stone-300 object-cover" />
                     <div className="mt-3 flex items-center justify-between gap-3">
                       <div>
                         <div className="text-sm font-medium text-ink">{candidate.variantLabel}</div>
@@ -8749,7 +9602,7 @@ export function ArticleEditorClient({
                           candidate.isSelected ? "border border-stone-300 bg-white text-stone-400" : "bg-cinnabar text-white"
                         } disabled:opacity-60`}
                       >
-                        {candidate.isSelected ? "已选择" : selectingCoverCandidateId === candidate.id ? "入库中..." : "选这张入库"}
+                        {candidate.isSelected ? "已选择" : selectingCoverCandidateId === candidate.id ? "入库中…" : "选这张入库"}
                       </button>
                     </div>
                     <div className="mt-3 border border-stone-300 bg-[#faf7f0] px-3 py-3 text-xs leading-6 text-stone-600">
@@ -8762,7 +9615,7 @@ export function ArticleEditorClient({
           ) : null}
           {coverImage ? (
             <div className="mt-4 space-y-3">
-              <img src={coverImage.imageUrl} alt="AI 生成封面图" className="aspect-[16/9] w-full border border-stone-300 object-cover" />
+              <img src={coverImage.imageUrl} alt="AI 生成封面图" width={800} height={450} className="aspect-[16/9] w-full border border-stone-300 object-cover" />
               <div className="border border-stone-300 bg-white px-4 py-3 text-xs leading-6 text-stone-600">
                 <div className="font-medium text-stone-800">最近一次封面图提示词</div>
                 <div className="mt-2">{coverImage.prompt}</div>
@@ -8783,7 +9636,9 @@ export function ArticleEditorClient({
             </div>
           ) : null}
         </div>
+        ) : null}
 
+        {showDeliveryRail ? (
         <div className="border border-stone-300/40 bg-[#faf7f0] p-5">
           <div className="text-xs uppercase tracking-[0.24em] text-stone-500">导出</div>
           <div className="mt-3 grid gap-2">
@@ -8804,7 +9659,9 @@ export function ArticleEditorClient({
             </Link>
           </div>
         </div>
+        ) : null}
 
+        {showDeliveryRail ? (
         <div className="border border-stone-300/40 bg-[#faf7f0] p-5">
           <div className="text-xs uppercase tracking-[0.24em] text-stone-500">发布到公众号</div>
           {canShowWechatControls ? (
@@ -8812,7 +9669,7 @@ export function ArticleEditorClient({
               <div className="mt-3 border border-stone-300 bg-white px-4 py-4 text-sm leading-7 text-stone-700">
                 当前发布动作会把 Markdown 先渲染为微信兼容 HTML，再按所选模板推入公众号草稿箱。
               </div>
-              <select value={wechatTemplateId ?? ""} onChange={(event) => setWechatTemplateId(event.target.value || null)} className="mt-3 w-full border border-stone-300 bg-white px-4 py-3 text-sm">
+              <select aria-label="select control" value={wechatTemplateId ?? ""} onChange={(event) => setWechatTemplateId(event.target.value || null)} className="mt-3 w-full border border-stone-300 bg-white px-4 py-3 text-sm">
                 <option value="">选择微信模板（默认）</option>
                 {templates.map((template) => (
                   <option key={`${template.id}-${template.version}`} value={template.id}>
@@ -8820,7 +9677,7 @@ export function ArticleEditorClient({
                   </option>
                 ))}
               </select>
-              <select value={selectedConnectionId} onChange={(event) => setSelectedConnectionId(event.target.value)} className="mt-3 w-full border border-stone-300 bg-white px-4 py-3 text-sm">
+              <select aria-label="select control" value={selectedConnectionId} onChange={(event) => setSelectedConnectionId(event.target.value)} className="mt-3 w-full border border-stone-300 bg-white px-4 py-3 text-sm">
                 <option value="">选择公众号连接</option>
                 {wechatConnections.map((connection) => (
                   <option key={connection.id} value={connection.id}>{connection.accountName || `连接 ${connection.id}`}{connection.isDefault ? " · 默认" : ""}</option>
@@ -8839,7 +9696,7 @@ export function ArticleEditorClient({
                   <div className="text-xs uppercase tracking-[0.18em] text-stone-500">
                     {selectedTemplate.meta || "模板"} · {selectedTemplate.version} · {formatTemplateAssetOwner(selectedTemplate)}
                   </div>
-                  <div className="mt-2 font-serifCn text-2xl text-ink">{selectedTemplate.name}</div>
+                  <div className="mt-2 font-serifCn text-2xl text-ink text-balance">{selectedTemplate.name}</div>
                   <div className="mt-2 text-sm leading-7 text-stone-700">{selectedTemplate.description || "当前模板未填写说明，但会参与微信 HTML 渲染。"}</div>
                   <div className="mt-2 text-xs leading-6 text-stone-500">来源：{formatTemplateSourceSummary(selectedTemplate)}</div>
                   <div className="mt-3 flex flex-wrap gap-2">
@@ -8858,7 +9715,7 @@ export function ArticleEditorClient({
               {selectedConnection ? (
                 <div className="mt-3 border border-stone-300 bg-white px-4 py-4 text-sm leading-7 text-stone-700">
                   <div className="text-xs uppercase tracking-[0.18em] text-stone-500">目标公众号</div>
-                  <div className="mt-2 font-serifCn text-2xl text-ink">{selectedConnection.accountName || `连接 ${selectedConnection.id}`}</div>
+                  <div className="mt-2 font-serifCn text-2xl text-ink text-balance">{selectedConnection.accountName || `连接 ${selectedConnection.id}`}</div>
                   <div className="mt-2">
                     状态：{formatConnectionStatus(selectedConnection.status)}
                     {selectedConnection.isDefault ? " · 默认连接" : ""}
@@ -8888,7 +9745,7 @@ export function ArticleEditorClient({
                       disabled={publishing}
                       className="border border-cinnabar bg-white px-4 py-2 text-sm text-cinnabar disabled:opacity-60"
                     >
-                      {publishing ? "恢复中..." : "恢复继续发布"}
+                      {publishing ? "恢复中…" : "恢复继续发布"}
                     </button>
                     <button
                       onClick={() => {
@@ -8914,7 +9771,7 @@ export function ArticleEditorClient({
                     disabled={loadingPublishPreview}
                     className="border border-stone-300 bg-white px-4 py-2 text-sm text-stone-700 disabled:opacity-60"
                   >
-                    {loadingPublishPreview ? "生成中..." : "生成最终预览"}
+                    {loadingPublishPreview ? "生成中…" : "生成最终预览"}
                   </button>
                 </div>
                 {hasUnsavedWechatRenderInputs ? (
@@ -8963,27 +9820,27 @@ export function ArticleEditorClient({
                     <div className="grid gap-3 md:grid-cols-6">
                       <div className="border border-stone-300 bg-[#faf7f0] px-3 py-3 text-sm text-stone-700">
                         <div className="text-xs uppercase tracking-[0.18em] text-stone-500">研究拦截</div>
-                        <div className="mt-2 font-serifCn text-2xl text-[#8f3136]">{researchBlockedCount}</div>
+                        <div className="mt-2 font-serifCn text-2xl text-[#8f3136] text-balance">{researchBlockedCount}</div>
                       </div>
                       <div className="border border-stone-300 bg-[#faf7f0] px-3 py-3 text-sm text-stone-700">
                         <div className="text-xs uppercase tracking-[0.18em] text-stone-500">研究待补</div>
-                        <div className="mt-2 font-serifCn text-2xl text-[#7d6430]">{researchWarningCount}</div>
+                        <div className="mt-2 font-serifCn text-2xl text-[#7d6430] text-balance">{researchWarningCount}</div>
                       </div>
                       <div className="border border-stone-300 bg-[#faf7f0] px-3 py-3 text-sm text-stone-700">
                         <div className="text-xs uppercase tracking-[0.18em] text-stone-500">其他拦截</div>
-                        <div className="mt-2 font-serifCn text-2xl text-ink">{otherBlockedCount}</div>
+                        <div className="mt-2 font-serifCn text-2xl text-ink text-balance">{otherBlockedCount}</div>
                       </div>
                       <div className="border border-stone-300 bg-[#faf7f0] px-3 py-3 text-sm text-stone-700">
                         <div className="text-xs uppercase tracking-[0.18em] text-stone-500">其他警告</div>
-                        <div className="mt-2 font-serifCn text-2xl text-ink">{otherWarningCount}</div>
+                        <div className="mt-2 font-serifCn text-2xl text-ink text-balance">{otherWarningCount}</div>
                       </div>
                       <div className="border border-stone-300 bg-[#faf7f0] px-3 py-3 text-sm text-stone-700">
                         <div className="text-xs uppercase tracking-[0.18em] text-stone-500">AI 噪声</div>
-                        <div className="mt-2 font-serifCn text-2xl text-ink">{publishPreview.publishGuard.aiNoise.score}</div>
+                        <div className="mt-2 font-serifCn text-2xl text-ink text-balance">{publishPreview.publishGuard.aiNoise.score}</div>
                       </div>
                       <div className="border border-stone-300 bg-[#faf7f0] px-3 py-3 text-sm text-stone-700">
                         <div className="text-xs uppercase tracking-[0.18em] text-stone-500">素材挂载</div>
-                        <div className="mt-2 font-serifCn text-2xl text-ink">{publishPreview.publishGuard.materialReadiness.attachedFragmentCount}</div>
+                        <div className="mt-2 font-serifCn text-2xl text-ink text-balance">{publishPreview.publishGuard.materialReadiness.attachedFragmentCount}</div>
                       </div>
                     </div>
                     <div className={`border px-3 py-3 text-sm leading-7 ${
@@ -9083,15 +9940,15 @@ export function ArticleEditorClient({
                             <div className="grid min-w-[220px] gap-2 sm:grid-cols-3">
                               <div className="border border-stone-300 bg-white px-3 py-3 text-xs text-stone-700">
                                 <div className="uppercase tracking-[0.14em] text-stone-500">总项</div>
-                                <div className="mt-2 font-serifCn text-2xl text-ink">{researchGuardChecks.length}</div>
+                                <div className="mt-2 font-serifCn text-2xl text-ink text-balance">{researchGuardChecks.length}</div>
                               </div>
                               <div className="border border-stone-300 bg-white px-3 py-3 text-xs text-stone-700">
                                 <div className="uppercase tracking-[0.14em] text-stone-500">拦截</div>
-                                <div className="mt-2 font-serifCn text-2xl text-[#8f3136]">{researchBlockedCount}</div>
+                                <div className="mt-2 font-serifCn text-2xl text-[#8f3136] text-balance">{researchBlockedCount}</div>
                               </div>
                               <div className="border border-stone-300 bg-white px-3 py-3 text-xs text-stone-700">
                                 <div className="uppercase tracking-[0.14em] text-stone-500">待补</div>
-                                <div className="mt-2 font-serifCn text-2xl text-[#7d6430]">{researchWarningCount}</div>
+                                <div className="mt-2 font-serifCn text-2xl text-[#7d6430] text-balance">{researchWarningCount}</div>
                               </div>
                             </div>
                           </div>
@@ -9182,7 +10039,7 @@ export function ArticleEditorClient({
                             disabled={retryingPublish || !selectedConnectionId}
                             className="mt-3 border border-cinnabar bg-white px-4 py-2 text-sm text-cinnabar disabled:opacity-60"
                           >
-                            {retryingPublish ? "重试中..." : "按最近失败上下文重试"}
+                            {retryingPublish ? "重试中…" : "按最近失败上下文重试"}
                           </button>
                         ) : null}
                       </div>
@@ -9228,19 +10085,24 @@ export function ArticleEditorClient({
                           disabled={refreshingPublishPreview}
                           className="border border-cinnabar bg-white px-4 py-2 text-sm text-cinnabar disabled:opacity-60"
                         >
-                          {refreshingPublishPreview ? "刷新中..." : "刷新为最终发布效果"}
+                          {refreshingPublishPreview ? "刷新中…" : "刷新为最终发布效果"}
                         </button>
                       ) : null}
                     </div>
-                    <div className="max-h-[280px] overflow-auto border border-stone-300 bg-[#fffdfa] p-4">
-                      <div dangerouslySetInnerHTML={{ __html: publishPreview.finalHtml || "<p>暂无预览</p>" }} />
+                    <div className="border border-stone-300 bg-[#fffdfa]">
+                      <WechatNativePreview
+                        html={publishPreview.finalHtml || ""}
+                        title={publishPreview.title || title}
+                        authorName={selectedSeries?.personaName || undefined}
+                        accountName={publishPreview.publishGuard.connectionHealth.connectionName || undefined}
+                      />
                     </div>
                   </div>
                   );
                 })() : null}
               </div>
               <button onClick={publish} disabled={publishing} className="mt-4 w-full bg-cinnabar px-4 py-3 text-sm text-white disabled:opacity-60">
-                {publishing ? "推送中..." : "推送到微信草稿箱"}
+                {publishing ? "推送中…" : "推送到微信草稿箱"}
               </button>
               <Link href="/settings" className="mt-3 block border border-stone-300 bg-white px-4 py-3 text-center text-sm text-stone-700">
                 去设置页管理公众号连接
@@ -9290,7 +10152,7 @@ export function ArticleEditorClient({
                       disabled={retryingPublish || !selectedConnectionId}
                       className="mt-3 border border-cinnabar bg-white px-4 py-2 text-sm text-cinnabar disabled:opacity-60"
                     >
-                      {retryingPublish ? "重试中..." : "直接重试这次发布"}
+                      {retryingPublish ? "重试中…" : "直接重试这次发布"}
                     </button>
                   ) : null}
                 </div>
@@ -9321,47 +10183,56 @@ export function ArticleEditorClient({
             )}
           </div>
         </div>
+        ) : null}
 
-        <div className="border border-stone-300/40 bg-[#1a1a1a] p-5 text-stone-100">
-          <div className="text-xs uppercase tracking-[0.24em] text-stone-500">差异结果</div>
+        {isPolishPhase ? (
+        <div className="border border-[#dfd2b0] bg-[#fffcf5] p-5 shadow-ink">
+          <div className="text-xs uppercase tracking-[0.24em] text-[#8c6b4b]">手稿校阅与比对</div>
           {diffState ? (
             <div className="mt-4 space-y-3">
-              <div className="text-sm text-stone-300">
+              <div className="text-sm font-medium text-[#584140]">
                 对比快照：{diffState.snapshotNote || "未命名快照"} · {new Date(diffState.createdAt).toLocaleString("zh-CN")}
               </div>
-              <div className="text-xs text-stone-500">
-                +{diffState.summary.added} / -{diffState.summary.removed} / ={diffState.summary.unchanged}
+              <div className="flex gap-4 text-xs font-medium tracking-wide">
+                <span className="text-emerald-700">+{diffState.summary.added} 增补</span>
+                <span className="text-[#a73032]">-{diffState.summary.removed} 删减</span>
+                <span className="text-[#8c6b4b]">={diffState.summary.unchanged} 留存</span>
               </div>
-              <div className="max-h-[260px] space-y-1 overflow-y-auto border border-stone-800 bg-[#101011] p-3 text-xs leading-6">
+              <div className="max-h-[360px] overflow-y-auto border-t border-dashed border-[#dfd2b0] bg-[linear-gradient(transparent_31px,rgba(140,107,75,0.1)_32px)] bg-[length:100%_32px] pt-4 font-serifCn text-[15px] leading-8 text-[#2c2a26]">
                 {diffState.lines.map((line, index) => (
-                  <div
+                  <span
                     key={`${line.type}-${index}`}
                     className={
                       line.type === "added"
-                        ? "bg-emerald-950/50 px-2 text-emerald-300"
+                        ? "bg-emerald-50 text-emerald-800 underline decoration-emerald-300/60 decoration-wavy decoration-1 underline-offset-4"
                         : line.type === "removed"
-                          ? "bg-red-950/40 px-2 text-red-300"
-                          : "px-2 text-stone-400"
+                          ? "text-[#a73032] opacity-70 line-through decoration-[#a73032]/80 decoration-2"
+                          : "text-[#2c2a26]"
                     }
                   >
-                    {line.type === "added" ? "+" : line.type === "removed" ? "-" : " "} {line.content || " "}
-                  </div>
+                    {line.content}
+                    {line.type !== "unchanged" && line.content ? " " : ""}
+                    {(!line.content || line.content.trim() === "") && <br />}
+                  </span>
                 ))}
               </div>
             </div>
           ) : (
-            <div className="mt-4 text-sm leading-7 text-stone-400">从左侧快照列表选择一个版本，即可查看当前稿件与历史快照的逐行差异。</div>
+            <div className="mt-4 text-sm leading-7 text-[#8c6b4b]">
+              从左侧「快照管理」列表中选择一个历史版本，即可像翻阅纸质手稿一般，查看它的批注与修改痕迹。
+            </div>
           )}
         </div>
+        ) : null}
       </aside>
 
       {showWechatConnectModal ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 px-4 py-8">
-          <div className="max-h-[90vh] w-full max-w-[560px] overflow-auto border border-stone-300 bg-[#fffdfa] p-6 shadow-ink">
+          <div className="max-h-[90vh] w-full max-w-[560px] overflow-auto overscroll-contain border border-stone-300 bg-[#fffdfa] p-6 shadow-ink">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <div className="text-xs uppercase tracking-[0.24em] text-stone-500">公众号快速配置</div>
-                <div className="mt-2 font-serifCn text-3xl text-ink">
+                <div className="mt-2 font-serifCn text-3xl text-ink text-balance">
                   {continuePublishAfterWechatConnect ? "补录凭证后继续发布" : "新增公众号连接"}
                 </div>
                 <div className="mt-3 text-sm leading-7 text-stone-700">
@@ -9381,25 +10252,25 @@ export function ArticleEditorClient({
               </button>
             </div>
             <form onSubmit={submitWechatConnectionFromEditor} className="mt-5 space-y-3">
-              <input
+              <input aria-label="公众号名称"
                 value={wechatConnectAccountName}
                 onChange={(event) => setWechatConnectAccountName(event.target.value)}
                 placeholder="公众号名称"
                 className="w-full border border-stone-300 bg-white px-4 py-3 text-sm"
               />
-              <input
+              <input aria-label="原始 ID"
                 value={wechatConnectOriginalId}
                 onChange={(event) => setWechatConnectOriginalId(event.target.value)}
                 placeholder="原始 ID"
                 className="w-full border border-stone-300 bg-white px-4 py-3 text-sm"
               />
-              <input
+              <input aria-label="公众号 AppID"
                 value={wechatConnectAppId}
                 onChange={(event) => setWechatConnectAppId(event.target.value)}
                   placeholder="公众号 AppID"
                   className="w-full border border-stone-300 bg-white px-4 py-3 text-sm"
                 />
-              <input
+              <input aria-label="公众号 AppSecret"
                 value={wechatConnectAppSecret}
                 onChange={(event) => setWechatConnectAppSecret(event.target.value)}
                 placeholder="公众号 AppSecret"
@@ -9407,7 +10278,7 @@ export function ArticleEditorClient({
                 className="w-full border border-stone-300 bg-white px-4 py-3 text-sm"
               />
               <label className="flex items-center gap-3 border border-stone-300 bg-white px-4 py-3 text-sm text-stone-700">
-                <input
+                <input aria-label="input control"
                   type="checkbox"
                   checked={wechatConnectIsDefault}
                   onChange={(event) => setWechatConnectIsDefault(event.target.checked)}
@@ -9439,8 +10310,8 @@ export function ArticleEditorClient({
                 >
                   {wechatConnectSubmitting
                     ? continuePublishAfterWechatConnect
-                      ? "校验并续发中..."
-                      : "校验中..."
+                      ? "校验并续发中…"
+                      : "校验中…"
                     : continuePublishAfterWechatConnect
                       ? "保存并继续发布"
                       : "保存公众号连接"}
@@ -9449,7 +10320,7 @@ export function ArticleEditorClient({
             </form>
           </div>
         </div>
-      ) : null}
+        ) : null}
     </div>
   );
 }

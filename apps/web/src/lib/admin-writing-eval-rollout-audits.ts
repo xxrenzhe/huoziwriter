@@ -15,6 +15,7 @@ export type NormalizedWritingEvalRolloutAuditItem = {
   feedbackCount: number | null;
   uniqueUsers: number | null;
   totalHitCount: number | null;
+  deltaTotalScore: number | null;
   observedViralScore: number | null;
   openRate: number | null;
   readCompletionRate: number | null;
@@ -72,6 +73,7 @@ export function normalizeWritingEvalRolloutAuditLog(item: AdminAuditLogItem): No
     feedbackCount: getNumber(signals.feedbackCount),
     uniqueUsers: getNumber(signals.uniqueUsers),
     totalHitCount: getNumber(signals.totalHitCount),
+    deltaTotalScore: getNumber(signals.deltaTotalScore),
     observedViralScore: getNumber(signals.observedViralScore),
     openRate: getNumber(signals.openRate),
     readCompletionRate: getNumber(signals.readCompletionRate),

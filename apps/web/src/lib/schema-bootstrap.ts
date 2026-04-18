@@ -230,6 +230,32 @@ async function normalizeCanonicalAdminData() {
   );
 }
 
+async function backfillWritingEvalRunSourceSchedules() {
+  if (!(await hasTable("writing_optimization_runs")) || !(await hasColumn("writing_optimization_runs", "source_schedule_id"))) {
+    return;
+  }
+  const db = getDatabase();
+  const rows = await db.query<{ id: number; summary: string | null }>(
+    `SELECT id, summary
+     FROM writing_optimization_runs
+     WHERE source_schedule_id IS NULL
+       AND summary IS NOT NULL
+       AND TRIM(summary) <> ''`,
+  );
+  for (const row of rows) {
+    const matched = String(row.summary || "").match(/(?:^|\n)schedule:[^#\n]*#(\d+)(?:\n|$)/);
+    if (!matched) continue;
+    const scheduleId = Number(matched[1]);
+    if (!Number.isInteger(scheduleId) || scheduleId <= 0) continue;
+    await db.exec(
+      `UPDATE writing_optimization_runs
+       SET source_schedule_id = ?
+       WHERE id = ? AND source_schedule_id IS NULL`,
+      [scheduleId, row.id],
+    );
+  }
+}
+
 async function ensureTopicSourceScopedUniqueness() {
   const db = getDatabase();
 
@@ -309,6 +335,18 @@ const WRITING_EVAL_SCORING_PROFILE_SEEDS = [
       },
       penalties: {
         aiNoiseMultiplier: 0.6,
+        historicalSimilarityMultiplier: 0.35,
+        judgeDisagreementMultiplier: 0.45,
+      },
+      judge: {
+        enabled: 1,
+        ruleWeight: 0.65,
+        judgeWeight: 0.35,
+        temperature: 0.2,
+        reviewers: [
+          { label: "strict", model: "", temperature: 0.1, weight: 1 },
+          { label: "market", model: "", temperature: 0.35, weight: 1 },
+        ],
       },
     },
   },
@@ -340,6 +378,18 @@ const WRITING_EVAL_SCORING_PROFILE_SEEDS = [
       },
       penalties: {
         aiNoiseMultiplier: 0.65,
+        historicalSimilarityMultiplier: 0.3,
+        judgeDisagreementMultiplier: 0.4,
+      },
+      judge: {
+        enabled: 1,
+        ruleWeight: 0.6,
+        judgeWeight: 0.4,
+        temperature: 0.25,
+        reviewers: [
+          { label: "strict", model: "", temperature: 0.1, weight: 1 },
+          { label: "market", model: "", temperature: 0.4, weight: 1 },
+        ],
       },
     },
   },
@@ -371,6 +421,18 @@ const WRITING_EVAL_SCORING_PROFILE_SEEDS = [
       },
       penalties: {
         aiNoiseMultiplier: 0.7,
+        historicalSimilarityMultiplier: 0.45,
+        judgeDisagreementMultiplier: 0.55,
+      },
+      judge: {
+        enabled: 1,
+        ruleWeight: 0.7,
+        judgeWeight: 0.3,
+        temperature: 0.15,
+        reviewers: [
+          { label: "strict", model: "", temperature: 0.1, weight: 1.1 },
+          { label: "market", model: "", temperature: 0.25, weight: 0.9 },
+        ],
       },
     },
   },
@@ -1292,6 +1354,10 @@ export async function ensureExtendedProductSchema() {
       task_code TEXT NOT NULL,
       task_type TEXT NOT NULL,
       topic_title TEXT NOT NULL,
+      source_type TEXT NOT NULL DEFAULT 'manual',
+      source_ref TEXT,
+      source_label TEXT,
+      source_url TEXT,
       input_payload_json TEXT NOT NULL,
       expected_constraints_json TEXT NOT NULL DEFAULT '{}',
       viral_targets_json TEXT NOT NULL DEFAULT '{}',
@@ -1308,6 +1374,7 @@ export async function ensureExtendedProductSchema() {
       id ${getDatabase().type === "postgres" ? "BIGSERIAL" : "INTEGER"} PRIMARY KEY ${getDatabase().type === "postgres" ? "" : "AUTOINCREMENT"},
       run_code TEXT NOT NULL UNIQUE,
       dataset_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"} NOT NULL,
+      source_schedule_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"},
       base_version_type TEXT NOT NULL,
       base_version_ref TEXT NOT NULL,
       candidate_version_type TEXT NOT NULL,
@@ -1878,6 +1945,10 @@ export async function ensureExtendedProductSchema() {
   await ensureColumn("layout_template_versions", "is_active", `${getDatabase().type === "postgres" ? "BOOLEAN" : "INTEGER"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "TRUE" : "1"}`);
   await ensureColumn("layout_template_versions", "created_at", `${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "NOW()" : "(datetime('now'))"}`);
   await ensureColumn("layout_template_versions", "updated_at", `${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "NOW()" : "(datetime('now'))"}`);
+  await ensureColumn("writing_eval_cases", "source_type", "TEXT NOT NULL DEFAULT 'manual'");
+  await ensureColumn("writing_eval_cases", "source_ref", "TEXT");
+  await ensureColumn("writing_eval_cases", "source_label", "TEXT");
+  await ensureColumn("writing_eval_cases", "source_url", "TEXT");
   await ensureColumn("writing_eval_cases", "stage_artifact_payloads_json", "TEXT NOT NULL DEFAULT '{}'");
   await ensureColumn("cover_images", "storage_provider", "TEXT");
   await ensureColumn("cover_images", "article_id", getDatabase().type === "postgres" ? "BIGINT" : "INTEGER");
@@ -1925,6 +1996,7 @@ export async function ensureExtendedProductSchema() {
   await ensureColumn("writing_optimization_runs", "decision_mode", "TEXT NOT NULL DEFAULT 'manual_review'");
   await ensureColumn("writing_optimization_runs", "resolution_status", "TEXT NOT NULL DEFAULT 'pending'");
   await ensureColumn("writing_optimization_runs", "resolved_at", `${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"}`);
+  await ensureColumn("writing_optimization_runs", "source_schedule_id", getDatabase().type === "postgres" ? "BIGINT" : "INTEGER");
   await ensureColumn("writing_eval_run_schedules", "experiment_mode", "TEXT NOT NULL DEFAULT 'full_article'");
   await ensureColumn("writing_eval_run_schedules", "agent_strategy", "TEXT NOT NULL DEFAULT 'default'");
   await ensureColumn("writing_eval_run_schedules", "decision_mode", "TEXT NOT NULL DEFAULT 'manual_review'");
@@ -1937,9 +2009,37 @@ export async function ensureExtendedProductSchema() {
     [LEGACY_AUDIT_LOG_STAFF_SCOPE_KEY, CANONICAL_OBSERVE_SCOPE_KEY],
   ]);
   await normalizeCanonicalAdminData();
+  await backfillWritingEvalRunSourceSchedules();
+  await execAll([
+    `UPDATE writing_eval_cases
+     SET source_type = 'article',
+         source_ref = COALESCE(source_ref, 'article:' || substr(task_code, 9)),
+         source_label = COALESCE(source_label, topic_title)
+     WHERE task_code LIKE 'article-%'
+       AND (source_type IS NULL OR source_type = '' OR source_type = 'manual')`,
+    `UPDATE writing_eval_cases
+     SET source_type = 'knowledge_card',
+         source_ref = COALESCE(source_ref, 'knowledge_card:' || substr(task_code, 16)),
+         source_label = COALESCE(source_label, topic_title)
+     WHERE task_code LIKE 'knowledge-card-%'
+       AND (source_type IS NULL OR source_type = '' OR source_type = 'manual')`,
+    `UPDATE writing_eval_cases
+     SET source_type = 'topic_item',
+         source_ref = COALESCE(source_ref, 'topic_item:' || substr(task_code, 12)),
+         source_label = COALESCE(source_label, topic_title)
+     WHERE task_code LIKE 'topic-item-%'
+       AND (source_type IS NULL OR source_type = '' OR source_type = 'manual')`,
+    `UPDATE writing_eval_cases
+     SET source_type = 'fragment',
+         source_ref = COALESCE(source_ref, 'fragment:' || substr(task_code, 10)),
+         source_label = COALESCE(source_label, topic_title)
+     WHERE task_code LIKE 'fragment-%'
+       AND (source_type IS NULL OR source_type = '' OR source_type = 'manual')`,
+  ]);
   await execAll([
     "CREATE INDEX IF NOT EXISTS idx_writing_eval_datasets_status_updated_at ON writing_eval_datasets(status, updated_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_writing_eval_cases_dataset_enabled_difficulty ON writing_eval_cases(dataset_id, is_enabled, difficulty_level)",
+    "CREATE INDEX IF NOT EXISTS idx_writing_eval_cases_dataset_source_type ON writing_eval_cases(dataset_id, source_type, updated_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_prompt_rollout_observations_prompt_version_last_hit ON prompt_rollout_observations(prompt_id, version, last_hit_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_prompt_rollout_observations_reason_last_hit ON prompt_rollout_observations(resolution_reason, last_hit_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_prompt_rollout_daily_metrics_prompt_version_date ON prompt_rollout_daily_metrics(prompt_id, version, metric_date DESC)",
@@ -1949,6 +2049,7 @@ export async function ensureExtendedProductSchema() {
     "CREATE INDEX IF NOT EXISTS idx_writing_asset_rollout_metrics_type_ref_date ON writing_asset_rollout_daily_metrics(asset_type, asset_ref, metric_date DESC)",
     "CREATE INDEX IF NOT EXISTS idx_writing_optimization_runs_status_created_at ON writing_optimization_runs(status, created_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_writing_optimization_runs_dataset_created_at ON writing_optimization_runs(dataset_id, created_at DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_writing_optimization_runs_source_schedule_created_at ON writing_optimization_runs(source_schedule_id, created_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_writing_eval_run_schedules_enabled_priority_next_run ON writing_eval_run_schedules(is_enabled, priority DESC, next_run_at ASC)",
     "CREATE INDEX IF NOT EXISTS idx_writing_eval_run_schedules_dataset_updated_at ON writing_eval_run_schedules(dataset_id, updated_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_writing_eval_run_schedules_trigger_strategy_priority_next_run ON writing_eval_run_schedules(trigger_mode, agent_strategy, priority DESC, next_run_at ASC)",

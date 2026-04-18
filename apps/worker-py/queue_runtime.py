@@ -3,10 +3,12 @@ from __future__ import annotations
 import base64
 import html
 import json
+import math
 import mimetypes
 import os
 import re
 import sqlite3
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -36,6 +38,8 @@ TOPIC_SYNC_TRIGGER_SLOTS_BEIJING = {
     (18, 15),
     (18, 45),
 }
+DEFAULT_WRITING_EVAL_CASE_CONCURRENCY = 3
+MAX_WRITING_EVAL_CASE_CONCURRENCY = 6
 
 
 def now_iso() -> str:
@@ -74,6 +78,15 @@ def get_current_topic_sync_window(now_utc: datetime) -> datetime | None:
     return slot_start.astimezone(timezone.utc)
 
 
+def get_writing_eval_case_concurrency() -> int:
+    raw = os.environ.get("WRITING_EVAL_CASE_CONCURRENCY") or str(DEFAULT_WRITING_EVAL_CASE_CONCURRENCY)
+    try:
+        value = int(str(raw).strip())
+    except Exception:
+        value = DEFAULT_WRITING_EVAL_CASE_CONCURRENCY
+    return max(1, min(MAX_WRITING_EVAL_CASE_CONCURRENCY, value))
+
+
 TOPIC_LINK_PATTERN = re.compile(r"""<a[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)</a>""", re.IGNORECASE)
 TOPIC_TAG_PATTERN = re.compile(r"<[^>]+>")
 TOPIC_SKIP_PATTERN = re.compile(r"登录|注册|下载|APP|关于我们|联系我们|广告|隐私|版权|更多|专题|视频|直播", re.IGNORECASE)
@@ -88,6 +101,7 @@ WRITING_TIMELINESS_CUES = ["今天", "刚刚", "最新", "本周", "这两天", 
 WRITING_SHAREABILITY_CUES = ["记住", "一句话", "最重要", "真正的问题", "别忽略", "值得转发", "结论是", "核心判断"]
 WRITING_FACT_UNITS = ["年", "月", "日", "%", "亿元", "万美元", "万人", "倍", "次", "小时", "分钟"]
 WRITING_RISK_CUES = ["据传", "内部人士", "有人说", "一定会", "绝对", "毫无疑问", "普遍认为"]
+WRITING_SERIES_CONTINUITY_CUES = ["继续", "这次", "上次", "上一轮", "之前", "后来", "延续", "再次", "仍然", "一直", "过去", "回到"]
 SUPPORTED_WRITING_SCENES = {
     "articleWrite",
     "deepWrite",
@@ -121,12 +135,28 @@ DEFAULT_WRITING_EVAL_SCORING_PROFILE: dict[str, Any] = {
     },
     "penalties": {
         "aiNoiseMultiplier": 0.6,
+        "historicalSimilarityMultiplier": 0.35,
+        "judgeDisagreementMultiplier": 0.45,
     },
     "judge": {
         "enabled": 1.0,
         "ruleWeight": 0.65,
         "judgeWeight": 0.35,
         "temperature": 0.2,
+        "reviewers": [
+            {
+                "label": "strict",
+                "model": "",
+                "temperature": 0.1,
+                "weight": 1.0,
+            },
+            {
+                "label": "market",
+                "model": "",
+                "temperature": 0.35,
+                "weight": 1.0,
+            },
+        ],
     },
 }
 DEFAULT_WRITING_EVAL_LAYOUT_STRATEGY: dict[str, Any] = {
@@ -504,9 +534,17 @@ def load_prompt_version(connection: RuntimeConnection, prompt_id: str, version: 
 def resolve_writing_eval_prompt(connection: RuntimeConnection, version_type: str, version_ref: str) -> dict[str, str]:
     normalized_type = version_type.strip()
     normalized_ref = version_ref.strip()
-    if normalized_type == "prompt_version" and "@" in normalized_ref:
+    if normalized_type in {"prompt_version", "fact_check", "title_template", "lead_template"} and "@" in normalized_ref:
         prompt_id, version = normalized_ref.split("@", 1)
-        prompt = load_prompt_version(connection, prompt_id.strip(), version.strip())
+        prompt_id = prompt_id.strip()
+        version = version.strip()
+        if normalized_type == "fact_check" and prompt_id != "fact_check":
+            raise RuntimeError(f"fact_check prompt ref invalid: {normalized_ref}")
+        if normalized_type == "title_template" and prompt_id != "outline_planning":
+            raise RuntimeError(f"title_template prompt ref invalid: {normalized_ref}")
+        if normalized_type == "lead_template" and prompt_id != "prose_polish":
+            raise RuntimeError(f"lead_template prompt ref invalid: {normalized_ref}")
+        prompt = load_prompt_version(connection, prompt_id, version)
         if prompt is None:
             raise RuntimeError(f"prompt version not found: {normalized_ref}")
         function_name = str(prompt.get("function_name") or "").strip()
@@ -514,8 +552,8 @@ def resolve_writing_eval_prompt(connection: RuntimeConnection, version_type: str
         prompt_content = str(prompt.get("prompt_content") or "").strip() or DEFAULT_WRITING_EVAL_PROMPT
         return {
             "label": normalized_ref,
-            "promptId": prompt_id.strip(),
-            "version": version.strip(),
+            "promptId": prompt_id,
+            "version": version,
             "sceneCode": scene_code,
             "promptContent": prompt_content,
         }
@@ -1292,12 +1330,169 @@ def keyword_overlap_ratio(keywords: list[str], content: str) -> float:
     return hits / len(cleaned)
 
 
+def extract_signal_keywords(content: str, limit: int = 12) -> list[str]:
+    keywords: list[str] = []
+    seen: set[str] = set()
+    for item in re.findall(r"[\u4e00-\u9fffA-Za-z0-9]{2,12}", content.lower()):
+        token = item.strip()
+        if len(token) < 2 or token in seen:
+            continue
+        seen.add(token)
+        keywords.append(token)
+        if len(keywords) >= limit:
+            break
+    return keywords
+
+
+def normalize_similarity_text(content: str) -> str:
+    return "".join(re.findall(r"[\u4e00-\u9fffA-Za-z0-9]+", content.lower()))
+
+
+def char_ngram_similarity(left: str, right: str, size: int = 6) -> float:
+    normalized_left = normalize_similarity_text(left)
+    normalized_right = normalize_similarity_text(right)
+    if not normalized_left or not normalized_right:
+        return 0.0
+    if normalized_left == normalized_right:
+        return 1.0
+
+    def build_shingles(text: str) -> set[str]:
+        if len(text) <= size:
+            return {text}
+        return {text[index : index + size] for index in range(len(text) - size + 1)}
+
+    left_shingles = build_shingles(normalized_left)
+    right_shingles = build_shingles(normalized_right)
+    union = left_shingles | right_shingles
+    if not union:
+        return 0.0
+    return len(left_shingles & right_shingles) / len(union)
+
+
+def paragraph_emotion_intensity(content: str) -> float:
+    text = markdown_to_plain_text(content)
+    if not text:
+        return 0.0
+    punctuation_hits = sum(text.count(mark) for mark in ["?", "？", "!", "！"])
+    intensity = (
+        count_phrase_hits(text, WRITING_EMOTION_CUES) * 2.8
+        + count_phrase_hits(text, WRITING_CONFLICT_CUES) * 1.8
+        + count_phrase_hits(text, WRITING_VALUE_CUES) * 1.2
+        + count_phrase_hits(text, WRITING_NOVELTY_CUES) * 1.4
+        + min(3, punctuation_hits) * 0.6
+    )
+    return round(min(10.0, float(intensity)), 3)
+
+
+def analyze_paragraph_emotion_trajectory(paragraphs: list[str], target_emotion: str) -> dict[str, Any]:
+    cleaned_paragraphs = [markdown_to_plain_text(item) for item in paragraphs if markdown_to_plain_text(item)]
+    if not cleaned_paragraphs:
+        return {
+            "paragraphCount": 0,
+            "levels": [],
+            "span": 0.0,
+            "turnCount": 0,
+            "progression": 0.0,
+            "peakIndex": -1,
+            "peakPosition": 0.0,
+            "targetCoverage": 0.0,
+            "trajectoryScore": 0.0,
+        }
+
+    levels = [paragraph_emotion_intensity(item) for item in cleaned_paragraphs]
+    span = max(levels) - min(levels) if levels else 0.0
+    turn_count = 0
+    previous_direction = 0
+    for previous_level, current_level in zip(levels, levels[1:]):
+        delta = current_level - previous_level
+        if abs(delta) < 0.8:
+            continue
+        current_direction = 1 if delta > 0 else -1
+        if previous_direction and current_direction != previous_direction:
+            turn_count += 1
+        previous_direction = current_direction
+    peak_index = max(range(len(levels)), key=lambda index: levels[index]) if levels else -1
+    peak_position = ((peak_index + 1) / len(levels)) if peak_index >= 0 and levels else 0.0
+    progression = levels[-1] - levels[0] if len(levels) >= 2 else levels[0]
+    target_coverage = keyword_overlap_ratio(extract_signal_keywords(target_emotion, 8), "\n".join(cleaned_paragraphs))
+    trajectory_score = 0.0
+    if len(levels) >= 2:
+        trajectory_score += min(0.35, span / 5.0 * 0.35)
+        trajectory_score += min(0.2, turn_count * 0.1)
+        if progression >= 0.8:
+            trajectory_score += 0.15
+        if 0 < peak_index < len(levels) - 1:
+            trajectory_score += 0.15
+        if peak_position >= 0.5:
+            trajectory_score += 0.05
+    trajectory_score += min(0.1, target_coverage * 0.1)
+    return {
+        "paragraphCount": len(levels),
+        "levels": levels,
+        "span": round(span, 3),
+        "turnCount": turn_count,
+        "progression": round(progression, 3),
+        "peakIndex": peak_index,
+        "peakPosition": round(peak_position, 3),
+        "targetCoverage": round(target_coverage, 3),
+        "trajectoryScore": round(min(1.0, trajectory_score), 3),
+    }
+
+
+def analyze_series_consistency(task_type: str, series_name: str, history_references: list[str], content: str) -> dict[str, Any]:
+    has_series_context = bool(series_name) or task_type == "series_observation" or len(history_references) >= 2
+    combined_history = " ".join(([series_name] if series_name else []) + history_references[:6]).strip()
+    keyword_overlap = keyword_overlap_ratio(extract_signal_keywords(combined_history, 12), content)
+    continuity_hits = count_phrase_hits(content, WRITING_SERIES_CONTINUITY_CUES)
+    series_name_hits = content.count(series_name) if series_name else 0
+    consistency_score = 0.0
+    if has_series_context:
+        consistency_score = min(
+            1.0,
+            keyword_overlap * 0.55
+            + min(0.25, continuity_hits * 0.08)
+            + min(0.2, series_name_hits * 0.1),
+        )
+    return {
+        "hasSeriesContext": has_series_context,
+        "historyReferenceCount": len(history_references),
+        "continuityHits": continuity_hits,
+        "seriesNameHits": series_name_hits,
+        "keywordOverlap": round(keyword_overlap, 3),
+        "consistencyScore": round(consistency_score, 3),
+    }
+
+
+def analyze_historical_similarity_risk(title: str, combined_text: str, reference_output: str, history_references: list[str]) -> dict[str, Any]:
+    reference_output_similarity = char_ngram_similarity(combined_text, reference_output) if reference_output else 0.0
+    history_title_similarity = max((char_ngram_similarity(title, item) for item in history_references if item), default=0.0)
+    history_body_similarity = max(
+        (char_ngram_similarity(combined_text, item) for item in history_references if len(normalize_similarity_text(item)) >= 12),
+        default=0.0,
+    )
+    risk = min(1.0, max(reference_output_similarity, history_body_similarity, history_title_similarity * 0.9))
+    return {
+        "referenceOutputSimilarity": round(reference_output_similarity, 3),
+        "historyTitleSimilarity": round(history_title_similarity, 3),
+        "historyBodySimilarity": round(history_body_similarity, 3),
+        "historicalSimilarityRisk": round(risk, 3),
+    }
+
+
 def weighted_average(scores: list[tuple[float, float]]) -> float:
     total_weight = sum(max(0.0, float(weight)) for _, weight in scores)
     if total_weight <= 0:
         total_weight = float(len(scores)) or 1.0
         return sum(value for value, _ in scores) / total_weight
     return sum(value * max(0.0, float(weight)) for value, weight in scores) / total_weight
+
+
+def score_standard_deviation(values: list[float]) -> float:
+    if len(values) < 2:
+        return 0.0
+    average = sum(values) / len(values)
+    variance = sum((value - average) ** 2 for value in values) / len(values)
+    return math.sqrt(max(0.0, variance))
 
 
 def apply_weight_multipliers(weights: dict[str, Any], multipliers: dict[str, float]) -> dict[str, float]:
@@ -1376,6 +1571,188 @@ def blend_rule_and_judge_score(rule_score: float, judge_score: float | None, rul
     return round_score((rule_score * normalized_rule_weight + judge_score * normalized_judge_weight) / total_weight)
 
 
+def normalize_judge_reviewers(model: str, judge_config: dict[str, Any], default_temperature: float) -> list[dict[str, Any]]:
+    reviewers = judge_config.get("reviewers") if isinstance(judge_config.get("reviewers"), list) else []
+    normalized_reviewers: list[dict[str, Any]] = []
+    for index, reviewer in enumerate(reviewers):
+        if isinstance(reviewer, str):
+            normalized_reviewers.append(
+                {
+                    "model": reviewer.strip() or model,
+                    "temperature": default_temperature,
+                    "weight": 1.0,
+                    "label": f"reviewer-{index + 1}",
+                }
+            )
+            continue
+        if not isinstance(reviewer, dict):
+            continue
+        reviewer_model = str(reviewer.get("model") or "").strip() or model
+        reviewer_temperature = reviewer.get("temperature")
+        normalized_reviewers.append(
+            {
+                "model": reviewer_model,
+                "temperature": float(reviewer_temperature) if isinstance(reviewer_temperature, (int, float)) else default_temperature,
+                "weight": float(reviewer.get("weight") or 1.0) if isinstance(reviewer.get("weight"), (int, float)) else 1.0,
+                "label": str(reviewer.get("label") or "").strip() or f"{reviewer_model}#{index + 1}",
+            }
+        )
+    if normalized_reviewers:
+        return normalized_reviewers
+    return [
+        {
+            "model": model,
+            "temperature": default_temperature,
+            "weight": 1.0,
+            "label": model,
+        }
+    ]
+
+
+def aggregate_judge_results(reviewers: list[dict[str, Any]], judge_results: list[dict[str, Any]]) -> dict[str, Any]:
+    score_fields = [
+        "styleScore",
+        "languageScore",
+        "densityScore",
+        "emotionScore",
+        "structureScore",
+        "topicMomentumScore",
+        "headlineScore",
+        "hookScore",
+        "shareabilityScore",
+        "readerValueScore",
+        "noveltyScore",
+        "platformFitScore",
+    ]
+    weighted_reviewers = []
+    for reviewer, result in zip(reviewers, judge_results):
+        current = dict(result)
+        current["label"] = str(reviewer.get("label") or current.get("model") or "reviewer").strip()
+        current["temperature"] = float(reviewer.get("temperature") or 0.0)
+        current["weight"] = float(reviewer.get("weight") or 1.0)
+        weighted_reviewers.append(current)
+
+    successful = [item for item in weighted_reviewers if item.get("status") == "ok"]
+    if not successful:
+        primary = weighted_reviewers[0] if weighted_reviewers else {
+            "status": "error",
+            "model": "",
+            "scores": {},
+            "reasons": {},
+            "problems": [],
+            "summary": "",
+            "keepRecommendation": "observe",
+            "weight": 1.0,
+            "temperature": 0.0,
+            "label": "reviewer",
+        }
+        return {
+            **primary,
+            "status": "error",
+            "reviewerCount": len(weighted_reviewers),
+            "successReviewerCount": 0,
+            "reviewers": weighted_reviewers,
+            "reviewerModelCount": 0,
+            "keepRecommendationAgreementRatio": 0.0,
+            "scoreStddev": 0.0,
+            "maxScoreStddev": 0.0,
+            "scoreStddevByField": {},
+            "disagreementRisk": 1.0,
+        }
+
+    aggregated_scores: dict[str, float | None] = {}
+    score_stddev_by_field: dict[str, float] = {}
+    for field in score_fields:
+        weighted_scores: list[tuple[float, float]] = []
+        raw_scores: list[float] = []
+        for item in successful:
+            scores = item.get("scores") if isinstance(item.get("scores"), dict) else {}
+            score_value = scores.get(field)
+            if isinstance(score_value, (int, float)):
+                normalized_score = float(score_value)
+                weighted_scores.append((normalized_score, max(0.0, float(item.get("weight") or 1.0))))
+                raw_scores.append(normalized_score)
+        aggregated_scores[field] = round_score(weighted_average(weighted_scores)) if weighted_scores else None
+        if raw_scores:
+            score_stddev_by_field[field] = round(score_standard_deviation(raw_scores), 3)
+
+    primary = sorted(successful, key=lambda item: float(item.get("weight") or 1.0), reverse=True)[0]
+    keep_counts: dict[str, float] = {}
+    successful_weight = 0.0
+    for item in successful:
+        weight = max(0.0, float(item.get("weight") or 1.0))
+        keep_key = str(item.get("keepRecommendation") or "observe").strip() or "observe"
+        keep_counts[keep_key] = keep_counts.get(keep_key, 0.0) + weight
+        successful_weight += weight
+    keep_recommendation = sorted(keep_counts.items(), key=lambda pair: pair[1], reverse=True)[0][0] if keep_counts else "observe"
+    keep_agreement_ratio = (
+        max(keep_counts.values(), default=0.0) / successful_weight if successful_weight > 0 else 1.0
+    )
+    merged_problems = extract_strings(
+        [problem for item in successful for problem in extract_strings(item.get("problems"), 8)],
+        12,
+    )
+    summaries = extract_strings([str(item.get("summary") or "").strip() for item in successful], 3)
+    reason_fields = [
+        "style",
+        "language",
+        "density",
+        "emotion",
+        "structure",
+        "topicMomentum",
+        "headline",
+        "hook",
+        "shareability",
+        "readerValue",
+        "novelty",
+        "platformFit",
+    ]
+    merged_reasons: dict[str, str] = {}
+    for field in reason_fields:
+        merged_reasons[field] = next(
+            (
+                str((item.get("reasons") or {}).get(field) or "").strip()
+                for item in successful
+                if isinstance(item.get("reasons"), dict) and str((item.get("reasons") or {}).get(field) or "").strip()
+            ),
+            "",
+        )
+    score_stddev_values = list(score_stddev_by_field.values())
+    score_stddev = round(sum(score_stddev_values) / len(score_stddev_values), 3) if score_stddev_values else 0.0
+    max_score_stddev = round(max(score_stddev_values, default=0.0), 3)
+    disagreement_risk = min(
+        1.0,
+        max(0.0, score_stddev / 14.0) * 0.6 + max(0.0, 1.0 - keep_agreement_ratio) * 0.4,
+    )
+
+    return {
+        "status": "ok" if len(successful) == len(weighted_reviewers) else "partial",
+        "model": ",".join(
+            dict.fromkeys(str(item.get("model") or "").strip() for item in successful if str(item.get("model") or "").strip())
+        ),
+        "scores": aggregated_scores,
+        "reasons": merged_reasons,
+        "problems": merged_problems,
+        "summary": "；".join(summaries) if summaries else str(primary.get("summary") or "").strip(),
+        "keepRecommendation": keep_recommendation,
+        "reviewerCount": len(weighted_reviewers),
+        "successReviewerCount": len(successful),
+        "reviewerModelCount": len(
+            {
+                str(item.get("model") or "").strip()
+                for item in successful
+                if str(item.get("model") or "").strip()
+            }
+        ),
+        "keepRecommendationAgreementRatio": round(keep_agreement_ratio, 3),
+        "scoreStddev": score_stddev,
+        "maxScoreStddev": max_score_stddev,
+        "scoreStddevByField": score_stddev_by_field,
+        "disagreementRisk": round(disagreement_risk, 3),
+        "reviewers": weighted_reviewers,
+    }
+
+
 def run_writing_eval_judge(
     model: str,
     case_row: dict[str, Any],
@@ -1451,9 +1828,15 @@ def score_writing_result(
     input_payload = parse_json_value(case_row.get("input_payload_json")) or {}
     expected_constraints = parse_json_value(case_row.get("expected_constraints_json")) or {}
     viral_targets = parse_json_value(case_row.get("viral_targets_json")) or {}
+    import_meta = expected_constraints.get("importMeta") if isinstance(expected_constraints.get("importMeta"), dict) else {}
     reference_bad_patterns = extract_strings(parse_json_value(case_row.get("reference_bad_patterns_json")) or [], 12)
     source_fragments = flatten_text_fragments(input_payload, 24) + flatten_text_fragments(expected_constraints, 16)
     topic_title = str(case_row.get("topic_title") or "").strip()
+    task_type = str(case_row.get("task_type") or "").strip()
+    target_emotion = str(input_payload.get("targetEmotion") or "").strip()
+    history_references = extract_strings(input_payload.get("historyReferences"), 8)
+    series_name = str(import_meta.get("seriesName") or "").strip()
+    reference_good_output = str(case_row.get("reference_good_output") or "").strip()
     source_text = " ".join(source_fragments + [topic_title, str(case_row.get("reference_good_output") or "")]).strip()
     must_use_facts = extract_writing_eval_must_use_facts(case_row)
     ai_noise = analyze_ai_noise_for_writing(combined_text)
@@ -1485,6 +1868,13 @@ def score_writing_result(
     lead_bonus = 12 if 28 <= lead_length <= 110 else 4 if 18 <= lead_length <= 140 else -10
     length_fit_bonus = 12 if 450 <= markdown_length <= 1800 else 4 if 280 <= markdown_length <= 2400 else -10
     platform_para_bonus = 10 if paragraphs and len(paragraphs) >= 4 else 0
+    emotion_trajectory = analyze_paragraph_emotion_trajectory(paragraphs, target_emotion)
+    series_consistency = analyze_series_consistency(task_type, series_name, history_references, combined_text)
+    historical_similarity = analyze_historical_similarity_risk(title, combined_text, reference_good_output, history_references)
+    emotion_trajectory_bonus = float(emotion_trajectory["trajectoryScore"]) * 18.0
+    target_emotion_bonus = float(emotion_trajectory["targetCoverage"]) * 12.0
+    series_consistency_bonus = float(series_consistency["consistencyScore"]) * 14.0 if series_consistency["hasSeriesContext"] else 0.0
+    historical_similarity_penalty = float(historical_similarity["historicalSimilarityRisk"]) * 24.0
     source_numbers = set(re.findall(r"\d+(?:\.\d+)?", source_text))
     output_numbers = set(re.findall(r"\d+(?:\.\d+)?", combined_text))
     unsupported_number_count = len([item for item in output_numbers if item not in source_numbers]) if source_numbers else max(0, len(output_numbers) - 1)
@@ -1492,14 +1882,43 @@ def score_writing_result(
     rule_style_score = clamp_score(62 + min(12, short_sentence_count * 1.5) + min(10, conflict_hits * 3) - ai_noise_score * 0.22 - bad_pattern_hits * 6)
     rule_language_score = clamp_score(90 - ai_noise_score * 0.5 - bad_pattern_hits * 5 - max(0, long_paragraph_count - 1) * 4)
     rule_density_score = clamp_score(34 + min(26, fact_signal_count * 3.2) + overlap_ratio * 18 + must_use_fact_coverage * 20 - ai_noise_score * 0.12)
-    rule_emotion_score = clamp_score(34 + min(24, emotion_hits * 8) + min(18, conflict_hits * 5) + (8 if "?" in lead or "？" in lead else 0))
-    rule_structure_score = clamp_score(42 + title_bonus + lead_bonus * 0.6 + platform_para_bonus + min(12, heading_count * 4) - long_paragraph_count * 4)
+    rule_emotion_score = clamp_score(
+        34
+        + min(24, emotion_hits * 8)
+        + min(18, conflict_hits * 5)
+        + (8 if "?" in lead or "？" in lead else 0)
+        + emotion_trajectory_bonus
+        + target_emotion_bonus
+    )
+    rule_structure_score = clamp_score(
+        42
+        + title_bonus
+        + lead_bonus * 0.6
+        + platform_para_bonus
+        + min(12, heading_count * 4)
+        - long_paragraph_count * 4
+        + min(10, emotion_trajectory_bonus * 0.55)
+        + series_consistency_bonus
+    )
     rule_topic_momentum_score = clamp_score(36 + overlap_ratio * 28 + min(18, timeliness_hits * 6) + min(10, conflict_hits * 3))
-    rule_headline_score = clamp_score(45 + title_bonus + title_signal_bonus + min(12, count_phrase_hits(title, WRITING_CONFLICT_CUES) * 4) - bad_pattern_hits * 4)
+    rule_headline_score = clamp_score(
+        45
+        + title_bonus
+        + title_signal_bonus
+        + min(12, count_phrase_hits(title, WRITING_CONFLICT_CUES) * 4)
+        - bad_pattern_hits * 4
+        - float(historical_similarity["historyTitleSimilarity"]) * 18.0
+    )
     rule_hook_score = clamp_score(36 + lead_bonus + min(18, conflict_hits * 4) + (10 if "?" in lead or "？" in lead else 0) + (8 if paragraphs and len(paragraphs[0]) <= 110 else 0))
     rule_shareability_score = clamp_score(34 + min(24, quotable_sentence_count * 6) + min(16, shareability_hits * 6) + min(10, value_hits * 3))
     rule_reader_value_score = clamp_score(35 + min(28, value_hits * 8) + overlap_ratio * 18 + (8 if re.search(r"建议|做法|要点|提醒", markdown) else 0))
-    rule_novelty_score = clamp_score(30 + min(30, novelty_hits * 8) + min(16, conflict_hits * 4))
+    rule_novelty_score = clamp_score(
+        30
+        + min(30, novelty_hits * 8)
+        + min(16, conflict_hits * 4)
+        + float(emotion_trajectory["span"]) * 2.2
+        - historical_similarity_penalty
+    )
     rule_platform_fit_score = clamp_score(48 + length_fit_bonus + platform_para_bonus + (10 if title_length <= 28 else 0) - long_paragraph_count * 4)
     scoring_config = scoring_profile.get("config") if isinstance(scoring_profile, dict) else {}
     quality_weights = scoring_config.get("qualityWeights") if isinstance(scoring_config, dict) and isinstance(scoring_config.get("qualityWeights"), dict) else {}
@@ -1547,6 +1966,7 @@ def score_writing_result(
     judge_rule_weight = float(judge_config.get("ruleWeight", 0.65))
     judge_weight = float(judge_config.get("judgeWeight", 0.35))
     judge_temperature = float(judge_config.get("temperature", 0.2))
+    judge_reviewers = normalize_judge_reviewers(model, judge_config, judge_temperature)
     judge_result: dict[str, Any] = {
         "status": "disabled" if not judge_enabled else "pending",
         "model": model,
@@ -1557,19 +1977,26 @@ def score_writing_result(
         "keepRecommendation": "observe",
     }
     if judge_enabled:
-        try:
-            judge_result = run_writing_eval_judge(model, case_row, generated, experiment_mode, judge_temperature)
-        except Exception as error:
-            judge_result = {
-                "status": "error",
-                "model": model,
-                "error": str(error)[:500],
-                "scores": {},
-                "reasons": {},
-                "problems": [],
-                "summary": "",
-                "keepRecommendation": "observe",
-            }
+        judge_results: list[dict[str, Any]] = []
+        for reviewer in judge_reviewers:
+            reviewer_model = str(reviewer.get("model") or model).strip() or model
+            reviewer_temperature = float(reviewer.get("temperature") or judge_temperature)
+            try:
+                judge_results.append(run_writing_eval_judge(reviewer_model, case_row, generated, experiment_mode, reviewer_temperature))
+            except Exception as error:
+                judge_results.append(
+                    {
+                        "status": "error",
+                        "model": reviewer_model,
+                        "error": str(error)[:500],
+                        "scores": {},
+                        "reasons": {},
+                        "problems": [],
+                        "summary": "",
+                        "keepRecommendation": "observe",
+                    }
+                )
+        judge_result = aggregate_judge_results(judge_reviewers, judge_results)
     judge_scores = judge_result.get("scores") if isinstance(judge_result.get("scores"), dict) else {}
     style_score = blend_rule_and_judge_score(rule_style_score, judge_scores.get("styleScore"), judge_rule_weight, judge_weight)
     language_score = blend_rule_and_judge_score(rule_language_score, judge_scores.get("languageScore"), judge_rule_weight, judge_weight)
@@ -1619,8 +2046,30 @@ def score_writing_result(
     normalized_quality_weight = total_quality_weight / total_weight_sum
     normalized_viral_weight = total_viral_weight / total_weight_sum
     ai_noise_multiplier = float(penalties.get("aiNoiseMultiplier", 0.6)) if isinstance(penalties, dict) else 0.6
+    historical_similarity_multiplier = (
+        float(penalties.get("historicalSimilarityMultiplier", 0.35)) if isinstance(penalties, dict) else 0.35
+    )
+    judge_disagreement_multiplier = (
+        float(penalties.get("judgeDisagreementMultiplier", 0.45)) if isinstance(penalties, dict) else 0.45
+    )
+    historical_similarity_risk = float(historical_similarity["historicalSimilarityRisk"])
+    judge_agreement_ratio = float(judge_result.get("keepRecommendationAgreementRatio") or 1.0)
+    judge_score_stddev = float(judge_result.get("scoreStddev") or 0.0)
+    judge_max_score_stddev = float(judge_result.get("maxScoreStddev") or 0.0)
+    judge_disagreement_risk = float(judge_result.get("disagreementRisk") or 0.0)
+    historical_similarity_total_penalty = round_score(
+        min(18.0, historical_similarity_risk * 18.0 * max(0.0, historical_similarity_multiplier))
+    )
+    judge_disagreement_penalty = round_score(
+        min(18.0, judge_disagreement_risk * 16.0 * max(0.0, judge_disagreement_multiplier))
+    )
     total_score = round_score(
-        quality_score * normalized_quality_weight + viral_score * normalized_viral_weight - factual_risk_penalty - ai_noise_penalty * ai_noise_multiplier
+        quality_score * normalized_quality_weight
+        + viral_score * normalized_viral_weight
+        - factual_risk_penalty
+        - ai_noise_penalty * ai_noise_multiplier
+        - historical_similarity_total_penalty
+        - judge_disagreement_penalty
     )
 
     return {
@@ -1640,6 +2089,8 @@ def score_writing_result(
         "viral_score": viral_score,
         "factual_risk_penalty": factual_risk_penalty,
         "ai_noise_penalty": ai_noise_penalty,
+        "historical_similarity_penalty": historical_similarity_total_penalty,
+        "judge_disagreement_penalty": judge_disagreement_penalty,
         "total_score": total_score,
         "judge_payload_json": {
             "model": model,
@@ -1660,9 +2111,33 @@ def score_writing_result(
                 "badPatternHits": bad_pattern_hits,
                 "keywordOverlapRatio": round(overlap_ratio, 3),
                 "unsupportedNumberCount": unsupported_number_count,
+                "seriesContinuityHits": int(series_consistency["continuityHits"]),
+                "seriesKeywordOverlap": float(series_consistency["keywordOverlap"]),
+                "seriesConsistencyScore": float(series_consistency["consistencyScore"]),
+                "targetEmotionCoverage": float(emotion_trajectory["targetCoverage"]),
+                "paragraphEmotionSpan": float(emotion_trajectory["span"]),
+                "paragraphEmotionTurns": int(emotion_trajectory["turnCount"]),
+                "paragraphEmotionProgression": float(emotion_trajectory["progression"]),
+                "paragraphEmotionPeakPosition": float(emotion_trajectory["peakPosition"]),
+                "emotionTrajectoryScore": float(emotion_trajectory["trajectoryScore"]),
+                "referenceOutputSimilarity": float(historical_similarity["referenceOutputSimilarity"]),
+                "historyTitleSimilarity": float(historical_similarity["historyTitleSimilarity"]),
+                "historyBodySimilarity": float(historical_similarity["historyBodySimilarity"]),
+                "historicalSimilarityRisk": historical_similarity_risk,
+                "judgeAgreementRatio": judge_agreement_ratio,
+                "judgeScoreStddev": judge_score_stddev,
+                "judgeMaxScoreStddev": judge_max_score_stddev,
+                "judgeDisagreementRisk": judge_disagreement_risk,
+                "judgeReviewerModelCount": float(judge_result.get("reviewerModelCount") or 0.0),
             },
             "aiNoise": ai_noise,
             "mustUseFacts": must_use_facts,
+            "totalPenalties": {
+                "factualRiskPenalty": factual_risk_penalty,
+                "aiNoisePenalty": round_score(ai_noise_penalty * ai_noise_multiplier),
+                "historicalSimilarityPenalty": historical_similarity_total_penalty,
+                "judgeDisagreementPenalty": judge_disagreement_penalty,
+            },
             "ruleScores": {
                 "styleScore": round_score(rule_style_score),
                 "languageScore": round_score(rule_language_score),
@@ -1694,12 +2169,23 @@ def score_writing_result(
                 },
                 "penalties": {
                     "aiNoiseMultiplier": round(ai_noise_multiplier, 4),
+                    "historicalSimilarityMultiplier": round(historical_similarity_multiplier, 4),
+                    "judgeDisagreementMultiplier": round(judge_disagreement_multiplier, 4),
                 },
                 "judge": {
                     "enabled": judge_enabled,
                     "temperature": round(judge_temperature, 4),
                     "ruleWeight": round(judge_rule_weight, 4),
                     "judgeWeight": round(judge_weight, 4),
+                    "reviewers": [
+                        {
+                            "label": str(item.get("label") or "").strip(),
+                            "model": str(item.get("model") or "").strip(),
+                            "temperature": round(float(item.get("temperature") or judge_temperature), 4),
+                            "weight": round(float(item.get("weight") or 1.0), 4),
+                        }
+                        for item in judge_reviewers
+                    ],
                 },
             },
             "experimentMode": experiment_mode,
@@ -1775,7 +2261,11 @@ def execute_writing_eval_case(
     layout_strategy: dict[str, Any] | None = None,
     apply_command_template: dict[str, Any] | None = None,
 ) -> tuple[dict[str, str], dict[str, Any], str, list[str]]:
-    primary_model, fallback_model = get_scene_route(connection, prompt_meta["sceneCode"])
+    primary_model = str(prompt_meta.get("primaryModel") or "").strip()
+    fallback_model_raw = str(prompt_meta.get("fallbackModel") or "").strip()
+    fallback_model = fallback_model_raw or None
+    if not primary_model:
+        primary_model, fallback_model = get_scene_route(connection, prompt_meta["sceneCode"])
     user_prompt = build_scene_generation_prompt(case_row, prompt_meta, experiment_mode, layout_strategy, apply_command_template)
     model_errors: list[str] = []
     raw_output = ""
@@ -1804,6 +2294,15 @@ def execute_writing_eval_case(
     scores["judge_payload_json"]["layoutStrategyLabel"] = str(layout_strategy.get("label") if layout_strategy else "default")
     scores["judge_payload_json"]["applyCommandTemplateLabel"] = str(apply_command_template.get("label") if apply_command_template else "default")
     return generated, scores, selected_model, model_errors
+
+
+def attach_writing_eval_prompt_models(connection: RuntimeConnection, prompt_meta: dict[str, str]) -> dict[str, str]:
+    primary_model, fallback_model = get_scene_route(connection, prompt_meta["sceneCode"])
+    resolved = dict(prompt_meta)
+    resolved["primaryModel"] = primary_model
+    if fallback_model:
+        resolved["fallbackModel"] = str(fallback_model)
+    return resolved
 
 
 def build_failed_generation(case_row: dict[str, Any], error_message: str) -> dict[str, str]:
@@ -1931,6 +2430,177 @@ def save_writing_eval_result(
     )
 
 
+def process_writing_eval_case_versions(
+    connection: RuntimeConnection,
+    case_row: dict[str, Any],
+    run: dict[str, Any],
+    experiment_mode: str,
+    base_prompt: dict[str, str],
+    base_scoring_profile: dict[str, Any],
+    base_layout_strategy: dict[str, Any],
+    base_apply_command_template: dict[str, Any],
+    candidate_prompt: dict[str, str],
+    candidate_scoring_profile: dict[str, Any],
+    candidate_layout_strategy: dict[str, Any],
+    candidate_apply_command_template: dict[str, Any],
+) -> dict[str, Any]:
+    try:
+        if (
+            base_prompt["promptId"] == candidate_prompt["promptId"]
+            and base_prompt["version"] == candidate_prompt["version"]
+            and base_prompt["sceneCode"] == candidate_prompt["sceneCode"]
+            and base_prompt["promptContent"] == candidate_prompt["promptContent"]
+            and base_layout_strategy["label"] == candidate_layout_strategy["label"]
+            and base_apply_command_template["label"] == candidate_apply_command_template["label"]
+        ):
+            candidate_generated, candidate_scores, candidate_model, candidate_errors = execute_writing_eval_case(
+                connection,
+                case_row,
+                candidate_prompt,
+                candidate_scoring_profile,
+                experiment_mode,
+                candidate_layout_strategy,
+                candidate_apply_command_template,
+            )
+            candidate_scores["status"] = "succeeded"
+            base_generated = candidate_generated
+            base_scores = score_writing_result(
+                case_row,
+                base_generated,
+                base_prompt,
+                candidate_model,
+                base_scoring_profile,
+                experiment_mode,
+            )
+            base_scores["status"] = "succeeded"
+            base_scores["judge_payload_json"]["layoutStrategyLabel"] = base_layout_strategy["label"]
+            base_scores["judge_payload_json"]["applyCommandTemplateLabel"] = base_apply_command_template["label"]
+            base_model = candidate_model
+            base_errors = list(candidate_errors)
+        else:
+            base_generated, base_scores, base_model, base_errors = execute_writing_eval_case(
+                connection,
+                case_row,
+                base_prompt,
+                base_scoring_profile,
+                experiment_mode,
+                base_layout_strategy,
+                base_apply_command_template,
+            )
+            base_scores["status"] = "succeeded"
+            candidate_generated, candidate_scores, candidate_model, candidate_errors = execute_writing_eval_case(
+                connection,
+                case_row,
+                candidate_prompt,
+                candidate_scoring_profile,
+                experiment_mode,
+                candidate_layout_strategy,
+                candidate_apply_command_template,
+            )
+            candidate_scores["status"] = "succeeded"
+
+        delta_scores = build_score_delta(candidate_scores, base_scores)
+        winner = determine_winner(candidate_scores, base_scores)
+        candidate_judge_payload = dict(candidate_scores["judge_payload_json"])
+        if candidate_errors:
+            candidate_judge_payload["fallbackErrors"] = candidate_errors
+        candidate_judge_payload["baseline"] = {
+            "versionRef": str(run.get("base_version_ref") or ""),
+            "versionType": str(run.get("base_version_type") or ""),
+            "model": base_model,
+            "generated": base_generated,
+            "scores": build_score_snapshot(base_scores),
+            "judge": base_scores["judge_payload_json"],
+            "fallbackErrors": base_errors,
+        }
+        candidate_judge_payload["comparison"] = {
+            "winner": winner,
+            "delta": delta_scores,
+            "candidateVersionRef": str(run.get("candidate_version_ref") or ""),
+            "baseVersionRef": str(run.get("base_version_ref") or ""),
+            "experimentMode": experiment_mode,
+        }
+        candidate_judge_payload["versions"] = {
+            "base": {
+                "type": str(run.get("base_version_type") or ""),
+                "ref": str(run.get("base_version_ref") or ""),
+                "label": base_prompt["label"],
+                "sceneCode": base_prompt["sceneCode"],
+                "scoringProfile": base_scoring_profile["label"],
+                "layoutStrategy": base_layout_strategy["label"],
+                "applyCommandTemplate": base_apply_command_template["label"],
+            },
+            "candidate": {
+                "type": str(run.get("candidate_version_type") or ""),
+                "ref": str(run.get("candidate_version_ref") or ""),
+                "label": candidate_prompt["label"],
+                "sceneCode": candidate_prompt["sceneCode"],
+                "scoringProfile": candidate_scoring_profile["label"],
+                "layoutStrategy": candidate_layout_strategy["label"],
+                "applyCommandTemplate": candidate_apply_command_template["label"],
+            },
+        }
+        candidate_judge_payload["experimentMode"] = experiment_mode
+        candidate_scores["judge_payload_json"] = candidate_judge_payload
+    except Exception as case_error:
+        error_message = str(case_error)
+        base_generated = build_failed_generation(case_row, error_message)
+        candidate_generated = build_failed_generation(case_row, error_message)
+        base_model = "failed"
+        candidate_model = "failed"
+        base_errors = []
+        candidate_errors = []
+        base_scores = build_failed_scores(base_prompt, base_model, case_row, error_message)
+        candidate_scores = build_failed_scores(candidate_prompt, candidate_model, case_row, error_message)
+        base_scores["status"] = "failed"
+        candidate_scores["status"] = "failed"
+        candidate_scores["judge_payload_json"]["baseline"] = {
+            "versionRef": str(run.get("base_version_ref") or ""),
+            "versionType": str(run.get("base_version_type") or ""),
+            "model": base_model,
+            "generated": base_generated,
+            "scores": build_score_snapshot(base_scores),
+            "judge": base_scores["judge_payload_json"],
+            "fallbackErrors": base_errors,
+        }
+        candidate_scores["judge_payload_json"]["comparison"] = {
+            "winner": "failed",
+            "delta": build_score_delta(candidate_scores, base_scores),
+            "candidateVersionRef": str(run.get("candidate_version_ref") or ""),
+            "baseVersionRef": str(run.get("base_version_ref") or ""),
+            "experimentMode": experiment_mode,
+        }
+        candidate_scores["judge_payload_json"]["versions"] = {
+            "base": {
+                "type": str(run.get("base_version_type") or ""),
+                "ref": str(run.get("base_version_ref") or ""),
+                "label": base_prompt["label"],
+                "sceneCode": base_prompt["sceneCode"],
+                "layoutStrategy": base_layout_strategy["label"],
+                "applyCommandTemplate": base_apply_command_template["label"],
+            },
+            "candidate": {
+                "type": str(run.get("candidate_version_type") or ""),
+                "ref": str(run.get("candidate_version_ref") or ""),
+                "label": candidate_prompt["label"],
+                "sceneCode": candidate_prompt["sceneCode"],
+                "layoutStrategy": candidate_layout_strategy["label"],
+                "applyCommandTemplate": candidate_apply_command_template["label"],
+            },
+        }
+        candidate_scores["judge_payload_json"]["experimentMode"] = experiment_mode
+        candidate_scores["judge_payload_json"]["caseError"] = error_message[:500]
+
+    return {
+        "caseId": int(case_row["id"]),
+        "taskCode": str(case_row.get("task_code") or f"case-{int(case_row['id'])}"),
+        "topicTitle": str(case_row.get("topic_title") or ""),
+        "candidateGenerated": candidate_generated,
+        "candidateScores": candidate_scores,
+        "baseScores": base_scores,
+    }
+
+
 def summarize_writing_eval_scores(results: list[dict[str, Any]], base_results: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     if not results:
         return {
@@ -1959,9 +2629,25 @@ def summarize_writing_eval_scores(results: list[dict[str, Any]], base_results: l
         ("factualRiskPenalty", "factual_risk_penalty"),
         ("aiNoisePenalty", "ai_noise_penalty"),
     ]
+    payload_metric_paths = [
+        ("historicalSimilarityRisk", ("judge_payload_json", "signals", "historicalSimilarityRisk")),
+        ("judgeAgreementRatio", ("judge_payload_json", "signals", "judgeAgreementRatio")),
+        ("judgeScoreStddev", ("judge_payload_json", "signals", "judgeScoreStddev")),
+        ("judgeDisagreementRisk", ("judge_payload_json", "signals", "judgeDisagreementRisk")),
+        ("historicalSimilarityPenalty", ("judge_payload_json", "totalPenalties", "historicalSimilarityPenalty")),
+        ("judgeDisagreementPenalty", ("judge_payload_json", "totalPenalties", "judgeDisagreementPenalty")),
+    ]
 
     def average(key: str) -> float:
         return round_score(sum(float(item.get(key) or 0.0) for item in results) / len(results))
+
+    def extract_nested_number(item: dict[str, Any], path: tuple[str, ...]) -> float:
+        current: Any = item
+        for key in path:
+            if not isinstance(current, dict):
+                return 0.0
+            current = current.get(key)
+        return float(current) if isinstance(current, (int, float)) else 0.0
 
     summary: dict[str, Any] = {
         "casesProcessed": len(results),
@@ -1969,6 +2655,8 @@ def summarize_writing_eval_scores(results: list[dict[str, Any]], base_results: l
     }
     for summary_key, raw_key in metric_pairs:
         summary[summary_key] = average(raw_key)
+    for summary_key, path in payload_metric_paths:
+        summary[summary_key] = round(sum(extract_nested_number(item, path) for item in results) / len(results), 3)
     if not base_results:
         return summary
 
@@ -1980,6 +2668,11 @@ def summarize_writing_eval_scores(results: list[dict[str, Any]], base_results: l
         delta_key = f"delta{summary_key[0].upper()}{summary_key[1:]}"
         summary[base_key] = average_base(raw_key)
         summary[delta_key] = round(summary[summary_key] - summary[base_key], 2)
+    for summary_key, path in payload_metric_paths:
+        base_key = f"base{summary_key[0].upper()}{summary_key[1:]}"
+        delta_key = f"delta{summary_key[0].upper()}{summary_key[1:]}"
+        summary[base_key] = round(sum(extract_nested_number(item, path) for item in base_results) / len(base_results), 3)
+        summary[delta_key] = round(summary[summary_key] - summary[base_key], 3)
     summary["improvedCaseCount"] = sum(
         1 for index, item in enumerate(results)
         if str(item.get("status") or "").strip() != "failed"
@@ -2027,10 +2720,16 @@ def extract_candidate_and_base_score_inputs(connection: RuntimeConnection, run_i
         "total_score",
     ]
     for row in rows:
-        candidate_results.append({key: float(row.get(key) or 0.0) for key in score_keys})
+        candidate_payload = parse_payload(row.get("judge_payload_json"))
+        candidate_result = {key: float(row.get(key) or 0.0) for key in score_keys}
+        candidate_result["judge_payload_json"] = candidate_payload
+        candidate_results.append(candidate_result)
         judge_payload = parse_payload(row.get("judge_payload_json"))
-        baseline_scores = parse_payload(parse_payload(judge_payload.get("baseline")).get("scores"))
-        base_results.append({key: float(baseline_scores.get(key) or 0.0) for key in score_keys})
+        baseline_payload = parse_payload(judge_payload.get("baseline"))
+        baseline_scores = parse_payload(baseline_payload.get("scores"))
+        base_result = {key: float(baseline_scores.get(key) or 0.0) for key in score_keys}
+        base_result["judge_payload_json"] = baseline_payload
+        base_results.append(base_result)
     return candidate_results, base_results
 
 
@@ -2038,11 +2737,26 @@ def build_promotion_decision_from_summary(summary: dict[str, Any]) -> dict[str, 
     delta_total = float(summary.get("deltaTotalScore") or 0.0)
     delta_quality = float(summary.get("deltaQualityScore") or 0.0)
     delta_viral = float(summary.get("deltaViralScore") or 0.0)
+    delta_density = float(summary.get("deltaDensityScore") or 0.0)
+    delta_emotion = float(summary.get("deltaEmotionScore") or 0.0)
+    delta_structure = float(summary.get("deltaStructureScore") or 0.0)
+    delta_headline = float(summary.get("deltaHeadlineScore") or 0.0)
+    delta_hook = float(summary.get("deltaHookScore") or 0.0)
+    delta_shareability = float(summary.get("deltaShareabilityScore") or 0.0)
+    delta_reader_value = float(summary.get("deltaReaderValueScore") or 0.0)
     failed_case_count = int(summary.get("failedCaseCount") or 0)
     factual_risk_penalty = float(summary.get("factualRiskPenalty") or 0.0)
     base_factual_risk_penalty = float(summary.get("baseFactualRiskPenalty") or factual_risk_penalty)
     ai_noise_penalty = float(summary.get("aiNoisePenalty") or 0.0)
     base_ai_noise_penalty = float(summary.get("baseAiNoisePenalty") or ai_noise_penalty)
+    historical_similarity_risk = float(summary.get("historicalSimilarityRisk") or 0.0)
+    base_historical_similarity_risk = float(summary.get("baseHistoricalSimilarityRisk") or historical_similarity_risk)
+    judge_agreement_ratio = float(summary.get("judgeAgreementRatio") or 1.0)
+    base_judge_agreement_ratio = float(summary.get("baseJudgeAgreementRatio") or judge_agreement_ratio)
+    judge_score_stddev = float(summary.get("judgeScoreStddev") or 0.0)
+    base_judge_score_stddev = float(summary.get("baseJudgeScoreStddev") or judge_score_stddev)
+    judge_disagreement_risk = float(summary.get("judgeDisagreementRisk") or 0.0)
+    base_judge_disagreement_risk = float(summary.get("baseJudgeDisagreementRisk") or judge_disagreement_risk)
     improved_case_count = int(summary.get("improvedCaseCount") or 0)
     regressed_case_count = int(summary.get("regressedCaseCount") or 0)
 
@@ -2061,6 +2775,20 @@ def build_promotion_decision_from_summary(summary: dict[str, Any]) -> dict[str, 
         blockers.append("机器腔惩罚上升")
     if improved_case_count < regressed_case_count:
         blockers.append(f"退化样本 {regressed_case_count} 条多于提分样本 {improved_case_count} 条")
+    if historical_similarity_risk > max(0.55, base_historical_similarity_risk + 0.08):
+        blockers.append("历史近重复风险过高")
+    if judge_agreement_ratio < 0.66 or judge_agreement_ratio < base_judge_agreement_ratio - 0.08:
+        blockers.append("评审结论分歧扩大")
+    if judge_disagreement_risk > max(0.45, base_judge_disagreement_risk + 0.08):
+        blockers.append("多评审分歧风险过高")
+    if judge_score_stddev > max(8.0, base_judge_score_stddev + 2.0):
+        blockers.append("裁判打分波动过大")
+    if delta_headline >= 0.5 and (delta_reader_value <= -0.5 or delta_density <= -0.5 or delta_structure <= -0.5):
+        blockers.append("标题点击力提升但正文兑现度下降")
+    if delta_hook >= 0.5 and delta_density <= -0.5:
+        blockers.append("开头留存力提升但后文信息密度下降")
+    if delta_shareability >= 0.5 and (delta_emotion <= -0.5 or ai_noise_penalty > base_ai_noise_penalty):
+        blockers.append("社交传播性提升但情绪操纵或标题党风险上升")
 
     if blockers:
         return {
@@ -2069,7 +2797,7 @@ def build_promotion_decision_from_summary(summary: dict[str, Any]) -> dict[str, 
         }
     return {
         "suggestion": "keep",
-        "reason": f"总分提升 {delta_total:.2f}，提分样本 {improved_case_count} 条，事实风险与机器腔未上升。",
+        "reason": f"总分提升 {delta_total:.2f}，提分样本 {improved_case_count} 条，事实风险、近重复与多评审分歧守卫均未触发。",
     }
 
 
@@ -3489,13 +4217,20 @@ def handle_writing_eval_run_job(connection: RuntimeConnection, payload: dict[str
 
     started_at = now_iso()
     started_param = timestamp_value(connection, started_at)
+    progress_summary: dict[str, Any] = {
+        "casesProcessed": 0,
+        "pipelineStage": "generation_running",
+        "runStartedAt": started_at,
+        "generationStartedAt": started_at,
+        "lastProgressAt": started_at,
+    }
     connection.execute(
         """
         UPDATE writing_optimization_runs
         SET status = 'running', started_at = ?, finished_at = NULL, error_message = NULL, score_summary_json = ?
         WHERE id = ?
         """,
-        (started_param, json_value(connection, {"casesProcessed": 0}), run_id),
+        (started_param, json_value(connection, progress_summary), run_id),
     )
     connection.execute("DELETE FROM writing_optimization_results WHERE run_id = ?", (run_id,))
     connection.commit()
@@ -3509,6 +4244,7 @@ def handle_writing_eval_run_job(connection: RuntimeConnection, payload: dict[str
             str(run.get("base_version_type") or ""),
             str(run.get("base_version_ref") or ""),
         )
+        base_prompt = attach_writing_eval_prompt_models(connection, base_prompt)
         base_scoring_profile = resolve_writing_eval_scoring_profile(
             connection,
             str(run.get("base_version_type") or ""),
@@ -3528,6 +4264,7 @@ def handle_writing_eval_run_job(connection: RuntimeConnection, payload: dict[str
             str(run.get("candidate_version_type") or ""),
             str(run.get("candidate_version_ref") or ""),
         )
+        candidate_prompt = attach_writing_eval_prompt_models(connection, candidate_prompt)
         candidate_scoring_profile = resolve_writing_eval_scoring_profile(
             connection,
             str(run.get("candidate_version_type") or ""),
@@ -3554,170 +4291,103 @@ def handle_writing_eval_run_job(connection: RuntimeConnection, payload: dict[str
         )
         if not cases:
             raise RuntimeError("当前评测集没有启用中的样本")
-
-        for case_row in cases:
-            try:
-                if (
-                    base_prompt["promptId"] == candidate_prompt["promptId"]
-                    and base_prompt["version"] == candidate_prompt["version"]
-                    and base_prompt["sceneCode"] == candidate_prompt["sceneCode"]
-                    and base_prompt["promptContent"] == candidate_prompt["promptContent"]
-                    and base_layout_strategy["label"] == candidate_layout_strategy["label"]
-                    and base_apply_command_template["label"] == candidate_apply_command_template["label"]
-                ):
-                    candidate_generated, candidate_scores, candidate_model, candidate_errors = execute_writing_eval_case(
-                        connection,
-                        case_row,
-                        candidate_prompt,
-                        candidate_scoring_profile,
-                        experiment_mode,
-                        candidate_layout_strategy,
-                        candidate_apply_command_template,
-                    )
-                    candidate_scores["status"] = "succeeded"
-                    base_generated = candidate_generated
-                    base_scores = score_writing_result(
-                        case_row,
-                        base_generated,
-                        base_prompt,
-                        candidate_model,
-                        base_scoring_profile,
-                        experiment_mode,
-                    )
-                    base_scores["status"] = "succeeded"
-                    base_scores["judge_payload_json"]["layoutStrategyLabel"] = base_layout_strategy["label"]
-                    base_scores["judge_payload_json"]["applyCommandTemplateLabel"] = base_apply_command_template["label"]
-                    base_model = candidate_model
-                    base_errors = list(candidate_errors)
-                else:
-                    base_generated, base_scores, base_model, base_errors = execute_writing_eval_case(
-                        connection,
-                        case_row,
-                        base_prompt,
-                        base_scoring_profile,
-                        experiment_mode,
-                        base_layout_strategy,
-                        base_apply_command_template,
-                    )
-                    base_scores["status"] = "succeeded"
-                    candidate_generated, candidate_scores, candidate_model, candidate_errors = execute_writing_eval_case(
-                        connection,
-                        case_row,
-                        candidate_prompt,
-                        candidate_scoring_profile,
-                        experiment_mode,
-                        candidate_layout_strategy,
-                        candidate_apply_command_template,
-                    )
-                    candidate_scores["status"] = "succeeded"
-
-                delta_scores = build_score_delta(candidate_scores, base_scores)
-                winner = determine_winner(candidate_scores, base_scores)
-                candidate_judge_payload = dict(candidate_scores["judge_payload_json"])
-                if candidate_errors:
-                    candidate_judge_payload["fallbackErrors"] = candidate_errors
-                candidate_judge_payload["baseline"] = {
-                    "versionRef": str(run.get("base_version_ref") or ""),
-                    "versionType": str(run.get("base_version_type") or ""),
-                    "model": base_model,
-                    "generated": base_generated,
-                    "scores": build_score_snapshot(base_scores),
-                    "judge": base_scores["judge_payload_json"],
-                    "fallbackErrors": base_errors,
-                }
-                candidate_judge_payload["comparison"] = {
-                    "winner": winner,
-                    "delta": delta_scores,
-                    "candidateVersionRef": str(run.get("candidate_version_ref") or ""),
-                    "baseVersionRef": str(run.get("base_version_ref") or ""),
-                    "experimentMode": experiment_mode,
-                }
-                candidate_judge_payload["versions"] = {
-                    "base": {
-                        "type": str(run.get("base_version_type") or ""),
-                        "ref": str(run.get("base_version_ref") or ""),
-                        "label": base_prompt["label"],
-                        "sceneCode": base_prompt["sceneCode"],
-                        "scoringProfile": base_scoring_profile["label"],
-                        "layoutStrategy": base_layout_strategy["label"],
-                        "applyCommandTemplate": base_apply_command_template["label"],
-                    },
-                    "candidate": {
-                        "type": str(run.get("candidate_version_type") or ""),
-                        "ref": str(run.get("candidate_version_ref") or ""),
-                        "label": candidate_prompt["label"],
-                        "sceneCode": candidate_prompt["sceneCode"],
-                        "scoringProfile": candidate_scoring_profile["label"],
-                        "layoutStrategy": candidate_layout_strategy["label"],
-                        "applyCommandTemplate": candidate_apply_command_template["label"],
-                    },
-                }
-                candidate_judge_payload["experimentMode"] = experiment_mode
-                candidate_scores["judge_payload_json"] = candidate_judge_payload
-            except Exception as case_error:
-                error_message = str(case_error)
-                base_generated = build_failed_generation(case_row, error_message)
-                candidate_generated = build_failed_generation(case_row, error_message)
-                base_model = "failed"
-                candidate_model = "failed"
-                base_errors = []
-                candidate_errors = []
-                base_scores = build_failed_scores(base_prompt, base_model, case_row, error_message)
-                candidate_scores = build_failed_scores(candidate_prompt, candidate_model, case_row, error_message)
-                base_scores["status"] = "failed"
-                candidate_scores["status"] = "failed"
-                candidate_scores["judge_payload_json"]["baseline"] = {
-                    "versionRef": str(run.get("base_version_ref") or ""),
-                    "versionType": str(run.get("base_version_type") or ""),
-                    "model": base_model,
-                    "generated": base_generated,
-                    "scores": build_score_snapshot(base_scores),
-                    "judge": base_scores["judge_payload_json"],
-                    "fallbackErrors": base_errors,
-                }
-                candidate_scores["judge_payload_json"]["comparison"] = {
-                    "winner": "failed",
-                    "delta": build_score_delta(candidate_scores, base_scores),
-                    "candidateVersionRef": str(run.get("candidate_version_ref") or ""),
-                    "baseVersionRef": str(run.get("base_version_ref") or ""),
-                    "experimentMode": experiment_mode,
-                }
-                candidate_scores["judge_payload_json"]["versions"] = {
-                    "base": {
-                        "type": str(run.get("base_version_type") or ""),
-                        "ref": str(run.get("base_version_ref") or ""),
-                        "label": base_prompt["label"],
-                        "sceneCode": base_prompt["sceneCode"],
-                        "layoutStrategy": base_layout_strategy["label"],
-                        "applyCommandTemplate": base_apply_command_template["label"],
-                    },
-                    "candidate": {
-                        "type": str(run.get("candidate_version_type") or ""),
-                        "ref": str(run.get("candidate_version_ref") or ""),
-                        "label": candidate_prompt["label"],
-                        "sceneCode": candidate_prompt["sceneCode"],
-                        "layoutStrategy": candidate_layout_strategy["label"],
-                        "applyCommandTemplate": candidate_apply_command_template["label"],
-                    },
-                }
-                candidate_scores["judge_payload_json"]["experimentMode"] = experiment_mode
-                candidate_scores["judge_payload_json"]["caseError"] = error_message[:500]
-
-            save_writing_eval_result(connection, run_id, int(case_row["id"]), candidate_generated, candidate_scores)
-            candidate_scored_results.append(candidate_scores)
-            base_scored_results.append(base_scores)
-            connection.commit()
-
-        score_payload = {
-            "casesProcessed": len(candidate_scored_results),
+        case_concurrency = min(len(cases), get_writing_eval_case_concurrency())
+        progress_base_payload = {
+            "casesProcessed": 0,
+            "totalCaseCount": len(cases),
+            "parallelCaseExecution": case_concurrency > 1,
+            "caseConcurrency": case_concurrency,
+            "failedCaseCount": 0,
             "baseVersionRef": str(run.get("base_version_ref") or ""),
             "candidateVersionRef": str(run.get("candidate_version_ref") or ""),
             "baseVersionType": str(run.get("base_version_type") or ""),
             "candidateVersionType": str(run.get("candidate_version_type") or ""),
             "experimentMode": experiment_mode,
-            "pipelineStage": "generation_completed",
-            "generationCompletedAt": now_iso(),
+            "pipelineStage": "generation_running",
+            "runStartedAt": started_at,
+            "generationStartedAt": started_at,
+            "lastProgressAt": started_at,
         }
+        progress_summary = dict(progress_base_payload)
+        connection.execute(
+            """
+            UPDATE writing_optimization_runs
+            SET score_summary_json = ?
+            WHERE id = ?
+            """,
+            (json_value(connection, progress_base_payload), run_id),
+        )
+        connection.commit()
+
+        completed_case_count = 0
+        failed_case_count = 0
+        with ThreadPoolExecutor(max_workers=case_concurrency) as executor:
+            future_map = {
+                executor.submit(
+                    process_writing_eval_case_versions,
+                    connection,
+                    case_row,
+                    run,
+                    experiment_mode,
+                    base_prompt,
+                    base_scoring_profile,
+                    base_layout_strategy,
+                    base_apply_command_template,
+                    candidate_prompt,
+                    candidate_scoring_profile,
+                    candidate_layout_strategy,
+                    candidate_apply_command_template,
+                ): case_row
+                for case_row in cases
+            }
+            for future in as_completed(future_map):
+                case_result = future.result()
+                save_writing_eval_result(
+                    connection,
+                    run_id,
+                    int(case_result["caseId"]),
+                    case_result["candidateGenerated"],
+                    case_result["candidateScores"],
+                )
+                candidate_scored_results.append(case_result["candidateScores"])
+                base_scored_results.append(case_result["baseScores"])
+                completed_case_count += 1
+                if str(case_result["candidateScores"].get("status") or "") != "succeeded":
+                    failed_case_count += 1
+                case_progress_at = now_iso()
+                progress_payload = {
+                    **progress_base_payload,
+                    "casesProcessed": completed_case_count,
+                    "failedCaseCount": failed_case_count,
+                    "currentCaseId": int(case_result["caseId"]),
+                    "currentTaskCode": str(case_result["taskCode"]),
+                    "currentTopicTitle": str(case_result["topicTitle"]),
+                    "lastProgressAt": case_progress_at,
+                }
+                progress_summary = dict(progress_payload)
+                connection.execute(
+                    """
+                    UPDATE writing_optimization_runs
+                    SET score_summary_json = ?
+                    WHERE id = ?
+                    """,
+                    (json_value(connection, progress_payload), run_id),
+                )
+                connection.commit()
+
+        score_started_at = now_iso()
+        score_payload = {
+            **progress_base_payload,
+            "casesProcessed": len(candidate_scored_results),
+            "currentCaseId": None,
+            "currentTaskCode": None,
+            "currentTopicTitle": None,
+            "pipelineStage": "scoring_running",
+            "generationCompletedAt": score_started_at,
+            "scoringStartedAt": score_started_at,
+            "lastProgressAt": score_started_at,
+        }
+        progress_summary = dict(score_payload)
         connection.execute(
             """
             UPDATE writing_optimization_runs
@@ -3730,9 +4400,16 @@ def handle_writing_eval_run_job(connection: RuntimeConnection, payload: dict[str
         enqueue_job(connection, "writingEvalScore", {"runId": run_id, "runCode": str(run.get("run_code") or "")})
     except Exception as error:
         failed_at = now_iso()
-        summary = summarize_writing_eval_scores(candidate_scored_results, base_scored_results if base_scored_results else None)
+        summary = {
+            **progress_summary,
+            **summarize_writing_eval_scores(candidate_scored_results, base_scored_results if base_scored_results else None),
+        }
         summary["error"] = str(error)
         summary["experimentMode"] = normalize_writing_eval_experiment_mode(run.get("experiment_mode"))
+        summary["pipelineStage"] = "generation_failed"
+        summary["failedStage"] = "generation"
+        summary["failedAt"] = failed_at
+        summary["lastProgressAt"] = failed_at
         connection.execute(
             """
             UPDATE writing_optimization_runs
@@ -3757,7 +4434,7 @@ def handle_writing_eval_score_job(connection: RuntimeConnection, payload: dict[s
 
     run = connection.fetchone(
         """
-        SELECT id, run_code, base_version_type, base_version_ref, candidate_version_type, candidate_version_ref, experiment_mode
+        SELECT id, run_code, base_version_type, base_version_ref, candidate_version_type, candidate_version_ref, experiment_mode, score_summary_json
         FROM writing_optimization_runs
         WHERE id = ?
         LIMIT 1
@@ -3767,18 +4444,44 @@ def handle_writing_eval_score_job(connection: RuntimeConnection, payload: dict[s
     if run is None:
         raise RuntimeError("writing eval run not found")
 
+    scoring_progress_summary: dict[str, Any] = {}
     try:
+        existing_summary = parse_payload(run.get("score_summary_json"))
+        scoring_started_at = str(existing_summary.get("scoringStartedAt") or now_iso())
+        scoring_progress_summary = {
+            **existing_summary,
+            "pipelineStage": "scoring_running",
+            "scoringStartedAt": scoring_started_at,
+            "lastProgressAt": scoring_started_at,
+        }
+        connection.execute(
+            """
+            UPDATE writing_optimization_runs
+            SET score_summary_json = ?, error_message = NULL
+            WHERE id = ?
+            """,
+            (json_value(connection, scoring_progress_summary), run_id),
+        )
+        connection.commit()
         candidate_results, base_results = extract_candidate_and_base_score_inputs(connection, run_id)
         if not candidate_results:
             raise RuntimeError("当前实验还没有可评分结果")
-        summary = summarize_writing_eval_scores(candidate_results, base_results)
+        score_completed_at = now_iso()
+        summary = {
+            **scoring_progress_summary,
+            **summarize_writing_eval_scores(candidate_results, base_results),
+        }
         summary["baseVersionRef"] = str(run.get("base_version_ref") or "")
         summary["candidateVersionRef"] = str(run.get("candidate_version_ref") or "")
         summary["baseVersionType"] = str(run.get("base_version_type") or "")
         summary["candidateVersionType"] = str(run.get("candidate_version_type") or "")
         summary["experimentMode"] = normalize_writing_eval_experiment_mode(run.get("experiment_mode"))
         summary["pipelineStage"] = "score_completed"
-        summary["scoreCompletedAt"] = now_iso()
+        summary["currentCaseId"] = None
+        summary["currentTaskCode"] = None
+        summary["currentTopicTitle"] = None
+        summary["scoreCompletedAt"] = score_completed_at
+        summary["lastProgressAt"] = score_completed_at
         connection.execute(
             """
             UPDATE writing_optimization_runs
@@ -3791,13 +4494,19 @@ def handle_writing_eval_score_job(connection: RuntimeConnection, payload: dict[s
         enqueue_job(connection, "writingEvalPromote", {"runId": run_id, "runCode": str(run.get("run_code") or "")})
     except Exception as error:
         failed_at = now_iso()
+        failure_summary = dict(scoring_progress_summary or parse_payload(run.get("score_summary_json")))
+        failure_summary["pipelineStage"] = "scoring_failed"
+        failure_summary["failedStage"] = "scoring"
+        failure_summary["failedAt"] = failed_at
+        failure_summary["lastProgressAt"] = failed_at
+        failure_summary["error"] = str(error)
         connection.execute(
             """
             UPDATE writing_optimization_runs
-            SET status = 'failed', error_message = ?, finished_at = ?
+            SET status = 'failed', score_summary_json = ?, error_message = ?, finished_at = ?
             WHERE id = ?
             """,
-            (str(error)[:400], timestamp_value(connection, failed_at), run_id),
+            (json_value(connection, failure_summary), str(error)[:400], timestamp_value(connection, failed_at), run_id),
         )
         connection.commit()
         raise
@@ -3820,8 +4529,22 @@ def handle_writing_eval_promote_job(connection: RuntimeConnection, payload: dict
     if run is None:
         raise RuntimeError("writing eval run not found")
 
+    summary: dict[str, Any] = {}
     try:
         summary = parse_payload(run.get("score_summary_json"))
+        promotion_started_at = now_iso()
+        summary["pipelineStage"] = "promoting_running"
+        summary["promotionStartedAt"] = str(summary.get("promotionStartedAt") or promotion_started_at)
+        summary["lastProgressAt"] = promotion_started_at
+        connection.execute(
+            """
+            UPDATE writing_optimization_runs
+            SET score_summary_json = ?, error_message = NULL
+            WHERE id = ?
+            """,
+            (json_value(connection, summary), run_id),
+        )
+        connection.commit()
         decision = build_promotion_decision_from_summary(summary)
         decision_mode = normalize_writing_eval_decision_mode(run.get("decision_mode"))
         resolution_status = normalize_writing_eval_resolution_status(run.get("resolution_status"))
@@ -3837,6 +4560,7 @@ def handle_writing_eval_promote_job(connection: RuntimeConnection, payload: dict
         summary.pop("autoExecutionError", None)
         summary["pipelineStage"] = "promotion_ready"
         summary["promotionCompletedAt"] = finished_at
+        summary["lastProgressAt"] = finished_at
         connection.execute(
             """
             UPDATE writing_optimization_runs
@@ -3885,13 +4609,19 @@ def handle_writing_eval_promote_job(connection: RuntimeConnection, payload: dict
             connection.commit()
     except Exception as error:
         failed_at = now_iso()
+        failure_summary = dict(summary or parse_payload(run.get("score_summary_json")))
+        failure_summary["pipelineStage"] = "promotion_failed"
+        failure_summary["failedStage"] = "promotion"
+        failure_summary["failedAt"] = failed_at
+        failure_summary["lastProgressAt"] = failed_at
+        failure_summary["error"] = str(error)
         connection.execute(
             """
             UPDATE writing_optimization_runs
-            SET status = 'failed', error_message = ?, finished_at = ?
+            SET status = 'failed', score_summary_json = ?, error_message = ?, finished_at = ?
             WHERE id = ?
             """,
-            (str(error)[:400], timestamp_value(connection, failed_at), run_id),
+            (json_value(connection, failure_summary), str(error)[:400], timestamp_value(connection, failed_at), run_id),
         )
         connection.commit()
         raise

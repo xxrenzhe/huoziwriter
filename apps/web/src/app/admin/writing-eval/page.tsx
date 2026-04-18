@@ -1,13 +1,12 @@
 import Link from "next/link";
 import { AdminWritingEvalNav } from "@/components/admin-writing-eval-nav";
-import { getWritingEvalRolloutAuditLogs } from "@/lib/audit";
+import { getWritingEvalAutomationOverview } from "@/lib/admin-writing-eval-automation-overview";
 import {
   buildAdminPromptVersionHref,
   buildAdminWritingEvalDatasetsHref,
   buildAdminWritingEvalRunsHref,
   buildAdminWritingEvalVersionsHref,
 } from "@/lib/admin-writing-eval-links";
-import { normalizeWritingEvalRolloutAuditLogs } from "@/lib/admin-writing-eval-rollout-audits";
 import { requireAdminSession } from "@/lib/page-auth";
 import { formatWritingEvalDateTime, formatWritingEvalMetric } from "@/lib/writing-eval-format";
 import {
@@ -16,6 +15,7 @@ import {
   getWritingEvalReadinessTone,
   getWritingEvalRunStats,
   getWritingEvalScheduleStats,
+  isWritingEvalScheduleExecutable,
 } from "@/lib/writing-eval-view";
 import { getWritingEvalDatasets, getWritingEvalInsights, getWritingEvalRunSchedules, getWritingEvalScoringProfiles, getWritingEvalRuns, getWritingEvalVersions } from "@/lib/writing-eval";
 import { uiPrimitives } from "@huoziwriter/ui";
@@ -29,16 +29,16 @@ function getStrategyActionLabel(item: { executionState: string | null | undefine
 
 export default async function AdminWritingEvalPage() {
   await requireAdminSession();
-  const [datasets, runs, versions, insights, scoringProfiles, schedules, rolloutAudits] = await Promise.all([
+  const [datasets, runs, versions, insights, scoringProfiles, schedules, automationOverview] = await Promise.all([
     getWritingEvalDatasets(),
     getWritingEvalRuns(),
     getWritingEvalVersions(),
     getWritingEvalInsights(),
     getWritingEvalScoringProfiles(),
     getWritingEvalRunSchedules(),
-    getWritingEvalRolloutAuditLogs(120),
+    getWritingEvalAutomationOverview(48),
   ]);
-  const { combinedRolloutAuditLogs } = rolloutAudits;
+  const { combinedRolloutAuditLogs, rolloutActions, counts24h: automationCounts24h } = automationOverview;
 
   const datasetStats = getWritingEvalDatasetStats(datasets);
   const runStats = getWritingEvalRunStats(runs);
@@ -52,11 +52,17 @@ export default async function AdminWritingEvalPage() {
   const onlineCalibration = insights.onlineCalibration;
   const topStrategyRecommendation = insights.strategyRecommendations?.[0] ?? null;
   const recentRolloutAuditLogs = combinedRolloutAuditLogs.filter((item) => Date.now() - new Date(item.createdAt).getTime() <= 24 * 60 * 60 * 1000);
-  const autoRolloutActions = normalizeWritingEvalRolloutAuditLogs(combinedRolloutAuditLogs);
-  const expandActionCount = autoRolloutActions.filter((item) => item.direction === "expand").length;
-  const shrinkActionCount = autoRolloutActions.filter((item) => item.direction === "shrink").length;
-  const highRiskActionCount = autoRolloutActions.filter((item) => item.riskLevel === "cinnabar").length;
-  const latestAutoRolloutAction = autoRolloutActions[0] ?? null;
+  const expandActionCount = rolloutActions.filter((item) => item.direction === "expand").length;
+  const shrinkActionCount = rolloutActions.filter((item) => item.direction === "shrink").length;
+  const highRiskActionCount = rolloutActions.filter((item) => item.riskLevel === "cinnabar").length;
+  const latestAutoRolloutAction = rolloutActions[0] ?? null;
+  const dueSchedules = schedules
+    .filter((item) => item.isEnabled && item.nextRunAt && new Date(item.nextRunAt).getTime() <= Date.now())
+    .sort((left, right) => new Date(left.nextRunAt || 0).getTime() - new Date(right.nextRunAt || 0).getTime())
+    .slice(0, 3);
+  const blockedSchedules = schedules.filter((item) => item.isEnabled && !isWritingEvalScheduleExecutable(item)).slice(0, 3);
+  const erroredSchedules = schedules.filter((item) => item.isEnabled && item.lastError).slice(0, 3);
+  const automationAlertCount = scheduleStats.blockedEnabledCount + scheduleStats.dueCount + erroredSchedules.length + highRiskActionCount;
   const latestRunHref = latestRun ? buildAdminWritingEvalRunsHref({ runId: latestRun.id }) : null;
   const latestRunDatasetHref = latestRun?.datasetId ? buildAdminWritingEvalDatasetsHref({ datasetId: latestRun.datasetId }) : null;
   const latestRunBasePromptHref =
@@ -102,7 +108,7 @@ export default async function AdminWritingEvalPage() {
         <div className="flex items-start justify-between gap-4">
           <div>
             <div className="text-xs uppercase tracking-[0.28em] text-cinnabar">Writing Eval Overview</div>
-            <h1 className="mt-4 font-serifCn text-4xl text-stone-100">写作评测总览</h1>
+            <h1 className="mt-4 font-serifCn text-4xl text-stone-100 text-balance">写作评测总览</h1>
             <p className="mt-4 max-w-4xl text-sm leading-7 text-stone-400">
               这里作为写作版 autoresearch 的总入口，统一查看评测集、实验运行、版本账本和长期校准状态，再决定该去哪个子页继续操作。
             </p>
@@ -117,6 +123,8 @@ export default async function AdminWritingEvalPage() {
           { label: "就绪评测集", value: datasetStats.readyCount, detail: `warning ${datasetStats.warningCount} · blocked ${datasetStats.blockedCount}` },
           { label: "实验运行", value: runs.length, detail: `成功 ${runStats.succeededCount} · 处理中 ${runStats.processingCount}` },
           { label: "自动调度", value: schedules.length, detail: `启用 ${scheduleStats.enabledCount} · 可执行 ${scheduleStats.executableCount} · 阻断 ${scheduleStats.blockedEnabledCount}` },
+          { label: "自动候选", value: automationCounts24h.autoCandidate, detail: `24h 提案 · 派发 ${automationCounts24h.scheduleDispatch} · 补桶 ${automationCounts24h.autoFill}` },
+          { label: "自动决议", value: automationCounts24h.autoResolve, detail: `治理 ${automationCounts24h.autoGovern} · 放量 ${automationCounts24h.autoRollout}` },
           { label: "版本账本", value: versions.length, detail: `keep ${keepCount} · rollback ${rollbackCount}` },
           {
             label: "线上回流",
@@ -128,10 +136,15 @@ export default async function AdminWritingEvalPage() {
             value: combinedRolloutAuditLogs.length,
             detail: `24h ${recentRolloutAuditLogs.length} · 扩量 ${expandActionCount} · 收缩 ${shrinkActionCount}`,
           },
+          {
+            label: "调度告警",
+            value: automationAlertCount,
+            detail: `due ${scheduleStats.dueCount} · error ${erroredSchedules.length} · 高风险动作 ${highRiskActionCount}`,
+          },
         ].map((item) => (
           <div key={item.label} className={uiPrimitives.adminPanel + " p-5"}>
             <div className="text-xs uppercase tracking-[0.18em] text-stone-500">{item.label}</div>
-            <div className="mt-3 text-3xl text-stone-100">{item.value}</div>
+            <div className="mt-3 text-3xl text-stone-100 text-balance">{item.value}</div>
             <div className="mt-3 text-sm text-stone-500">{item.detail}</div>
           </div>
         ))}
@@ -141,8 +154,124 @@ export default async function AdminWritingEvalPage() {
         <div className={uiPrimitives.adminPanel + " p-5"}>
           <div className="flex items-center justify-between gap-3">
             <div>
+              <div className="text-xs uppercase tracking-[0.24em] text-stone-500">自动运营时间线</div>
+              <h2 className="mt-3 font-serifCn text-2xl text-stone-100 text-balance">Scheduler 最近做了什么</h2>
+            </div>
+            <div className="text-sm text-stone-500">
+              24h 提案 {automationCounts24h.autoCandidate} · 决议 {automationCounts24h.autoResolve} · 治理 {automationCounts24h.autoGovern} · 放量 {automationCounts24h.autoRollout} · 校准 {automationCounts24h.autoCalibrate}
+            </div>
+          </div>
+          <div className="mt-5 space-y-3">
+            {automationOverview.items.slice(0, 10).map((item) => (
+              <div key={`automation-feed-${item.kind}-${item.id}`} className="border border-stone-800 bg-stone-950 px-4 py-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-xs uppercase tracking-[0.16em] text-stone-500">{item.kind}</div>
+                    <div className="mt-2 text-sm text-stone-100">{item.title}</div>
+                  </div>
+                  <div className="text-xs text-stone-500">{formatWritingEvalDateTime(item.createdAt)}</div>
+                </div>
+                <div className={`mt-3 text-sm ${item.tone === "cinnabar" ? "text-cinnabar" : item.tone === "amber" ? "text-amber-200" : item.tone === "emerald" ? "text-emerald-400" : "text-stone-400"}`}>
+                  {item.summary}
+                </div>
+                {item.detail ? <div className="mt-2 text-xs leading-6 text-stone-500">{item.detail}</div> : null}
+                {item.href || item.secondaryHref ? (
+                  <div className="mt-3 flex flex-wrap gap-3">
+                    {item.href && item.hrefLabel ? (
+                      <Link href={item.href} className={uiPrimitives.adminSecondaryButton}>
+                        {item.hrefLabel}
+                      </Link>
+                    ) : null}
+                    {item.secondaryHref && item.secondaryHrefLabel ? (
+                      <Link href={item.secondaryHref} className={uiPrimitives.adminSecondaryButton}>
+                        {item.secondaryHrefLabel}
+                      </Link>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+            ))}
+            {automationOverview.items.length === 0 ? <div className="text-sm text-stone-500">最近还没有写作评测自动运营轨迹。</div> : null}
+          </div>
+        </div>
+
+        <div className={uiPrimitives.adminPanel + " p-5"}>
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="text-xs uppercase tracking-[0.24em] text-stone-500">当前告警</div>
+              <h2 className="mt-3 font-serifCn text-2xl text-stone-100 text-balance">先处理这些异常</h2>
+            </div>
+            <div className="text-sm text-stone-500">{automationAlertCount} 项</div>
+          </div>
+          <div className="mt-5 space-y-4">
+            <div className="border border-stone-800 bg-stone-950 px-4 py-4">
+              <div className="text-xs uppercase tracking-[0.18em] text-stone-500">调度阻断</div>
+              <div className="mt-3 text-stone-100">{scheduleStats.blockedEnabledCount} 条启用中的 schedule 当前不可执行</div>
+              <div className="mt-2 text-sm text-stone-500">通常是评测集 readiness 不满足，或自动决议模式要求更高的样本守卫。</div>
+              {blockedSchedules.length > 0 ? (
+                <div className="mt-3 space-y-2">
+                  {blockedSchedules.map((item) => (
+                    <div key={`blocked-schedule-${item.id}`} className="text-xs leading-6 text-stone-400">
+                      <Link href={buildAdminWritingEvalRunsHref({ scheduleId: item.id })} className="transition hover:text-cinnabar">
+                        {item.name}
+                      </Link>
+                      {` · ${item.readiness.status} · ${(item.readiness.blockers[0] || item.readiness.warnings[0] || "待补样本覆盖").trim()}`}
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+
+            <div className="border border-stone-800 bg-stone-950 px-4 py-4">
+              <div className="text-xs uppercase tracking-[0.18em] text-stone-500">到点未处理</div>
+              <div className="mt-3 text-stone-100">{scheduleStats.dueCount} 条启用中的 schedule 已到派发时间</div>
+              <div className="mt-2 text-sm text-stone-500">如果这个数字持续累积，优先排查 scheduler 心跳和 service token。</div>
+              {dueSchedules.length > 0 ? (
+                <div className="mt-3 space-y-2">
+                  {dueSchedules.map((item) => (
+                    <div key={`due-schedule-${item.id}`} className="text-xs leading-6 text-stone-400">
+                      <Link href={buildAdminWritingEvalRunsHref({ scheduleId: item.id })} className="transition hover:text-cinnabar">
+                        {item.name}
+                      </Link>
+                      {` · next ${item.nextRunAt ? formatWritingEvalDateTime(item.nextRunAt) : "--"} · 上次派发 ${item.lastDispatchedAt ? formatWritingEvalDateTime(item.lastDispatchedAt) : "暂无"}`}
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+
+            <div className="border border-stone-800 bg-stone-950 px-4 py-4">
+              <div className="text-xs uppercase tracking-[0.18em] text-stone-500">派发报错与高风险动作</div>
+              <div className="mt-3 text-stone-100">error {erroredSchedules.length} · 高风险自动动作 {highRiskActionCount}</div>
+              <div className="mt-2 text-sm text-stone-500">调度报错看 Runs 调度面板，高风险自动放量动作建议回到 Versions / Runs 复核。</div>
+              {erroredSchedules.length > 0 ? (
+                <div className="mt-3 space-y-2">
+                  {erroredSchedules.map((item) => (
+                    <div key={`errored-schedule-${item.id}`} className="text-xs leading-6 text-cinnabar">
+                      <Link href={buildAdminWritingEvalRunsHref({ scheduleId: item.id })} className="transition hover:text-cinnabar">
+                        {item.name}
+                      </Link>
+                      {` · ${item.lastError}`}
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+              {latestAutoRolloutAction ? (
+                <div className="mt-3 text-xs leading-6 text-stone-400">
+                  最近自动放量：{latestAutoRolloutAction.assetRef || latestAutoRolloutAction.assetType} · {latestAutoRolloutAction.directionLabel} · 风险 {latestAutoRolloutAction.riskLevel}
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="grid gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
+        <div className={uiPrimitives.adminPanel + " p-5"}>
+          <div className="flex items-center justify-between gap-3">
+            <div>
               <div className="text-xs uppercase tracking-[0.24em] text-stone-500">模块导航</div>
-              <h2 className="mt-3 font-serifCn text-2xl text-stone-100">下一步去哪</h2>
+              <h2 className="mt-3 font-serifCn text-2xl text-stone-100 text-balance">下一步去哪</h2>
             </div>
             <div className="text-sm text-stone-500">按任务拆分入口</div>
           </div>

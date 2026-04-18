@@ -18,7 +18,7 @@ export default async function ChangePasswordPage() {
       <div className="grid w-full gap-8 border border-stone-300/40 bg-white shadow-ink lg:grid-cols-[1.1fr_420px]">
         <section className="bg-[#f4efe6] px-8 py-12 md:px-12">
           <div className="text-xs uppercase tracking-[0.28em] text-cinnabar">HuoZi Writer</div>
-          <h1 className="mt-6 font-serifCn text-5xl font-semibold leading-tight text-ink md:text-6xl">先改密码，再继续写。</h1>
+          <h1 className="mt-6 font-serifCn text-5xl font-semibold leading-tight text-ink md:text-6xl text-balance">先改密码，再继续写。</h1>
           <p className="mt-6 max-w-2xl text-base leading-8 text-stone-700">
             {user.must_change_password
               ? "当前仍在使用运营后台发放的初始密码。为确保后台账号与写作资产安全，首次登录后必须先完成密码更新。"
@@ -27,7 +27,7 @@ export default async function ChangePasswordPage() {
         </section>
         <section className="px-8 py-12 md:px-10">
           <div className="text-xs uppercase tracking-[0.28em] text-stone-500">账户安全</div>
-          <h2 className="mt-4 font-serifCn text-3xl text-ink">
+          <h2 className="mt-4 font-serifCn text-3xl text-ink text-balance">
             {user.must_change_password ? "设置新的登录密码" : "修改当前登录密码"}
           </h2>
           <div className="mt-8">

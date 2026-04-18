@@ -166,3 +166,8 @@ __pycache__/
 docs/
 oldcode/
 secrets/
+
+# Local browser automation artifacts
+.playwright-mcp/
+/article4.png
+/home.png

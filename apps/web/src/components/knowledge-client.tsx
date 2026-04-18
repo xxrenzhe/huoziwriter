@@ -85,7 +85,7 @@ export function KnowledgeGovernanceClient({
         ].map(([label, value, note]) => (
           <article key={label} className="border border-stone-800 bg-[#171718] p-5">
             <div className="text-xs uppercase tracking-[0.24em] text-stone-500">{label}</div>
-            <div className="mt-3 font-serifCn text-4xl text-stone-100">{value}</div>
+            <div className="mt-3 font-serifCn text-4xl text-stone-100 text-balance">{value}</div>
             <p className="mt-3 text-sm leading-7 text-stone-400">{note}</p>
           </article>
         ))}
@@ -125,7 +125,7 @@ export function KnowledgeGovernanceClient({
                   </td>
                   <td className="px-6 py-4 text-stone-400">{card.username || `user#${card.id}`}</td>
                   <td className="px-6 py-4">
-                    <select
+                    <select aria-label="select control"
                       value={card.status}
                       onChange={(event) => handleStatus(card.id, event.target.value)}
                       className="border border-stone-800 bg-stone-950 px-3 py-2 text-sm text-stone-100"
@@ -153,12 +153,12 @@ export function KnowledgeGovernanceClient({
 
         <aside className="border border-stone-800 bg-stone-950 p-5">
           <div className="text-xs uppercase tracking-[0.24em] text-stone-500">Revision Timeline</div>
-          <h2 className="mt-4 font-serifCn text-3xl text-stone-100">背景卡治理</h2>
+          <h2 className="mt-4 font-serifCn text-3xl text-stone-100 text-balance">背景卡治理</h2>
           <p className="mt-4 text-sm leading-7 text-stone-400">
             这里优先处理冲突、过期和低置信度档案。每次重编译都保留 revision，确保结论可以回链。
           </p>
           <div className="mt-6 space-y-3">
-            {loading ? <div className="text-sm text-stone-500">正在加载 revision...</div> : null}
+            {loading ? <div className="text-sm text-stone-500">正在加载 revision…</div> : null}
             {!loading && revisions.length === 0 ? <div className="text-sm text-stone-500">当前档案还没有 revision 记录。</div> : null}
             {revisions.map((revision) => (
               <div key={revision.id} className="border border-stone-800 bg-[#151516] p-4">

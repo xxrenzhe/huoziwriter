@@ -67,7 +67,7 @@ export function SupportFormClient({
     <form onSubmit={handleSubmit} className="space-y-5 border border-stone-300/40 bg-white p-6 shadow-ink md:p-8">
       <div>
         <div className="text-xs uppercase tracking-[0.28em] text-cinnabar">Support Form</div>
-        <h2 className="mt-3 font-serifCn text-3xl text-ink">发送信息</h2>
+        <h2 className="mt-3 font-serifCn text-3xl text-ink text-balance">发送信息</h2>
         <p className="mt-3 text-sm leading-7 text-stone-700">
           提交后会进入后台支持池。产品问题请尽量附带路径、时间和异常现象。
         </p>
@@ -77,7 +77,7 @@ export function SupportFormClient({
           <label htmlFor="support-name" className="text-sm text-stone-700">
             名字
           </label>
-          <input
+          <input aria-label="怎么称呼你"
             id="support-name"
             value={name}
             onChange={(event) => setName(event.target.value)}
@@ -90,7 +90,7 @@ export function SupportFormClient({
           <label htmlFor="support-email" className="text-sm text-stone-700">
             邮箱
           </label>
-          <input
+          <input aria-label="name@example.com"
             id="support-email"
             type="email"
             value={email}
@@ -122,7 +122,7 @@ export function SupportFormClient({
         <label htmlFor="support-description" className="text-sm text-stone-700">
           详细描述
         </label>
-        <textarea
+        <textarea aria-label="请写明问题路径、报错信息、页面位置，或你希望新增的功能。"
           id="support-description"
           value={description}
           onChange={(event) => setDescription(event.target.value)}
@@ -134,7 +134,7 @@ export function SupportFormClient({
       {error ? <div className="text-sm text-cinnabar">{error}</div> : null}
       {success ? <div className="border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{success}</div> : null}
       <button disabled={submitting} className={uiPrimitives.primaryButton}>
-        {submitting ? "发送中..." : "发送信息"}
+        {submitting ? "发送中…" : "发送信息"}
       </button>
     </form>
   );

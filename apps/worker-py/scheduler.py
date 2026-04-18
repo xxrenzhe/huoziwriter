@@ -133,6 +133,129 @@ def auto_manage_writing_eval_rollouts() -> dict[str, int]:
         return {"writing_eval_auto_rollout_applied": 0}
 
 
+def auto_fill_writing_eval_datasets() -> dict[str, int]:
+    base_url = os.environ.get("SCHEDULER_SERVICE_URL", "http://127.0.0.1:3000")
+    base_url = base_url.rstrip("/")
+    token = os.environ.get("SCHEDULER_SERVICE_TOKEN") or os.environ.get("JWT_SECRET")
+    if not token:
+        return {"writing_eval_auto_fill_applied": 0, "writing_eval_auto_fill_cases": 0}
+
+    request = urllib.request.Request(
+        f"{base_url}/api/service/writing-eval/auto-fill",
+        data=json.dumps({}).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+            data = payload.get("data") or {}
+            return {
+                "writing_eval_auto_fill_applied": int(data.get("appliedCount", 0)),
+                "writing_eval_auto_fill_cases": int(data.get("createdCaseCount", 0)),
+            }
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as error:
+        print(f"scheduler: writing eval auto fill request failed: {error}", file=sys.stderr, flush=True)
+        return {"writing_eval_auto_fill_applied": 0, "writing_eval_auto_fill_cases": 0}
+
+
+def auto_propose_writing_eval_prompt_candidates() -> dict[str, int]:
+    base_url = os.environ.get("SCHEDULER_SERVICE_URL", "http://127.0.0.1:3000")
+    base_url = base_url.rstrip("/")
+    token = os.environ.get("SCHEDULER_SERVICE_TOKEN") or os.environ.get("JWT_SECRET")
+    if not token:
+        return {"writing_eval_auto_prompt_candidates": 0}
+
+    request = urllib.request.Request(
+        f"{base_url}/api/service/writing-eval/auto-propose-prompt",
+        data=json.dumps({}).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+            data = payload.get("data") or {}
+            return {
+                "writing_eval_auto_prompt_candidates": int(data.get("createdCount", 0)),
+            }
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as error:
+        print(f"scheduler: writing eval auto prompt candidate request failed: {error}", file=sys.stderr, flush=True)
+        return {"writing_eval_auto_prompt_candidates": 0}
+
+
+def auto_optimize_writing_eval_cycle() -> dict[str, int]:
+    base_url = os.environ.get("SCHEDULER_SERVICE_URL", "http://127.0.0.1:3000")
+    base_url = base_url.rstrip("/")
+    token = os.environ.get("SCHEDULER_SERVICE_TOKEN") or os.environ.get("JWT_SECRET")
+    if not token:
+        return {
+            "writing_eval_auto_cycle_activity": 0,
+            "writing_eval_auto_fill_cases": 0,
+            "writing_eval_auto_govern_success": 0,
+            "writing_eval_auto_resolved": 0,
+            "writing_eval_auto_keep": 0,
+            "writing_eval_auto_discard": 0,
+            "writing_eval_auto_calibrated": 0,
+            "writing_eval_auto_rollout_applied": 0,
+            "prompt_auto_rollout_applied": 0,
+            "writing_eval_auto_prompt_candidates": 0,
+        }
+
+    request = urllib.request.Request(
+        f"{base_url}/api/service/writing-eval/auto-optimize-cycle",
+        data=json.dumps({}).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+            data = payload.get("data") or {}
+            auto_fill = data.get("autoFill") or {}
+            auto_govern = data.get("autoGovern") or {}
+            auto_resolve = data.get("autoResolve") or {}
+            auto_calibrate = data.get("autoCalibrate") or {}
+            asset_rollout = data.get("assetRollout") or {}
+            prompt_rollout = data.get("promptRollout") or {}
+            auto_propose = data.get("autoPropose") or {}
+            return {
+                "writing_eval_auto_cycle_activity": int(data.get("totalActivityCount", 0)),
+                "writing_eval_auto_fill_cases": int(auto_fill.get("createdCaseCount", 0)),
+                "writing_eval_auto_govern_success": int(auto_govern.get("successCount", 0)),
+                "writing_eval_auto_resolved": int(auto_resolve.get("resolvedCount", 0)),
+                "writing_eval_auto_keep": int(auto_resolve.get("keepCount", 0)),
+                "writing_eval_auto_discard": int(auto_resolve.get("discardCount", 0)),
+                "writing_eval_auto_calibrated": 1 if str(auto_calibrate.get("action") or "") == "created" else 0,
+                "writing_eval_auto_rollout_applied": int(asset_rollout.get("appliedCount", 0)),
+                "prompt_auto_rollout_applied": int(prompt_rollout.get("appliedCount", 0)),
+                "writing_eval_auto_prompt_candidates": int(auto_propose.get("createdCount", 0)),
+            }
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as error:
+        print(f"scheduler: writing eval auto optimize cycle request failed: {error}", file=sys.stderr, flush=True)
+        return {
+            "writing_eval_auto_cycle_activity": 0,
+            "writing_eval_auto_fill_cases": 0,
+            "writing_eval_auto_govern_success": 0,
+            "writing_eval_auto_resolved": 0,
+            "writing_eval_auto_keep": 0,
+            "writing_eval_auto_discard": 0,
+            "writing_eval_auto_calibrated": 0,
+            "writing_eval_auto_rollout_applied": 0,
+            "prompt_auto_rollout_applied": 0,
+            "writing_eval_auto_prompt_candidates": 0,
+        }
+
+
 def auto_manage_prompt_rollouts() -> dict[str, int]:
     base_url = os.environ.get("SCHEDULER_SERVICE_URL", "http://127.0.0.1:3000")
     base_url = base_url.rstrip("/")
@@ -186,9 +309,7 @@ def main() -> None:
             stats = run_scheduler_tick(connection)
             refresh_stats = refresh_wechat_tokens()
             writing_eval_stats = dispatch_all_writing_eval_schedules()
-            writing_eval_calibration_stats = auto_calibrate_writing_eval_profile()
-            writing_eval_rollout_stats = auto_manage_writing_eval_rollouts()
-            prompt_rollout_stats = auto_manage_prompt_rollouts()
+            writing_eval_cycle_stats = auto_optimize_writing_eval_cycle()
             print(
                 "scheduler: "
                 f"expired_tokens={stats['expired_tokens']} "
@@ -196,9 +317,16 @@ def main() -> None:
                 f"scheduled_refresh_refreshed={refresh_stats['scheduled_refresh_refreshed']} "
                 f"scheduled_refresh_failed={refresh_stats['scheduled_refresh_failed']} "
                 f"writing_eval_dispatched={writing_eval_stats['writing_eval_dispatched']} "
-                f"writing_eval_auto_calibrated={writing_eval_calibration_stats['writing_eval_auto_calibrated']} "
-                f"writing_eval_auto_rollout_applied={writing_eval_rollout_stats['writing_eval_auto_rollout_applied']} "
-                f"prompt_auto_rollout_applied={prompt_rollout_stats['prompt_auto_rollout_applied']} "
+                f"writing_eval_auto_cycle_activity={writing_eval_cycle_stats['writing_eval_auto_cycle_activity']} "
+                f"writing_eval_auto_fill_cases={writing_eval_cycle_stats['writing_eval_auto_fill_cases']} "
+                f"writing_eval_auto_govern_success={writing_eval_cycle_stats['writing_eval_auto_govern_success']} "
+                f"writing_eval_auto_resolved={writing_eval_cycle_stats['writing_eval_auto_resolved']} "
+                f"writing_eval_auto_keep={writing_eval_cycle_stats['writing_eval_auto_keep']} "
+                f"writing_eval_auto_discard={writing_eval_cycle_stats['writing_eval_auto_discard']} "
+                f"writing_eval_auto_calibrated={writing_eval_cycle_stats['writing_eval_auto_calibrated']} "
+                f"writing_eval_auto_rollout_applied={writing_eval_cycle_stats['writing_eval_auto_rollout_applied']} "
+                f"writing_eval_auto_prompt_candidates={writing_eval_cycle_stats['writing_eval_auto_prompt_candidates']} "
+                f"prompt_auto_rollout_applied={writing_eval_cycle_stats['prompt_auto_rollout_applied']} "
                 f"requeued_jobs={stats['requeued_jobs']} "
                 f"deleted_snapshots={stats['deleted_snapshots']} "
                 f"stale_cards_marked={stats['stale_cards_marked']} "

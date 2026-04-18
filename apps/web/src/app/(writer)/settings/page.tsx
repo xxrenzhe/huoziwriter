@@ -110,7 +110,7 @@ function stringifySummary(value: string | Record<string, unknown> | null) {
 function summarizeSyncPayload(value: string | Record<string, unknown> | null, maxLength = 180) {
   const summary = stringifySummary(value);
   if (!summary) return null;
-  return summary.length > maxLength ? `${summary.slice(0, maxLength).trimEnd()}...` : summary;
+  return summary.length > maxLength ? `${summary.slice(0, maxLength).trimEnd()}…` : summary;
 }
 
 function parseStringList(value: unknown) {
@@ -363,7 +363,7 @@ export default async function SettingsPage() {
           <section id="personas-series" className="space-y-4 scroll-mt-8">
             <div className="border border-stone-300/40 bg-white p-6 shadow-ink">
               <div className="text-xs uppercase tracking-[0.24em] text-cinnabar">作者与系列</div>
-              <div className="mt-3 font-serifCn text-3xl text-ink">先固定写作身份，再沉淀可复用的文风资产。</div>
+              <div className="mt-3 font-serifCn text-3xl text-ink text-balance">先固定写作身份，再沉淀可复用的文风资产。</div>
               <div className="mt-3 text-sm leading-7 text-stone-700">
                 每篇稿件都应该先归属一个长期经营的系列，再从系列绑定的人设和风格资产继承约束，而不是在后期随手切换口气。这里负责维护系列、默认人设和写作风格沉淀。
               </div>
@@ -421,7 +421,7 @@ export default async function SettingsPage() {
             <div className="flex flex-wrap items-end justify-between gap-4">
               <div>
                 <div className="text-xs uppercase tracking-[0.24em] text-cinnabar">资产中心</div>
-                <div className="mt-3 font-serifCn text-3xl text-ink">把长期沉淀的素材、模板、图像和信源集中管理。</div>
+                <div className="mt-3 font-serifCn text-3xl text-ink text-balance">把长期沉淀的素材、模板、图像和信源集中管理。</div>
                 <div className="mt-3 text-sm leading-7 text-stone-700">
                   你的个人空间已经沉淀了 {workspaceAssets.articlesCount} 篇稿件、{workspaceAssets.fragmentsCount} 条素材、{workspaceAssets.seriesCount} 个系列、{workspaceAssets.personasCount} 个作者人设、{workspaceAssets.customTemplatesCount} 个私有模板和 {workspaceAssets.wechatConnectionsCount} 个发布连接。
                 </div>
@@ -437,7 +437,7 @@ export default async function SettingsPage() {
                   {workspaceHealthStats.map((item) => (
                     <div key={item.label} className="border border-stone-300/40 bg-white px-4 py-4">
                       <div className="text-xs uppercase tracking-[0.18em] text-stone-500">{item.label}</div>
-                      <div className="mt-3 font-serifCn text-3xl text-ink">{item.value}</div>
+                      <div className="mt-3 font-serifCn text-3xl text-ink text-balance">{item.value}</div>
                       <div className="mt-2 text-sm leading-6 text-stone-700">{item.note}</div>
                     </div>
                   ))}
@@ -538,37 +538,37 @@ export default async function SettingsPage() {
             <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
               <article className="border border-stone-300/40 bg-[#faf7f0] p-5">
                 <div className="text-xs uppercase tracking-[0.24em] text-stone-500">写作库存</div>
-                <div className="mt-3 font-serifCn text-3xl text-ink">{workspaceAssets.articlesCount + workspaceAssets.fragmentsCount}</div>
+                <div className="mt-3 font-serifCn text-3xl text-ink text-balance">{workspaceAssets.articlesCount + workspaceAssets.fragmentsCount}</div>
                 <div className="mt-3 text-sm leading-7 text-stone-700">稿件 {workspaceAssets.articlesCount} 篇，素材 {workspaceAssets.fragmentsCount} 条。所有后续大纲、写作和核查都从这里取材。</div>
               </article>
               <article className="border border-stone-300/40 bg-[#faf7f0] p-5">
                 <div className="text-xs uppercase tracking-[0.24em] text-stone-500">背景卡</div>
-                <div className="mt-3 font-serifCn text-3xl text-ink">{workspaceAssets.knowledgeCardsCount}</div>
+                <div className="mt-3 font-serifCn text-3xl text-ink text-balance">{workspaceAssets.knowledgeCardsCount}</div>
                 <div className="mt-3 text-sm leading-7 text-stone-700">已激活 {workspaceAssets.activeKnowledgeCardsCount} 张，待处理冲突 {workspaceAssets.conflictedKnowledgeCardsCount} 张。</div>
               </article>
               <article className="border border-stone-300/40 bg-[#faf7f0] p-5">
                 <div className="text-xs uppercase tracking-[0.24em] text-stone-500">人设与文风</div>
-                <div className="mt-3 font-serifCn text-3xl text-ink">{workspaceAssets.seriesCount + workspaceAssets.personasCount + workspaceAssets.writingStyleProfilesCount}</div>
+                <div className="mt-3 font-serifCn text-3xl text-ink text-balance">{workspaceAssets.seriesCount + workspaceAssets.personasCount + workspaceAssets.writingStyleProfilesCount}</div>
                 <div className="mt-3 text-sm leading-7 text-stone-700">系列 {workspaceAssets.seriesCount} 个，作者人设 {workspaceAssets.personasCount} 个，写作风格资产 {workspaceAssets.writingStyleProfilesCount} 个，持续影响选题与写作输出。</div>
               </article>
               <article className="border border-stone-300/40 bg-[#faf7f0] p-5">
                 <div className="text-xs uppercase tracking-[0.24em] text-stone-500">模板资产</div>
-                <div className="mt-3 font-serifCn text-3xl text-ink">{workspaceAssets.customTemplatesCount}</div>
+                <div className="mt-3 font-serifCn text-3xl text-ink text-balance">{workspaceAssets.customTemplatesCount}</div>
                 <div className="mt-3 text-sm leading-7 text-stone-700">私有模板 {workspaceAssets.customTemplatesCount} 个，可直接用于预览、排版与发布。</div>
               </article>
               <article className="border border-stone-300/40 bg-[#faf7f0] p-5">
                 <div className="text-xs uppercase tracking-[0.24em] text-stone-500">图像资产</div>
-                <div className="mt-3 font-serifCn text-3xl text-ink">{workspaceAssets.coverImagesCount + workspaceAssets.imagePromptsCount}</div>
+                <div className="mt-3 font-serifCn text-3xl text-ink text-balance">{workspaceAssets.coverImagesCount + workspaceAssets.imagePromptsCount}</div>
                 <div className="mt-3 text-sm leading-7 text-stone-700">封面图 {workspaceAssets.coverImagesCount} 张，文中配图提示词 {workspaceAssets.imagePromptsCount} 条。</div>
               </article>
               <article className="border border-stone-300/40 bg-[#faf7f0] p-5">
                 <div className="text-xs uppercase tracking-[0.24em] text-stone-500">机会信源</div>
-                <div className="mt-3 font-serifCn text-3xl text-ink">{workspaceAssets.customTopicSourcesCount}</div>
+                <div className="mt-3 font-serifCn text-3xl text-ink text-balance">{workspaceAssets.customTopicSourcesCount}</div>
                 <div className="mt-3 text-sm leading-7 text-stone-700">自定义源 {workspaceAssets.customTopicSourcesCount} 个，系统默认源 {systemTopicSources.length} 个；付费套餐可继续扩充个人来源池。</div>
               </article>
               <article className="border border-stone-300/40 bg-[#faf7f0] p-5">
                 <div className="text-xs uppercase tracking-[0.24em] text-stone-500">发布连接</div>
-                <div className="mt-3 font-serifCn text-3xl text-ink">{workspaceAssets.wechatConnectionsCount}</div>
+                <div className="mt-3 font-serifCn text-3xl text-ink text-balance">{workspaceAssets.wechatConnectionsCount}</div>
                 <div className="mt-3 text-sm leading-7 text-stone-700">已绑定公众号 {workspaceAssets.wechatConnectionsCount} 个，后续发布、恢复发布和草稿箱同步都依赖这里的连接资产。</div>
               </article>
             </div>
@@ -646,7 +646,7 @@ export default async function SettingsPage() {
             <div className="flex flex-wrap items-end justify-between gap-4">
               <div>
                 <div className="text-xs uppercase tracking-[0.24em] text-cinnabar">模板资产</div>
-                <div className="mt-3 font-serifCn text-3xl text-ink">把模板提取结果沉淀为你自己的排版资产。</div>
+                <div className="mt-3 font-serifCn text-3xl text-ink text-balance">把模板提取结果沉淀为你自己的排版资产。</div>
                 <div className="mt-3 text-sm leading-7 text-stone-700">
                   当前个人空间中共有 {ownedTemplates.length}{customTemplateLimit > 0 ? ` / ${customTemplateLimit}` : ""} 个私有模板。
                   {canExtractTemplates
@@ -663,7 +663,7 @@ export default async function SettingsPage() {
                     <div className="text-xs uppercase tracking-[0.24em] text-stone-500">
                       私有模板 · {template.version}
                     </div>
-                    <div className="mt-3 font-serifCn text-2xl text-ink">{template.name}</div>
+                    <div className="mt-3 font-serifCn text-2xl text-ink text-balance">{template.name}</div>
                     <div className="mt-3 text-sm leading-7 text-stone-700">{template.description || "暂无说明"}</div>
                     <div className="mt-4 flex flex-wrap gap-2 text-xs text-stone-600">
                       <span className="border border-stone-300 bg-white px-3 py-1">语气 {summarizeTemplateTone(template.config)}</span>
@@ -685,7 +685,7 @@ export default async function SettingsPage() {
             </div>
             <div id="topic-sources" className="border border-stone-300/40 bg-white p-6 shadow-ink">
             <div className="text-xs uppercase tracking-[0.24em] text-cinnabar">机会信源</div>
-            <div className="mt-3 font-serifCn text-3xl text-ink">把系统源和你的个人来源池分开管理。</div>
+            <div className="mt-3 font-serifCn text-3xl text-ink text-balance">把系统源和你的个人来源池分开管理。</div>
             <div className="mt-3 text-sm leading-7 text-stone-700">
               当前可见 {topicSources.length} 个信息源，其中系统源 {systemTopicSources.length} 个、自定义源 {customTopicSources.length} 个。新的信源类型与优先级会直接影响热点排序。
               {customTopicSourceLimit > 0 ? ` 当前套餐最多可启用 ${customTopicSourceLimit} 个自定义源。` : " 当前套餐仅可浏览系统默认源。"}
@@ -720,7 +720,7 @@ export default async function SettingsPage() {
           <section id="publishing-connections" className="space-y-4 scroll-mt-8">
             <div className="border border-stone-300/40 bg-white p-6 shadow-ink">
               <div className="text-xs uppercase tracking-[0.24em] text-cinnabar">发布连接</div>
-              <div className="mt-3 font-serifCn text-3xl text-ink">把公众号连接和最近发布诊断收进同一处维护。</div>
+              <div className="mt-3 font-serifCn text-3xl text-ink text-balance">把公众号连接和最近发布诊断收进同一处维护。</div>
               <div className="mt-3 text-sm leading-7 text-stone-700">
                 默认公众号、授权状态和同步恢复动作都统一在这里处理，稿件发布阶段只消费这里的连接结果。
               </div>
@@ -749,7 +749,7 @@ export default async function SettingsPage() {
               <div className="flex flex-wrap items-end justify-between gap-4">
                 <div>
                   <div className="text-xs uppercase tracking-[0.24em] text-cinnabar">最近同步记录</div>
-                  <div className="mt-3 font-serifCn text-3xl text-ink">最近请求与响应摘要直接集中展示在这里。</div>
+                  <div className="mt-3 font-serifCn text-3xl text-ink text-balance">最近请求与响应摘要直接集中展示在这里。</div>
                   <div className="mt-3 text-sm leading-7 text-stone-700">
                     这里仅保留最近几次公众号同步诊断，方便快速判断是连接问题、素材问题还是内容格式问题；单篇更细的记录仍回到具体稿件查看。
                   </div>
@@ -825,14 +825,14 @@ export default async function SettingsPage() {
           <section id="account-security" className="space-y-4 scroll-mt-8">
             <div className="border border-stone-300/40 bg-white p-6 shadow-ink">
               <div className="text-xs uppercase tracking-[0.24em] text-cinnabar">账号安全与套餐</div>
-              <div className="mt-3 font-serifCn text-3xl text-ink">把身份、登录安全和套餐配额放回统一的账户管理区。</div>
+              <div className="mt-3 font-serifCn text-3xl text-ink text-balance">把身份、登录安全和套餐配额放回统一的账户管理区。</div>
               <div className="mt-3 text-sm leading-7 text-stone-700">
                 这里不再承担产品叙事，只负责账号信息、退出登录、订阅状态和配额边界，让写作主链路保持干净。
               </div>
             </div>
             <div className="border border-stone-300/40 bg-white p-6 shadow-ink">
               <div className="text-xs uppercase tracking-[0.24em] text-cinnabar">账号信息</div>
-              <div className="mt-4 font-serifCn text-3xl text-ink">{user.display_name || user.username}</div>
+              <div className="mt-4 font-serifCn text-3xl text-ink text-balance">{user.display_name || user.username}</div>
               <div className="mt-3 text-sm leading-7 text-stone-700">
                 用户名：{user.username}<br />
                 角色：{user.role}<br />
@@ -846,7 +846,7 @@ export default async function SettingsPage() {
               <div className="text-xs uppercase tracking-[0.24em] text-cinnabar">订阅与配额</div>
               <div className="mt-4 flex flex-wrap items-end justify-between gap-4">
                 <div>
-                  <div className="font-serifCn text-3xl text-ink">{formatPlanDisplayName(currentPlan?.name || subscription?.plan_name || effectivePlanCode)}</div>
+                  <div className="font-serifCn text-3xl text-ink text-balance">{formatPlanDisplayName(currentPlan?.name || subscription?.plan_name || effectivePlanCode)}</div>
                   <div className="mt-2 text-sm text-stone-700">
                     {planSnapshot.priceCny ? `￥${planSnapshot.priceCny}/月` : "免费套餐"}
                   </div>
@@ -866,7 +866,7 @@ export default async function SettingsPage() {
                 </div>
                 <div className="mt-3 h-3 overflow-hidden border border-stone-200 bg-[#f4efe6]">
                   <div
-                    className="h-full bg-cinnabar transition-all"
+                    className="h-full bg-cinnabar transition-[width] duration-300"
                     style={{ width: planSnapshot.dailyGenerationLimit == null ? "38%" : `${usagePercent}%` }}
                   />
                 </div>

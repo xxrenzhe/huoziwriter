@@ -148,6 +148,8 @@ export function SeriesManager({
   }
 
   async function handleDelete(seriesIdToDelete: number) {
+    if (!window.confirm("确定要删除吗？")) return;
+
     setDeletingId(seriesIdToDelete);
     setMessage("");
     const response = await fetch(`/api/series/${seriesIdToDelete}`, {
@@ -180,7 +182,7 @@ export function SeriesManager({
         ].map(([label, value, note]) => (
           <article key={label} className="border border-stone-300/40 bg-[#fffdfa] p-4">
             <div className="text-xs uppercase tracking-[0.18em] text-stone-500">{label}</div>
-            <div className="mt-3 font-serifCn text-3xl text-ink">{value}</div>
+            <div className="mt-3 font-serifCn text-3xl text-ink text-balance">{value}</div>
             <div className="mt-2 text-sm leading-6 text-stone-700">{note}</div>
           </article>
         ))}
@@ -189,13 +191,13 @@ export function SeriesManager({
       <form onSubmit={handleCreate} className="grid gap-3 border border-stone-300/40 bg-[#faf7f0] p-5">
         <div className="text-xs uppercase tracking-[0.24em] text-cinnabar">新建系列</div>
         <div className="grid gap-3 md:grid-cols-2">
-          <input
+          <input aria-label="系列名称，例如：AI 基础设施观察"
             value={name}
             onChange={(event) => setName(event.target.value)}
             placeholder="系列名称，例如：AI 基础设施观察"
             className="border border-stone-300 bg-white px-4 py-3 text-sm"
           />
-          <select
+          <select aria-label="select control"
             value={personaId}
             onChange={(event) => setPersonaId(event.target.value)}
             disabled={!canCreate}
@@ -214,13 +216,13 @@ export function SeriesManager({
           className="min-h-[92px] border border-stone-300 bg-white px-4 py-3 text-sm leading-7"
         />
         <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_220px]">
-          <input
+          <input aria-label="目标读者：这组稿件主要写给谁"
             value={targetAudience}
             onChange={(event) => setTargetAudience(event.target.value)}
             placeholder="目标读者：这组稿件主要写给谁"
             className="border border-stone-300 bg-white px-4 py-3 text-sm"
           />
-          <select
+          <select aria-label="select control"
             value={activeStatus}
             onChange={(event) => setActiveStatus(event.target.value)}
             className="border border-stone-300 bg-white px-4 py-3 text-sm"
@@ -237,7 +239,7 @@ export function SeriesManager({
             disabled={submitting || !canCreate}
             className="border border-cinnabar bg-cinnabar px-4 py-3 text-sm text-white disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {submitting ? "创建中..." : "保存系列"}
+            {submitting ? "创建中…" : "保存系列"}
           </button>
         </div>
       </form>
@@ -248,12 +250,12 @@ export function SeriesManager({
           return (
             <article key={item.id} className="border border-stone-300/40 bg-white p-5">
               <div className="grid gap-3 md:grid-cols-2">
-                <input
+                <input aria-label="input control"
                   value={draft.name}
                   onChange={(event) => setDrafts((prev) => ({ ...prev, [item.id]: { ...draft, name: event.target.value } }))}
                   className="border border-stone-300 bg-[#fffdfa] px-4 py-3 text-sm"
                 />
-                <select
+                <select aria-label="select control"
                   value={draft.personaId}
                   onChange={(event) => setDrafts((prev) => ({ ...prev, [item.id]: { ...draft, personaId: event.target.value } }))}
                   className="border border-stone-300 bg-[#fffdfa] px-4 py-3 text-sm"
@@ -269,12 +271,12 @@ export function SeriesManager({
                 className="mt-3 min-h-[88px] w-full border border-stone-300 bg-[#fffdfa] px-4 py-3 text-sm leading-7"
               />
               <div className="mt-3 grid gap-3 md:grid-cols-[minmax(0,1fr)_220px]">
-                <input
+                <input aria-label="input control"
                   value={draft.targetAudience}
                   onChange={(event) => setDrafts((prev) => ({ ...prev, [item.id]: { ...draft, targetAudience: event.target.value } }))}
                   className="border border-stone-300 bg-[#fffdfa] px-4 py-3 text-sm"
                 />
-                <select
+                <select aria-label="select control"
                   value={draft.activeStatus}
                   onChange={(event) => setDrafts((prev) => ({ ...prev, [item.id]: { ...draft, activeStatus: event.target.value } }))}
                   className="border border-stone-300 bg-[#fffdfa] px-4 py-3 text-sm"
@@ -295,7 +297,7 @@ export function SeriesManager({
                     disabled={updatingId === item.id}
                     className="border border-stone-300 bg-white px-4 py-2 text-sm text-stone-700 disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    {updatingId === item.id ? "保存中..." : "保存修改"}
+                    {updatingId === item.id ? "保存中…" : "保存修改"}
                   </button>
                   <button
                     type="button"
@@ -303,7 +305,7 @@ export function SeriesManager({
                     disabled={deletingId === item.id}
                     className="border border-stone-300 bg-white px-4 py-2 text-sm text-stone-700 disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    {deletingId === item.id ? "删除中..." : "删除系列"}
+                    {deletingId === item.id ? "删除中…" : "删除系列"}
                   </button>
                 </div>
               </div>

@@ -34,6 +34,7 @@ export default async function ArticlesPage({
   const selectedStatus = getSearchValue(searchParams?.status);
   const selectedTargetPackage = getSearchValue(searchParams?.targetPackage);
   const redirectedFromCapture = getSearchValue(searchParams?.fromCapture) === "1";
+  const hasActiveFilters = (Number.isInteger(selectedSeriesId) && selectedSeriesId > 0) || Boolean(selectedStatus) || Boolean(selectedTargetPackage);
   const drafts = normalizedArticles.filter((article) => !isPublishedArticleStatus(article.status));
   const publishedArticles = normalizedArticles.filter((article) => isPublishedArticleStatus(article.status));
   const recentlySyncedIds = new Set(
@@ -61,18 +62,47 @@ export default async function ArticlesPage({
     return {
       id: article.id,
       title: article.title,
-      status: formatArticleStatusLabel(article.status),
+      status: article.status,
       updatedAt: article.updated_at,
       seriesName: article.series_id ? seriesMap.get(article.series_id)?.name ?? null : null,
       targetPackage: bundle?.outcome?.targetPackage ?? null,
     };
   });
+  const articleListEmptyState = hasActiveFilters
+    ? {
+        eyebrow: "筛选结果",
+        title: "这组筛选条件下，还没有翻到合适稿件。",
+        detail: "稿夹里可能还有别的稿件，只是它们被系列、状态或目标包条件拦在外面了。先放宽筛选，再决定继续推进哪一篇。",
+        prompts: [
+          "先清空筛选，看全量稿件再决定优先级。",
+          "目标包为空时，说明这篇稿还没进入结果管理层。",
+          "如果只想开新稿，可直接回到上方新建区。",
+        ],
+        actionHref: "/articles",
+        actionLabel: "清空筛选",
+        secondaryHref: "/articles#create-article",
+        secondaryLabel: "去新建稿件",
+      }
+    : {
+        eyebrow: "稿件案头",
+        title: "先把第一篇稿件立起来，链路才会开始运转。",
+        detail: "稿件页不是冷冰冰的列表，而是所有机会、策略、证据、成稿和发布结果的总入口。先起一篇稿，后面的每一步才有地方安放。",
+        prompts: [
+          "先写一个能代表问题域的题目，不必一开始就完美。",
+          "题目先落进系列，后续证据和结果回流才不会散。",
+          "如果刚从采集入口回来，先把最值得继续追的一条线立成稿件。",
+        ],
+        actionHref: "#create-article",
+        actionLabel: "去新建稿件",
+        secondaryHref: "/dashboard",
+        secondaryLabel: "回作战台",
+      };
 
   return (
     <div className="space-y-8">
       <section className="border border-stone-300/40 bg-[rgba(255,255,255,0.72)] p-6 shadow-ink md:p-8">
         <div className="text-xs uppercase tracking-[0.3em] text-cinnabar">稿件</div>
-        <h1 className="mt-4 font-serifCn text-4xl font-semibold text-ink md:text-5xl">稿件是唯一内容生产对象。</h1>
+        <h1 className="mt-4 font-serifCn text-4xl font-semibold text-ink md:text-5xl text-balance">稿件是唯一内容生产对象。</h1>
         <p className="mt-4 max-w-3xl text-base leading-8 text-stone-700">
           所有稿件都从这里进入，并统一落到机会、策略、证据、成稿、发布、结果六步主链路。
         </p>
@@ -85,18 +115,18 @@ export default async function ArticlesPage({
           ].map(([label, value, note]) => (
             <article key={label} className="border border-stone-300/40 bg-white p-5 shadow-ink">
               <div className="text-xs uppercase tracking-[0.24em] text-stone-500">{label}</div>
-              <div className="mt-3 font-serifCn text-4xl text-ink">{value}</div>
+              <div className="mt-3 font-serifCn text-4xl text-ink text-balance">{value}</div>
               <div className="mt-3 text-sm leading-7 text-stone-700">{note}</div>
             </article>
           ))}
         </div>
       </section>
 
-      <section className="border border-stone-300/40 bg-white p-6 shadow-ink">
+      <section id="create-article" className="border border-stone-300/40 bg-white p-6 shadow-ink">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
             <div className="text-xs uppercase tracking-[0.28em] text-cinnabar">新建稿件</div>
-            <h2 className="mt-3 font-serifCn text-3xl text-ink">从一个题目开始，先把稿件对象立起来。</h2>
+            <h2 className="mt-3 font-serifCn text-3xl text-ink text-balance">从一个题目开始，先把稿件对象立起来。</h2>
           </div>
           <Link href="/dashboard" className="border border-stone-300 bg-[#faf7f0] px-4 py-3 text-sm text-ink">
             回到作战台
@@ -123,7 +153,7 @@ export default async function ArticlesPage({
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
             <div className="text-xs uppercase tracking-[0.28em] text-cinnabar">全部稿件</div>
-            <h2 className="mt-3 font-serifCn text-3xl text-ink">统一在这里按系列、状态和目标包筛选。</h2>
+            <h2 className="mt-3 font-serifCn text-3xl text-ink text-balance">统一在这里按系列、状态和目标包筛选。</h2>
           </div>
           <Link href="/articles" className="border border-stone-300 bg-[#faf7f0] px-4 py-3 text-sm text-ink">
             清空筛选
@@ -132,7 +162,7 @@ export default async function ArticlesPage({
         <form className="mt-6 grid gap-3 xl:grid-cols-4" method="GET">
           <label className="block text-sm text-stone-700">
             <div className="mb-2 text-xs uppercase tracking-[0.16em] text-stone-500">系列</div>
-            <select name="series" defaultValue={Number.isInteger(selectedSeriesId) && selectedSeriesId > 0 ? String(selectedSeriesId) : ""} className="w-full border border-stone-300 bg-white px-4 py-3 text-sm">
+            <select aria-label="select control" name="series" defaultValue={Number.isInteger(selectedSeriesId) && selectedSeriesId > 0 ? String(selectedSeriesId) : ""} className="w-full border border-stone-300 bg-white px-4 py-3 text-sm">
               <option value="">全部系列</option>
               {series.map((item) => (
                 <option key={item.id} value={item.id}>
@@ -143,7 +173,7 @@ export default async function ArticlesPage({
           </label>
           <label className="block text-sm text-stone-700">
             <div className="mb-2 text-xs uppercase tracking-[0.16em] text-stone-500">状态</div>
-            <select name="status" defaultValue={selectedStatus} className="w-full border border-stone-300 bg-white px-4 py-3 text-sm">
+            <select aria-label="select control" name="status" defaultValue={selectedStatus} className="w-full border border-stone-300 bg-white px-4 py-3 text-sm">
               <option value="">全部状态</option>
               {statusOptions.map((status) => (
                 <option key={status} value={status}>
@@ -154,7 +184,7 @@ export default async function ArticlesPage({
           </label>
           <label className="block text-sm text-stone-700">
             <div className="mb-2 text-xs uppercase tracking-[0.16em] text-stone-500">目标包</div>
-            <select name="targetPackage" defaultValue={selectedTargetPackage} className="w-full border border-stone-300 bg-white px-4 py-3 text-sm">
+            <select aria-label="select control" name="targetPackage" defaultValue={selectedTargetPackage} className="w-full border border-stone-300 bg-white px-4 py-3 text-sm">
               <option value="">全部目标包</option>
               {targetPackageOptions.map((targetPackage) => (
                 <option key={targetPackage} value={targetPackage}>
@@ -169,7 +199,7 @@ export default async function ArticlesPage({
           </div>
         </form>
         <div className="mt-6">
-          <ArticleList articles={articleCards} />
+          <ArticleList articles={articleCards} emptyState={articleListEmptyState} />
         </div>
       </section>
     </div>

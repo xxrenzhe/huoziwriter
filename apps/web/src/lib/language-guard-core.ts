@@ -29,7 +29,7 @@ function escapeRegExp(value: string) {
 }
 
 function templateToRegex(template: string) {
-  const parts = template.split("...").map((part) => escapeRegExp(part.trim())).filter(Boolean);
+  const parts = template.split("…").map((part) => escapeRegExp(part.trim())).filter(Boolean);
   if (parts.length === 0) return null;
   return new RegExp(parts.join("[\\s\\S]{0,40}?"), "g");
 }

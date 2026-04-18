@@ -77,7 +77,7 @@ export function AdminAuditClient({
         ].map(([label, value, note]) => (
           <article key={label} className="border border-stone-800 bg-[#171718] p-5">
             <div className="text-xs uppercase tracking-[0.24em] text-stone-500">{label}</div>
-            <div className="mt-3 font-serifCn text-4xl text-stone-100">{value}</div>
+            <div className="mt-3 font-serifCn text-4xl text-stone-100 text-balance">{value}</div>
             <p className="mt-3 text-sm leading-7 text-stone-400">{note}</p>
           </article>
         ))}
@@ -86,19 +86,19 @@ export function AdminAuditClient({
       <section className="grid gap-4 xl:grid-cols-[minmax(0,1.5fr)_380px]">
         <div className="border border-stone-800 bg-[#171718]">
           <div className="grid gap-3 border-b border-stone-800 p-5 md:grid-cols-[minmax(0,1fr)_200px_200px]">
-            <input
+            <input aria-label="搜索 action / target / payload / 用户名"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="搜索 action / target / payload / 用户名"
               className="border border-stone-800 bg-stone-950 px-4 py-3 text-sm text-stone-100"
             />
-            <select value={action} onChange={(event) => setAction(event.target.value)} className="border border-stone-800 bg-stone-950 px-4 py-3 text-sm text-stone-100">
+            <select aria-label="select control" value={action} onChange={(event) => setAction(event.target.value)} className="border border-stone-800 bg-stone-950 px-4 py-3 text-sm text-stone-100">
               <option value="">全部动作</option>
               {actions.map((item) => (
                 <option key={item} value={item}>{item}</option>
               ))}
             </select>
-            <select value={targetType} onChange={(event) => setTargetType(event.target.value)} className="border border-stone-800 bg-stone-950 px-4 py-3 text-sm text-stone-100">
+            <select aria-label="select control" value={targetType} onChange={(event) => setTargetType(event.target.value)} className="border border-stone-800 bg-stone-950 px-4 py-3 text-sm text-stone-100">
               <option value="">全部目标</option>
               {targetTypes.map((item) => (
                 <option key={item} value={item}>{item}</option>
@@ -137,13 +137,13 @@ export function AdminAuditClient({
             {!loading && logs.length === 0 ? (
               <div className="p-6 text-sm text-stone-500">当前筛选条件下没有审计记录。</div>
             ) : null}
-            {loading ? <div className="border-t border-stone-800 p-4 text-sm text-stone-500">正在刷新审计日志...</div> : null}
+            {loading ? <div className="border-t border-stone-800 p-4 text-sm text-stone-500">正在刷新审计日志…</div> : null}
           </div>
         </div>
 
         <aside className="border border-stone-800 bg-stone-950 p-5">
           <div className="text-xs uppercase tracking-[0.24em] text-stone-500">Audit Detail</div>
-          <h2 className="mt-4 font-serifCn text-3xl text-stone-100">操作回放</h2>
+          <h2 className="mt-4 font-serifCn text-3xl text-stone-100 text-balance">操作回放</h2>
           <p className="mt-4 text-sm leading-7 text-stone-400">
             这里展示每条关键动作的目标对象和载荷快照，便于排查是谁改了配置、谁触发了重编译，以及业务动作是否走到真实链路。
           </p>
