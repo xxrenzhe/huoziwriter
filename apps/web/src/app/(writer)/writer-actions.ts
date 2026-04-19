@@ -55,7 +55,7 @@ function mapWechatConnection(connection: Awaited<ReturnType<typeof getWechatConn
 
 function revalidateWriterSurface(articleId?: number | null) {
   revalidatePath("/settings");
-  revalidatePath("/dashboard");
+  revalidatePath("/warroom");
   revalidatePath("/articles");
   if (articleId) {
     revalidatePath(`/articles/${articleId}`);

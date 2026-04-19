@@ -4,5 +4,24 @@
   "private": true,
   "type": "module",
   "main": "src/index.ts",
-  "types": "src/index.ts"
+  "types": "src/index.ts",
+  "scripts": {
+    "storybook": "CI=1 STORYBOOK_DISABLE_TELEMETRY=1 storybook dev -p 6006 --config-dir .storybook",
+    "build-storybook": "CI=1 STORYBOOK_DISABLE_TELEMETRY=1 storybook build --config-dir .storybook --output-dir storybook-static",
+    "test-storybook": "CI=1 STORYBOOK_DISABLE_TELEMETRY=1 storybook dev --smoke-test --ci -p 6006 --config-dir .storybook",
+    "test-storybook:a11y": "node ../../scripts/check-storybook-a11y.mjs"
+  },
+  "devDependencies": {
+    "@storybook/addon-a11y": "^8.6.18",
+    "@storybook/addon-essentials": "^8.6.18",
+    "@storybook/react": "^8.6.18",
+    "@storybook/react-vite": "^8.6.18",
+    "@types/react": "^18.3.18",
+    "@types/react-dom": "^18.3.5",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "storybook": "^8.6.18",
+    "typescript": "^5.8.3",
+    "vite": "^5.4.14"
+  }
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useState } from "react";
-import { uiPrimitives } from "@huoziwriter/ui";
+import { Button, Input, Select, Textarea, cn, surfaceCardStyles } from "@huoziwriter/ui";
 
 const ISSUE_OPTIONS = [
   { value: "product", label: "产品问题" },
@@ -10,6 +10,13 @@ const ISSUE_OPTIONS = [
   { value: "business", label: "商务合作" },
   { value: "feedback", label: "功能建议" },
 ] as const;
+
+const supportFormClassName = cn(surfaceCardStyles(), "space-y-5 p-6 md:p-8");
+const fieldClassName = "space-y-2";
+const fieldLabelClassName = "text-sm text-inkSoft";
+const descriptionFieldClassName = "min-h-[180px]";
+const errorMessageClassName = "text-sm text-cinnabar";
+const successMessageClassName = cn(surfaceCardStyles({ tone: "success" }), "px-4 py-3 text-sm text-emerald-700 shadow-none");
 
 function normalizeIssueType(value: string | null | undefined) {
   return ISSUE_OPTIONS.some((item) => item.value === value) ? value! : "product";
@@ -64,78 +71,78 @@ export function SupportFormClient({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-5 border border-stone-300/40 bg-white p-6 shadow-ink md:p-8">
+    <form onSubmit={handleSubmit} className={supportFormClassName}>
       <div>
         <div className="text-xs uppercase tracking-[0.28em] text-cinnabar">Support Form</div>
         <h2 className="mt-3 font-serifCn text-3xl text-ink text-balance">发送信息</h2>
-        <p className="mt-3 text-sm leading-7 text-stone-700">
+        <p className="mt-3 text-sm leading-7 text-inkSoft">
           提交后会进入后台支持池。产品问题请尽量附带路径、时间和异常现象。
         </p>
       </div>
       <div className="grid gap-4 md:grid-cols-2">
-        <div className="space-y-2">
-          <label htmlFor="support-name" className="text-sm text-stone-700">
+        <div className={fieldClassName}>
+          <label htmlFor="support-name" className={fieldLabelClassName}>
             名字
           </label>
-          <input aria-label="怎么称呼你"
+          <Input
+            aria-label="怎么称呼你"
             id="support-name"
             value={name}
             onChange={(event) => setName(event.target.value)}
-            className={uiPrimitives.input}
             placeholder="怎么称呼你"
             required
           />
         </div>
-        <div className="space-y-2">
-          <label htmlFor="support-email" className="text-sm text-stone-700">
+        <div className={fieldClassName}>
+          <label htmlFor="support-email" className={fieldLabelClassName}>
             邮箱
           </label>
-          <input aria-label="name@example.com"
+          <Input
+            aria-label="name@example.com"
             id="support-email"
             type="email"
             value={email}
             onChange={(event) => setEmail(event.target.value)}
-            className={uiPrimitives.input}
             placeholder="name@example.com"
             required
           />
         </div>
       </div>
-      <div className="space-y-2">
-        <label htmlFor="support-issue-type" className="text-sm text-stone-700">
+      <div className={fieldClassName}>
+        <label htmlFor="support-issue-type" className={fieldLabelClassName}>
           问题类型
         </label>
-        <select
+        <Select
           id="support-issue-type"
           value={issueType}
           onChange={(event) => setIssueType(event.target.value)}
-          className={uiPrimitives.input}
         >
           {ISSUE_OPTIONS.map((option) => (
             <option key={option.value} value={option.value}>
               {option.label}
             </option>
           ))}
-        </select>
+        </Select>
       </div>
-      <div className="space-y-2">
-        <label htmlFor="support-description" className="text-sm text-stone-700">
+      <div className={fieldClassName}>
+        <label htmlFor="support-description" className={fieldLabelClassName}>
           详细描述
         </label>
-        <textarea aria-label="请写明问题路径、报错信息、页面位置，或你希望新增的功能。"
+        <Textarea
+          aria-label="请写明问题路径、报错信息、页面位置，或你希望新增的功能。"
           id="support-description"
           value={description}
           onChange={(event) => setDescription(event.target.value)}
-          className="min-h-[180px] w-full border border-stone-300 bg-white px-4 py-3 text-sm leading-7"
+          className={descriptionFieldClassName}
           placeholder="请写明问题路径、报错信息、页面位置，或你希望新增的功能。"
           required
         />
       </div>
-      {error ? <div className="text-sm text-cinnabar">{error}</div> : null}
-      {success ? <div className="border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{success}</div> : null}
-      <button disabled={submitting} className={uiPrimitives.primaryButton}>
+      {error ? <div className={errorMessageClassName}>{error}</div> : null}
+      {success ? <div className={successMessageClassName}>{success}</div> : null}
+      <Button type="submit" variant="primary" disabled={submitting}>
         {submitting ? "发送中…" : "发送信息"}
-      </button>
+      </Button>
     </form>
   );
 }

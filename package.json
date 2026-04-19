@@ -7,10 +7,16 @@
     "dev": "pnpm --filter @huoziwriter/web dev",
     "build": "pnpm --filter @huoziwriter/web build",
     "start": "pnpm --filter @huoziwriter/web start",
+    "storybook": "pnpm --filter @huoziwriter/ui storybook",
+    "build-storybook": "pnpm --filter @huoziwriter/ui build-storybook",
+    "test-storybook": "pnpm --filter @huoziwriter/ui test-storybook",
+    "test:ui:a11y": "pnpm --filter @huoziwriter/ui test-storybook:a11y",
     "type-check": "pnpm --filter @huoziwriter/web type-check",
     "db:init": "tsx scripts/db-init.ts",
     "db:migrate": "tsx scripts/db-migrate.ts",
     "verify": "pnpm type-check && NEXT_OUTPUT_MODE=standalone pnpm build && python3 -m py_compile apps/worker-py/main.py apps/worker-py/scheduler.py apps/worker-py/queue_runtime.py && node scripts/check-standalone-runtime-init.mjs && pnpm --filter @huoziwriter/web exec node ../../scripts/check-postgres-runtime-init.mjs",
+    "verify:ui": "pnpm test-storybook && pnpm build-storybook && pnpm test:ui:a11y",
+    "lighthouse:ci": "lhci autorun --config=./lighthouserc.json",
     "test:e2e": "rm -rf apps/web/.next && pnpm build && playwright test",
     "test:e2e:smoke": "rm -rf apps/web/.next && pnpm build && playwright test tests/e2e/smoke.spec.ts"
   },
@@ -21,6 +27,8 @@
     ]
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.11.2",
+    "@lhci/cli": "^0.15.1",
     "@playwright/test": "^1.59.1",
     "tsx": "^4.20.3"
   }

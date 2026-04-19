@@ -1,8 +1,16 @@
+import {
+  Button,
+  Select,
+  buttonStyles,
+  cn,
+  fieldEyebrowClassName,
+  fieldLabelClassName,
+  surfaceCardStyles,
+} from "@huoziwriter/ui";
 import Link from "next/link";
 import { ArticleList, CreateArticleForm } from "@/components/dashboard-client";
 import { compareArticleStatuses, formatArticleStatusLabel, isPublishedArticleStatus, normalizeArticleStatus } from "@/lib/article-status-label";
 import { requireWriterSession } from "@/lib/page-auth";
-import { hasPersona } from "@/lib/personas";
 import { getArticleOutcomeBundlesByUser, getArticlesByUser, getWechatSyncLogs } from "@/lib/repositories";
 import { getSeries } from "@/lib/series";
 
@@ -10,16 +18,46 @@ function getSearchValue(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] || "" : value || "";
 }
 
+const pageClassName = "space-y-8";
+const heroCardClassName = surfaceCardStyles({ tone: "subtle", padding: "lg" });
+const sectionCardClassName = surfaceCardStyles({ padding: "md" });
+const sectionHeaderClassName = "flex flex-wrap items-end justify-between gap-4";
+const accentEyebrowClassName = "text-xs uppercase text-cinnabar";
+const heroEyebrowClassName = cn(accentEyebrowClassName, "tracking-[0.3em]");
+const sectionEyebrowClassName = cn(accentEyebrowClassName, "tracking-[0.28em]");
+const headingBaseClassName = "font-serifCn text-ink text-balance";
+const heroTitleClassName = cn(headingBaseClassName, "mt-4 text-4xl font-semibold md:text-5xl");
+const sectionTitleClassName = cn(headingBaseClassName, "mt-3 text-3xl");
+const bodyCopyClassName = "text-sm leading-7 text-inkSoft";
+const heroDescriptionClassName = cn("mt-4 max-w-3xl text-base leading-8", "text-inkSoft");
+const statsGridClassName = "mt-6 grid gap-4 md:grid-cols-4";
+const statCardClassName = surfaceCardStyles({ padding: "md" });
+const statLabelClassName = "text-xs uppercase tracking-[0.24em] text-inkMuted";
+const statValueClassName = cn(headingBaseClassName, "mt-3 text-4xl");
+const statNoteClassName = cn("mt-3", bodyCopyClassName);
+const secondaryActionLinkClassName = buttonStyles({ variant: "secondary" });
+const redirectedBannerClassName = cn(
+  "mt-5",
+  surfaceCardStyles({ tone: "warning", padding: "sm" }),
+  "shadow-none text-sm leading-7 text-warning",
+);
+const completionBannerClassName = cn(
+  "mt-5",
+  surfaceCardStyles({ tone: "success", padding: "sm" }),
+  "shadow-none text-sm leading-7 text-emerald-700",
+);
+const createFormWrapClassName = "mt-5";
+const filterFormClassName = "mt-6 grid gap-3 xl:grid-cols-4";
+const filterActionsClassName = "flex items-end gap-3";
+const filterResultsClassName = "text-sm text-inkSoft";
+const articleListWrapClassName = "mt-6";
+
 export default async function ArticlesPage({
   searchParams,
 }: {
   searchParams?: Record<string, string | string[] | undefined>;
 }) {
   const { session } = await requireWriterSession();
-  if (!(await hasPersona(session.userId))) {
-    return null;
-  }
-
   const [articles, syncLogs, outcomeBundles, series] = await Promise.all([
     getArticlesByUser(session.userId),
     getWechatSyncLogs(session.userId),
@@ -37,6 +75,7 @@ export default async function ArticlesPage({
   const hasActiveFilters = (Number.isInteger(selectedSeriesId) && selectedSeriesId > 0) || Boolean(selectedStatus) || Boolean(selectedTargetPackage);
   const drafts = normalizedArticles.filter((article) => !isPublishedArticleStatus(article.status));
   const publishedArticles = normalizedArticles.filter((article) => isPublishedArticleStatus(article.status));
+  const hasClearedActiveQueue = normalizedArticles.length > 0 && drafts.length === 0;
   const recentlySyncedIds = new Set(
     syncLogs.filter((log) => log.status === "success").map((log) => log.articleId),
   );
@@ -94,50 +133,56 @@ export default async function ArticlesPage({
         ],
         actionHref: "#create-article",
         actionLabel: "去新建稿件",
-        secondaryHref: "/dashboard",
+        secondaryHref: "/warroom",
         secondaryLabel: "回作战台",
       };
+  const articleStats = [
+    { label: "全部稿件", value: String(articles.length), note: "统一从这里进入稿件详情。" },
+    { label: "待推进", value: String(drafts.length), note: "还没发布的稿件优先清空。" },
+    { label: "已发布", value: String(publishedArticles.length), note: "结果回流、命中判定和复盘都从稿件详情继续推进。" },
+    { label: "已推送微信", value: String(recentlySyncedIds.size), note: "已形成成功草稿箱记录的稿件数。" },
+  ] as const;
 
   return (
-    <div className="space-y-8">
-      <section className="border border-stone-300/40 bg-[rgba(255,255,255,0.72)] p-6 shadow-ink md:p-8">
-        <div className="text-xs uppercase tracking-[0.3em] text-cinnabar">稿件</div>
-        <h1 className="mt-4 font-serifCn text-4xl font-semibold text-ink md:text-5xl text-balance">稿件是唯一内容生产对象。</h1>
-        <p className="mt-4 max-w-3xl text-base leading-8 text-stone-700">
+    <div className={pageClassName}>
+      <section className={heroCardClassName}>
+        <div className={heroEyebrowClassName}>稿件</div>
+        <h1 className={heroTitleClassName}>稿件是唯一内容生产对象。</h1>
+        <p className={heroDescriptionClassName}>
           所有稿件都从这里进入，并统一落到机会、策略、证据、成稿、发布、结果六步主链路。
         </p>
-        <div className="mt-6 grid gap-4 md:grid-cols-4">
-          {[
-            ["全部稿件", String(articles.length), "统一从这里进入稿件详情。"] as const,
-            ["待推进", String(drafts.length), "还没发布的稿件优先清空。"] as const,
-            ["已发布", String(publishedArticles.length), "结果回流、命中判定和复盘都从稿件详情继续推进。"] as const,
-            ["已推送微信", String(recentlySyncedIds.size), "已形成成功草稿箱记录的稿件数。"] as const,
-          ].map(([label, value, note]) => (
-            <article key={label} className="border border-stone-300/40 bg-white p-5 shadow-ink">
-              <div className="text-xs uppercase tracking-[0.24em] text-stone-500">{label}</div>
-              <div className="mt-3 font-serifCn text-4xl text-ink text-balance">{value}</div>
-              <div className="mt-3 text-sm leading-7 text-stone-700">{note}</div>
+        <div className={statsGridClassName}>
+          {articleStats.map((stat) => (
+            <article key={stat.label} className={statCardClassName}>
+              <div className={statLabelClassName}>{stat.label}</div>
+              <div className={statValueClassName}>{stat.value}</div>
+              <div className={statNoteClassName}>{stat.note}</div>
             </article>
           ))}
         </div>
       </section>
 
-      <section id="create-article" className="border border-stone-300/40 bg-white p-6 shadow-ink">
-        <div className="flex flex-wrap items-end justify-between gap-4">
+      <section id="create-article" className={sectionCardClassName}>
+        <div className={sectionHeaderClassName}>
           <div>
-            <div className="text-xs uppercase tracking-[0.28em] text-cinnabar">新建稿件</div>
-            <h2 className="mt-3 font-serifCn text-3xl text-ink text-balance">从一个题目开始，先把稿件对象立起来。</h2>
+            <div className={sectionEyebrowClassName}>新建稿件</div>
+            <h2 className={sectionTitleClassName}>从一个题目开始，先把稿件对象立起来。</h2>
           </div>
-          <Link href="/dashboard" className="border border-stone-300 bg-[#faf7f0] px-4 py-3 text-sm text-ink">
+          <Link href="/warroom" className={secondaryActionLinkClassName}>
             回到作战台
           </Link>
         </div>
         {redirectedFromCapture ? (
-          <div className="mt-5 border border-[#dfd2b0] bg-[#fff8e8] px-4 py-4 text-sm leading-7 text-[#7d6430]">
+          <div className={redirectedBannerClassName}>
             历史采集入口已经并入「稿件 -&gt; 证据」。当前还没有可接续的草稿，请先新建一篇稿件；创建后会在稿件详情里继续挂素材、补截图和做事实核查。
           </div>
         ) : null}
-        <div className="mt-5">
+        {hasClearedActiveQueue ? (
+          <div className={completionBannerClassName}>
+            当前没有待推进稿件，已建稿件都已进入发布或结果回流阶段。接下来可以回复盘页补结果，也可以直接从作战台再开一篇新稿。
+          </div>
+        ) : null}
+        <div className={createFormWrapClassName}>
           <CreateArticleForm
             seriesOptions={series.map((item) => ({
               id: item.id,
@@ -149,56 +194,56 @@ export default async function ArticlesPage({
         </div>
       </section>
 
-      <section className="border border-stone-300/40 bg-white p-6 shadow-ink">
-        <div className="flex flex-wrap items-end justify-between gap-4">
+      <section className={sectionCardClassName}>
+        <div className={sectionHeaderClassName}>
           <div>
-            <div className="text-xs uppercase tracking-[0.28em] text-cinnabar">全部稿件</div>
-            <h2 className="mt-3 font-serifCn text-3xl text-ink text-balance">统一在这里按系列、状态和目标包筛选。</h2>
+            <div className={sectionEyebrowClassName}>全部稿件</div>
+            <h2 className={sectionTitleClassName}>统一在这里按系列、状态和目标包筛选。</h2>
           </div>
-          <Link href="/articles" className="border border-stone-300 bg-[#faf7f0] px-4 py-3 text-sm text-ink">
+          <Link href="/articles" className={secondaryActionLinkClassName}>
             清空筛选
           </Link>
         </div>
-        <form className="mt-6 grid gap-3 xl:grid-cols-4" method="GET">
-          <label className="block text-sm text-stone-700">
-            <div className="mb-2 text-xs uppercase tracking-[0.16em] text-stone-500">系列</div>
-            <select aria-label="select control" name="series" defaultValue={Number.isInteger(selectedSeriesId) && selectedSeriesId > 0 ? String(selectedSeriesId) : ""} className="w-full border border-stone-300 bg-white px-4 py-3 text-sm">
+        <form className={filterFormClassName} method="GET">
+          <label className={fieldLabelClassName}>
+            <div className={fieldEyebrowClassName}>系列</div>
+            <Select aria-label="select control" name="series" defaultValue={Number.isInteger(selectedSeriesId) && selectedSeriesId > 0 ? String(selectedSeriesId) : ""}>
               <option value="">全部系列</option>
               {series.map((item) => (
                 <option key={item.id} value={item.id}>
                   {item.name}
                 </option>
               ))}
-            </select>
+            </Select>
           </label>
-          <label className="block text-sm text-stone-700">
-            <div className="mb-2 text-xs uppercase tracking-[0.16em] text-stone-500">状态</div>
-            <select aria-label="select control" name="status" defaultValue={selectedStatus} className="w-full border border-stone-300 bg-white px-4 py-3 text-sm">
+          <label className={fieldLabelClassName}>
+            <div className={fieldEyebrowClassName}>状态</div>
+            <Select aria-label="select control" name="status" defaultValue={selectedStatus}>
               <option value="">全部状态</option>
               {statusOptions.map((status) => (
                 <option key={status} value={status}>
                   {formatArticleStatusLabel(status)}
                 </option>
               ))}
-            </select>
+            </Select>
           </label>
-          <label className="block text-sm text-stone-700">
-            <div className="mb-2 text-xs uppercase tracking-[0.16em] text-stone-500">目标包</div>
-            <select aria-label="select control" name="targetPackage" defaultValue={selectedTargetPackage} className="w-full border border-stone-300 bg-white px-4 py-3 text-sm">
+          <label className={fieldLabelClassName}>
+            <div className={fieldEyebrowClassName}>目标包</div>
+            <Select aria-label="select control" name="targetPackage" defaultValue={selectedTargetPackage}>
               <option value="">全部目标包</option>
               {targetPackageOptions.map((targetPackage) => (
                 <option key={targetPackage} value={targetPackage}>
                   {targetPackage}
                 </option>
               ))}
-            </select>
+            </Select>
           </label>
-          <div className="flex items-end gap-3">
-            <button className="bg-cinnabar px-5 py-3 text-sm text-white">应用筛选</button>
-            <div className="text-sm text-stone-600">当前命中 {filteredArticles.length} 篇稿件</div>
+          <div className={filterActionsClassName}>
+            <Button type="submit" variant="primary">应用筛选</Button>
+            <div className={filterResultsClassName}>当前命中 {filteredArticles.length} 篇稿件</div>
           </div>
         </form>
-        <div className="mt-6">
+        <div className={articleListWrapClassName}>
           <ArticleList articles={articleCards} emptyState={articleListEmptyState} />
         </div>
       </section>

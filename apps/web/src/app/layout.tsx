@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { CommandMenuProvider } from "@/components/command-menu";
 
 export const metadata: Metadata = {
   title: {
@@ -15,8 +16,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="zh-CN">
-      <body>{children}</body>
+    <html lang="zh-CN" className="h-full">
+      <body className="min-h-dvh bg-paper text-ink antialiased">
+        <CommandMenuProvider>{children}</CommandMenuProvider>
+      </body>
     </html>
   );
 }

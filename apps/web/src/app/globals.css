@@ -1,11 +1,11 @@
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@400;600;700;900&display=swap");
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
   color-scheme: light;
+  --font-ui: "Inter";
+  --font-serif-cn: "Songti SC";
   --paper: #faf7f0;
   --paper-strong: #f2ede2;
   --ink: #1b1c1a;
@@ -36,7 +36,7 @@ body {
 }
 
 body {
-  font-family: "Noto Sans SC", "Inter", sans-serif;
+  font-family: var(--font-ui), "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
   text-rendering: optimizeLegibility;
 }
 
@@ -61,4 +61,35 @@ a {
 
 main {
   isolation: isolate;
+}
+
+html[data-ui-theme="night"] {
+  color-scheme: dark;
+  --paper: #151413;
+  --paper-strong: #1d1a18;
+  --ink: #f4ecdf;
+  --muted: #c0b39f;
+  --line: rgba(235, 221, 202, 0.14);
+  --panel: rgba(24, 22, 20, 0.82);
+  --cinnabar: #db7c67;
+  --cinnabar-deep: #b45145;
+  --gold: #d7a35b;
+  --admin-bg: #0c0c0d;
+  --admin-panel: #121214;
+}
+
+html[data-ui-theme="night"] body {
+  background:
+    radial-gradient(circle at top left, rgba(219, 124, 103, 0.14), transparent 24%),
+    radial-gradient(circle at bottom right, rgba(215, 163, 91, 0.12), transparent 22%),
+    var(--paper);
+}
+
+html[data-focus-mode="1"] [data-command-chrome="true"] {
+  display: none !important;
+}
+
+html[data-focus-mode="1"] [data-command-focus-root="workspace"],
+html[data-focus-mode="1"] [data-command-focus-root="admin"] {
+  grid-template-columns: minmax(0, 1fr) !important;
 }

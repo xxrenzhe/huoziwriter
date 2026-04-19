@@ -1067,27 +1067,27 @@ export function ArticleOutlineClient({
     return (
       <div
         key={`${nodeId}-${fragment.id}`}
-        className="group relative border border-[#dfd2b0] bg-[#fffaf0] px-3 py-3 text-xs leading-6 text-[#584140] shadow-sm transition-shadow hover:shadow"
+        className="group relative border border-lineStrong bg-surfaceHighlight px-3 py-3 text-xs leading-6 text-inkSoft shadow-sm transition-shadow hover:shadow"
       >
         <div className="flex items-start gap-2">
           <div className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-cinnabar/50" />
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
-              <div className="truncate font-medium text-stone-900">{fragment.title || `素材 #${fragment.id}`}</div>
+              <div className="truncate font-medium text-ink">{fragment.title || `素材 #${fragment.id}`}</div>
               {fragment.shared ? (
-                <span className="border border-stone-300 bg-white px-2 py-0.5 text-[10px] uppercase tracking-[0.16em] text-stone-500">
+                <span className="border border-lineStrong bg-surface px-2 py-0.5 text-[10px] uppercase tracking-[0.16em] text-inkMuted">
                   共用
                 </span>
               ) : null}
             </div>
-            <div className="mt-1 line-clamp-3 text-[#6e5b47]">{fragment.distilledContent}</div>
+            <div className="mt-1 line-clamp-3 text-inkMuted">{fragment.distilledContent}</div>
           </div>
           <button
             type="button"
             onClick={() => {
               void detachFragment(nodeId, fragment.id);
             }}
-            className="text-stone-400 opacity-0 transition-opacity hover:text-cinnabar group-hover:opacity-100"
+            className="text-inkMuted opacity-0 transition-opacity hover:text-cinnabar group-hover:opacity-100"
             title="移除素材"
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
@@ -1141,12 +1141,12 @@ export function ArticleOutlineClient({
         }}
         className={`border transition-all ${
           dragTargetNodeId === node.id
-            ? "border-cinnabar bg-[#fff4f1] shadow-[0_0_0_1px_rgba(167,48,50,0.08)]"
+            ? "border-cinnabar bg-surfaceWarning shadow-[0_0_0_1px_rgba(167,48,50,0.08)]"
             : isBoard
               ? selectedBoardNodeId === node.id
-                ? "h-full border-cinnabar bg-[#fffaf8] shadow-[0_14px_32px_rgba(167,48,50,0.12)]"
-                : "h-full border-stone-300/70 bg-white shadow-sm hover:shadow-md"
-              : "border-stone-300 bg-white"
+                ? "h-full border-cinnabar bg-surfaceHighlight shadow-[0_14px_32px_rgba(167,48,50,0.12)]"
+                : "h-full border-lineStrong bg-surface shadow-sm hover:shadow-md"
+              : "border-lineStrong bg-surface"
         }`}
       >
         <div className={isBoard ? "p-4" : "p-4"}>
@@ -1154,19 +1154,19 @@ export function ArticleOutlineClient({
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
                 <div className="font-serifCn text-xl text-ink text-balance">{node.title}</div>
-                <span className="border border-stone-300 bg-[#faf7f0] px-2 py-0.5 text-[10px] uppercase tracking-[0.16em] text-stone-500">
+                <span className="border border-lineStrong bg-surfaceWarm px-2 py-0.5 text-[10px] uppercase tracking-[0.16em] text-inkMuted">
                   节点 {node.sortOrder}
                 </span>
-                <span className="border border-stone-300 bg-[#faf7f0] px-2 py-0.5 text-[10px] uppercase tracking-[0.16em] text-stone-500">
+                <span className="border border-lineStrong bg-surfaceWarm px-2 py-0.5 text-[10px] uppercase tracking-[0.16em] text-inkMuted">
                   素材 {node.fragments.length}
                 </span>
                 {boardPositionLabel ? (
-                  <span className="border border-[#dcc8a6] bg-[#fff8eb] px-2 py-0.5 text-[10px] uppercase tracking-[0.16em] text-[#7d6430]">
+                  <span className="border border-warning/40 bg-surfaceWarning px-2 py-0.5 text-[10px] uppercase tracking-[0.16em] text-warning">
                     {boardPositionLabel}
                   </span>
                 ) : null}
               </div>
-              <div className="mt-2 text-xs leading-6 text-stone-500">
+              <div className="mt-2 text-xs leading-6 text-inkMuted">
                 {draggedFragmentId
                   ? "拖一条素材到这张卡上，直接完成挂载。"
                   : boardPositionLabel
@@ -1174,7 +1174,7 @@ export function ArticleOutlineClient({
                     : "这张节点卡代表一段判断或一个章节推进位。"}
               </div>
             </div>
-            <div className="flex items-center gap-3 text-xs text-stone-500">
+            <div className="flex items-center gap-3 text-xs text-inkMuted">
               {isBoard ? (
                 <button
                   type="button"
@@ -1197,7 +1197,7 @@ export function ArticleOutlineClient({
                     }
                   }}
                   title="拖动排布，或聚焦后用方向键微调；按住 Shift 可加大步长"
-                  className={`cursor-grab border border-stone-300 bg-[#faf7f0] px-2 py-1 text-[11px] uppercase tracking-[0.16em] text-stone-500 active:cursor-grabbing ${
+                  className={`cursor-grab border border-lineStrong bg-surfaceWarm px-2 py-1 text-[11px] uppercase tracking-[0.16em] text-inkMuted active:cursor-grabbing ${
                     activeBoardDrag?.nodeId === node.id ? "border-cinnabar text-cinnabar" : ""
                   }`}
                 >
@@ -1220,19 +1220,19 @@ export function ArticleOutlineClient({
           </div>
 
           {editingNodeId === node.id ? (
-            <div className="mt-4 space-y-2 border border-stone-300 bg-[#faf7f0] p-3">
+            <div className="mt-4 space-y-2 border border-lineStrong bg-surfaceWarm p-3">
               <input
                 aria-label="节点标题"
                 value={editingTitle}
                 onChange={(event) => setEditingTitle(event.target.value)}
-                className="w-full border border-stone-300 bg-white px-3 py-2 text-sm"
+                className="w-full border border-lineStrong bg-surface px-3 py-2 text-sm text-ink"
               />
               <textarea
                 aria-label="补充这个节点要写的事实、判断或写作提醒"
                 value={editingDescription}
                 onChange={(event) => setEditingDescription(event.target.value)}
                 placeholder="补充这个节点要写的事实、判断或写作提醒"
-                className="min-h-[88px] w-full border border-stone-300 bg-white px-3 py-2 text-sm leading-7"
+                className="min-h-[88px] w-full border border-lineStrong bg-surface px-3 py-2 text-sm leading-7 text-ink"
               />
               <div className="flex gap-2">
                 <button
@@ -1245,29 +1245,29 @@ export function ArticleOutlineClient({
                 >
                   {savingNodeId === node.id ? "保存中…" : "保存节点"}
                 </button>
-                <button type="button" onClick={cancelEdit} className="border border-stone-300 px-3 py-2 text-xs text-stone-700">
+                <button type="button" onClick={cancelEdit} className="border border-lineStrong bg-surface px-3 py-2 text-xs text-inkSoft">
                   取消
                 </button>
               </div>
             </div>
           ) : node.description ? (
-            <div className="mt-4 border border-stone-200 bg-[#faf7f0] px-3 py-3 text-sm leading-7 text-stone-700">
+            <div className="mt-4 border border-line bg-surfaceWarm px-3 py-3 text-sm leading-7 text-inkSoft">
               {node.description}
             </div>
           ) : (
-            <div className="mt-4 border border-dashed border-stone-200 px-3 py-3 text-sm leading-7 text-stone-500">
+            <div className="mt-4 border border-dashed border-line px-3 py-3 text-sm leading-7 text-inkMuted">
               这个节点还没有写作说明。点击“编辑”，补上这一段应该承接的事实和判断。
             </div>
           )}
 
           <div className="mt-4">
-            <div className="text-[11px] uppercase tracking-[0.18em] text-stone-500">挂载素材</div>
+            <div className="text-[11px] uppercase tracking-[0.18em] text-inkMuted">挂载素材</div>
             {node.fragments.length > 0 ? (
               <div className="mt-3 space-y-2">
                 {node.fragments.map((fragment) => renderFragmentChip(fragment, node.id))}
               </div>
             ) : (
-              <div className="mt-3 border border-dashed border-stone-200 bg-[#fcfbf7] px-3 py-3 text-sm leading-7 text-stone-500">
+              <div className="mt-3 border border-dashed border-line bg-surfaceHighlight px-3 py-3 text-sm leading-7 text-inkMuted">
                 这张节点卡还没有挂载素材。可以从左侧拖进来，或直接在下方选择已有素材。
               </div>
             )}
@@ -1283,7 +1283,7 @@ export function ArticleOutlineClient({
                   void attachFragment(node.id, fragmentId);
                 }
               }}
-              className="w-full border border-stone-300 bg-[#faf7f0] px-3 py-2 text-xs text-stone-700"
+              className="w-full border border-lineStrong bg-surfaceWarm px-3 py-2 text-xs text-inkSoft"
             >
               <option value="">挂载已有素材到该节点</option>
               {availableFragments.map((fragment) => (
@@ -1304,16 +1304,16 @@ export function ArticleOutlineClient({
       <div className="sr-only" aria-live="polite" aria-atomic="true">
         {boardAnnouncement}
       </div>
-      <div className="border border-stone-300/60 bg-[radial-gradient(circle_at_top_left,rgba(196,138,58,0.12),transparent_30%),linear-gradient(180deg,#fffdfa_0%,#f7f1e6_100%)] p-4">
+      <div className="border border-lineStrong bg-[radial-gradient(circle_at_top_left,rgba(196,138,58,0.12),transparent_30%),linear-gradient(180deg,#fffdfa_0%,#f7f1e6_100%)] p-4">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <div className="text-xs uppercase tracking-[0.22em] text-cinnabar">检字白板</div>
             <div className="mt-2 font-serifCn text-2xl text-ink text-balance">把素材拖进节点卡，先完成拆解与拼接，再追求完整成稿。</div>
-            <div className="mt-2 text-sm leading-7 text-stone-700">
+            <div className="mt-2 text-sm leading-7 text-inkSoft">
               这块面板默认按白板方式组织大纲和素材，保留拖拽重排，但弱化“管理后台”感。需要逐条核对时，再切回清单。
             </div>
           </div>
-          <div className="flex overflow-hidden border border-stone-300 bg-white">
+          <div className="flex overflow-hidden border border-lineStrong bg-surface">
             {([
               ["board", "白板视图"],
               ["list", "清单视图"],
@@ -1325,7 +1325,7 @@ export function ArticleOutlineClient({
                 className={`px-4 py-2 text-sm transition-colors ${
                   canvasView === value
                     ? "bg-cinnabar text-white"
-                    : "text-stone-700 hover:bg-[#faf7f0]"
+                    : "text-inkSoft hover:bg-surfaceWarm"
                 }`}
               >
                 {label}
@@ -1335,16 +1335,16 @@ export function ArticleOutlineClient({
         </div>
 
         <div className="mt-4 grid gap-3 sm:grid-cols-3">
-          <div className="border border-stone-300/70 bg-white/85 px-4 py-3">
-            <div className="text-[11px] uppercase tracking-[0.16em] text-stone-500">大纲节点</div>
+          <div className="border border-lineStrong bg-surface px-4 py-3">
+            <div className="text-[11px] uppercase tracking-[0.16em] text-inkMuted">大纲节点</div>
             <div className="mt-2 font-serifCn text-3xl text-ink text-balance">{nodes.length}</div>
           </div>
-          <div className="border border-stone-300/70 bg-white/85 px-4 py-3">
-            <div className="text-[11px] uppercase tracking-[0.16em] text-stone-500">已挂素材</div>
+          <div className="border border-lineStrong bg-surface px-4 py-3">
+            <div className="text-[11px] uppercase tracking-[0.16em] text-inkMuted">已挂素材</div>
             <div className="mt-2 font-serifCn text-3xl text-ink text-balance">{totalAttachedCount}</div>
           </div>
-          <div className="border border-stone-300/70 bg-white/85 px-4 py-3">
-            <div className="text-[11px] uppercase tracking-[0.16em] text-stone-500">素材池 / 共用</div>
+          <div className="border border-lineStrong bg-surface px-4 py-3">
+            <div className="text-[11px] uppercase tracking-[0.16em] text-inkMuted">素材池 / 共用</div>
             <div className="mt-2 font-serifCn text-3xl text-ink text-balance">
               {fragmentPool.length} / {sharedFragmentCount}
             </div>
@@ -1353,9 +1353,9 @@ export function ArticleOutlineClient({
       </div>
 
       <div className="grid min-w-0 gap-4 xl:grid-cols-[320px_minmax(0,1fr)]">
-        <aside className="min-w-0 space-y-4 border border-stone-300 bg-[#faf7f0] p-4">
+        <aside className="min-w-0 space-y-4 border border-lineStrong bg-surfaceWarm p-4">
           <div>
-            <div className="text-xs uppercase tracking-[0.18em] text-stone-500">新建节点</div>
+            <div className="text-xs uppercase tracking-[0.18em] text-inkMuted">新建节点</div>
             <div className="mt-3 flex gap-2">
               <input
                 aria-label="新增大纲节点"
@@ -1368,27 +1368,27 @@ export function ArticleOutlineClient({
                   }
                 }}
                 placeholder="新增大纲节点"
-                className="min-w-0 flex-1 border border-stone-300 bg-white px-3 py-2 text-sm"
+                className="min-w-0 flex-1 border border-lineStrong bg-surface px-3 py-2 text-sm text-ink"
               />
               <button type="button" onClick={() => void addNode()} className="bg-cinnabar px-3 py-2 text-sm text-white">
                 添加
               </button>
             </div>
-            <div className="mt-2 text-xs leading-6 text-stone-500">
+            <div className="mt-2 text-xs leading-6 text-inkMuted">
               先写一个段落标题，再慢慢往里塞事实、判断和反直觉点。
             </div>
           </div>
 
-          <div className="border border-stone-300 bg-white px-3 py-3">
-            <div className="text-[11px] uppercase tracking-[0.18em] text-stone-500">语义召回</div>
+          <div className="border border-lineStrong bg-surface px-3 py-3">
+            <div className="text-[11px] uppercase tracking-[0.18em] text-inkMuted">语义召回</div>
             <input
               aria-label="搜观点、时间、人物或事件，不必完全匹配原文"
               value={searchQuery}
               onChange={(event) => setSearchQuery(event.target.value)}
               placeholder="搜观点、时间、人物或事件，不必完全匹配原文"
-              className="mt-2 w-full border border-stone-300 bg-white px-3 py-2 text-sm"
+              className="mt-2 w-full border border-lineStrong bg-surface px-3 py-2 text-sm text-ink"
             />
-            <div className="mt-2 text-xs leading-6 text-stone-500">
+            <div className="mt-2 text-xs leading-6 text-inkMuted">
               {searchQuery.trim()
                 ? searching
                   ? "正在按语义相近度重排素材…"
@@ -1397,10 +1397,10 @@ export function ArticleOutlineClient({
             </div>
           </div>
 
-          <div className="border border-stone-300 bg-white px-3 py-3">
+          <div className="border border-lineStrong bg-surface px-3 py-3">
             <div className="flex items-center justify-between gap-3">
-              <div className="text-[11px] uppercase tracking-[0.18em] text-stone-500">活字匣</div>
-              <span className="text-[11px] text-stone-500">未挂载 {fragmentPool.filter((fragment) => !attachedFragmentIds.has(fragment.id)).length} 条</span>
+              <div className="text-[11px] uppercase tracking-[0.18em] text-inkMuted">活字匣</div>
+              <span className="text-[11px] text-inkMuted">未挂载 {fragmentPool.filter((fragment) => !attachedFragmentIds.has(fragment.id)).length} 条</span>
             </div>
             {fragmentPool.length > 0 ? (
               <div className="mt-3 grid max-h-[480px] gap-2 overflow-y-auto pr-1">
@@ -1417,17 +1417,17 @@ export function ArticleOutlineClient({
                       onDragEnd={() => setDraggedFragmentId(null)}
                       className={`cursor-move overflow-hidden border px-3 py-3 text-xs leading-6 shadow-sm transition-all ${
                         attached
-                          ? "border-stone-200 bg-[#f6f3ec] text-stone-500"
-                          : "border-[#dfd2b0] bg-[#fffaf0] text-[#584140] hover:-translate-y-0.5 hover:border-[#c48a3a] hover:shadow-md"
+                          ? "border-line bg-surfaceMuted text-inkMuted"
+                          : "border-lineStrong bg-surfaceHighlight text-inkSoft hover:-translate-y-0.5 hover:border-warning hover:shadow-md"
                       }`}
                       title={fragment.distilledContent}
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
-                          <div className="truncate font-medium text-stone-900">{fragment.title || "未命名片段"}</div>
+                          <div className="truncate font-medium text-ink">{fragment.title || "未命名片段"}</div>
                           <div className="mt-1 line-clamp-4 opacity-90">{fragment.distilledContent}</div>
                         </div>
-                        <div className="space-y-1 text-[10px] uppercase tracking-[0.16em] text-stone-500">
+                        <div className="space-y-1 text-[10px] uppercase tracking-[0.16em] text-inkMuted">
                           {fragment.shared ? <div>共用</div> : null}
                           {attached ? <div>已挂</div> : <div>待挂</div>}
                         </div>
@@ -1437,20 +1437,20 @@ export function ArticleOutlineClient({
                 })}
               </div>
             ) : (
-              <div className="mt-3 border border-dashed border-stone-200 bg-[#fcfbf7] px-3 py-3 text-sm leading-7 text-stone-500">
+              <div className="mt-3 border border-dashed border-line bg-surfaceHighlight px-3 py-3 text-sm leading-7 text-inkMuted">
                 {searchQuery.trim() ? "当前检索没有命中素材，换个关键词再试。" : "素材池暂时为空，先去证据区补几条材料。"}
               </div>
             )}
           </div>
         </aside>
 
-        <section className="min-w-0 border border-stone-300 bg-white p-4">
-          <div className="flex flex-wrap items-start justify-between gap-4 border-b border-stone-200 pb-4">
+        <section className="min-w-0 border border-lineStrong bg-surface p-4">
+          <div className="flex flex-wrap items-start justify-between gap-4 border-b border-line pb-4">
             <div>
-              <div className="text-xs uppercase tracking-[0.18em] text-stone-500">
+              <div className="text-xs uppercase tracking-[0.18em] text-inkMuted">
                 {canvasView === "board" ? "白板区" : "清单区"}
               </div>
-              <div className="mt-2 text-sm leading-7 text-stone-700">
+              <div className="mt-2 text-sm leading-7 text-inkSoft">
                 {canvasView === "board"
                   ? "更适合先看节点之间的空隙、素材分布和段落重量。拖动画布上的节点卡可自由排布，拖素材可直接挂载。"
                   : "更适合逐条核对节点说明和素材挂载情况。"}
@@ -1470,8 +1470,8 @@ export function ArticleOutlineClient({
                     aria-pressed={soundEnabled}
                     className={`border px-3 py-2 text-xs ${
                       soundEnabled
-                        ? "border-cinnabar bg-[#fff4f1] text-cinnabar"
-                        : "border-stone-300 bg-[#faf7f0] text-stone-700"
+                        ? "border-cinnabar bg-surfaceWarning text-cinnabar"
+                        : "border-lineStrong bg-surfaceWarm text-inkSoft"
                     }`}
                   >
                     {soundEnabled ? "落位声：开" : "落位声：关"}
@@ -1483,13 +1483,13 @@ export function ArticleOutlineClient({
                       setBoardLayoutPreset("balance");
                       announceBoardAction("白板卡位已重新整理。");
                     }}
-                    className="border border-stone-300 bg-[#faf7f0] px-3 py-2 text-xs text-stone-700"
+                    className="border border-lineStrong bg-surfaceWarm px-3 py-2 text-xs text-inkSoft"
                   >
                     重新整理卡位
                   </button>
                 </>
               ) : null}
-              <div className="text-xs leading-6 text-stone-500">
+              <div className="text-xs leading-6 text-inkMuted">
                 {draggedFragmentId
                   ? "正在拖动素材，松手即可挂到目标节点。"
                   : draggedId
@@ -1501,7 +1501,7 @@ export function ArticleOutlineClient({
             </div>
           </div>
           {canvasView === "board" ? (
-            <div className="mt-3 border border-stone-300/60 bg-[#fcfbf8] px-3 py-3 text-xs leading-6 text-stone-600">
+            <div className="mt-3 border border-lineStrong bg-surfaceHighlight px-3 py-3 text-xs leading-6 text-inkMuted">
               键盘提示：聚焦节点右上角“排布”按钮后，用方向键微调位置；按住 Shift 可加大步长。白板动作会同步播报落位结果。
             </div>
           ) : null}
@@ -1518,21 +1518,21 @@ export function ArticleOutlineClient({
                   onClick={() => applyBoardLayoutPreset(preset)}
                   className={`border px-3 py-2 text-xs ${
                     boardLayoutPreset === preset
-                      ? "border-cinnabar bg-[#fff4f1] text-cinnabar"
-                      : "border-stone-300 bg-white text-stone-700"
+                      ? "border-cinnabar bg-surfaceWarning text-cinnabar"
+                      : "border-lineStrong bg-surface text-inkSoft"
                   }`}
                 >
                   {label}
                 </button>
               ))}
               {boardLayoutPreset === "free" ? (
-                <span className="border border-[#dcc8a6] bg-[#fff8eb] px-3 py-2 text-xs text-[#7d6430]">当前为自由排布</span>
+                <span className="border border-warning/40 bg-surfaceWarning px-3 py-2 text-xs text-warning">当前为自由排布</span>
               ) : null}
               <button
                 type="button"
                 onClick={restoreFreeBoardLayout}
                 disabled={Object.keys(freeBoardPositions).length === 0 || boardLayoutPreset === "free"}
-                className="border border-stone-300 bg-white px-3 py-2 text-xs text-stone-700 disabled:opacity-50"
+                className="border border-lineStrong bg-surface px-3 py-2 text-xs text-inkSoft disabled:opacity-50"
               >
                 恢复自由排布
               </button>
@@ -1540,18 +1540,18 @@ export function ArticleOutlineClient({
           ) : null}
           {canvasView === "board" && nodes.length > 0 ? (
             <div className="mt-3 grid min-w-0 gap-3 lg:grid-cols-[260px_minmax(0,1fr)]">
-              <div className="min-w-0 border border-stone-300/70 bg-white px-3 py-3">
+              <div className="min-w-0 border border-lineStrong bg-surface px-3 py-3">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <div className="text-[11px] uppercase tracking-[0.16em] text-stone-500">画布总览</div>
-                    <div className="mt-2 text-xs leading-6 text-stone-600">
+                    <div className="text-[11px] uppercase tracking-[0.16em] text-inkMuted">画布总览</div>
+                    <div className="mt-2 text-xs leading-6 text-inkMuted">
                       点空白可跳转视口，点字块可直接定位到对应节点，拖动画框可细调当前观察区。
                     </div>
                   </div>
                   <button
                     type="button"
                     onClick={() => panBoardViewport(0, 0)}
-                    className="border border-stone-300 bg-[#faf7f0] px-3 py-2 text-[11px] text-stone-700"
+                    className="border border-lineStrong bg-surfaceWarm px-3 py-2 text-[11px] text-inkSoft"
                   >
                     回到左上
                   </button>
@@ -1568,7 +1568,7 @@ export function ArticleOutlineClient({
                     panBoardViewport(targetX - viewportWidth / 2, targetY - viewportHeight / 2);
                     announceBoardAction(`白板视口已跳转到 ${describeBoardPosition({ x: targetX, y: targetY }, boardCanvasWidth, boardCanvasHeight)}。`);
                   }}
-                  className="mt-3 relative overflow-hidden border border-dashed border-[#dcc8a6] bg-[linear-gradient(transparent_15px,rgba(140,107,75,0.06)_16px)] bg-[length:100%_16px]"
+                  className="mt-3 relative overflow-hidden border border-dashed border-warning/40 bg-[linear-gradient(transparent_15px,rgba(140,107,75,0.06)_16px)] bg-[length:100%_16px]"
                   style={{
                     width: `${boardMinimapMetrics.width}px`,
                     height: `${boardMinimapMetrics.height}px`,
@@ -1593,8 +1593,8 @@ export function ArticleOutlineClient({
                         title={node.title}
                         className={`absolute overflow-hidden border px-1 text-left text-[9px] leading-4 transition-colors ${
                           selected
-                            ? "border-cinnabar bg-[#fff0ea] text-cinnabar"
-                            : "border-stone-400/70 bg-white/85 text-stone-600 hover:border-cinnabar/70 hover:text-cinnabar"
+                            ? "border-cinnabar bg-surfaceWarning text-cinnabar"
+                            : "border-lineStrong bg-surface text-inkMuted hover:border-cinnabar/70 hover:text-cinnabar"
                         }`}
                         style={{
                           left: `${markerLeft}px`,
@@ -1633,8 +1633,8 @@ export function ArticleOutlineClient({
                             offsetY: event.clientY - minimapBounds.top - boardViewportIndicator.top,
                           });
                         }}
-                        className={`pointer-events-auto absolute left-1/2 top-1/2 flex h-8 w-8 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-cinnabar/60 bg-white/92 text-cinnabar shadow-sm transition-colors ${
-                          activeMinimapViewportDrag ? "cursor-grabbing bg-[#fff4f1]" : "cursor-grab hover:bg-[#fff7f4]"
+                        className={`pointer-events-auto absolute left-1/2 top-1/2 flex h-8 w-8 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-cinnabar/60 bg-surface text-cinnabar shadow-sm transition-colors ${
+                          activeMinimapViewportDrag ? "cursor-grabbing bg-surfaceWarning" : "cursor-grab hover:bg-surfaceHighlight"
                         }`}
                         style={{ touchAction: "none" }}
                       >
@@ -1644,13 +1644,13 @@ export function ArticleOutlineClient({
                     </div>
                   ) : null}
                 </div>
-                <div className="mt-3 flex flex-wrap gap-2 text-[11px] uppercase tracking-[0.14em] text-stone-500">
-                  <span className="border border-stone-300/70 bg-[#faf7f0] px-2 py-1">{nodes.length} 张节点卡</span>
-                  <span className="border border-stone-300/70 bg-[#faf7f0] px-2 py-1">画布 {Math.round(boardCanvasWidth)} × {Math.round(boardCanvasHeight)}</span>
+                <div className="mt-3 flex flex-wrap gap-2 text-[11px] uppercase tracking-[0.14em] text-inkMuted">
+                  <span className="border border-lineStrong bg-surfaceWarm px-2 py-1">{nodes.length} 张节点卡</span>
+                  <span className="border border-lineStrong bg-surfaceWarm px-2 py-1">画布 {Math.round(boardCanvasWidth)} × {Math.round(boardCanvasHeight)}</span>
                 </div>
               </div>
-              <div className="min-w-0 border border-stone-300/60 bg-[#fcfbf8] px-3 py-3">
-                <div className="text-[11px] uppercase tracking-[0.16em] text-stone-500">节点导航</div>
+              <div className="min-w-0 border border-lineStrong bg-surfaceHighlight px-3 py-3">
+                <div className="text-[11px] uppercase tracking-[0.16em] text-inkMuted">节点导航</div>
                 <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
                   {nodes.map((node) => {
                     const position = boardPositions[node.id];
@@ -1665,13 +1665,13 @@ export function ArticleOutlineClient({
                         onClick={() => focusBoardNode(node.id)}
                         className={`min-w-[180px] shrink-0 border px-3 py-3 text-left transition-colors ${
                           selected
-                            ? "border-cinnabar bg-[#fff4f1]"
-                            : "border-stone-300 bg-white hover:bg-[#faf7f0]"
+                            ? "border-cinnabar bg-surfaceWarning"
+                            : "border-lineStrong bg-surface hover:bg-surfaceWarm"
                         }`}
                       >
                         <div className="truncate text-sm font-medium text-ink">{node.title}</div>
-                        <div className="mt-1 text-[11px] uppercase tracking-[0.14em] text-stone-500">{locationLabel}</div>
-                        <div className="mt-2 text-xs text-stone-500">素材 {node.fragments.length}</div>
+                        <div className="mt-1 text-[11px] uppercase tracking-[0.14em] text-inkMuted">{locationLabel}</div>
+                        <div className="mt-2 text-xs text-inkMuted">素材 {node.fragments.length}</div>
                       </button>
                     );
                   })}
@@ -1680,28 +1680,28 @@ export function ArticleOutlineClient({
             </div>
           ) : null}
           {canvasView === "board" ? (
-            <div className="mt-3 flex flex-wrap gap-2 text-[11px] uppercase tracking-[0.16em] text-stone-500">
-              <span className="border border-stone-300/70 bg-[#faf7f0] px-3 py-2">拖拽排布</span>
-              <span className="border border-stone-300/70 bg-[#faf7f0] px-3 py-2">方向键微调</span>
-              <span className="border border-stone-300/70 bg-[#faf7f0] px-3 py-2">布局预设</span>
-              <span className="border border-stone-300/70 bg-[#faf7f0] px-3 py-2">缩略总览定位</span>
-              <span className="border border-stone-300/70 bg-[#faf7f0] px-3 py-2">吸附后会显示位置语义</span>
+            <div className="mt-3 flex flex-wrap gap-2 text-[11px] uppercase tracking-[0.16em] text-inkMuted">
+              <span className="border border-lineStrong bg-surfaceWarm px-3 py-2">拖拽排布</span>
+              <span className="border border-lineStrong bg-surfaceWarm px-3 py-2">方向键微调</span>
+              <span className="border border-lineStrong bg-surfaceWarm px-3 py-2">布局预设</span>
+              <span className="border border-lineStrong bg-surfaceWarm px-3 py-2">缩略总览定位</span>
+              <span className="border border-lineStrong bg-surfaceWarm px-3 py-2">吸附后会显示位置语义</span>
             </div>
           ) : null}
 
           {nodes.length === 0 ? (
-            <div className="mt-4 flex min-h-[320px] flex-col items-center justify-center border border-dashed border-stone-300 bg-[linear-gradient(transparent_31px,rgba(140,107,75,0.05)_32px)] bg-[length:100%_32px] px-6 text-center">
-              <div className="font-serifCn text-3xl text-stone-400">白板还没有第一块字</div>
-              <div className="mt-3 max-w-xl text-sm leading-7 text-stone-600">
+            <div className="mt-4 flex min-h-[320px] flex-col items-center justify-center border border-dashed border-lineStrong bg-[linear-gradient(transparent_31px,rgba(140,107,75,0.05)_32px)] bg-[length:100%_32px] px-6 text-center">
+              <div className="font-serifCn text-3xl text-inkMuted">白板还没有第一块字</div>
+              <div className="mt-3 max-w-xl text-sm leading-7 text-inkMuted">
                 从左侧写下一个节点标题，这里就会长出第一张卡。先定义段落，再决定每张卡该挂哪些素材，白纸焦虑会比直接写正文轻很多。
               </div>
               {outlineInspirations.length > 0 ? (
                 <div className="mt-6 grid w-full max-w-4xl gap-3 text-left md:grid-cols-2">
                   {outlineInspirations.map((item) => (
-                    <div key={item.key} className="border border-stone-300/70 bg-white/85 px-4 py-4">
+                    <div key={item.key} className="border border-lineStrong bg-surface px-4 py-4">
                       <div className="text-xs uppercase tracking-[0.16em] text-cinnabar">{item.title}</div>
-                      <div className="mt-3 text-sm leading-7 text-stone-700">{item.detail}</div>
-                      <div className="mt-3 text-xs leading-6 text-stone-500">{item.meta}</div>
+                      <div className="mt-3 text-sm leading-7 text-inkSoft">{item.detail}</div>
+                      <div className="mt-3 text-xs leading-6 text-inkMuted">{item.meta}</div>
                     </div>
                   ))}
                 </div>
@@ -1710,7 +1710,7 @@ export function ArticleOutlineClient({
           ) : canvasView === "board" ? (
             <div
               ref={boardCanvasRef}
-              className="mt-4 relative overflow-auto border border-dashed border-stone-300 bg-[radial-gradient(circle_at_top_left,rgba(196,138,58,0.10),transparent_28%),linear-gradient(transparent_31px,rgba(140,107,75,0.05)_32px)] bg-[length:100%_32px]"
+              className="mt-4 relative overflow-auto border border-dashed border-lineStrong bg-[radial-gradient(circle_at_top_left,rgba(196,138,58,0.10),transparent_28%),linear-gradient(transparent_31px,rgba(140,107,75,0.05)_32px)] bg-[length:100%_32px]"
               style={{
                 height: `min(72vh, ${BOARD_VIEWPORT_MAX_HEIGHT}px)`,
                 minHeight: `${Math.min(BOARD_VIEWPORT_MIN_HEIGHT, boardCanvasHeight)}px`,
@@ -1779,7 +1779,7 @@ export function ArticleOutlineClient({
                       {boardDropEcho?.nodeId === node.id ? (
                         <div
                           key={boardDropEcho.stamp}
-                          className="pointer-events-none absolute -top-3 left-4 z-30 border border-cinnabar/20 bg-[#fff4f1] px-3 py-1 text-[10px] uppercase tracking-[0.18em] text-cinnabar shadow-[0_10px_24px_rgba(167,48,50,0.12)]"
+                          className="pointer-events-none absolute -top-3 left-4 z-30 border border-cinnabar/20 bg-surfaceWarning px-3 py-1 text-[10px] uppercase tracking-[0.18em] text-cinnabar shadow-[0_10px_24px_rgba(167,48,50,0.12)]"
                         >
                           {boardDropEcho.label}
                         </div>

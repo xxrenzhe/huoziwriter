@@ -1,9 +1,18 @@
 "use client";
 
+import { Button, Input, Select, buttonStyles, cn, surfaceCardStyles } from "@huoziwriter/ui";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
 import { formatArticleStatusLabel } from "@/lib/article-status-label";
+
+const writerPaperEmptyStateSurfaceClassName =
+  "relative overflow-hidden bg-[radial-gradient(circle_at_top_left,rgba(196,138,58,0.14),transparent_28%),linear-gradient(180deg,#fffdfa_0%,#faf7f0_100%)]";
+const writerPaperPromptCardClassName = cn(surfaceCardStyles({ padding: "sm" }), "bg-surface/80 text-xs leading-6 text-inkSoft");
+const writerPaperPrimaryActionClassName = buttonStyles({ variant: "primary" });
+const writerPaperSecondaryActionClassName = buttonStyles({ variant: "secondary" });
+const createArticleMessageClassName = "text-sm text-cinnabar";
+const articleListCardClassName = cn("block", surfaceCardStyles({ padding: "md", interactive: true }));
 
 type WriterPaperEmptyStateProps = {
   eyebrow: string;
@@ -29,18 +38,20 @@ export function WriterPaperEmptyState({
   compact = false,
 }: WriterPaperEmptyStateProps) {
   return (
-    <div className={`relative overflow-hidden border border-[#dfd2b0] bg-[radial-gradient(circle_at_top_left,rgba(196,138,58,0.14),transparent_28%),linear-gradient(180deg,#fffdfa_0%,#faf7f0_100%)] shadow-ink ${compact ? "px-5 py-5" : "px-6 py-6"}`}>
+    <div
+      className={cn(surfaceCardStyles({ tone: "highlight", padding: compact ? "sm" : "md" }), writerPaperEmptyStateSurfaceClassName)}
+    >
       <div className="pointer-events-none absolute inset-x-0 top-0 h-16 bg-[linear-gradient(180deg,rgba(255,255,255,0.78),rgba(255,255,255,0))]" />
       <div className="relative">
-        <div className="inline-flex items-center border border-stone-300/70 bg-white/80 px-3 py-1 text-[11px] uppercase tracking-[0.24em] text-stone-500">
+        <div className="inline-flex items-center border border-lineStrong/70 bg-surface/80 px-3 py-1 text-[11px] uppercase tracking-[0.24em] text-inkMuted">
           {eyebrow}
         </div>
         <div className={`mt-4 font-serifCn text-ink text-balance ${compact ? "text-2xl" : "text-3xl"}`}>{title}</div>
-        <div className={`mt-3 max-w-3xl text-stone-700 ${compact ? "text-sm leading-7" : "text-sm leading-8"}`}>{detail}</div>
+        <div className={`mt-3 max-w-3xl text-inkSoft ${compact ? "text-sm leading-7" : "text-sm leading-8"}`}>{detail}</div>
         {prompts.length > 0 ? (
           <div className={`mt-4 grid gap-2 ${compact ? "sm:grid-cols-2" : "md:grid-cols-3"}`}>
             {prompts.map((prompt) => (
-              <div key={prompt} className="border border-stone-300/60 bg-white/80 px-3 py-3 text-xs leading-6 text-stone-600">
+              <div key={prompt} className={writerPaperPromptCardClassName}>
                 {prompt}
               </div>
             ))}
@@ -49,12 +60,12 @@ export function WriterPaperEmptyState({
         {actionHref || secondaryHref ? (
           <div className="mt-5 flex flex-wrap gap-3">
             {actionHref && actionLabel ? (
-              <Link href={actionHref} className="bg-cinnabar px-4 py-3 text-sm text-white">
+              <Link href={actionHref} className={writerPaperPrimaryActionClassName}>
                 {actionLabel}
               </Link>
             ) : null}
             {secondaryHref && secondaryLabel ? (
-              <Link href={secondaryHref} className="border border-stone-300 bg-white px-4 py-3 text-sm text-stone-700">
+              <Link href={secondaryHref} className={writerPaperSecondaryActionClassName}>
                 {secondaryLabel}
               </Link>
             ) : null}
@@ -102,16 +113,18 @@ export function CreateArticleForm({
   return (
     <form onSubmit={handleSubmit} className="space-y-3">
       <div className="flex flex-wrap gap-3">
-        <input aria-label="输入稿件标题"
+        <Input
+          aria-label="输入稿件标题"
           value={title}
           onChange={(event) => setTitle(event.target.value)}
           placeholder="输入稿件标题"
-          className="min-w-[240px] flex-1 border border-stone-300 bg-white px-4 py-3 text-sm"
+          className="min-w-[240px] flex-1"
         />
-        <select aria-label="select control"
+        <Select
+          aria-label="select control"
           value={seriesId}
           onChange={(event) => setSeriesId(event.target.value)}
-          className="min-w-[240px] border border-stone-300 bg-white px-4 py-3 text-sm"
+          className="min-w-[240px]"
         >
           <option value="">{seriesOptions.length > 0 ? "选择稿件归属系列" : "请先创建系列"}</option>
           {seriesOptions.map((item) => (
@@ -119,10 +132,10 @@ export function CreateArticleForm({
               {item.name} · {item.personaName}{item.activeStatus !== "active" ? " · 非经营中" : ""}
             </option>
           ))}
-        </select>
-        <button disabled={loading || seriesOptions.length === 0} className="bg-cinnabar px-5 py-3 text-sm text-white disabled:opacity-60">
+        </Select>
+        <Button disabled={loading || seriesOptions.length === 0} type="submit" variant="primary">
           {loading ? "创建中…" : "新建稿件"}
-        </button>
+        </Button>
       </div>
       {seriesOptions.length === 0 ? (
         <WriterPaperEmptyState
@@ -139,7 +152,7 @@ export function CreateArticleForm({
           compact
         />
       ) : null}
-      {message ? <div className="text-sm text-cinnabar">{message}</div> : null}
+      {message ? <div className={createArticleMessageClassName}>{message}</div> : null}
     </form>
   );
 }
@@ -177,18 +190,14 @@ export function ArticleList({
   return (
     <div className="space-y-3">
       {articles.map((article) => (
-        <Link
-          key={article.id}
-          href={`/articles/${article.id}`}
-          className="block border border-stone-300/40 bg-white p-5 shadow-ink transition-colors hover:bg-[#fffdfa]"
-          >
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="font-serifCn text-2xl text-ink text-balance">{article.title}</div>
-              <div className="text-xs uppercase tracking-[0.2em] text-stone-500">{formatArticleStatusLabel(article.status)}</div>
-            </div>
-          {article.seriesName ? <div className="mt-3 text-sm text-stone-700">归属系列：{article.seriesName}</div> : null}
-          {article.targetPackage ? <div className="mt-2 text-sm text-stone-700">目标包：{article.targetPackage}</div> : null}
-          <div className="mt-3 text-sm text-stone-600">最后更新：{new Date(article.updatedAt).toLocaleString("zh-CN")}</div>
+        <Link key={article.id} href={`/articles/${article.id}`} className={articleListCardClassName}>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="font-serifCn text-2xl text-ink text-balance">{article.title}</div>
+            <div className="text-xs uppercase tracking-[0.2em] text-inkMuted">{formatArticleStatusLabel(article.status)}</div>
+          </div>
+          {article.seriesName ? <div className="mt-3 text-sm text-inkSoft">归属系列：{article.seriesName}</div> : null}
+          {article.targetPackage ? <div className="mt-2 text-sm text-inkSoft">目标包：{article.targetPackage}</div> : null}
+          <div className="mt-3 text-sm text-inkMuted">最后更新：{new Date(article.updatedAt).toLocaleString("zh-CN")}</div>
         </Link>
       ))}
     </div>

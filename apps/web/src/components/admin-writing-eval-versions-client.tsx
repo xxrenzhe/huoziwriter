@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { startTransition, useEffect, useState, type ReactNode } from "react";
+import { startTransition, useEffect, useState, type KeyboardEvent, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import { uiPrimitives } from "@huoziwriter/ui";
+import { cn, surfaceCardStyles, uiPrimitives } from "@huoziwriter/ui";
 import {
   buildAdminPromptVersionHref,
   buildAdminWritingEvalDatasetsHref,
@@ -195,6 +195,65 @@ type ForkPromptCandidateResponse = {
   };
 };
 
+const adminVersionsPanelBaseClassName = cn(
+  surfaceCardStyles(),
+  "border-stone-800 bg-[#171718] shadow-none",
+);
+const adminVersionsSectionClassName = cn(adminVersionsPanelBaseClassName, "p-5");
+const adminVersionsWideSectionClassName = cn(
+  surfaceCardStyles(),
+  "border-stone-800 bg-stone-950 px-4 py-4 shadow-none xl:col-span-2",
+);
+const adminVersionsInsetCardClassName = cn(
+  surfaceCardStyles(),
+  "border-stone-800 bg-[#141414] px-4 py-4 shadow-none",
+);
+const adminVersionsInsetCardCompactClassName = cn(
+  surfaceCardStyles(),
+  "border-stone-800 bg-[#141414] px-4 py-3 shadow-none",
+);
+const adminVersionsRaisedCardClassName = cn(
+  surfaceCardStyles(),
+  "border-stone-800 bg-stone-950 px-4 py-4 shadow-none",
+);
+const adminVersionsRaisedCardCompactClassName = cn(
+  surfaceCardStyles(),
+  "border-stone-800 bg-stone-950 px-4 py-3 shadow-none",
+);
+const adminVersionsFocusCardClassName = cn(
+  surfaceCardStyles(),
+  "border-cinnabar bg-[#1d1413] px-4 py-4 shadow-none",
+);
+const adminVersionsMutedNoticeClassName = cn(
+  adminVersionsInsetCardClassName,
+  "text-sm text-stone-500",
+);
+const adminVersionsDashedNoticeClassName = cn(
+  surfaceCardStyles(),
+  "border-dashed border-stone-700 bg-stone-950 px-4 py-6 text-sm text-stone-500 shadow-none",
+);
+const adminVersionsTableDesktopShellClassName = "hidden overflow-x-auto md:block";
+const adminVersionsTableMobileListClassName = "grid gap-3 p-4 md:hidden";
+const adminVersionsMobileCardClassName = cn(
+  surfaceCardStyles({ padding: "md" }),
+  "border-stone-800 bg-stone-950 text-stone-100 shadow-none transition-colors",
+);
+const adminVersionsAuditChangeCardClassName = cn(
+  surfaceCardStyles(),
+  "border-stone-800 bg-[#141414] px-3 py-3 text-sm text-stone-300 shadow-none",
+);
+const adminVersionsPreviewClassName = cn(
+  adminVersionsInsetCardClassName,
+  "mt-4 max-h-[420px] overflow-auto whitespace-pre-wrap break-words text-xs leading-6 text-stone-300",
+);
+const adminVersionsInfoChipClassName = "border border-stone-700 px-3 py-1 text-stone-400";
+const adminVersionsMutedChipClassName = "border border-stone-700 px-3 py-1 text-stone-500";
+const adminVersionsInputClassName = cn("mt-3", uiPrimitives.adminInput);
+const adminVersionsSelectClassName = cn("mt-3", uiPrimitives.adminSelect);
+const adminVersionsTextareaClassName = cn("mt-3 min-h-[110px]", uiPrimitives.adminInput);
+const adminVersionsSecondaryButtonClassName = uiPrimitives.adminSecondaryButton;
+const adminVersionsPrimaryButtonClassName = uiPrimitives.primaryButton;
+
 function getNumber(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
@@ -204,6 +263,24 @@ function getRolloutRiskTextTone(value: string) {
   if (value === "emerald") return "text-emerald-400";
   if (value === "amber") return "text-amber-300";
   return "text-stone-300";
+}
+
+function getVersionsMobileCardClassName(selected: boolean) {
+  return cn(
+    adminVersionsMobileCardClassName,
+    selected ? "border-cinnabar bg-[#1d1413]" : "hover:border-stone-700 hover:bg-stone-900/70",
+  );
+}
+
+function handleSelectableCardKeyDown(event: KeyboardEvent<HTMLElement>, onSelect: () => void) {
+  if (event.currentTarget !== event.target) {
+    return;
+  }
+  if (event.key !== "Enter" && event.key !== " ") {
+    return;
+  }
+  event.preventDefault();
+  onSelect();
 }
 
 function getDecisionTextTone(value: string) {
@@ -292,7 +369,7 @@ function SectionEyebrow({
   children: ReactNode;
 }) {
   return (
-    <div className={`text-xs uppercase tracking-[0.18em] ${tone === "cinnabar" ? "text-cinnabar" : "text-stone-500"}`}>
+    <div className={cn("text-xs uppercase tracking-[0.18em]", tone === "cinnabar" ? "text-cinnabar" : "text-stone-500")}>
       {children}
     </div>
   );
@@ -304,7 +381,7 @@ function SecondaryActionLinks({ items }: { items: SecondaryActionLink[] }) {
   return (
     <div className="flex flex-wrap gap-3">
       {items.map((item) => (
-        <Link key={item.key} href={item.href} className={uiPrimitives.adminSecondaryButton}>
+        <Link key={item.key} href={item.href} className={adminVersionsSecondaryButtonClassName}>
           {item.label}
         </Link>
       ))}
@@ -322,17 +399,17 @@ function SummaryStatGrid({
   return (
     <div className={className}>
       {items.map((item) => (
-        <div key={item.label} className="border border-stone-800 bg-[#141414] px-4 py-4">
+        <div key={item.label} className={adminVersionsInsetCardClassName}>
           <div className="text-xs uppercase tracking-[0.16em] text-stone-500">{item.label}</div>
           {item.href ? (
             <Link
               href={item.href}
-              className={`mt-3 block transition hover:text-cinnabar ${item.valueClassName || "text-2xl"} ${item.tone || "text-stone-100"}`}
+              className={cn("mt-3 block transition hover:text-cinnabar", item.valueClassName || "text-2xl", item.tone || "text-stone-100")}
             >
               {item.value}
             </Link>
           ) : (
-            <div className={`mt-3 ${item.valueClassName || "text-2xl"} ${item.tone || "text-stone-100"}`}>{item.value}</div>
+            <div className={cn("mt-3", item.valueClassName || "text-2xl", item.tone || "text-stone-100")}>{item.value}</div>
           )}
         </div>
       ))}
@@ -350,7 +427,7 @@ function AdvisoryPanel({
   contentClassName?: string;
 }) {
   return (
-    <div className="border border-stone-800 bg-[#141414] px-4 py-4">
+    <div className={adminVersionsInsetCardClassName}>
       <div className="text-xs uppercase tracking-[0.16em] text-stone-500">{title}</div>
       <div className={contentClassName}>{children}</div>
     </div>
@@ -373,7 +450,7 @@ function VersionPreviewPanel({
   emptyPreview: string;
 }) {
   return (
-    <div className="border border-stone-800 bg-stone-950 px-4 py-4">
+    <div className={adminVersionsRaisedCardClassName}>
       <SectionEyebrow tone={tone}>{title}</SectionEyebrow>
       <div className="mt-3 text-sm text-stone-400">{label}</div>
       {actionLinks.length ? (
@@ -381,7 +458,7 @@ function VersionPreviewPanel({
           <SecondaryActionLinks items={actionLinks} />
         </div>
       ) : null}
-      <pre className="mt-4 max-h-[420px] overflow-auto whitespace-pre-wrap break-words border border-stone-800 bg-[#141414] px-4 py-4 text-xs leading-6 text-stone-300">
+      <pre className={adminVersionsPreviewClassName}>
         {preview || emptyPreview}
       </pre>
     </div>
@@ -398,7 +475,7 @@ function ConfigCard({
   children: ReactNode;
 }) {
   return (
-    <div className={`border border-stone-800 bg-[#141414] ${compact ? "px-4 py-3" : "px-4 py-4"}`}>
+    <div className={compact ? adminVersionsInsetCardCompactClassName : adminVersionsInsetCardClassName}>
       {title ? <div className="text-xs uppercase tracking-[0.16em] text-stone-500">{title}</div> : null}
       <div className={title ? "mt-3" : ""}>{children}</div>
     </div>
@@ -415,7 +492,7 @@ function ToggleConfigCard({
   onChange: (checked: boolean) => void;
 }) {
   return (
-    <label className="flex items-center gap-3 border border-stone-800 bg-[#141414] px-4 py-3 text-sm text-stone-300">
+    <label className={cn(adminVersionsInsetCardCompactClassName, "flex items-center gap-3 text-sm text-stone-300")}>
       <input aria-label="input control" type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} />
       {label}
     </label>
@@ -442,7 +519,7 @@ function RolloutAuditSection({
   const summary = buildRolloutAuditSummary(logs);
 
   return (
-    <div className="mt-3 border border-stone-800 bg-[#141414] px-4 py-4">
+    <div className={cn(adminVersionsInsetCardClassName, "mt-3")}>
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="text-xs uppercase tracking-[0.16em] text-stone-500">{title}</div>
@@ -458,14 +535,14 @@ function RolloutAuditSection({
           { label: "冷却跳过", value: summary.cooldownSkipCount, tone: "text-stone-300" },
           { label: "最近风险", value: summary.latestRiskLevel, tone: getRolloutRiskTextTone(summary.latestRiskLevel) },
         ].map((item) => (
-          <div key={item.label} className="border border-stone-800 bg-stone-950 px-4 py-4">
+          <div key={item.label} className={adminVersionsRaisedCardClassName}>
             <div className="text-xs uppercase tracking-[0.16em] text-stone-500">{item.label}</div>
             <div className={`mt-3 text-2xl ${item.tone}`}>{item.value}</div>
           </div>
         ))}
       </div>
       {showTimeline && logs.length ? (
-        <div className="mt-4 overflow-hidden border border-stone-800 bg-stone-950 px-4 py-4">
+        <div className={cn(adminVersionsRaisedCardClassName, "mt-4 overflow-hidden")}>
           <div className="text-xs uppercase tracking-[0.16em] text-stone-500">审计时间线</div>
           <div className="mt-3 flex items-end gap-2">
             {logs.slice(0, 12).reverse().map((item) => (
@@ -486,7 +563,7 @@ function RolloutAuditSection({
       <div className="mt-4 space-y-3">
         {logs.length ? (
           logs.slice(0, 6).map((item) => (
-            <article key={item.id} className="border border-stone-800 bg-stone-950 px-4 py-4">
+            <article key={item.id} className={adminVersionsRaisedCardClassName}>
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <div className="text-xs uppercase tracking-[0.16em] text-stone-500">
@@ -504,37 +581,37 @@ function RolloutAuditSection({
                 </div>
               </div>
               <div className="mt-3 grid gap-3 xl:grid-cols-2">
-                <div className="border border-stone-800 bg-[#141414] px-3 py-3 text-sm text-stone-300">
+                <div className={adminVersionsAuditChangeCardClassName}>
                   变更前：{formatRolloutConfigSummary(item.previousConfig)}
                 </div>
-                <div className="border border-stone-800 bg-[#141414] px-3 py-3 text-sm text-stone-300">
+                <div className={adminVersionsAuditChangeCardClassName}>
                   变更后：{formatRolloutConfigSummary(item.nextConfig)}
                 </div>
               </div>
               <div className="mt-3 flex flex-wrap gap-2 text-xs">
                 {item.changes.length ? (
                   item.changes.map((change) => (
-                    <span key={`${item.id}-${change}`} className="border border-stone-700 px-3 py-1 text-stone-400">
+                    <span key={`${item.id}-${change}`} className={adminVersionsInfoChipClassName}>
                       {change}
                     </span>
                   ))
                 ) : (
-                  <span className="border border-stone-700 px-3 py-1 text-stone-500">本轮没有实际改动</span>
+                  <span className={adminVersionsMutedChipClassName}>本轮没有实际改动</span>
                 )}
               </div>
               <div className="mt-3 flex flex-wrap gap-2 text-xs">
-                <span className="border border-stone-700 px-3 py-1 text-stone-400">回流 {formatWritingEvalMetric(item.signals.feedbackCount, "", 0)} 条</span>
-                <span className="border border-stone-700 px-3 py-1 text-stone-400">用户 {formatWritingEvalMetric(item.signals.uniqueUsers, "", 0)}</span>
-                <span className="border border-stone-700 px-3 py-1 text-stone-400">命中 {formatWritingEvalMetric(item.signals.totalHitCount, "", 0)}</span>
-                <span className="border border-stone-700 px-3 py-1 text-stone-400">Delta {formatWritingEvalMetric(item.signals.deltaTotalScore, "", 2)}</span>
-                <span className="border border-stone-700 px-3 py-1 text-stone-400">爆款 {formatWritingEvalMetric(item.signals.observedViralScore, "", 2)}</span>
-                <span className="border border-stone-700 px-3 py-1 text-stone-400">打开 {formatWritingEvalMetric(item.signals.openRate, "%", 1)}</span>
-                <span className="border border-stone-700 px-3 py-1 text-stone-400">读完 {formatWritingEvalMetric(item.signals.readCompletionRate, "%", 1)}</span>
+                <span className={adminVersionsInfoChipClassName}>回流 {formatWritingEvalMetric(item.signals.feedbackCount, "", 0)} 条</span>
+                <span className={adminVersionsInfoChipClassName}>用户 {formatWritingEvalMetric(item.signals.uniqueUsers, "", 0)}</span>
+                <span className={adminVersionsInfoChipClassName}>命中 {formatWritingEvalMetric(item.signals.totalHitCount, "", 0)}</span>
+                <span className={adminVersionsInfoChipClassName}>Delta {formatWritingEvalMetric(item.signals.deltaTotalScore, "", 2)}</span>
+                <span className={adminVersionsInfoChipClassName}>爆款 {formatWritingEvalMetric(item.signals.observedViralScore, "", 2)}</span>
+                <span className={adminVersionsInfoChipClassName}>打开 {formatWritingEvalMetric(item.signals.openRate, "%", 1)}</span>
+                <span className={adminVersionsInfoChipClassName}>读完 {formatWritingEvalMetric(item.signals.readCompletionRate, "%", 1)}</span>
               </div>
             </article>
           ))
         ) : (
-          <div className="border border-dashed border-stone-700 bg-stone-950 px-4 py-6 text-sm text-stone-500">{emptyState}</div>
+          <div className={adminVersionsDashedNoticeClassName}>{emptyState}</div>
         )}
       </div>
     </div>
@@ -1214,7 +1291,7 @@ export function AdminWritingEvalVersionsClient({
   }
 
   return (
-    <section className={uiPrimitives.adminPanel + " p-5"}>
+    <section className={adminVersionsSectionClassName}>
       <div className="flex items-center justify-between gap-4">
         <div>
           <div className="text-xs uppercase tracking-[0.24em] text-stone-500">Version Ledger</div>
@@ -1223,9 +1300,9 @@ export function AdminWritingEvalVersionsClient({
         <div className="text-sm text-stone-500">{displayedVersions.length} 条记录</div>
       </div>
 
-      {message ? <div className="mt-4 border border-stone-800 bg-stone-950 px-4 py-3 text-sm text-stone-300">{message}</div> : null}
+      {message ? <div className={cn(adminVersionsRaisedCardCompactClassName, "mt-4 text-sm text-stone-300")}>{message}</div> : null}
       {focusAsset ? (
-        <div className="mt-4 flex flex-wrap items-start justify-between gap-3 border border-cinnabar bg-[#1d1413] px-4 py-4">
+        <div className={cn(adminVersionsFocusCardClassName, "mt-4 flex flex-wrap items-start justify-between gap-3")}>
           <div>
             <SectionEyebrow tone="cinnabar">资产聚焦模式</SectionEyebrow>
             <div className="mt-2 text-sm leading-7 text-stone-200">
@@ -1236,99 +1313,134 @@ export function AdminWritingEvalVersionsClient({
         </div>
       ) : null}
 
-      <div className="mt-5 overflow-x-auto">
-        <table className="w-full min-w-[1200px] text-left text-sm">
-          <thead className="text-stone-500">
-            <tr>
-              {["时间", "对象", "来源版本", "目标版本", "决策", "当前状态", "效果信号", "原因", "总分", "操作人", "操作"].map((head) => (
-                <th key={head} className="pb-4 font-medium">
-                  {head}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {displayedVersions.map((item) => (
-              (() => {
-                const advisory = buildRolloutAdvisory(item);
-                const primaryFeedbackSummary = getPrimaryFeedbackSummary(item);
-                const sourcePromptPageHref = isPromptBackedVersionType(item.versionType) ? buildAdminPromptVersionHref(item.sourceVersion, item.targetKey) : null;
-                const promptPageHref = isPromptBackedVersionType(item.versionType) ? buildAdminPromptVersionHref(item.candidateContent, item.targetKey) : null;
-                return (
-              <tr
-                key={item.id}
-                className={`cursor-pointer border-t border-stone-800 align-top ${selectedVersionId === item.id ? "bg-[#1d1413]" : ""}`}
-                onClick={() => setSelectedVersionId(item.id)}
-              >
-                <td className="py-4 text-stone-400">{formatWritingEvalDateTime(item.createdAt)}</td>
-                <td className="py-4 text-stone-100">
-                  {getVersionTypeLabel(item.versionType)} · {item.targetKey}
-                </td>
-                <td className="py-4 font-mono text-xs text-stone-400">
-                  {sourcePromptPageHref ? (
-                    <Link href={sourcePromptPageHref} onClick={(event) => event.stopPropagation()} className="transition hover:text-cinnabar">
-                      {item.sourceVersion}
-                    </Link>
-                  ) : (
-                    item.sourceVersion
-                  )}
-                </td>
-                <td className="py-4 font-mono text-xs text-stone-300">
-                  {promptPageHref ? (
-                    <Link href={promptPageHref} onClick={(event) => event.stopPropagation()} className="transition hover:text-cinnabar">
-                      {item.candidateContent}
-                    </Link>
-                  ) : (
-                    item.candidateContent
-                  )}
-                </td>
-                <td className={`py-4 ${getDecisionTextTone(item.decision)}`}>
-                  {item.decision}
-                </td>
-                <td className="py-4 text-stone-400">{toStatusLabel(item)}</td>
-                <td className="py-4 text-xs leading-6 text-stone-400">
-                  {item.rolloutStats ? (
+      <div className={cn(adminVersionsPanelBaseClassName, "mt-5 overflow-hidden")}>
+        <div className={adminVersionsTableMobileListClassName}>
+          {displayedVersions.length ? (
+            displayedVersions.map((item) => {
+              const advisory = buildRolloutAdvisory(item);
+              const primaryFeedbackSummary = getPrimaryFeedbackSummary(item);
+              const sourcePromptPageHref = isPromptBackedVersionType(item.versionType) ? buildAdminPromptVersionHref(item.sourceVersion, item.targetKey) : null;
+              const promptPageHref = isPromptBackedVersionType(item.versionType) ? buildAdminPromptVersionHref(item.candidateContent, item.targetKey) : null;
+              const selected = selectedVersionId === item.id;
+              return (
+                <article
+                  key={item.id}
+                  role="button"
+                  tabIndex={0}
+                  aria-pressed={selected}
+                  onClick={() => setSelectedVersionId(item.id)}
+                  onKeyDown={(event) => handleSelectableCardKeyDown(event, () => setSelectedVersionId(item.id))}
+                  className={getVersionsMobileCardClassName(selected)}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="text-xs uppercase tracking-[0.18em] text-stone-500">
+                        {formatWritingEvalDateTime(item.createdAt)}
+                      </div>
+                      <div className="mt-3 font-serifCn text-2xl text-stone-100 text-balance">
+                        {getVersionTypeLabel(item.versionType)}
+                      </div>
+                      <div className="mt-2 text-sm text-stone-400">{item.targetKey}</div>
+                    </div>
+                    <div className="shrink-0 text-right">
+                      <div className={cn("text-xs uppercase tracking-[0.18em]", getDecisionTextTone(item.decision))}>
+                        {item.decision}
+                      </div>
+                      <div className="mt-2 text-xs text-stone-500">{toStatusLabel(item)}</div>
+                    </div>
+                  </div>
+                  <div className="mt-4 grid gap-3 text-sm text-stone-400 sm:grid-cols-2">
                     <div>
-                      命中 {item.rolloutStats.totalHitCount} 次 / {item.rolloutStats.uniqueUserCount} 人
-                      <br />
-                      {item.rolloutStats.lastHitAt ? `最近命中 ${formatWritingEvalDateTime(item.rolloutStats.lastHitAt)}` : "尚无灰度命中"}
+                      <div className="text-[11px] uppercase tracking-[0.18em] text-stone-500">来源版本</div>
+                      <div className="mt-1 break-all font-mono text-xs text-stone-300">
+                        {sourcePromptPageHref ? (
+                          <Link
+                            href={sourcePromptPageHref}
+                            onClick={(event) => event.stopPropagation()}
+                            className="transition hover:text-cinnabar"
+                          >
+                            {item.sourceVersion}
+                          </Link>
+                        ) : (
+                          item.sourceVersion
+                        )}
+                      </div>
                     </div>
-                  ) : (
-                    <div>暂无灰度统计</div>
-                  )}
-                  {item.rolloutConfig ? <div className="mt-2 text-stone-600">自动模式：{item.rolloutConfig.autoMode}</div> : null}
-                  {primaryFeedbackSummary ? (
-                    <div className="mt-2 text-stone-500">
-                      {getFeedbackSummaryLabel(item)} {primaryFeedbackSummary.feedbackCount} 条
-                      <br />
-                      爆款 {formatWritingEvalMetric(primaryFeedbackSummary.averageObservedViralScore, "", 2)} · 打开 {formatWritingEvalMetric(primaryFeedbackSummary.averageOpenRate, "%", 1)}
+                    <div>
+                      <div className="text-[11px] uppercase tracking-[0.18em] text-stone-500">目标版本</div>
+                      <div className="mt-1 break-all font-mono text-xs text-stone-200">
+                        {promptPageHref ? (
+                          <Link
+                            href={promptPageHref}
+                            onClick={(event) => event.stopPropagation()}
+                            className="transition hover:text-cinnabar"
+                          >
+                            {item.candidateContent}
+                          </Link>
+                        ) : (
+                          item.candidateContent
+                        )}
+                      </div>
                     </div>
-                  ) : (
-                    <div className="mt-2 text-stone-600">暂无回流反馈</div>
-                  )}
-                  {advisory ? (
-                    <div className={`mt-2 ${getAdvisoryInlineTone(advisory.tone)}`}>
-                      {advisory.headline}
+                    <div>
+                      <div className="text-[11px] uppercase tracking-[0.18em] text-stone-500">总分</div>
+                      <div className="mt-1 text-stone-300">
+                        {typeof getNumber(item.scoreSummary.totalScore) === "number" ? getNumber(item.scoreSummary.totalScore)?.toFixed(2) : "--"}
+                      </div>
                     </div>
-                  ) : null}
-                </td>
-                <td className="py-4 text-stone-400">{item.decisionReason || "暂无"}</td>
-                <td className="py-4 text-stone-400">
-                  {typeof getNumber(item.scoreSummary.totalScore) === "number" ? getNumber(item.scoreSummary.totalScore)?.toFixed(2) : "--"}
-                </td>
-                <td className="py-4 text-stone-400">{item.approvedBy ?? "--"}</td>
-                <td className="py-4">
-                  <div className="flex flex-wrap gap-2">
+                    <div>
+                      <div className="text-[11px] uppercase tracking-[0.18em] text-stone-500">操作人</div>
+                      <div className="mt-1 text-stone-300">{item.approvedBy ?? "--"}</div>
+                    </div>
+                  </div>
+                  <div className="mt-4 text-sm leading-7 text-stone-400">
+                    {item.rolloutStats ? (
+                      <div>
+                        命中 {item.rolloutStats.totalHitCount} 次 / {item.rolloutStats.uniqueUserCount} 人
+                        <br />
+                        {item.rolloutStats.lastHitAt ? `最近命中 ${formatWritingEvalDateTime(item.rolloutStats.lastHitAt)}` : "尚无灰度命中"}
+                      </div>
+                    ) : (
+                      <div>暂无灰度统计</div>
+                    )}
+                    {item.rolloutConfig ? <div className="mt-2 text-stone-500">自动模式：{item.rolloutConfig.autoMode}</div> : null}
+                    {primaryFeedbackSummary ? (
+                      <div className="mt-2 text-stone-500">
+                        {getFeedbackSummaryLabel(item)} {primaryFeedbackSummary.feedbackCount} 条
+                        <br />
+                        爆款 {formatWritingEvalMetric(primaryFeedbackSummary.averageObservedViralScore, "", 2)} · 打开 {formatWritingEvalMetric(primaryFeedbackSummary.averageOpenRate, "%", 1)}
+                      </div>
+                    ) : (
+                      <div className="mt-2 text-stone-600">暂无回流反馈</div>
+                    )}
+                    {advisory ? (
+                      <div className={cn("mt-2", getAdvisoryInlineTone(advisory.tone))}>
+                        {advisory.headline}
+                      </div>
+                    ) : null}
+                  </div>
+                  <div className="mt-4">
+                    <div className="text-[11px] uppercase tracking-[0.18em] text-stone-500">原因</div>
+                    <div className="mt-2 text-sm leading-7 text-stone-400">{item.decisionReason || "暂无"}</div>
+                  </div>
+                  <div className="mt-4 flex flex-wrap gap-2">
                     {promptPageHref ? (
-                      <Link href={promptPageHref} className={uiPrimitives.adminSecondaryButton}>
+                      <Link
+                        href={promptPageHref}
+                        onClick={(event) => event.stopPropagation()}
+                        className={adminVersionsSecondaryButtonClassName}
+                      >
                         Prompts
                       </Link>
                     ) : null}
                     {item.decision === "keep" ? (
                       <button
                         type="button"
-                        onClick={() => void handleRollback(item.id)}
-                        className={uiPrimitives.adminSecondaryButton}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          void handleRollback(item.id);
+                        }}
+                        className={adminVersionsSecondaryButtonClassName}
                         disabled={rollingBackId === item.id}
                       >
                         {rollingBackId === item.id ? "回滚中…" : "回滚到来源版本"}
@@ -1339,32 +1451,156 @@ export function AdminWritingEvalVersionsClient({
                     {isPromptBackedVersionType(item.versionType) && item.experimentSource?.datasetId ? (
                       <button
                         type="button"
-                        onClick={() => void handleForkPromptCandidate(item)}
-                        className={uiPrimitives.adminSecondaryButton}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          void handleForkPromptCandidate(item);
+                        }}
+                        className={adminVersionsSecondaryButtonClassName}
                         disabled={forkingVersionId === item.id}
                       >
                         {forkingVersionId === item.id ? "创建中…" : "继续迭代并发起实验"}
                       </button>
                     ) : null}
                   </div>
-                </td>
-              </tr>
-                );
-              })()
-            ))}
-            {displayedVersions.length === 0 ? (
+                </article>
+              );
+            })
+          ) : (
+            <div className={adminVersionsDashedNoticeClassName}>
+              {focusAsset ? "当前聚焦资产还没有匹配的版本账本记录。" : "当前还没有版本账本记录。"}
+            </div>
+          )}
+        </div>
+        <div className={adminVersionsTableDesktopShellClassName}>
+          <table className="w-full min-w-[1200px] text-left text-sm">
+            <thead className="text-stone-500">
               <tr>
-                <td colSpan={11} className="py-6 text-stone-500">
-                  {focusAsset ? "当前聚焦资产还没有匹配的版本账本记录。" : "当前还没有版本账本记录。"}
-                </td>
+                {["时间", "对象", "来源版本", "目标版本", "决策", "当前状态", "效果信号", "原因", "总分", "操作人", "操作"].map((head) => (
+                  <th key={head} className="pb-4 font-medium">
+                    {head}
+                  </th>
+                ))}
               </tr>
-            ) : null}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {displayedVersions.map((item) => (
+                (() => {
+                  const advisory = buildRolloutAdvisory(item);
+                  const primaryFeedbackSummary = getPrimaryFeedbackSummary(item);
+                  const sourcePromptPageHref = isPromptBackedVersionType(item.versionType) ? buildAdminPromptVersionHref(item.sourceVersion, item.targetKey) : null;
+                  const promptPageHref = isPromptBackedVersionType(item.versionType) ? buildAdminPromptVersionHref(item.candidateContent, item.targetKey) : null;
+                  return (
+                    <tr
+                      key={item.id}
+                      className={`cursor-pointer border-t border-stone-800 align-top ${selectedVersionId === item.id ? "bg-[#1d1413]" : ""}`}
+                      onClick={() => setSelectedVersionId(item.id)}
+                    >
+                      <td className="py-4 text-stone-400">{formatWritingEvalDateTime(item.createdAt)}</td>
+                      <td className="py-4 text-stone-100">
+                        {getVersionTypeLabel(item.versionType)} · {item.targetKey}
+                      </td>
+                      <td className="py-4 font-mono text-xs text-stone-400">
+                        {sourcePromptPageHref ? (
+                          <Link href={sourcePromptPageHref} onClick={(event) => event.stopPropagation()} className="transition hover:text-cinnabar">
+                            {item.sourceVersion}
+                          </Link>
+                        ) : (
+                          item.sourceVersion
+                        )}
+                      </td>
+                      <td className="py-4 font-mono text-xs text-stone-300">
+                        {promptPageHref ? (
+                          <Link href={promptPageHref} onClick={(event) => event.stopPropagation()} className="transition hover:text-cinnabar">
+                            {item.candidateContent}
+                          </Link>
+                        ) : (
+                          item.candidateContent
+                        )}
+                      </td>
+                      <td className={`py-4 ${getDecisionTextTone(item.decision)}`}>
+                        {item.decision}
+                      </td>
+                      <td className="py-4 text-stone-400">{toStatusLabel(item)}</td>
+                      <td className="py-4 text-xs leading-6 text-stone-400">
+                        {item.rolloutStats ? (
+                          <div>
+                            命中 {item.rolloutStats.totalHitCount} 次 / {item.rolloutStats.uniqueUserCount} 人
+                            <br />
+                            {item.rolloutStats.lastHitAt ? `最近命中 ${formatWritingEvalDateTime(item.rolloutStats.lastHitAt)}` : "尚无灰度命中"}
+                          </div>
+                        ) : (
+                          <div>暂无灰度统计</div>
+                        )}
+                        {item.rolloutConfig ? <div className="mt-2 text-stone-600">自动模式：{item.rolloutConfig.autoMode}</div> : null}
+                        {primaryFeedbackSummary ? (
+                          <div className="mt-2 text-stone-500">
+                            {getFeedbackSummaryLabel(item)} {primaryFeedbackSummary.feedbackCount} 条
+                            <br />
+                            爆款 {formatWritingEvalMetric(primaryFeedbackSummary.averageObservedViralScore, "", 2)} · 打开 {formatWritingEvalMetric(primaryFeedbackSummary.averageOpenRate, "%", 1)}
+                          </div>
+                        ) : (
+                          <div className="mt-2 text-stone-600">暂无回流反馈</div>
+                        )}
+                        {advisory ? (
+                          <div className={`mt-2 ${getAdvisoryInlineTone(advisory.tone)}`}>
+                            {advisory.headline}
+                          </div>
+                        ) : null}
+                      </td>
+                      <td className="py-4 text-stone-400">{item.decisionReason || "暂无"}</td>
+                      <td className="py-4 text-stone-400">
+                        {typeof getNumber(item.scoreSummary.totalScore) === "number" ? getNumber(item.scoreSummary.totalScore)?.toFixed(2) : "--"}
+                      </td>
+                      <td className="py-4 text-stone-400">{item.approvedBy ?? "--"}</td>
+                      <td className="py-4">
+                        <div className="flex flex-wrap gap-2">
+                          {promptPageHref ? (
+                            <Link href={promptPageHref} className={adminVersionsSecondaryButtonClassName}>
+                              Prompts
+                            </Link>
+                          ) : null}
+                          {item.decision === "keep" ? (
+                            <button
+                              type="button"
+                              onClick={() => void handleRollback(item.id)}
+                              className={adminVersionsSecondaryButtonClassName}
+                              disabled={rollingBackId === item.id}
+                            >
+                              {rollingBackId === item.id ? "回滚中…" : "回滚到来源版本"}
+                            </button>
+                          ) : (
+                            <span className="text-xs text-stone-600">不可回滚</span>
+                          )}
+                          {isPromptBackedVersionType(item.versionType) && item.experimentSource?.datasetId ? (
+                            <button
+                              type="button"
+                              onClick={() => void handleForkPromptCandidate(item)}
+                              className={adminVersionsSecondaryButtonClassName}
+                              disabled={forkingVersionId === item.id}
+                            >
+                              {forkingVersionId === item.id ? "创建中…" : "继续迭代并发起实验"}
+                            </button>
+                          ) : null}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })()
+              ))}
+              {displayedVersions.length === 0 ? (
+                <tr>
+                  <td colSpan={11} className="py-6 text-stone-500">
+                    {focusAsset ? "当前聚焦资产还没有匹配的版本账本记录。" : "当前还没有版本账本记录。"}
+                  </td>
+                </tr>
+              ) : null}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       <section className="mt-6 grid gap-4 xl:grid-cols-2">
-        <div className="border border-stone-800 bg-stone-950 px-4 py-4 xl:col-span-2">
+        <div className={adminVersionsWideSectionClassName}>
           <div className="flex items-start justify-between gap-4">
             <div>
               <SectionEyebrow>实验来源</SectionEyebrow>
@@ -1434,7 +1670,7 @@ export function AdminWritingEvalVersionsClient({
               {selectedVersion && selectedCanForkPromptCandidate ? (
                 <button
                   type="button"
-                  className={uiPrimitives.primaryButton}
+                  className={adminVersionsPrimaryButtonClassName}
                   onClick={() => void handleForkPromptCandidate(selectedVersion)}
                   disabled={forkingVersionId === selectedVersion.id}
                 >
@@ -1448,13 +1684,13 @@ export function AdminWritingEvalVersionsClient({
                     assetRef: selectedVersion.candidateContent,
                     versionId: selectedVersion.id,
                   })}
-                  className={uiPrimitives.adminSecondaryButton}
+                  className={adminVersionsSecondaryButtonClassName}
                 >
                   聚焦当前资产账本
                 </Link>
               ) : null}
               {!selectedCanForkPromptCandidate && selectedForkRunHref ? (
-                <Link href={selectedForkRunHref} className={uiPrimitives.adminSecondaryButton}>
+                <Link href={selectedForkRunHref} className={adminVersionsSecondaryButtonClassName}>
                   去 Runs 手动发起
                 </Link>
               ) : null}
@@ -1462,7 +1698,7 @@ export function AdminWritingEvalVersionsClient({
           </div>
         </div>
 
-        <div className="border border-stone-800 bg-stone-950 px-4 py-4 xl:col-span-2">
+        <div className={adminVersionsWideSectionClassName}>
           <SectionEyebrow>运营判断</SectionEyebrow>
           {selectedRolloutAdvisory ? (
             <div className="mt-4 space-y-4">
@@ -1499,16 +1735,16 @@ export function AdminWritingEvalVersionsClient({
                 <AdvisoryPanel title="推荐灰度方案" contentClassName="mt-3 space-y-3">
                   <>
                     <div className="flex flex-wrap gap-3">
-                    {selectedRolloutPresets.map((preset) => (
-                      <button
-                        key={preset.label}
-                        type="button"
-                        className={uiPrimitives.adminSecondaryButton}
-                        onClick={() => applyRolloutPreset(preset)}
-                      >
-                        {preset.label}
-                      </button>
-                    ))}
+                      {selectedRolloutPresets.map((preset) => (
+                        <button
+                          key={preset.label}
+                          type="button"
+                          className={adminVersionsSecondaryButtonClassName}
+                          onClick={() => applyRolloutPreset(preset)}
+                        >
+                          {preset.label}
+                        </button>
+                      ))}
                     </div>
                     <div className="space-y-2 text-sm text-stone-400">
                       {selectedRolloutPresets.map((preset) => (
@@ -1522,13 +1758,13 @@ export function AdminWritingEvalVersionsClient({
               ) : null}
             </div>
           ) : (
-            <div className="mt-4 border border-stone-800 bg-[#141414] px-4 py-4 text-sm text-stone-500">
+            <div className={cn(adminVersionsMutedNoticeClassName, "mt-4")}>
               当前对象不是支持灰度的实验资产，暂不生成运营告警与放量建议。
             </div>
           )}
         </div>
 
-        <div className="border border-stone-800 bg-stone-950 px-4 py-4 xl:col-span-2">
+        <div className={adminVersionsWideSectionClassName}>
           <SectionEyebrow>得分摘要</SectionEyebrow>
           <SummaryStatGrid
             className="mt-4 grid gap-3 md:grid-cols-3 xl:grid-cols-6"
@@ -1553,7 +1789,7 @@ export function AdminWritingEvalVersionsClient({
           />
         </div>
 
-        <div className="border border-stone-800 bg-stone-950 px-4 py-4 xl:col-span-2">
+        <div className={adminVersionsWideSectionClassName}>
           <div className="flex items-start justify-between gap-4">
             <div>
               <SectionEyebrow tone="cinnabar">线上灰度</SectionEyebrow>
@@ -1566,11 +1802,16 @@ export function AdminWritingEvalVersionsClient({
             {selectedVersion && isRolloutVersionType(selectedVersion.versionType) ? (
               <div className="flex flex-wrap gap-3">
                 {selectedVersion.versionType === "prompt_version" && selectedPromptPageHref ? (
-                  <Link href={selectedPromptPageHref} className={uiPrimitives.adminSecondaryButton}>
+                  <Link href={selectedPromptPageHref} className={adminVersionsSecondaryButtonClassName}>
                     打开 Prompts 页
                   </Link>
                 ) : null}
-                <button type="button" className={uiPrimitives.adminSecondaryButton} onClick={() => void handleSaveRollout()} disabled={!canEditRollout || savingRollout || !selectedRolloutAdmission.canEnable}>
+                <button
+                  type="button"
+                  className={adminVersionsSecondaryButtonClassName}
+                  onClick={() => void handleSaveRollout()}
+                  disabled={!canEditRollout || savingRollout || !selectedRolloutAdmission.canEnable}
+                >
                   {savingRollout ? "保存中…" : "保存灰度配置"}
                 </button>
               </div>
@@ -1595,7 +1836,7 @@ export function AdminWritingEvalVersionsClient({
                     <select aria-label="select control"
                       value={rolloutForm.autoMode}
                       onChange={(event) => setRolloutForm((prev) => ({ ...prev, autoMode: event.target.value as RolloutAutoMode }))}
-                      className={`mt-3 ${uiPrimitives.adminInput}`}
+                      className={adminVersionsSelectClassName}
                     >
                       <option value="manual">manual</option>
                       <option value="recommendation">recommendation</option>
@@ -1606,7 +1847,7 @@ export function AdminWritingEvalVersionsClient({
                       value={rolloutForm.rolloutPercentage}
                       onChange={(event) => setRolloutForm((prev) => ({ ...prev, rolloutPercentage: event.target.value }))}
                       placeholder="0-100"
-                      className={`mt-3 ${uiPrimitives.adminInput}`}
+                      className={adminVersionsInputClassName}
                     />
                   </ConfigCard>
                   <ConfigCard title="当前观测" compact>
@@ -1621,7 +1862,7 @@ export function AdminWritingEvalVersionsClient({
                       value={rolloutForm.rolloutPlanCodes}
                       onChange={(event) => setRolloutForm((prev) => ({ ...prev, rolloutPlanCodes: event.target.value }))}
                       placeholder="pro, ultra"
-                      className={`mt-3 ${uiPrimitives.adminInput}`}
+                      className={adminVersionsInputClassName}
                     />
                     <div className="mt-2 text-xs leading-6 text-stone-600">多个套餐用逗号分隔；为空时仅看观察优先开关和比例。</div>
                   </ConfigCard>
@@ -1632,7 +1873,7 @@ export function AdminWritingEvalVersionsClient({
                           value={rolloutForm.notes}
                           onChange={(event) => setRolloutForm((prev) => ({ ...prev, notes: event.target.value }))}
                           placeholder="记录灰度目标、风险点或预计观察窗口"
-                          className={`mt-3 min-h-[110px] ${uiPrimitives.adminInput}`}
+                          className={adminVersionsTextareaClassName}
                         />
                         <div className="mt-2 text-xs leading-6 text-stone-600">
                           `recommendation` 会允许 scheduler 按线上回流自动收缩、限流或谨慎扩量；`manual` 只保留提示，不自动改配置。
@@ -1685,7 +1926,7 @@ export function AdminWritingEvalVersionsClient({
                 />
               </>
             ) : (
-              <div className="mt-4 border border-stone-800 bg-[#141414] px-4 py-4 text-sm text-stone-400">
+              <div className={cn(adminVersionsInsetCardClassName, "mt-4 text-sm text-stone-400")}>
                 {selectedVersion?.versionType === "prompt_version" && selectedVersion.isCurrentActive ? (
                   "当前 Prompt 版本已经全量生效，无需再配置灰度窗口。"
                 ) : (
@@ -1699,9 +1940,9 @@ export function AdminWritingEvalVersionsClient({
         </div>
 
         {selectedVersion?.versionType === "prompt_version" ? (
-          <div className="border border-stone-800 bg-stone-950 px-4 py-4 xl:col-span-2">
+          <div className={adminVersionsWideSectionClassName}>
             <div className="flex items-start justify-between gap-4">
-            <div>
+              <div>
                 <SectionEyebrow tone="cinnabar">Prompt 灰度治理</SectionEyebrow>
                 <div className="mt-3 text-sm leading-7 text-stone-400">
                   聚焦当前 prompt 版本的自动灰度配置、账本判断和 scheduler 审计，不和通用写作资产治理混在一起看。

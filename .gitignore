@@ -107,6 +107,7 @@ dist
 
 # vitepress build output
 **/.vitepress/dist
+**/storybook-static/
 
 # vitepress cache directory
 **/.vitepress/cache
@@ -169,5 +170,6 @@ secrets/
 
 # Local browser automation artifacts
 .playwright-mcp/
+.lighthouseci/
 /article4.png
 /home.png

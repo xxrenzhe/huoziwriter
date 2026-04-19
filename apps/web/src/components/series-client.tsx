@@ -1,5 +1,6 @@
 "use client";
 
+import { Button, Input, Select, Textarea, cn, surfaceCardStyles } from "@huoziwriter/ui";
 import { useRouter } from "next/navigation";
 import { FormEvent, startTransition, useMemo, useState } from "react";
 
@@ -43,6 +44,12 @@ function formatSeriesStatus(value: string) {
   if (value === "archived") return "归档";
   return "经营中";
 }
+
+const statsCardClassName = cn(surfaceCardStyles({ padding: "sm" }), "bg-surfaceWarm");
+const createFormClassName = cn(surfaceCardStyles({ tone: "warm", padding: "md" }), "grid gap-3");
+const editorCardClassName = surfaceCardStyles({ padding: "md" });
+const messageCardClassName = cn(surfaceCardStyles({ padding: "sm" }), "bg-surfaceWarm text-sm text-inkSoft");
+const draftFieldClassName = "bg-paperStrong";
 
 export function SeriesManager({
   initialSeries,
@@ -180,67 +187,72 @@ export function SeriesManager({
           ["经营中", String(activeSeriesCount), "经营中的系列会优先进入稿件和作战台的默认视角。"] as const,
           ["绑定人设", String(new Set(series.map((item) => item.personaId)).size), "系列固定绑定作者身份，避免写到后期随手换口吻。"] as const,
         ].map(([label, value, note]) => (
-          <article key={label} className="border border-stone-300/40 bg-[#fffdfa] p-4">
-            <div className="text-xs uppercase tracking-[0.18em] text-stone-500">{label}</div>
+          <article key={label} className={statsCardClassName}>
+            <div className="text-xs uppercase tracking-[0.18em] text-inkMuted">{label}</div>
             <div className="mt-3 font-serifCn text-3xl text-ink text-balance">{value}</div>
-            <div className="mt-2 text-sm leading-6 text-stone-700">{note}</div>
+            <div className="mt-2 text-sm leading-6 text-inkSoft">{note}</div>
           </article>
         ))}
       </div>
 
-      <form onSubmit={handleCreate} className="grid gap-3 border border-stone-300/40 bg-[#faf7f0] p-5">
+      <form onSubmit={handleCreate} className={createFormClassName}>
         <div className="text-xs uppercase tracking-[0.24em] text-cinnabar">新建系列</div>
         <div className="grid gap-3 md:grid-cols-2">
-          <input aria-label="系列名称，例如：AI 基础设施观察"
+          <Input
+            aria-label="系列名称，例如：AI 基础设施观察"
             value={name}
             onChange={(event) => setName(event.target.value)}
             placeholder="系列名称，例如：AI 基础设施观察"
-            className="border border-stone-300 bg-white px-4 py-3 text-sm"
+            className="bg-surface"
           />
-          <select aria-label="select control"
+          <Select
+            aria-label="select control"
             value={personaId}
             onChange={(event) => setPersonaId(event.target.value)}
             disabled={!canCreate}
-            className="border border-stone-300 bg-white px-4 py-3 text-sm disabled:bg-stone-100"
+            className="bg-surface disabled:bg-surfaceMuted"
           >
             <option value="">{canCreate ? "选择绑定作者人设" : "先创建作者人设"}</option>
             {personas.map((persona) => (
               <option key={persona.id} value={persona.id}>{persona.name}</option>
             ))}
-          </select>
+          </Select>
         </div>
-        <textarea
+        <Textarea
           value={thesis}
           onChange={(event) => setThesis(event.target.value)}
           placeholder="核心判断：这个系列长期要反复打透什么问题？"
-          className="min-h-[92px] border border-stone-300 bg-white px-4 py-3 text-sm leading-7"
+          className="min-h-[92px] bg-surface"
         />
         <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_220px]">
-          <input aria-label="目标读者：这组稿件主要写给谁"
+          <Input
+            aria-label="目标读者：这组稿件主要写给谁"
             value={targetAudience}
             onChange={(event) => setTargetAudience(event.target.value)}
             placeholder="目标读者：这组稿件主要写给谁"
-            className="border border-stone-300 bg-white px-4 py-3 text-sm"
+            className="bg-surface"
           />
-          <select aria-label="select control"
+          <Select
+            aria-label="select control"
             value={activeStatus}
             onChange={(event) => setActiveStatus(event.target.value)}
-            className="border border-stone-300 bg-white px-4 py-3 text-sm"
+            className="bg-surface"
           >
             <option value="active">经营中</option>
             <option value="paused">暂停经营</option>
             <option value="archived">归档</option>
-          </select>
+          </Select>
         </div>
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="text-sm text-stone-600">{canCreate ? "系列会固定绑定一个人设，稿件默认继承这个身份。" : "先创建作者人设后再创建系列。"}</div>
-          <button
+          <div className="text-sm text-inkSoft">{canCreate ? "系列会固定绑定一个人设，稿件默认继承这个身份。" : "先创建作者人设后再创建系列。"}</div>
+          <Button
             type="submit"
             disabled={submitting || !canCreate}
-            className="border border-cinnabar bg-cinnabar px-4 py-3 text-sm text-white disabled:cursor-not-allowed disabled:opacity-50"
+            variant="primary"
+            className="disabled:opacity-50"
           >
             {submitting ? "创建中…" : "保存系列"}
-          </button>
+          </Button>
         </div>
       </form>
 
@@ -248,65 +260,71 @@ export function SeriesManager({
         {series.map((item) => {
           const draft = drafts[item.id] || buildDraft(item);
           return (
-            <article key={item.id} className="border border-stone-300/40 bg-white p-5">
+            <article key={item.id} className={editorCardClassName}>
               <div className="grid gap-3 md:grid-cols-2">
-                <input aria-label="input control"
+                <Input
+                  aria-label="input control"
                   value={draft.name}
                   onChange={(event) => setDrafts((prev) => ({ ...prev, [item.id]: { ...draft, name: event.target.value } }))}
-                  className="border border-stone-300 bg-[#fffdfa] px-4 py-3 text-sm"
+                  className={draftFieldClassName}
                 />
-                <select aria-label="select control"
+                <Select
+                  aria-label="select control"
                   value={draft.personaId}
                   onChange={(event) => setDrafts((prev) => ({ ...prev, [item.id]: { ...draft, personaId: event.target.value } }))}
-                  className="border border-stone-300 bg-[#fffdfa] px-4 py-3 text-sm"
+                  className={draftFieldClassName}
                 >
                   {personas.map((persona) => (
                     <option key={persona.id} value={persona.id}>{persona.name}</option>
                   ))}
-                </select>
+                </Select>
               </div>
-              <textarea
+              <Textarea
                 value={draft.thesis}
                 onChange={(event) => setDrafts((prev) => ({ ...prev, [item.id]: { ...draft, thesis: event.target.value } }))}
-                className="mt-3 min-h-[88px] w-full border border-stone-300 bg-[#fffdfa] px-4 py-3 text-sm leading-7"
+                className="mt-3 min-h-[88px] bg-paperStrong"
               />
               <div className="mt-3 grid gap-3 md:grid-cols-[minmax(0,1fr)_220px]">
-                <input aria-label="input control"
+                <Input
+                  aria-label="input control"
                   value={draft.targetAudience}
                   onChange={(event) => setDrafts((prev) => ({ ...prev, [item.id]: { ...draft, targetAudience: event.target.value } }))}
-                  className="border border-stone-300 bg-[#fffdfa] px-4 py-3 text-sm"
+                  className={draftFieldClassName}
                 />
-                <select aria-label="select control"
+                <Select
+                  aria-label="select control"
                   value={draft.activeStatus}
                   onChange={(event) => setDrafts((prev) => ({ ...prev, [item.id]: { ...draft, activeStatus: event.target.value } }))}
-                  className="border border-stone-300 bg-[#fffdfa] px-4 py-3 text-sm"
+                  className={draftFieldClassName}
                 >
                   <option value="active">经营中</option>
                   <option value="paused">暂停经营</option>
                   <option value="archived">归档</option>
-                </select>
+                </Select>
               </div>
               <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-                <div className="text-sm text-stone-600">
+                <div className="text-sm text-inkSoft">
                   当前状态：{formatSeriesStatus(item.activeStatus)} · 绑定人设：{item.personaName}
                 </div>
                 <div className="flex flex-wrap gap-3">
-                  <button
+                  <Button
                     type="button"
                     onClick={() => handleSave(item.id)}
                     disabled={updatingId === item.id}
-                    className="border border-stone-300 bg-white px-4 py-2 text-sm text-stone-700 disabled:cursor-not-allowed disabled:opacity-50"
+                    variant="secondary"
+                    className="py-2 disabled:opacity-50"
                   >
                     {updatingId === item.id ? "保存中…" : "保存修改"}
-                  </button>
-                  <button
+                  </Button>
+                  <Button
                     type="button"
                     onClick={() => handleDelete(item.id)}
                     disabled={deletingId === item.id}
-                    className="border border-stone-300 bg-white px-4 py-2 text-sm text-stone-700 disabled:cursor-not-allowed disabled:opacity-50"
+                    variant="secondary"
+                    className="py-2 disabled:opacity-50"
                   >
                     {deletingId === item.id ? "删除中…" : "删除系列"}
-                  </button>
+                  </Button>
                 </div>
               </div>
             </article>
@@ -314,7 +332,7 @@ export function SeriesManager({
         })}
       </div>
 
-      {message ? <div className="border border-stone-300 bg-[#fffdfa] px-4 py-3 text-sm text-stone-700">{message}</div> : null}
+      {message ? <div className={messageCardClassName}>{message}</div> : null}
     </div>
   );
 }

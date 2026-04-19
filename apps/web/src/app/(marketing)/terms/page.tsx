@@ -46,8 +46,8 @@ const TERMS_SECTIONS = [
 export default function TermsPage() {
   return (
     <div className="grid gap-8 lg:grid-cols-[260px_minmax(0,1fr)]">
-      <aside className="h-fit border border-stone-300/40 bg-white p-5 shadow-ink lg:sticky lg:top-28">
-        <div className="text-xs uppercase tracking-[0.28em] text-stone-500">目录</div>
+      <aside className="h-fit border border-lineStrong/40 bg-surface p-5 shadow-ink lg:sticky lg:top-28">
+        <div className="text-xs uppercase tracking-[0.28em] text-inkMuted">目录</div>
         <nav className="mt-4 space-y-2">
           {TERMS_SECTIONS.map((section, index) => (
             <a
@@ -56,7 +56,7 @@ export default function TermsPage() {
               className={`block border-l-2 px-4 py-3 text-sm transition-colors ${
                 index === 0
                   ? "border-cinnabar bg-cinnabar/5 font-medium text-cinnabar"
-                  : "border-stone-200 text-stone-700 hover:border-stone-400 hover:bg-[#faf7f0]"
+                  : "border-line text-inkSoft hover:border-lineStrong hover:bg-surfaceWarm"
               }`}
             >
               {section.title}
@@ -64,17 +64,17 @@ export default function TermsPage() {
           ))}
         </nav>
       </aside>
-      <article className="border border-stone-300/40 bg-white px-6 py-10 shadow-ink md:px-10">
-        <div className="border-b border-stone-200 pb-8">
+      <article className="border border-lineStrong/40 bg-surface px-6 py-10 shadow-ink md:px-10">
+        <div className="border-b border-line pb-8">
           <div className="text-xs uppercase tracking-[0.3em] text-cinnabar">Terms of Service</div>
           <h1 className="mt-4 font-serifCn text-4xl font-semibold text-ink md:text-5xl text-balance">服务条款</h1>
-          <p className="mt-4 text-base leading-8 text-stone-700">最后更新：2026 年 4 月</p>
+          <p className="mt-4 text-base leading-8 text-inkSoft">最后更新：2026 年 4 月</p>
         </div>
         <div className="mt-8 space-y-10">
           {TERMS_SECTIONS.map((section) => (
             <section key={section.id} id={section.id} className="scroll-mt-28">
               <h2 className="font-serifCn text-2xl font-semibold text-ink text-balance">{section.title}</h2>
-              <p className="mt-4 text-base leading-9 text-stone-700">{section.body}</p>
+              <p className="mt-4 text-base leading-9 text-inkSoft">{section.body}</p>
             </section>
           ))}
         </div>

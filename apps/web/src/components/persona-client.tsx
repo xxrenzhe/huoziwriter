@@ -1,5 +1,6 @@
 "use client";
 
+import { Button, Input, Select, Textarea, cn, surfaceCardStyles } from "@huoziwriter/ui";
 import { useRouter } from "next/navigation";
 import { ChangeEvent, FormEvent, startTransition, useMemo, useRef, useState } from "react";
 import { derivePersonaName } from "@/lib/persona-catalog";
@@ -47,6 +48,20 @@ function toggleTag(current: string[], value: string) {
   }
   return [...current, value];
 }
+
+const statsCardClassName = cn(surfaceCardStyles({ padding: "sm" }), "bg-surfaceWarm");
+const createFormClassName = cn(surfaceCardStyles({ tone: "warm", padding: "md" }), "grid gap-3");
+const analysisCardClassName = cn(surfaceCardStyles({ padding: "md" }), "grid gap-4");
+const personaCardClassName = surfaceCardStyles({ padding: "md" });
+const messageCardClassName = cn(surfaceCardStyles({ padding: "sm" }), "bg-surfaceWarm text-sm text-inkSoft");
+const sourceFieldClassName = "bg-paperStrong";
+const sourceCountClassName = "border border-lineStrong bg-surfaceWarm px-4 py-3 text-sm text-inkSoft";
+const personaBadgeClassName = "border border-lineStrong bg-surface px-2 py-1 text-inkSoft";
+const boundStyleBadgeClassName = "border border-cinnabar/40 px-2 py-1 text-cinnabar";
+const secondaryButtonClassName = "hover:border-lineStrong hover:bg-surface hover:text-ink";
+const primaryButtonClassName = "hover:border-cinnabar hover:bg-cinnabar";
+const identityTagButtonClassName = "border-cinnabar bg-cinnabar text-white hover:border-cinnabar hover:bg-cinnabar hover:text-white";
+const writingStyleTagButtonClassName = "border-ink bg-ink text-white hover:border-ink hover:bg-ink hover:text-white focus-visible:ring-ink/60";
 
 export function PersonaManager({
   initialPersonas,
@@ -284,125 +299,136 @@ export function PersonaManager({
           ["默认人设", personas.find((item) => item.isDefault)?.name || "未设置", "账号级默认人设用于新系列初始化，不再作为稿件绕过系列绑定的兜底身份。"] as const,
           ["套餐额度", `${personas.length}/${maxCount}`, `当前套餐 ${displayPlanName} 可保留 ${maxCount} 套长期作者人设。`] as const,
         ].map(([label, value, note]) => (
-          <article key={label} className="border border-stone-300/40 bg-[#fffdfa] p-4">
-            <div className="text-xs uppercase tracking-[0.18em] text-stone-500">{label}</div>
+          <article key={label} className={statsCardClassName}>
+            <div className="text-xs uppercase tracking-[0.18em] text-inkMuted">{label}</div>
             <div className="mt-3 font-serifCn text-3xl text-ink text-balance">{value}</div>
-            <div className="mt-2 text-sm leading-6 text-stone-700">{note}</div>
+            <div className="mt-2 text-sm leading-6 text-inkSoft">{note}</div>
           </article>
         ))}
       </div>
 
-      <form onSubmit={handleCreate} className="grid gap-3 border border-stone-300/40 bg-[#faf7f0] p-5">
+      <form onSubmit={handleCreate} className={createFormClassName}>
         <div className="text-xs uppercase tracking-[0.24em] text-cinnabar">新建作者人设</div>
         <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_240px]">
-          <input aria-label="作者人设名称，例如：长期主义产业观察者"
+          <Input
+            aria-label="作者人设名称，例如：长期主义产业观察者"
             value={name}
             onChange={(event) => setName(event.target.value)}
             placeholder="作者人设名称，例如：长期主义产业观察者"
-            className="border border-stone-300 bg-white px-4 py-3 text-sm"
+            className="bg-surface"
           />
-          <select aria-label="select control"
+          <Select
+            aria-label="select control"
             value={boundWritingStyleProfileId}
             onChange={(event) => setBoundWritingStyleProfileId(event.target.value)}
-            className="border border-stone-300 bg-white px-4 py-3 text-sm"
+            className="bg-surface"
           >
             <option value="">不绑定写作风格资产</option>
             {availableWritingStyles.map((item) => (
               <option key={item.id} value={item.id}>{item.name}</option>
             ))}
-          </select>
+          </Select>
         </div>
 
         <div className="grid gap-4 md:grid-cols-2">
           <div className="space-y-3">
-            <div className="text-xs uppercase tracking-[0.18em] text-stone-500">身份维度</div>
+            <div className="text-xs uppercase tracking-[0.18em] text-inkMuted">身份维度</div>
             <div className="flex flex-wrap gap-2">
               {identityOptions.map((option) => (
-                <button
+                <Button
                   key={option}
                   type="button"
+                  size="sm"
+                  variant="secondary"
                   onClick={() => setIdentityTags((current) => toggleTag(current, option))}
-                  className={`border px-3 py-2 text-sm ${identityTags.includes(option) ? "border-cinnabar bg-cinnabar text-white" : "border-stone-300 bg-white text-stone-700"}`}
+                  className={identityTags.includes(option) ? identityTagButtonClassName : secondaryButtonClassName}
                 >
                   {option}
-                </button>
+                </Button>
               ))}
             </div>
           </div>
           <div className="space-y-3">
-            <div className="text-xs uppercase tracking-[0.18em] text-stone-500">写作风格</div>
+            <div className="text-xs uppercase tracking-[0.18em] text-inkMuted">写作风格</div>
             <div className="flex flex-wrap gap-2">
               {writingStyleOptions.map((option) => (
-                <button
+                <Button
                   key={option}
                   type="button"
+                  size="sm"
+                  variant="secondary"
                   onClick={() => setWritingStyleTags((current) => toggleTag(current, option))}
-                  className={`border px-3 py-2 text-sm ${writingStyleTags.includes(option) ? "border-ink bg-ink text-white" : "border-stone-300 bg-white text-stone-700"}`}
+                  className={writingStyleTags.includes(option) ? writingStyleTagButtonClassName : secondaryButtonClassName}
                 >
                   {option}
-                </button>
+                </Button>
               ))}
             </div>
           </div>
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="text-sm text-stone-600">当前将保存为：{resolvedName || "请先选择标签"}</div>
-          <button
+          <div className="text-sm text-inkSoft">当前将保存为：{resolvedName || "请先选择标签"}</div>
+          <Button
             type="submit"
             disabled={submitting || reachedLimit}
-            className="border border-cinnabar bg-cinnabar px-4 py-3 text-sm text-white disabled:cursor-not-allowed disabled:opacity-50"
+            variant="primary"
+            className={primaryButtonClassName}
           >
             {submitting ? "保存中…" : reachedLimit ? "已达到套餐额度" : "保存作者人设"}
-          </button>
+          </Button>
         </div>
       </form>
 
-      <section className="grid gap-4 border border-stone-300/40 bg-white p-5">
+      <section className={analysisCardClassName}>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <div className="text-xs uppercase tracking-[0.24em] text-stone-500">资料分析生成</div>
-            <div className="mt-2 text-sm leading-7 text-stone-700">上传文章、访谈或自述资料，让系统抽取稳定身份、常见判断和表达偏好。</div>
+            <div className="text-xs uppercase tracking-[0.24em] text-inkMuted">资料分析生成</div>
+            <div className="mt-2 text-sm leading-7 text-inkSoft">上传文章、访谈或自述资料，让系统抽取稳定身份、常见判断和表达偏好。</div>
           </div>
-          <button
+          <Button
             type="button"
             onClick={handleAnalyzeSourcePersona}
             disabled={analyzingSources || reachedLimit}
-            className="border border-ink bg-ink px-4 py-3 text-sm text-white disabled:cursor-not-allowed disabled:opacity-50"
+            variant="secondary"
+            className={writingStyleTagButtonClassName}
           >
             {analyzingSources ? "分析中…" : reachedLimit ? "已达到套餐额度" : "分析并沉淀作者人设"}
-          </button>
+          </Button>
         </div>
         <div className="grid gap-3 md:grid-cols-2">
-          <input aria-label="资料标题，例如：近半年公众号文章合集"
+          <Input
+            aria-label="资料标题，例如：近半年公众号文章合集"
             value={sourceTitle}
             onChange={(event) => setSourceTitle(event.target.value)}
             placeholder="资料标题，例如：近半年公众号文章合集"
-            className="border border-stone-300 bg-[#fffdfa] px-4 py-3 text-sm"
+            className={sourceFieldClassName}
           />
-          <input aria-label="资料来源链接，可选"
+          <Input
+            aria-label="资料来源链接，可选"
             value={sourceUrl}
             onChange={(event) => setSourceUrl(event.target.value)}
             placeholder="资料来源链接，可选"
-            className="border border-stone-300 bg-[#fffdfa] px-4 py-3 text-sm"
+            className={sourceFieldClassName}
           />
         </div>
-        <textarea
+        <Textarea
           value={sourceText}
           onChange={(event) => setSourceText(event.target.value)}
           placeholder="粘贴较完整的文章、访谈、自述或多篇代表作片段。建议至少 80 字。"
-          className="min-h-[160px] border border-stone-300 bg-[#fffdfa] px-4 py-3 text-sm leading-7"
+          className={cn(sourceFieldClassName, "min-h-[160px]")}
         />
         <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_240px]">
-          <input aria-label="input control"
+          <Input
+            aria-label="input control"
             ref={sourceFileInputRef}
             type="file"
             multiple
             accept=".txt,.md,.markdown,.html,.htm,.json,.csv,text/plain,text/markdown,text/html,text/csv,application/json,application/ld+json"
             onChange={handleSourceFilesChange}
-            className="border border-stone-300 bg-[#fffdfa] px-4 py-3 text-sm"
+            className={sourceFieldClassName}
           />
-          <div className="border border-stone-300 bg-[#fffdfa] px-4 py-3 text-sm text-stone-600">
+          <div className={sourceCountClassName}>
             当前资料：{analyzedSourceCount} 份，约 {analyzedSourceCharacters} 字
           </div>
         </div>
@@ -410,32 +436,34 @@ export function PersonaManager({
 
       <div className="space-y-3">
         {personas.map((persona) => (
-          <article key={persona.id} className="border border-stone-300/40 bg-white p-5">
+          <article key={persona.id} className={personaCardClassName}>
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <div className="text-xs uppercase tracking-[0.18em] text-stone-500">{persona.isDefault ? "默认作者人设" : "作者人设"}</div>
+                <div className="text-xs uppercase tracking-[0.18em] text-inkMuted">{persona.isDefault ? "默认作者人设" : "作者人设"}</div>
                 <div className="mt-2 font-serifCn text-2xl text-ink text-balance">{persona.name}</div>
-                {persona.summary ? <div className="mt-3 text-sm leading-7 text-stone-700">{persona.summary}</div> : null}
-                <div className="mt-3 flex flex-wrap gap-2 text-xs text-stone-500">
-                  {persona.identityTags.map((tag) => <span key={`${persona.id}-identity-${tag}`} className="border border-stone-300 px-2 py-1">{tag}</span>)}
-                  {persona.writingStyleTags.map((tag) => <span key={`${persona.id}-style-${tag}`} className="border border-stone-300 px-2 py-1">{tag}</span>)}
-                  {persona.boundWritingStyleProfileName ? <span className="border border-cinnabar/40 px-2 py-1 text-cinnabar">绑定文风：{persona.boundWritingStyleProfileName}</span> : null}
+                {persona.summary ? <div className="mt-3 text-sm leading-7 text-inkSoft">{persona.summary}</div> : null}
+                <div className="mt-3 flex flex-wrap gap-2 text-xs text-inkMuted">
+                  {persona.identityTags.map((tag) => <span key={`${persona.id}-identity-${tag}`} className={personaBadgeClassName}>{tag}</span>)}
+                  {persona.writingStyleTags.map((tag) => <span key={`${persona.id}-style-${tag}`} className={personaBadgeClassName}>{tag}</span>)}
+                  {persona.boundWritingStyleProfileName ? <span className={boundStyleBadgeClassName}>绑定文风：{persona.boundWritingStyleProfileName}</span> : null}
                 </div>
               </div>
-              <button
+              <Button
                 type="button"
+                size="sm"
+                variant="secondary"
                 onClick={() => handleSetDefault(persona.id)}
                 disabled={persona.isDefault || updatingId === persona.id}
-                className="border border-stone-300 bg-white px-4 py-2 text-sm text-stone-700 disabled:cursor-not-allowed disabled:opacity-50"
+                className={secondaryButtonClassName}
               >
                 {persona.isDefault ? "当前默认" : updatingId === persona.id ? "切换中…" : "设为默认"}
-              </button>
+              </Button>
             </div>
           </article>
         ))}
       </div>
 
-      {message ? <div className="border border-stone-300 bg-[#fffdfa] px-4 py-3 text-sm text-stone-700">{message}</div> : null}
+      {message ? <div className={messageCardClassName}>{message}</div> : null}
     </div>
   );
 }

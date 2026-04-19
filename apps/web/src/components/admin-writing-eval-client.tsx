@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { startTransition, useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { uiPrimitives } from "@huoziwriter/ui";
+import { cn, uiPrimitives } from "@huoziwriter/ui";
 import { AdminWritingEvalNav } from "@/components/admin-writing-eval-nav";
 import {
   buildAdminWritingEvalDatasetsHref,
@@ -412,6 +412,13 @@ type ScoringProfileItem = {
   updatedAt: string;
 };
 
+const runOpsTableShellClassName = "hidden overflow-x-auto md:block";
+const runOpsMobileListClassName = "mt-5 grid gap-3 md:hidden";
+const runOpsMobileCardClassName = cn(
+  uiPrimitives.adminPanel,
+  "w-full cursor-pointer p-4 text-left transition-colors hover:border-adminLineStrong hover:bg-adminSurfaceAlt",
+);
+
 function stringifyJson(value: unknown) {
   return JSON.stringify(value, null, 2);
 }
@@ -596,7 +603,7 @@ function getWritingEvalRunOpsIssueTone(run: RunItem) {
   const flags = getWritingEvalRunOpsFlags(run);
   if (run.status === "failed" || flags.heartbeatStale) return "text-cinnabar";
   if (flags.queueDelayed || flags.resolutionPending) return "text-amber-200";
-  return "text-stone-400";
+  return "text-adminInkSoft";
 }
 
 function compareRunsByUrgency(left: RunItem, right: RunItem) {
@@ -652,8 +659,8 @@ function getWritingEvalCaseLedgerStatusTone(status: "succeeded" | "failed" | "ru
   if (status === "succeeded") return "text-emerald-400 border-emerald-500/30";
   if (status === "failed") return "text-cinnabar border-cinnabar/40";
   if (status === "running") return "text-amber-200 border-amber-400/40";
-  if (status === "queued") return "text-stone-300 border-stone-700";
-  return "text-stone-500 border-stone-800";
+  if (status === "queued") return "text-adminInk border-adminLineStrong";
+  return "text-adminInkMuted border-adminLineStrong";
 }
 
 function getWritingEvalStageJobStatusLabel(status: string) {
@@ -668,8 +675,8 @@ function getWritingEvalStageJobStatusTone(status: string) {
   if (status === "completed") return "text-emerald-400 border-emerald-500/30";
   if (status === "failed") return "text-cinnabar border-cinnabar/40";
   if (status === "running") return "text-amber-200 border-amber-400/40";
-  if (status === "queued") return "text-stone-300 border-stone-700";
-  return "text-stone-500 border-stone-800";
+  if (status === "queued") return "text-adminInk border-adminLineStrong";
+  return "text-adminInkMuted border-adminLineStrong";
 }
 
 function averageNumbers(values: Array<number | null | undefined>) {
@@ -800,9 +807,9 @@ function WritingEvalDatasetGuardPanel({
   children: ReactNode;
 }) {
   return (
-    <div className="border border-stone-800 bg-stone-950 px-4 py-4 text-sm text-stone-400">
+    <div className="border border-adminLineStrong bg-adminBg px-4 py-4 text-sm text-adminInkSoft">
       <div className="flex items-center justify-between gap-3">
-        <div className="text-xs uppercase tracking-[0.18em] text-stone-500">{title}</div>
+        <div className="text-xs uppercase tracking-[0.18em] text-adminInkMuted">{title}</div>
         <span className={`border px-2 py-1 text-[11px] uppercase tracking-[0.16em] ${meta.tone}`}>
           {meta.label}
         </span>
@@ -824,7 +831,7 @@ function formatDeltaMetric(value: number | null | undefined, suffix = "", digits
 }
 
 function getDeltaTone(value: number | null | undefined) {
-  if (typeof value !== "number" || !Number.isFinite(value)) return "text-stone-400";
+  if (typeof value !== "number" || !Number.isFinite(value)) return "text-adminInkSoft";
   return value >= 0 ? "text-emerald-400" : "text-cinnabar";
 }
 
@@ -844,7 +851,7 @@ function getFeedbackSignalHighlights(item: FeedbackItem) {
 }
 
 function getFeedbackCalibrationTone(value: number | null | undefined) {
-  if (typeof value !== "number" || !Number.isFinite(value)) return "border-stone-700 text-stone-300";
+  if (typeof value !== "number" || !Number.isFinite(value)) return "border-adminLineStrong text-adminInk";
   return value >= 0 ? "border-emerald-700 text-emerald-400" : "border-cinnabar text-cinnabar";
 }
 
@@ -860,37 +867,37 @@ function FeedbackSampleCard({
   extraContent?: ReactNode;
 }) {
   return (
-    <article className="border border-stone-800 bg-[#141414] px-4 py-4">
+    <article className="border border-adminLineStrong bg-adminSurfaceAlt px-4 py-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <div className="text-xs uppercase tracking-[0.18em] text-stone-500">{getFeedbackSourceLabel(item)}</div>
-          <div className="mt-2 text-base text-stone-100">{item.topicTitle || item.articleTitle || "未绑定样本"}</div>
-          <div className="mt-2 text-sm text-stone-500">{detail}</div>
+          <div className="text-xs uppercase tracking-[0.18em] text-adminInkMuted">{getFeedbackSourceLabel(item)}</div>
+          <div className="mt-2 text-base text-adminInk">{item.topicTitle || item.articleTitle || "未绑定样本"}</div>
+          <div className="mt-2 text-sm text-adminInkMuted">{detail}</div>
         </div>
-        <div className="text-xs text-stone-500">{formatWritingEvalDateTime(item.capturedAt)}</div>
+        <div className="text-xs text-adminInkMuted">{formatWritingEvalDateTime(item.capturedAt)}</div>
       </div>
 
       <div className="mt-4 grid gap-2 text-sm md:grid-cols-2 xl:grid-cols-4">
-        <div className="border border-stone-800 px-3 py-3 text-stone-300">打开率 {formatWritingEvalMetric(item.openRate, "%")}</div>
-        <div className="border border-stone-800 px-3 py-3 text-stone-300">读完率 {formatWritingEvalMetric(item.readCompletionRate, "%")}</div>
-        <div className="border border-stone-800 px-3 py-3 text-stone-300">分享率 {formatWritingEvalMetric(item.shareRate, "%")}</div>
-        <div className="border border-stone-800 px-3 py-3 text-stone-300">收藏率 {formatWritingEvalMetric(item.favoriteRate, "%")}</div>
+        <div className="border border-adminLineStrong px-3 py-3 text-adminInk">打开率 {formatWritingEvalMetric(item.openRate, "%")}</div>
+        <div className="border border-adminLineStrong px-3 py-3 text-adminInk">读完率 {formatWritingEvalMetric(item.readCompletionRate, "%")}</div>
+        <div className="border border-adminLineStrong px-3 py-3 text-adminInk">分享率 {formatWritingEvalMetric(item.shareRate, "%")}</div>
+        <div className="border border-adminLineStrong px-3 py-3 text-adminInk">收藏率 {formatWritingEvalMetric(item.favoriteRate, "%")}</div>
       </div>
 
       <div className="mt-4 flex flex-wrap gap-3 text-sm">
-        <span className="border border-stone-700 px-3 py-1 text-stone-300">观察爆款 {formatWritingEvalMetric(item.observedViralScore, "", 2)}</span>
-        <span className="border border-stone-700 px-3 py-1 text-stone-300">离线预测 {formatWritingEvalMetric(item.predictedViralScore, "", 2)}</span>
+        <span className="border border-adminLineStrong px-3 py-1 text-adminInk">观察爆款 {formatWritingEvalMetric(item.observedViralScore, "", 2)}</span>
+        <span className="border border-adminLineStrong px-3 py-1 text-adminInk">离线预测 {formatWritingEvalMetric(item.predictedViralScore, "", 2)}</span>
         <span className={`border px-3 py-1 ${getFeedbackCalibrationTone(item.calibrationGap)}`}>
           偏差 {formatWritingEvalMetric(item.calibrationGap, "", 2)}
         </span>
-        <span className="border border-stone-700 px-3 py-1 text-stone-300">
+        <span className="border border-adminLineStrong px-3 py-1 text-adminInk">
           阅读量 {item.readCount ?? "--"} · 点赞 {item.likeCount ?? "--"} · 评论 {item.commentCount ?? "--"}
         </span>
       </div>
 
       {actionContent ? <div className="mt-4 flex flex-wrap gap-3">{actionContent}</div> : null}
       {extraContent ? <div className="mt-4">{extraContent}</div> : null}
-      {item.notes ? <div className="mt-3 text-sm leading-7 text-stone-400">{item.notes}</div> : null}
+      {item.notes ? <div className="mt-3 text-sm leading-7 text-adminInkSoft">{item.notes}</div> : null}
     </article>
   );
 }
@@ -1066,7 +1073,7 @@ function getWritingEvalAutoExecutionResultLabel(result: string) {
 function getWritingEvalAutoExecutionTone(result: string) {
   if (result === "keep") return "text-emerald-400";
   if (result === "discard" || result === "rollback" || result === "failed") return "text-cinnabar";
-  return "text-stone-500";
+  return "text-adminInkMuted";
 }
 
 function toDateTimeLocalValue(value: string | null | undefined) {
@@ -2986,8 +2993,8 @@ export function AdminWritingEvalClient({
         <div className="flex items-start justify-between gap-4">
           <div>
             <div className="text-xs uppercase tracking-[0.28em] text-cinnabar">Writing Eval</div>
-            <h1 className="mt-4 font-serifCn text-4xl text-stone-100 text-balance">写作自动优化闭环</h1>
-            <p className="mt-4 max-w-4xl text-sm leading-7 text-stone-400">
+            <h1 className="mt-4 font-serifCn text-4xl text-adminInk text-balance">写作自动优化闭环</h1>
+            <p className="mt-4 max-w-4xl text-sm leading-7 text-adminInkSoft">
               Runs 页现在专注实验编排、结果对比和线上回流；评测集与样本维护已经迁到独立的 Datasets 页，避免一个页面承担两类职责。
             </p>
           </div>
@@ -2999,16 +3006,16 @@ export function AdminWritingEvalClient({
         <div className={uiPrimitives.adminPanel + " p-5"}>
           <div className="flex items-center justify-between gap-3">
             <div>
-              <div className="text-xs uppercase tracking-[0.24em] text-stone-500">实验上下文</div>
-              <h2 className="mt-3 font-serifCn text-2xl text-stone-100 text-balance">当前可用评测集</h2>
+              <div className="text-xs uppercase tracking-[0.24em] text-adminInkMuted">实验上下文</div>
+              <h2 className="mt-3 font-serifCn text-2xl text-adminInk text-balance">当前可用评测集</h2>
             </div>
-            <div className="text-sm text-stone-500">{datasets.length} 个数据集</div>
+            <div className="text-sm text-adminInkMuted">{datasets.length} 个数据集</div>
           </div>
           {focusDataset ? (
-            <div className="mt-4 flex flex-wrap items-start justify-between gap-3 border border-cinnabar bg-[#1d1413] px-4 py-4">
+            <div className="mt-4 flex flex-wrap items-start justify-between gap-3 border border-adminAccent bg-adminSurfaceAlt px-4 py-4">
               <div>
                 <div className="text-xs uppercase tracking-[0.18em] text-cinnabar">数据集预选模式</div>
-                <div className="mt-2 text-sm leading-7 text-stone-200">
+                <div className="mt-2 text-sm leading-7 text-adminInk">
                   当前通过深链预选 dataset #{focusDataset.datasetId}，匹配 {focusDataset.matchedCount} 条。
                 </div>
               </div>
@@ -3024,7 +3031,7 @@ export function AdminWritingEvalClient({
               return (
                 <article
                   key={dataset.id}
-                  className={`border px-4 py-4 ${selectedDatasetId === dataset.id ? "border-cinnabar bg-[#241312]" : "border-stone-800 bg-stone-950"}`}
+                  className={`border px-4 py-4 ${selectedDatasetId === dataset.id ? "border-adminAccent bg-adminSurfaceAlt" : "border-adminLineStrong bg-adminBg"}`}
                 >
                   <button
                     type="button"
@@ -3037,17 +3044,17 @@ export function AdminWritingEvalClient({
                   >
                     <div className="flex items-center justify-between gap-4">
                       <div>
-                        <div className="font-medium text-stone-100">{dataset.name}</div>
-                        <div className="mt-2 text-xs uppercase tracking-[0.2em] text-stone-500">{dataset.code}</div>
+                        <div className="font-medium text-adminInk">{dataset.name}</div>
+                        <div className="mt-2 text-xs uppercase tracking-[0.2em] text-adminInkMuted">{dataset.code}</div>
                       </div>
                       <div className="flex flex-col items-end gap-2">
-                        <div className="text-xs text-stone-400">{dataset.status}</div>
+                        <div className="text-xs text-adminInkSoft">{dataset.status}</div>
                         <span className={`border px-2 py-1 text-[11px] uppercase tracking-[0.16em] ${readinessMeta.tone}`}>{readinessMeta.label}</span>
                       </div>
                     </div>
-                    <div className="mt-3 text-sm leading-6 text-stone-400">{dataset.description || "暂无说明"}</div>
-                    <div className="mt-3 text-xs text-stone-500">样本数 {dataset.sampleCount} · 更新于 {formatWritingEvalDateTime(dataset.updatedAt)}</div>
-                    <div className="mt-2 text-xs leading-6 text-stone-500">{readinessMeta.summary}</div>
+                    <div className="mt-3 text-sm leading-6 text-adminInkSoft">{dataset.description || "暂无说明"}</div>
+                    <div className="mt-3 text-xs text-adminInkMuted">样本数 {dataset.sampleCount} · 更新于 {formatWritingEvalDateTime(dataset.updatedAt)}</div>
+                    <div className="mt-2 text-xs leading-6 text-adminInkMuted">{readinessMeta.summary}</div>
                   </button>
                   <div className="mt-4">
                     <Link href={datasetHref} className={uiPrimitives.adminSecondaryButton}>
@@ -3057,14 +3064,14 @@ export function AdminWritingEvalClient({
                 </article>
               );
             })}
-            {datasets.length === 0 ? <div className="border border-dashed border-stone-700 bg-stone-950 px-4 py-5 text-sm text-stone-400">还没有评测集。</div> : null}
+            {datasets.length === 0 ? <div className="border border-dashed border-adminLineStrong bg-adminBg px-4 py-5 text-sm text-adminInkSoft">还没有评测集。</div> : null}
           </div>
         </div>
 
         <div className={uiPrimitives.adminPanel + " p-5"}>
-          <div className="text-xs uppercase tracking-[0.24em] text-stone-500">数据集职责</div>
-          <h2 className="mt-3 font-serifCn text-2xl text-stone-100 text-balance">样本维护已迁出</h2>
-          <div className="mt-4 space-y-3 text-sm leading-7 text-stone-400">
+          <div className="text-xs uppercase tracking-[0.24em] text-adminInkMuted">数据集职责</div>
+          <h2 className="mt-3 font-serifCn text-2xl text-adminInk text-balance">样本维护已迁出</h2>
+          <div className="mt-4 space-y-3 text-sm leading-7 text-adminInkSoft">
             <div>当前 Runs 页只负责选择评测集并发起实验，不再直接维护样本。</div>
             <div>
               已选数据集：
@@ -3089,27 +3096,27 @@ export function AdminWritingEvalClient({
         <div className={uiPrimitives.adminPanel + " p-5"}>
           <div className="flex items-center justify-between gap-3">
             <div>
-              <div className="text-xs uppercase tracking-[0.24em] text-stone-500">评分画像</div>
-              <h2 className="mt-3 font-serifCn text-2xl text-stone-100 text-balance">评分权重实验对象</h2>
+              <div className="text-xs uppercase tracking-[0.24em] text-adminInkMuted">评分画像</div>
+              <h2 className="mt-3 font-serifCn text-2xl text-adminInk text-balance">评分权重实验对象</h2>
             </div>
-            <div className="text-sm text-stone-500">{scoringProfiles.length} 个画像</div>
+            <div className="text-sm text-adminInkMuted">{scoringProfiles.length} 个画像</div>
           </div>
           <div className="mt-5 grid gap-3">
             {scoringProfiles.length === 0 ? (
-              <div className="border border-dashed border-stone-700 bg-stone-950 px-4 py-5 text-sm text-stone-400">还没有评分画像。</div>
+              <div className="border border-dashed border-adminLineStrong bg-adminBg px-4 py-5 text-sm text-adminInkSoft">还没有评分画像。</div>
             ) : (
               scoringProfiles.map((profile) => (
                 <button
                   key={profile.id}
                   type="button"
                   onClick={() => setSelectedScoringProfileId(profile.id)}
-                  className={`border px-4 py-4 text-left ${selectedScoringProfileId === profile.id ? "border-cinnabar bg-[#1d1413]" : "border-stone-800 bg-stone-950"}`}
+                  className={`border px-4 py-4 text-left ${selectedScoringProfileId === profile.id ? "border-adminAccent bg-adminSurfaceAlt" : "border-adminLineStrong bg-adminBg"}`}
                 >
-                  <div className="font-medium text-stone-100">
+                  <div className="font-medium text-adminInk">
                     {profile.name} · {profile.code}
                     {profile.isActive ? " · active" : ""}
                   </div>
-                  <div className="mt-2 text-sm text-stone-500">{profile.description || "暂无说明"}</div>
+                  <div className="mt-2 text-sm text-adminInkMuted">{profile.description || "暂无说明"}</div>
                 </button>
               ))
             )}
@@ -3117,11 +3124,11 @@ export function AdminWritingEvalClient({
         </div>
 
         <form onSubmit={handleCreateScoringProfile} className={uiPrimitives.adminPanel + " space-y-3 p-5"}>
-          <div className="text-xs uppercase tracking-[0.24em] text-stone-500">新建评分画像</div>
+          <div className="text-xs uppercase tracking-[0.24em] text-adminInkMuted">新建评分画像</div>
           <input aria-label="编码，例如 viral-55-default" value={scoringProfileForm.code} onChange={(event) => setScoringProfileForm((prev) => ({ ...prev, code: event.target.value }))} placeholder="编码，例如 viral-55-default" className={uiPrimitives.adminInput} />
           <input aria-label="名称" value={scoringProfileForm.name} onChange={(event) => setScoringProfileForm((prev) => ({ ...prev, name: event.target.value }))} placeholder="名称" className={uiPrimitives.adminInput} />
           <textarea value={scoringProfileForm.description} onChange={(event) => setScoringProfileForm((prev) => ({ ...prev, description: event.target.value }))} placeholder="说明" className={`min-h-[90px] ${uiPrimitives.adminInput}`} />
-          <label className="flex items-center gap-2 text-sm text-stone-400">
+          <label className="flex items-center gap-2 text-sm text-adminInkSoft">
             <input aria-label="评分画像配置 JSON" type="checkbox" checked={scoringProfileForm.isActive} onChange={(event) => setScoringProfileForm((prev) => ({ ...prev, isActive: event.target.checked }))} />
             设为 active
           </label>
@@ -3137,7 +3144,7 @@ export function AdminWritingEvalClient({
 
       <section className="grid gap-6 xl:grid-cols-[420px_minmax(0,1fr)]">
         <form id="run-create-form" onSubmit={handleCreateRun} className={uiPrimitives.adminPanel + " space-y-3 p-5"}>
-          <div className="text-xs uppercase tracking-[0.24em] text-stone-500">发起实验</div>
+          <div className="text-xs uppercase tracking-[0.24em] text-adminInkMuted">发起实验</div>
           <select aria-label="select control"
             value={runForm.datasetId}
             onChange={(event) => {
@@ -3163,7 +3170,7 @@ export function AdminWritingEvalClient({
                 启用样本 {selectedRunFormDatasetReadiness.enabledCaseCount}/{selectedRunFormDatasetReadiness.totalCaseCount} ·
                 标题目标 {selectedRunFormDatasetReadiness.coverage.titleGoal} · 开头目标 {selectedRunFormDatasetReadiness.coverage.hookGoal} ·
                 传播目标 {selectedRunFormDatasetReadiness.coverage.shareTriggerGoal} · 事实素材 {selectedRunFormDatasetReadiness.coverage.sourceFacts}
-                <div className="mt-2 text-xs leading-6 text-stone-500">
+                <div className="mt-2 text-xs leading-6 text-adminInkMuted">
                 题型 {selectedRunFormDatasetReadiness.qualityTargets.distinctTaskTypeCount}/4 ·
                 light {selectedRunFormDatasetReadiness.qualityTargets.lightCount} ·
                 medium {selectedRunFormDatasetReadiness.qualityTargets.mediumCount} ·
@@ -3227,7 +3234,7 @@ export function AdminWritingEvalClient({
               <option key={target.promptId} value={target.promptId}>{target.label}</option>
             ))}
           </select>
-          <div className="text-xs leading-6 text-stone-500">
+          <div className="text-xs leading-6 text-adminInkMuted">
             {runForm.experimentMode === "title_only"
               ? "标题专项实验会固定到 title_template（底层绑定 outline_planning），仅比较标题候选对点击力的影响。"
               : runForm.experimentMode === "lead_only"
@@ -3324,7 +3331,7 @@ export function AdminWritingEvalClient({
             {creatingAiCandidateRun ? "AI 生成并开跑中…" : "AI 生成候选并开跑"}
           </button>
           {isPromptBackedVersionType(runForm.baseVersionType) ? (
-            <div className="text-xs leading-6 text-stone-500">
+            <div className="text-xs leading-6 text-adminInkMuted">
               会基于当前基线 {runForm.baseVersionRef || "Prompt"} 自动产出下一版候选，并直接创建同类型对照实验。
             </div>
           ) : null}
@@ -3343,18 +3350,18 @@ export function AdminWritingEvalClient({
         <div className={uiPrimitives.adminPanel + " p-5"}>
           <div className="flex items-center justify-between gap-3">
             <div>
-              <div className="text-xs uppercase tracking-[0.24em] text-stone-500">实验运行</div>
-              <h2 className="mt-3 font-serifCn text-2xl text-stone-100 text-balance">当前队列与历史记录</h2>
+              <div className="text-xs uppercase tracking-[0.24em] text-adminInkMuted">实验运行</div>
+              <h2 className="mt-3 font-serifCn text-2xl text-adminInk text-balance">当前队列与历史记录</h2>
             </div>
-            <div className="text-sm text-stone-500">{displayedRuns.length}/{runs.length} 条运行记录</div>
+            <div className="text-sm text-adminInkMuted">{displayedRuns.length}/{runs.length} 条运行记录</div>
           </div>
           {runOpsStats.actionRequired > 0 ? (
             <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)]">
-              <div className="border border-stone-800 bg-stone-950 px-4 py-4">
+              <div className="border border-adminLineStrong bg-adminBg px-4 py-4">
                 <div className="flex items-center justify-between gap-3">
                   <div>
-                    <div className="text-xs uppercase tracking-[0.18em] text-stone-500">异常与卡住</div>
-                    <div className="mt-2 text-sm text-stone-100">failed / 心跳中断 / 排队过久</div>
+                    <div className="text-xs uppercase tracking-[0.18em] text-adminInkMuted">异常与卡住</div>
+                    <div className="mt-2 text-sm text-adminInk">failed / 心跳中断 / 排队过久</div>
                   </div>
                   <button
                     type="button"
@@ -3369,18 +3376,18 @@ export function AdminWritingEvalClient({
                     exceptionRuns.map((run) => {
                       const issueTone = getWritingEvalRunOpsIssueTone(run);
                       return (
-                        <div key={`exception-run-${run.id}`} className="border border-stone-800 bg-[#141414] px-3 py-3 text-xs">
+                        <div key={`exception-run-${run.id}`} className="border border-adminLineStrong bg-adminSurfaceAlt px-3 py-3 text-xs">
                           <div className="flex flex-wrap items-center justify-between gap-3">
                             <button
                               type="button"
-                              className="font-mono text-stone-300 transition hover:text-cinnabar"
+                              className="font-mono text-adminInk transition hover:text-cinnabar"
                               onClick={() => void loadRunDetail(run.id)}
                             >
                               {run.runCode}
                             </button>
-                            <div className="text-stone-500">{formatWritingEvalDateTime(run.createdAt)}</div>
+                            <div className="text-adminInkMuted">{formatWritingEvalDateTime(run.createdAt)}</div>
                           </div>
-                          <div className="mt-2 flex flex-wrap gap-3 text-stone-500">
+                          <div className="mt-2 flex flex-wrap gap-3 text-adminInkMuted">
                             <span>{run.status}</span>
                             <span>{getExperimentModeLabel(run.experimentMode)}</span>
                             <span>{run.datasetName || `#${run.datasetId}`}</span>
@@ -3407,16 +3414,16 @@ export function AdminWritingEvalClient({
                       );
                     })
                   ) : (
-                    <div className="text-xs leading-6 text-stone-500">当前没有 failed、卡住或排队过久的 Run。</div>
+                    <div className="text-xs leading-6 text-adminInkMuted">当前没有 failed、卡住或排队过久的 Run。</div>
                   )}
                 </div>
               </div>
 
-              <div className="border border-stone-800 bg-stone-950 px-4 py-4">
+              <div className="border border-adminLineStrong bg-adminBg px-4 py-4">
                 <div className="flex items-center justify-between gap-3">
                   <div>
-                    <div className="text-xs uppercase tracking-[0.18em] text-stone-500">待人工处理</div>
-                    <div className="mt-2 text-sm text-stone-100">运行成功但还没决议</div>
+                    <div className="text-xs uppercase tracking-[0.18em] text-adminInkMuted">待人工处理</div>
+                    <div className="mt-2 text-sm text-adminInk">运行成功但还没决议</div>
                   </div>
                   <button
                     type="button"
@@ -3429,18 +3436,18 @@ export function AdminWritingEvalClient({
                 <div className="mt-4 space-y-3">
                   {pendingDecisionRuns.length > 0 ? (
                     pendingDecisionRuns.map((run) => (
-                      <div key={`pending-run-${run.id}`} className="border border-stone-800 bg-[#141414] px-3 py-3 text-xs">
+                      <div key={`pending-run-${run.id}`} className="border border-adminLineStrong bg-adminSurfaceAlt px-3 py-3 text-xs">
                         <div className="flex flex-wrap items-center justify-between gap-3">
                           <button
                             type="button"
-                            className="font-mono text-stone-300 transition hover:text-cinnabar"
+                            className="font-mono text-adminInk transition hover:text-cinnabar"
                             onClick={() => void loadRunDetail(run.id)}
                           >
                             {run.runCode}
                           </button>
-                          <div className="text-stone-500">{typeof run.scoreSummary.deltaTotalScore === "number" ? `${run.scoreSummary.deltaTotalScore >= 0 ? "+" : ""}${run.scoreSummary.deltaTotalScore.toFixed(2)}` : "--"}</div>
+                          <div className="text-adminInkMuted">{typeof run.scoreSummary.deltaTotalScore === "number" ? `${run.scoreSummary.deltaTotalScore >= 0 ? "+" : ""}${run.scoreSummary.deltaTotalScore.toFixed(2)}` : "--"}</div>
                         </div>
-                        <div className="mt-2 flex flex-wrap gap-3 text-stone-500">
+                        <div className="mt-2 flex flex-wrap gap-3 text-adminInkMuted">
                           <span>{getDecisionModeLabel(run.decisionMode)}</span>
                           <span>{run.datasetName || `#${run.datasetId}`}</span>
                           <span>{formatWritingEvalDateTime(run.createdAt)}</span>
@@ -3458,13 +3465,13 @@ export function AdminWritingEvalClient({
                       </div>
                     ))
                   ) : (
-                    <div className="text-xs leading-6 text-stone-500">当前没有待人工决议的成功 Run。</div>
+                    <div className="text-xs leading-6 text-adminInkMuted">当前没有待人工决议的成功 Run。</div>
                   )}
                 </div>
               </div>
             </div>
           ) : null}
-          <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-stone-500">
+          <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-adminInkMuted">
             <button
               type="button"
               className={runOpsFilter === "all" ? uiPrimitives.primaryButton : uiPrimitives.adminSecondaryButton}
@@ -3488,9 +3495,205 @@ export function AdminWritingEvalClient({
             </button>
             {runOpsStats.pendingResolution > 0 ? <span>待人工决议 {runOpsStats.pendingResolution}</span> : null}
           </div>
-          <div className="mt-5 overflow-x-auto">
+          <div className={runOpsMobileListClassName}>
+            {displayedRuns.map((run) => (
+              (() => {
+                const runOpsFlags = getWritingEvalRunOpsFlags(run);
+                const runDatasetHref = buildAdminWritingEvalDatasetsHref({ datasetId: run.datasetId });
+                const runSourceScheduleHref = run.sourceScheduleId ? buildAdminWritingEvalRunsHref({ scheduleId: run.sourceScheduleId }) : null;
+                const runBasePromptHref = isPromptBackedVersionType(run.baseVersionType)
+                  ? buildPromptFocusHref(run.baseVersionRef)
+                  : null;
+                const runCandidatePromptHref = isPromptBackedVersionType(run.candidateVersionType)
+                  ? buildPromptFocusHref(run.candidateVersionRef)
+                  : null;
+                const runCasesProcessed = getNumber(run.scoreSummary.casesProcessed);
+                const runTotalCaseCount = getNumber(run.scoreSummary.totalCaseCount);
+                const runCurrentTaskCode = getString(run.scoreSummary.currentTaskCode);
+                const runPipelineStage = getString(run.scoreSummary.pipelineStage);
+                const runPipelineStageLabel = getWritingEvalPipelineStageLabel(runPipelineStage, run.status);
+                const runStageStartedAt = getWritingEvalStageStartedAt(run.scoreSummary, run.startedAt);
+                const runStageDuration = formatWritingEvalElapsed(runStageStartedAt, isRunActive(run.status) ? undefined : run.finishedAt);
+                const runTotalDuration = formatWritingEvalElapsed(
+                  getIsoDateTimeString(run.scoreSummary.runStartedAt) ?? run.startedAt,
+                  run.finishedAt,
+                );
+                const runLastProgressAt = getIsoDateTimeString(run.scoreSummary.lastProgressAt);
+                const runQueueWaitDuration = getWritingEvalQueueWaitDuration(run.createdAt, run.startedAt, run.status);
+                const runQueueDelayed = runOpsFlags.queueDelayed;
+                const runHeartbeatLag = getWritingEvalHeartbeatStaleness(runLastProgressAt, run.startedAt, run.status);
+                const runHeartbeatStale = runOpsFlags.heartbeatStale;
+                const runAutoExecutionMode = getString(run.scoreSummary.autoExecutionMode);
+                const runAutoExecutionResult = getString(run.scoreSummary.autoExecutionResult);
+                const shouldShowQuickRetry = runOpsFlags.exception;
+                return (
+                  <button
+                    key={run.id}
+                    type="button"
+                    className={cn(runOpsMobileCardClassName, selectedRunId === run.id ? "border-adminAccent bg-adminSurfaceAlt" : "")}
+                    onClick={() => {
+                      void loadRunDetail(run.id);
+                    }}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="font-mono text-xs text-adminInk">{run.runCode}</div>
+                        <div className="mt-2 text-base text-adminInk">{getExperimentModeLabel(run.experimentMode)}</div>
+                        <div className="mt-1 text-xs text-adminInkMuted">{formatWritingEvalDateTime(run.createdAt)}</div>
+                      </div>
+                      <div className="shrink-0 text-right">
+                        <div className={`text-sm ${typeof run.scoreSummary.deltaTotalScore === "number" && run.scoreSummary.deltaTotalScore >= 0 ? "text-emerald-400" : "text-cinnabar"}`}>
+                          {typeof run.scoreSummary.deltaTotalScore === "number" ? `${run.scoreSummary.deltaTotalScore >= 0 ? "+" : ""}${run.scoreSummary.deltaTotalScore.toFixed(2)}` : "--"}
+                        </div>
+                        <div className="mt-1 text-[11px] uppercase tracking-[0.16em] text-adminInkMuted">Delta</div>
+                      </div>
+                    </div>
+                    <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                      <div>
+                        <div className="text-[11px] uppercase tracking-[0.18em] text-adminInkMuted">决议</div>
+                        <div className="mt-1 text-sm text-adminInk">{getDecisionModeLabel(run.decisionMode)}</div>
+                        <div className="mt-1 text-xs text-adminInkMuted">
+                          {getResolutionStatusLabel(run.resolutionStatus)}
+                          {run.resolvedAt ? ` · ${formatWritingEvalDateTime(run.resolvedAt)}` : ""}
+                        </div>
+                        {runAutoExecutionMode || runAutoExecutionResult ? (
+                          <div className={`mt-2 text-xs ${getWritingEvalAutoExecutionTone(runAutoExecutionResult)}`}>
+                            自动执行：
+                            {runAutoExecutionMode ? ` ${getDecisionModeLabel(runAutoExecutionMode)}` : ""}
+                            {runAutoExecutionResult ? ` · ${getWritingEvalAutoExecutionResultLabel(runAutoExecutionResult)}` : ""}
+                          </div>
+                        ) : null}
+                      </div>
+                      <div>
+                        <div className="text-[11px] uppercase tracking-[0.18em] text-adminInkMuted">数据集</div>
+                        <div className="mt-1 text-sm text-adminInk">
+                          <Link href={runDatasetHref} onClick={(event) => event.stopPropagation()} className="transition hover:text-cinnabar">
+                            {run.datasetName || `#${run.datasetId}`}
+                          </Link>
+                        </div>
+                        {runSourceScheduleHref ? (
+                          <Link
+                            href={runSourceScheduleHref}
+                            onClick={(event) => event.stopPropagation()}
+                            className="mt-1 inline-block text-xs text-adminInkMuted transition hover:text-cinnabar"
+                          >
+                            {`${run.sourceScheduleName || "来源调度"} · #${run.sourceScheduleId}`}
+                          </Link>
+                        ) : null}
+                      </div>
+                    </div>
+                    <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                      <div>
+                        <div className="text-[11px] uppercase tracking-[0.18em] text-adminInkMuted">基线</div>
+                        <div className="mt-1 text-sm text-adminInk">
+                          {runBasePromptHref ? (
+                            <Link href={runBasePromptHref} onClick={(event) => event.stopPropagation()} className="transition hover:text-cinnabar">
+                              {run.baseVersionRef}
+                            </Link>
+                          ) : (
+                            run.baseVersionRef
+                          )}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-[11px] uppercase tracking-[0.18em] text-adminInkMuted">候选</div>
+                        <div className="mt-1 text-sm text-adminInk">
+                          {runCandidatePromptHref ? (
+                            <Link href={runCandidatePromptHref} onClick={(event) => event.stopPropagation()} className="transition hover:text-cinnabar">
+                              {run.candidateVersionRef}
+                            </Link>
+                          ) : (
+                            run.candidateVersionRef
+                          )}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-[11px] uppercase tracking-[0.18em] text-adminInkMuted">状态</div>
+                        <div className="mt-1 text-sm text-adminInk">{run.status}</div>
+                        <div className="mt-1 text-xs text-adminInkMuted">
+                          {runPipelineStageLabel}
+                          {run.status === "queued"
+                            ? runQueueWaitDuration
+                              ? ` · 排队 ${runQueueWaitDuration}`
+                              : ""
+                            : isRunActive(run.status)
+                              ? runStageDuration
+                                ? ` · 阶段耗时 ${runStageDuration}`
+                                : ""
+                              : runTotalDuration
+                                ? ` · 总耗时 ${runTotalDuration}`
+                                : ""}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="mt-4 grid gap-3 sm:grid-cols-4 text-sm">
+                      <div>
+                        <div className="text-[11px] uppercase tracking-[0.18em] text-adminInkMuted">质量分</div>
+                        <div className="mt-1 text-adminInk">{typeof run.scoreSummary.qualityScore === "number" ? run.scoreSummary.qualityScore.toFixed(2) : "--"}</div>
+                      </div>
+                      <div>
+                        <div className="text-[11px] uppercase tracking-[0.18em] text-adminInkMuted">爆款分</div>
+                        <div className="mt-1 text-adminInk">{typeof run.scoreSummary.viralScore === "number" ? run.scoreSummary.viralScore.toFixed(2) : "--"}</div>
+                      </div>
+                      <div>
+                        <div className="text-[11px] uppercase tracking-[0.18em] text-adminInkMuted">候选总分</div>
+                        <div className="mt-1 text-adminInk">{typeof run.scoreSummary.totalScore === "number" ? run.scoreSummary.totalScore.toFixed(2) : "--"}</div>
+                      </div>
+                      <div>
+                        <div className="text-[11px] uppercase tracking-[0.18em] text-adminInkMuted">处理进度</div>
+                        <div className="mt-1 text-adminInk">
+                          {runCasesProcessed !== null || runTotalCaseCount !== null
+                            ? `${runCasesProcessed ?? 0}/${runTotalCaseCount ?? "--"}`
+                            : "--"}
+                        </div>
+                      </div>
+                    </div>
+                    {runQueueDelayed ? (
+                      <div className="mt-3 text-xs text-amber-200">排队偏久，请检查 worker 是否及时取走任务</div>
+                    ) : null}
+                    {runHeartbeatStale ? (
+                      <div className="mt-2 text-xs text-amber-200">
+                        疑似卡住，{runHeartbeatLag ? `${runHeartbeatLag} 未收到心跳` : "长时间未收到心跳"}
+                      </div>
+                    ) : null}
+                    {runCurrentTaskCode || runPipelineStage ? (
+                      <div className="mt-2 text-xs text-adminInkMuted">
+                        {runCurrentTaskCode ? `当前任务 ${runCurrentTaskCode}` : ""}
+                        {runCurrentTaskCode && runPipelineStage ? " · " : ""}
+                        {runPipelineStage ? runPipelineStage : ""}
+                      </div>
+                    ) : null}
+                    {runLastProgressAt ? (
+                      <div className="mt-1 text-xs text-adminInkMuted">最近心跳 {formatWritingEvalDateTime(runLastProgressAt)}</div>
+                    ) : null}
+                    {shouldShowQuickRetry ? (
+                      <div className="mt-4">
+                        <button
+                          type="button"
+                          className={uiPrimitives.adminSecondaryButton}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void handleRetryRunById(run.id);
+                          }}
+                          disabled={retryingRunId === run.id}
+                        >
+                          {retryingRunId === run.id ? "重跑中…" : "快速重跑"}
+                        </button>
+                      </div>
+                    ) : null}
+                  </button>
+                );
+              })()
+            ))}
+            {displayedRuns.length === 0 ? (
+              <div className="text-sm text-adminInkMuted">
+                {runOpsFilter === "all" ? "还没有实验运行记录。" : "当前筛选条件下没有 Run。"}
+              </div>
+            ) : null}
+          </div>
+          <div className={runOpsTableShellClassName}>
             <table className="w-full min-w-[980px] text-left text-sm">
-              <thead className="text-stone-500">
+              <thead className="text-adminInkMuted">
                 <tr>
                   {["Run", "模式", "决议", "数据集", "基线", "候选", "状态", "质量分", "爆款分", "候选总分", "Delta", "创建时间"].map((head) => (
                     <th key={head} className="pb-4 font-medium">{head}</th>
@@ -3531,27 +3734,27 @@ export function AdminWritingEvalClient({
                     return (
                       <tr
                         key={run.id}
-                        className={`cursor-pointer border-t border-stone-800 ${selectedRunId === run.id ? "bg-[#1d1413]" : ""}`}
+                        className={`cursor-pointer border-t border-adminLineStrong ${selectedRunId === run.id ? "bg-adminSurfaceAlt" : ""}`}
                         onClick={() => {
                           void loadRunDetail(run.id);
                         }}
                       >
-                        <td className="py-4 font-mono text-xs text-stone-300">
+                        <td className="py-4 font-mono text-xs text-adminInk">
                           <div>{run.runCode}</div>
                           {runSourceScheduleHref ? (
                             <Link
                               href={runSourceScheduleHref}
                               onClick={(event) => event.stopPropagation()}
-                              className="mt-1 inline-block text-[11px] text-stone-500 transition hover:text-cinnabar"
+                              className="mt-1 inline-block text-[11px] text-adminInkMuted transition hover:text-cinnabar"
                             >
                               {`${run.sourceScheduleName || "来源调度"} · #${run.sourceScheduleId}`}
                             </Link>
                           ) : null}
                         </td>
-                        <td className="py-4 text-stone-400">{getExperimentModeLabel(run.experimentMode)}</td>
-                        <td className="py-4 text-stone-400">
+                        <td className="py-4 text-adminInkSoft">{getExperimentModeLabel(run.experimentMode)}</td>
+                        <td className="py-4 text-adminInkSoft">
                           <div>{getDecisionModeLabel(run.decisionMode)}</div>
-                          <div className="mt-1 text-xs text-stone-500">
+                          <div className="mt-1 text-xs text-adminInkMuted">
                             {getResolutionStatusLabel(run.resolutionStatus)}
                             {run.resolvedAt ? ` · ${formatWritingEvalDateTime(run.resolvedAt)}` : ""}
                           </div>
@@ -3563,12 +3766,12 @@ export function AdminWritingEvalClient({
                             </div>
                           ) : null}
                         </td>
-                        <td className="py-4 text-stone-400">
+                        <td className="py-4 text-adminInkSoft">
                           <Link href={runDatasetHref} onClick={(event) => event.stopPropagation()} className="transition hover:text-cinnabar">
                             {run.datasetName || `#${run.datasetId}`}
                           </Link>
                         </td>
-                        <td className="py-4 text-stone-400">
+                        <td className="py-4 text-adminInkSoft">
                           {runBasePromptHref ? (
                             <Link href={runBasePromptHref} onClick={(event) => event.stopPropagation()} className="transition hover:text-cinnabar">
                               {run.baseVersionRef}
@@ -3577,7 +3780,7 @@ export function AdminWritingEvalClient({
                             run.baseVersionRef
                           )}
                         </td>
-                        <td className="py-4 text-stone-400">
+                        <td className="py-4 text-adminInkSoft">
                           {runCandidatePromptHref ? (
                             <Link href={runCandidatePromptHref} onClick={(event) => event.stopPropagation()} className="transition hover:text-cinnabar">
                               {run.candidateVersionRef}
@@ -3586,9 +3789,9 @@ export function AdminWritingEvalClient({
                             run.candidateVersionRef
                           )}
                         </td>
-                        <td className="py-4 text-stone-100">
+                        <td className="py-4 text-adminInk">
                           <div>{run.status}</div>
-                          <div className="mt-1 text-xs text-stone-500">
+                          <div className="mt-1 text-xs text-adminInkMuted">
                             {runPipelineStageLabel}
                             {run.status === "queued"
                               ? runQueueWaitDuration
@@ -3626,7 +3829,7 @@ export function AdminWritingEvalClient({
                             </div>
                           ) : null}
                           {runCasesProcessed !== null || runTotalCaseCount !== null || runCurrentTaskCode ? (
-                            <div className="mt-1 text-xs text-stone-500">
+                            <div className="mt-1 text-xs text-adminInkMuted">
                               {runCasesProcessed !== null || runTotalCaseCount !== null
                                 ? `${runCasesProcessed ?? 0}/${runTotalCaseCount ?? "--"}`
                                 : ""}
@@ -3635,23 +3838,23 @@ export function AdminWritingEvalClient({
                             </div>
                           ) : null}
                           {runLastProgressAt ? (
-                            <div className="mt-1 text-xs text-stone-500">最近心跳 {formatWritingEvalDateTime(runLastProgressAt)}</div>
+                            <div className="mt-1 text-xs text-adminInkMuted">最近心跳 {formatWritingEvalDateTime(runLastProgressAt)}</div>
                           ) : null}
                         </td>
-                        <td className="py-4 text-stone-400">{typeof run.scoreSummary.qualityScore === "number" ? run.scoreSummary.qualityScore.toFixed(2) : "--"}</td>
-                        <td className="py-4 text-stone-400">{typeof run.scoreSummary.viralScore === "number" ? run.scoreSummary.viralScore.toFixed(2) : "--"}</td>
-                        <td className="py-4 text-stone-400">{typeof run.scoreSummary.totalScore === "number" ? run.scoreSummary.totalScore.toFixed(2) : "--"}</td>
+                        <td className="py-4 text-adminInkSoft">{typeof run.scoreSummary.qualityScore === "number" ? run.scoreSummary.qualityScore.toFixed(2) : "--"}</td>
+                        <td className="py-4 text-adminInkSoft">{typeof run.scoreSummary.viralScore === "number" ? run.scoreSummary.viralScore.toFixed(2) : "--"}</td>
+                        <td className="py-4 text-adminInkSoft">{typeof run.scoreSummary.totalScore === "number" ? run.scoreSummary.totalScore.toFixed(2) : "--"}</td>
                         <td className={`py-4 ${typeof run.scoreSummary.deltaTotalScore === "number" && run.scoreSummary.deltaTotalScore >= 0 ? "text-emerald-400" : "text-cinnabar"}`}>
                           {typeof run.scoreSummary.deltaTotalScore === "number" ? `${run.scoreSummary.deltaTotalScore >= 0 ? "+" : ""}${run.scoreSummary.deltaTotalScore.toFixed(2)}` : "--"}
                         </td>
-                        <td className="py-4 text-stone-400">{formatWritingEvalDateTime(run.createdAt)}</td>
+                        <td className="py-4 text-adminInkSoft">{formatWritingEvalDateTime(run.createdAt)}</td>
                       </tr>
                     );
                   })()
                 ))}
                 {displayedRuns.length === 0 ? (
                   <tr>
-                    <td colSpan={12} className="py-6 text-sm text-stone-500">
+                    <td colSpan={12} className="py-6 text-sm text-adminInkMuted">
                       {runOpsFilter === "all" ? "还没有实验运行记录。" : "当前筛选条件下没有 Run。"}
                     </td>
                   </tr>
@@ -3666,8 +3869,8 @@ export function AdminWritingEvalClient({
         <form id="schedule-create-form" onSubmit={handleCreateSchedule} className={uiPrimitives.adminPanel + " space-y-3 p-5"}>
           <div className="flex items-center justify-between gap-3">
             <div>
-              <div className="text-xs uppercase tracking-[0.24em] text-stone-500">自动触发</div>
-              <h2 className="mt-3 font-serifCn text-2xl text-stone-100 text-balance">创建调度规则</h2>
+              <div className="text-xs uppercase tracking-[0.24em] text-adminInkMuted">自动触发</div>
+              <h2 className="mt-3 font-serifCn text-2xl text-adminInk text-balance">创建调度规则</h2>
             </div>
             <button
               type="button"
@@ -3691,7 +3894,7 @@ export function AdminWritingEvalClient({
             placeholder="规则名称，例如 每日标题实验"
             className={uiPrimitives.adminInput}
           />
-          <div className="border border-stone-800 bg-stone-950 px-4 py-4 text-sm leading-7 text-stone-400">
+          <div className="border border-adminLineStrong bg-adminBg px-4 py-4 text-sm leading-7 text-adminInkSoft">
             数据集：
             {runFormDatasetHref ? (
               <Link href={runFormDatasetHref} className="ml-1 transition hover:text-cinnabar">
@@ -3783,7 +3986,7 @@ export function AdminWritingEvalClient({
                 placeholder="agent 策略标签，例如 default / calibration / title_lab"
                 className={uiPrimitives.adminInput}
               />
-              <div className="border border-stone-800 bg-stone-950 px-4 py-3 text-sm leading-6 text-stone-500">
+              <div className="border border-adminLineStrong bg-adminBg px-4 py-3 text-sm leading-6 text-adminInkMuted">
                 {currentCreateStrategyPreset ? (
                   <>
                     {currentCreateStrategyPreset.label}：{currentCreateStrategyPreset.description}
@@ -3816,7 +4019,7 @@ export function AdminWritingEvalClient({
               className={uiPrimitives.adminInput}
             />
           </div>
-          <label className="flex items-center gap-2 text-sm text-stone-400">
+          <label className="flex items-center gap-2 text-sm text-adminInkSoft">
             <input aria-label="规则说明，可选" type="checkbox" checked={scheduleForm.isEnabled} onChange={(event) => setScheduleForm((prev) => ({ ...prev, isEnabled: event.target.checked }))} />
             创建后立即启用
           </label>
@@ -3843,18 +4046,18 @@ export function AdminWritingEvalClient({
         <div className={uiPrimitives.adminPanel + " p-5"}>
           <div className="flex items-center justify-between gap-3">
             <div>
-              <div className="text-xs uppercase tracking-[0.24em] text-stone-500">调度编排</div>
-              <h2 className="mt-3 font-serifCn text-2xl text-stone-100 text-balance">自动实验规则</h2>
+              <div className="text-xs uppercase tracking-[0.24em] text-adminInkMuted">调度编排</div>
+              <h2 className="mt-3 font-serifCn text-2xl text-adminInk text-balance">自动实验规则</h2>
             </div>
             <button type="button" className={uiPrimitives.adminSecondaryButton} onClick={() => void handleDispatchDueSchedules()} disabled={dispatchingDue}>
               {dispatchingDue ? "派发中…" : "派发到期规则"}
             </button>
           </div>
           {focusSchedule ? (
-            <div className="mt-4 flex flex-wrap items-start justify-between gap-3 border border-cinnabar bg-[#1d1413] px-4 py-4">
+            <div className="mt-4 flex flex-wrap items-start justify-between gap-3 border border-adminAccent bg-adminSurfaceAlt px-4 py-4">
               <div>
                 <div className="text-xs uppercase tracking-[0.18em] text-cinnabar">调度聚焦模式</div>
-                <div className="mt-2 text-sm leading-7 text-stone-200">
+                <div className="mt-2 text-sm leading-7 text-adminInk">
                   当前只展示 schedule #{focusSchedule.scheduleId}，共 {focusSchedule.matchedCount} 条。
                 </div>
               </div>
@@ -3864,17 +4067,17 @@ export function AdminWritingEvalClient({
             </div>
           ) : null}
           {lastDispatchDueSkipped.length > 0 ? (
-            <div className="mt-4 border border-amber-400/40 bg-[#211913] px-4 py-4">
+            <div className="mt-4 border border-amber-400/40 bg-adminSurfaceAlt px-4 py-4">
               <div className="text-xs uppercase tracking-[0.18em] text-amber-200">最近一次批量跳过</div>
               <div className="mt-3 space-y-3">
                 {lastDispatchDueSkipped.map((item) => {
                   const matchedSchedule = schedules.find((schedule) => schedule.id === item.scheduleId) ?? null;
                   const skippedDatasetHref = matchedSchedule ? buildAdminWritingEvalDatasetsHref({ datasetId: matchedSchedule.datasetId }) : null;
                   return (
-                    <div key={`skipped-${item.scheduleId}`} className="border border-stone-800 bg-stone-950 px-4 py-3">
+                    <div key={`skipped-${item.scheduleId}`} className="border border-adminLineStrong bg-adminBg px-4 py-3">
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div>
-                          <div className="text-sm text-stone-100">{item.scheduleName}</div>
+                          <div className="text-sm text-adminInk">{item.scheduleName}</div>
                           <div className="mt-2 text-xs leading-6 text-amber-200">{item.reason}</div>
                         </div>
                         <div className="flex flex-wrap gap-2">
@@ -3894,8 +4097,8 @@ export function AdminWritingEvalClient({
               </div>
             </div>
           ) : null}
-          <div className="mt-4 border border-stone-800 bg-stone-950 px-4 py-4">
-            <div className="flex flex-wrap items-center gap-3 text-xs text-stone-500">
+          <div className="mt-4 border border-adminLineStrong bg-adminBg px-4 py-4">
+            <div className="flex flex-wrap items-center gap-3 text-xs text-adminInkMuted">
               <span>总规则 {displayedSchedules.length}</span>
               <span>启用 {displayedScheduleStats.enabledCount}</span>
               <span>可执行 {displayedScheduleStats.executableCount}</span>
@@ -3904,7 +4107,7 @@ export function AdminWritingEvalClient({
             {blockedDisplayedSchedules.length > 0 ? (
               <div className="mt-3 space-y-2">
                 {blockedDisplayedSchedules.slice(0, 3).map((schedule) => (
-                  <div key={`blocked-summary-${schedule.id}`} className="text-xs leading-6 text-stone-400">
+                  <div key={`blocked-summary-${schedule.id}`} className="text-xs leading-6 text-adminInkSoft">
                     <Link href={buildAdminWritingEvalRunsHref({ scheduleId: schedule.id })} className="transition hover:text-cinnabar">
                       {schedule.name}
                     </Link>
@@ -3914,7 +4117,7 @@ export function AdminWritingEvalClient({
                 ))}
               </div>
             ) : (
-              <div className="mt-3 text-xs text-stone-500">当前展示范围内的启用规则都可执行。</div>
+              <div className="mt-3 text-xs text-adminInkMuted">当前展示范围内的启用规则都可执行。</div>
             )}
           </div>
           <div className="mt-5 space-y-3">
@@ -3922,7 +4125,7 @@ export function AdminWritingEvalClient({
               <div
                 key={schedule.id}
                 id={`schedule-card-${schedule.id}`}
-                className={`border bg-stone-950 px-4 py-4 ${focusSchedule?.scheduleId === schedule.id ? "border-cinnabar bg-[#1d1413]" : "border-stone-800"}`}
+                className={`border bg-adminBg px-4 py-4 ${focusSchedule?.scheduleId === schedule.id ? "border-adminAccent bg-adminSurfaceAlt" : "border-adminLineStrong"}`}
               >
                 {(() => {
                   const isEditing = editingScheduleId === schedule.id;
@@ -3953,21 +4156,21 @@ export function AdminWritingEvalClient({
                     <>
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <div className="text-stone-100">{schedule.name}</div>
-                    <div className="mt-2 text-xs uppercase tracking-[0.18em] text-stone-500">
+                    <div className="text-adminInk">{schedule.name}</div>
+                    <div className="mt-2 text-xs uppercase tracking-[0.18em] text-adminInkMuted">
                       P{schedule.priority} · {schedule.triggerMode} · {getDecisionModeLabel(schedule.decisionMode)} · 每 {schedule.cadenceHours} 小时 · {schedule.isEnabled ? "enabled" : "disabled"}
                     </div>
                     <div className="mt-2">
                       <span className={`border px-2 py-1 text-[11px] uppercase tracking-[0.16em] ${scheduleReadinessMeta.tone}`}>{scheduleReadinessMeta.label}</span>
                     </div>
                     {schedule.triggerMode === "agent" ? (
-                      <div className="mt-2 text-xs text-stone-500">
+                      <div className="mt-2 text-xs text-adminInkMuted">
                         agentStrategy: {getWritingEvalAgentStrategyLabel(schedule.agentStrategy)} ({schedule.agentStrategy})
                       </div>
                     ) : null}
                   </div>
                   <div className="flex items-center gap-2">
-                    <label className="text-xs text-stone-500">
+                    <label className="text-xs text-adminInkMuted">
                       <input aria-label="input control"
                         type="checkbox"
                         checked={schedule.isEnabled}
@@ -3994,7 +4197,7 @@ export function AdminWritingEvalClient({
                     </button>
                   </div>
                 </div>
-                <div className="mt-3 text-sm leading-7 text-stone-400">
+                <div className="mt-3 text-sm leading-7 text-adminInkSoft">
                   数据集：
                   <Link href={scheduleDatasetHref} className="ml-1 transition hover:text-cinnabar">
                     {schedule.datasetName || `#${schedule.datasetId}`}
@@ -4038,9 +4241,9 @@ export function AdminWritingEvalClient({
                   )}
                 </div>
                 {schedule.lastRunId ? (
-                  <div className="mt-3 border border-stone-800 bg-[#141414] px-3 py-3 text-xs text-stone-400">
+                  <div className="mt-3 border border-adminLineStrong bg-adminSurfaceAlt px-3 py-3 text-xs text-adminInkSoft">
                     <div className="flex flex-wrap items-center gap-3">
-                      <span className="text-stone-300">最近 Run 进度</span>
+                      <span className="text-adminInk">最近 Run 进度</span>
                       <span>{scheduleLastRunPipelineLabel}</span>
                       {scheduleLastRunDuration ? <span>耗时 {scheduleLastRunDuration}</span> : null}
                       {scheduleLastRunCasesProcessed !== null || scheduleLastRunTotalCaseCount !== null ? (
@@ -4053,7 +4256,7 @@ export function AdminWritingEvalClient({
                     </div>
                   </div>
                 ) : null}
-                <div className="mt-3 text-xs leading-6 text-stone-500">
+                <div className="mt-3 text-xs leading-6 text-adminInkMuted">
                   {scheduleReadinessMeta.summary}
                   {schedule.readiness.status === "warning" && schedule.decisionMode !== "manual_review"
                     ? " 当前规则使用自动决议，建议先补齐数据集覆盖后再继续。"
@@ -4065,12 +4268,12 @@ export function AdminWritingEvalClient({
                 {schedule.readiness.warnings.length > 0 ? (
                   <div className="mt-2 text-sm text-amber-200">覆盖告警：{schedule.readiness.warnings.slice(0, 3).join("；")}</div>
                 ) : null}
-                {schedule.summary ? <div className="mt-3 text-sm text-stone-500">{schedule.summary}</div> : null}
+                {schedule.summary ? <div className="mt-3 text-sm text-adminInkMuted">{schedule.summary}</div> : null}
                 {schedule.lastError ? <div className="mt-3 text-sm text-cinnabar">最近错误：{schedule.lastError}</div> : null}
                 {isEditing ? (
-                  <div className="mt-4 space-y-3 border-t border-stone-800 pt-4">
+                  <div className="mt-4 space-y-3 border-t border-adminLineStrong pt-4">
                     <div className="flex items-center justify-between gap-3">
-                      <div className="text-xs uppercase tracking-[0.18em] text-stone-500">编辑规则</div>
+                      <div className="text-xs uppercase tracking-[0.18em] text-adminInkMuted">编辑规则</div>
                       <button type="button" className={uiPrimitives.adminSecondaryButton} onClick={handleApplyCurrentRunToEditingSchedule}>
                         用当前实验覆盖定义
                       </button>
@@ -4129,7 +4332,7 @@ export function AdminWritingEvalClient({
                             className={uiPrimitives.adminInput}
                             placeholder="agent 策略标签"
                           />
-                          <div className="border border-stone-800 bg-stone-950 px-4 py-3 text-sm leading-6 text-stone-500">
+                          <div className="border border-adminLineStrong bg-adminBg px-4 py-3 text-sm leading-6 text-adminInkMuted">
                             {currentEditorStrategyPreset ? (
                               <>
                                 {currentEditorStrategyPreset.label}：{currentEditorStrategyPreset.description}
@@ -4142,7 +4345,7 @@ export function AdminWritingEvalClient({
                           </div>
                         </div>
                       ) : (
-                        <div className="border border-stone-800 bg-stone-950 px-4 py-3 text-sm text-stone-500">当前为 scheduled 规则，不单独指定 agent 策略。</div>
+                        <div className="border border-adminLineStrong bg-adminBg px-4 py-3 text-sm text-adminInkMuted">当前为 scheduled 规则，不单独指定 agent 策略。</div>
                       )}
                       <input aria-label="优先级，越大越先派发"
                         value={scheduleEditorForm.priority}
@@ -4162,7 +4365,7 @@ export function AdminWritingEvalClient({
                         onChange={(event) => setScheduleEditorForm((prev) => ({ ...prev, nextRunAt: event.target.value }))}
                         className={uiPrimitives.adminInput}
                       />
-                      <label className="flex items-center gap-2 border border-stone-800 bg-stone-950 px-4 py-3 text-sm text-stone-400">
+                      <label className="flex items-center gap-2 border border-adminLineStrong bg-adminBg px-4 py-3 text-sm text-adminInkSoft">
                         <input aria-label="input control"
                           type="checkbox"
                           checked={scheduleEditorForm.isEnabled}
@@ -4171,7 +4374,7 @@ export function AdminWritingEvalClient({
                         保存后启用该规则
                       </label>
                     </div>
-                    <div className="border border-stone-800 bg-[#140f0f] px-4 py-4 text-sm leading-7 text-stone-400">
+                    <div className="border border-adminLineStrong bg-adminSurfaceAlt px-4 py-4 text-sm leading-7 text-adminInkSoft">
                       数据集：
                       {scheduleEditorDatasetHref ? (
                         <Link href={scheduleEditorDatasetHref} className="ml-1 transition hover:text-cinnabar">
@@ -4233,7 +4436,7 @@ export function AdminWritingEvalClient({
               </div>
             ))}
             {displayedSchedules.length === 0 ? (
-              <div className="text-sm text-stone-500">
+              <div className="text-sm text-adminInkMuted">
                 {focusSchedule ? "当前聚焦的调度规则不存在或已被移除。" : "当前还没有调度规则。"}
               </div>
             ) : null}
@@ -4244,12 +4447,12 @@ export function AdminWritingEvalClient({
       <section className={uiPrimitives.adminPanel + " p-5"}>
         <div className="flex items-start justify-between gap-4">
           <div>
-            <div className="text-xs uppercase tracking-[0.24em] text-stone-500">运行详情</div>
-            <h2 className="mt-3 font-serifCn text-2xl text-stone-100 text-balance">
+            <div className="text-xs uppercase tracking-[0.24em] text-adminInkMuted">运行详情</div>
+            <h2 className="mt-3 font-serifCn text-2xl text-adminInk text-balance">
               {selectedRunDetail ? `Run ${selectedRunDetail.runCode}` : "选择一条实验运行"}
             </h2>
           </div>
-          <div className="text-sm text-stone-500">
+          <div className="text-sm text-adminInkMuted">
             {loadingRunDetail ? "加载详情中…" : selectedRunDetail ? `${selectedRunDetail.results.length} 条样本结果` : "暂无详情"}
           </div>
         </div>
@@ -4261,12 +4464,12 @@ export function AdminWritingEvalClient({
                 {
                   label: "候选总分",
                   value: getNumber(selectedRunDetail.scoreSummary.totalScore),
-                  tone: "text-stone-100",
+                  tone: "text-adminInk",
                 },
                 {
                   label: "基线总分",
                   value: getNumber(selectedRunDetail.scoreSummary.baseTotalScore),
-                  tone: "text-stone-300",
+                  tone: "text-adminInk",
                 },
                 {
                   label: "总分 Delta",
@@ -4279,12 +4482,12 @@ export function AdminWritingEvalClient({
                 {
                   label: "候选质量",
                   value: getNumber(selectedRunDetail.scoreSummary.qualityScore),
-                  tone: "text-stone-100",
+                  tone: "text-adminInk",
                 },
                 {
                   label: "候选爆款",
                   value: getNumber(selectedRunDetail.scoreSummary.viralScore),
-                  tone: "text-stone-100",
+                  tone: "text-adminInk",
                 },
                 {
                   label: "提升样本",
@@ -4292,8 +4495,8 @@ export function AdminWritingEvalClient({
                   tone: "text-emerald-400",
                 },
               ].map((item) => (
-                <div key={item.label} className="border border-stone-800 bg-stone-950 px-4 py-4">
-                  <div className="text-xs uppercase tracking-[0.2em] text-stone-500">{item.label}</div>
+                <div key={item.label} className="border border-adminLineStrong bg-adminBg px-4 py-4">
+                  <div className="text-xs uppercase tracking-[0.2em] text-adminInkMuted">{item.label}</div>
                   <div className={`mt-3 text-2xl ${item.tone}`}>
                     {item.value === null ? "--" : Number.isInteger(item.value) ? item.value : item.value.toFixed(2)}
                   </div>
@@ -4301,26 +4504,26 @@ export function AdminWritingEvalClient({
               ))}
             </div>
 
-            <section className="border border-stone-800 bg-stone-950 px-4 py-4">
+            <section className="border border-adminLineStrong bg-adminBg px-4 py-4">
               <div className="flex items-center justify-between gap-3">
                 <div>
-                  <div className="text-xs uppercase tracking-[0.2em] text-stone-500">分项得分对比</div>
-                  <h3 className="mt-3 text-lg text-stone-100">候选均值 vs 基线均值</h3>
+                  <div className="text-xs uppercase tracking-[0.2em] text-adminInkMuted">分项得分对比</div>
+                  <h3 className="mt-3 text-lg text-adminInk">候选均值 vs 基线均值</h3>
                 </div>
-                <div className="text-xs text-stone-500">按当前运行全部样本聚合</div>
+                <div className="text-xs text-adminInkMuted">按当前运行全部样本聚合</div>
               </div>
               <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                 {selectedRunHighlights?.scoreComparisons.map((item) => (
-                  <div key={item.label} className="border border-stone-800 bg-[#141414] px-4 py-4">
-                    <div className="text-xs uppercase tracking-[0.18em] text-stone-500">{item.label}</div>
+                  <div key={item.label} className="border border-adminLineStrong bg-adminSurfaceAlt px-4 py-4">
+                    <div className="text-xs uppercase tracking-[0.18em] text-adminInkMuted">{item.label}</div>
                     <div className="mt-3 flex items-end justify-between gap-3">
                       <div>
-                        <div className="text-[11px] uppercase tracking-[0.16em] text-stone-600">候选</div>
-                        <div className="mt-1 text-xl text-stone-100">{formatWritingEvalMetric(item.candidateAverage, "", 2)}</div>
+                        <div className="text-[11px] uppercase tracking-[0.16em] text-adminInkMuted">候选</div>
+                        <div className="mt-1 text-xl text-adminInk">{formatWritingEvalMetric(item.candidateAverage, "", 2)}</div>
                       </div>
                       <div className="text-right">
-                        <div className="text-[11px] uppercase tracking-[0.16em] text-stone-600">基线</div>
-                        <div className="mt-1 text-lg text-stone-400">{formatWritingEvalMetric(item.baselineAverage, "", 2)}</div>
+                        <div className="text-[11px] uppercase tracking-[0.16em] text-adminInkMuted">基线</div>
+                        <div className="mt-1 text-lg text-adminInkSoft">{formatWritingEvalMetric(item.baselineAverage, "", 2)}</div>
                       </div>
                     </div>
                     <div className={`mt-3 text-sm ${((item.deltaAverage ?? 0) >= 0 ? "text-emerald-400" : "text-cinnabar")}`}>
@@ -4331,25 +4534,25 @@ export function AdminWritingEvalClient({
               </div>
             </section>
 
-            <section className="border border-stone-800 bg-stone-950 px-4 py-4">
+            <section className="border border-adminLineStrong bg-adminBg px-4 py-4">
               <div className="flex items-center justify-between gap-3">
                 <div>
-                  <div className="text-xs uppercase tracking-[0.2em] text-stone-500">总分趋势</div>
-                  <h3 className="mt-3 text-lg text-stone-100">按样本查看候选 vs 基线</h3>
+                  <div className="text-xs uppercase tracking-[0.2em] text-adminInkMuted">总分趋势</div>
+                  <h3 className="mt-3 text-lg text-adminInk">按样本查看候选 vs 基线</h3>
                 </div>
-                <div className="text-xs text-stone-500">{selectedRunHighlights?.scoreTrend.length ?? 0} 条样本</div>
+                <div className="text-xs text-adminInkMuted">{selectedRunHighlights?.scoreTrend.length ?? 0} 条样本</div>
               </div>
               <div className="mt-4 space-y-3">
                 {selectedRunHighlights?.scoreTrend.map((item) => {
                   const maxTotal = Math.max(item.candidateTotal, item.baselineTotal ?? 0, 1);
                   const trendCaseHref = buildAdminWritingEvalDatasetsHref({ datasetId: selectedRunDetail.datasetId, caseId: item.caseId });
                   return (
-                    <article key={`trend-${item.id}`} className="border border-stone-800 bg-[#141414] px-4 py-4">
+                    <article key={`trend-${item.id}`} className="border border-adminLineStrong bg-adminSurfaceAlt px-4 py-4">
                       <button type="button" onClick={() => focusRunResult(item.id)} className="w-full text-left">
                         <div className="flex items-center justify-between gap-3">
                           <div>
-                            <div className="text-sm text-stone-100">{item.topicTitle}</div>
-                            <div className="mt-1 font-mono text-xs text-stone-500">{item.taskCode}</div>
+                            <div className="text-sm text-adminInk">{item.topicTitle}</div>
+                            <div className="mt-1 font-mono text-xs text-adminInkMuted">{item.taskCode}</div>
                           </div>
                           <div className={`text-sm ${((item.deltaTotal ?? 0) >= 0 ? "text-emerald-400" : "text-cinnabar")}`}>
                             Delta {item.deltaTotal !== null ? `${item.deltaTotal >= 0 ? "+" : ""}${item.deltaTotal.toFixed(2)}` : "--"}
@@ -4357,22 +4560,22 @@ export function AdminWritingEvalClient({
                         </div>
                         <div className="mt-4 space-y-2">
                           <div>
-                            <div className="flex items-center justify-between text-xs text-stone-500">
+                            <div className="flex items-center justify-between text-xs text-adminInkMuted">
                               <span>候选</span>
                               <span>{item.candidateTotal.toFixed(2)}</span>
                             </div>
-                            <div className="mt-1 h-2 rounded bg-stone-900">
+                            <div className="mt-1 h-2 rounded bg-adminSurface">
                               <div className="h-2 rounded bg-emerald-500/80" style={{ width: `${Math.max(8, Math.round((item.candidateTotal / maxTotal) * 100))}%` }} />
                             </div>
                           </div>
                           <div>
-                            <div className="flex items-center justify-between text-xs text-stone-500">
+                            <div className="flex items-center justify-between text-xs text-adminInkMuted">
                               <span>基线</span>
                               <span>{item.baselineTotal !== null ? item.baselineTotal.toFixed(2) : "--"}</span>
                             </div>
-                            <div className="mt-1 h-2 rounded bg-stone-900">
+                            <div className="mt-1 h-2 rounded bg-adminSurface">
                               <div
-                                className="h-2 rounded bg-stone-400/70"
+                                className="h-2 rounded bg-adminInkMuted/70"
                                 style={{ width: `${Math.max(8, Math.round((((item.baselineTotal ?? 0) / maxTotal) * 100) || 0))}%` }}
                               />
                             </div>
@@ -4391,17 +4594,17 @@ export function AdminWritingEvalClient({
             </section>
 
             <div className="grid gap-4 xl:grid-cols-3">
-              <section className="border border-stone-800 bg-stone-950 px-4 py-4">
+              <section className="border border-adminLineStrong bg-adminBg px-4 py-4">
                 <div className="text-xs uppercase tracking-[0.2em] text-emerald-400">Top 提升样本</div>
                 <div className="mt-4 space-y-3">
                   {selectedRunHighlights?.topImproved.length ? (
                     selectedRunHighlights.topImproved.map(({ result, deltaTotal }) => {
                       const improvedCaseHref = buildAdminWritingEvalDatasetsHref({ datasetId: selectedRunDetail.datasetId, caseId: result.caseId });
                       return (
-                        <article key={`improved-${result.id}`} className="border border-stone-800 bg-[#141414] px-4 py-3">
+                        <article key={`improved-${result.id}`} className="border border-adminLineStrong bg-adminSurfaceAlt px-4 py-3">
                           <button type="button" onClick={() => focusRunResult(result.id)} className="w-full text-left">
-                            <div className="text-sm text-stone-100">{result.topicTitle || result.taskCode || `case-${result.caseId}`}</div>
-                            <div className="mt-2 text-xs text-stone-500">
+                            <div className="text-sm text-adminInk">{result.topicTitle || result.taskCode || `case-${result.caseId}`}</div>
+                            <div className="mt-2 text-xs text-adminInkMuted">
                               {result.taskCode || `case-${result.caseId}`} · 候选 {result.totalScore.toFixed(2)} · Delta{" "}
                               {deltaTotal !== null ? `${deltaTotal >= 0 ? "+" : ""}${deltaTotal.toFixed(2)}` : "--"}
                             </div>
@@ -4415,22 +4618,22 @@ export function AdminWritingEvalClient({
                       );
                     })
                   ) : (
-                    <div className="text-sm text-stone-500">当前没有明显提分样本。</div>
+                    <div className="text-sm text-adminInkMuted">当前没有明显提分样本。</div>
                   )}
                 </div>
               </section>
 
-              <section className="border border-stone-800 bg-stone-950 px-4 py-4">
+              <section className="border border-adminLineStrong bg-adminBg px-4 py-4">
                 <div className="text-xs uppercase tracking-[0.2em] text-cinnabar">Top 退化样本</div>
                 <div className="mt-4 space-y-3">
                   {selectedRunHighlights?.topRegressed.length ? (
                     selectedRunHighlights.topRegressed.map(({ result, deltaTotal }) => {
                       const regressedCaseHref = buildAdminWritingEvalDatasetsHref({ datasetId: selectedRunDetail.datasetId, caseId: result.caseId });
                       return (
-                        <article key={`regressed-${result.id}`} className="border border-stone-800 bg-[#141414] px-4 py-3">
+                        <article key={`regressed-${result.id}`} className="border border-adminLineStrong bg-adminSurfaceAlt px-4 py-3">
                           <button type="button" onClick={() => focusRunResult(result.id)} className="w-full text-left">
-                            <div className="text-sm text-stone-100">{result.topicTitle || result.taskCode || `case-${result.caseId}`}</div>
-                            <div className="mt-2 text-xs text-stone-500">
+                            <div className="text-sm text-adminInk">{result.topicTitle || result.taskCode || `case-${result.caseId}`}</div>
+                            <div className="mt-2 text-xs text-adminInkMuted">
                               {result.taskCode || `case-${result.caseId}`} · 候选 {result.totalScore.toFixed(2)} · Delta{" "}
                               {deltaTotal !== null ? `${deltaTotal >= 0 ? "+" : ""}${deltaTotal.toFixed(2)}` : "--"}
                             </div>
@@ -4444,22 +4647,22 @@ export function AdminWritingEvalClient({
                       );
                     })
                   ) : (
-                    <div className="text-sm text-stone-500">当前没有明显退化样本。</div>
+                    <div className="text-sm text-adminInkMuted">当前没有明显退化样本。</div>
                   )}
                 </div>
               </section>
 
-              <section className="border border-stone-800 bg-stone-950 px-4 py-4">
+              <section className="border border-adminLineStrong bg-adminBg px-4 py-4">
                 <div className="text-xs uppercase tracking-[0.2em] text-amber-300">失败样本</div>
                 <div className="mt-4 space-y-3">
                   {selectedRunHighlights?.failingResults.length ? (
                     selectedRunHighlights.failingResults.map(({ result, caseError }) => {
                       const failedCaseHref = buildAdminWritingEvalDatasetsHref({ datasetId: selectedRunDetail.datasetId, caseId: result.caseId });
                       return (
-                        <article key={`failed-${result.id}`} className="border border-stone-800 bg-[#141414] px-4 py-3">
+                        <article key={`failed-${result.id}`} className="border border-adminLineStrong bg-adminSurfaceAlt px-4 py-3">
                           <button type="button" onClick={() => focusRunResult(result.id)} className="w-full text-left">
-                            <div className="text-sm text-stone-100">{result.topicTitle || result.taskCode || `case-${result.caseId}`}</div>
-                            <div className="mt-2 text-xs leading-6 text-stone-500">{caseError}</div>
+                            <div className="text-sm text-adminInk">{result.topicTitle || result.taskCode || `case-${result.caseId}`}</div>
+                            <div className="mt-2 text-xs leading-6 text-adminInkMuted">{caseError}</div>
                           </button>
                           <div className="mt-3">
                             <Link href={failedCaseHref} className={uiPrimitives.adminSecondaryButton}>
@@ -4470,15 +4673,15 @@ export function AdminWritingEvalClient({
                       );
                     })
                   ) : (
-                    <div className="text-sm text-stone-500">当前没有失败样本。</div>
+                    <div className="text-sm text-adminInkMuted">当前没有失败样本。</div>
                   )}
                 </div>
               </section>
             </div>
 
             <div className="grid gap-4 xl:grid-cols-2">
-              <div className="border border-stone-800 bg-stone-950 px-4 py-4 text-sm text-stone-400">
-                <div className="text-xs uppercase tracking-[0.2em] text-stone-500">版本信息</div>
+              <div className="border border-adminLineStrong bg-adminBg px-4 py-4 text-sm text-adminInkSoft">
+                <div className="text-xs uppercase tracking-[0.2em] text-adminInkMuted">版本信息</div>
                 <div className="mt-3 leading-7">
                   模式：{getExperimentModeLabel(selectedRunDetail.experimentMode)}
                   <br />
@@ -4555,17 +4758,17 @@ export function AdminWritingEvalClient({
                   ) : null}
                 </div>
               </div>
-              <div className="border border-stone-800 bg-stone-950 px-4 py-4 text-sm text-stone-400">
-                <div className="text-xs uppercase tracking-[0.2em] text-stone-500">实验摘要与建议</div>
+              <div className="border border-adminLineStrong bg-adminBg px-4 py-4 text-sm text-adminInkSoft">
+                <div className="text-xs uppercase tracking-[0.2em] text-adminInkMuted">实验摘要与建议</div>
                 <div className="mt-3 leading-7">
                   {selectedRunDetail.summary || "暂无摘要"}
                   {(getNumber(selectedRunDetail.scoreSummary.casesProcessed) !== null ||
                     getNumber(selectedRunDetail.scoreSummary.totalCaseCount) !== null ||
                     getString(selectedRunDetail.scoreSummary.currentTaskCode) ||
                     selectedRunTimelineEntries.length > 0) ? (
-                    <div className="mt-3 border border-stone-800 bg-[#141414] px-3 py-3 text-xs text-stone-400">
+                    <div className="mt-3 border border-adminLineStrong bg-adminSurfaceAlt px-3 py-3 text-xs text-adminInkSoft">
                       <div className="flex flex-wrap items-center gap-3">
-                        <span className="text-stone-300">执行进度</span>
+                        <span className="text-adminInk">执行进度</span>
                         <span>{selectedRunPipelineStageLabel}</span>
                         {selectedRunQueueWaitDuration ? <span>排队 {selectedRunQueueWaitDuration}</span> : null}
                         {selectedRunStageDuration ? <span>阶段耗时 {selectedRunStageDuration}</span> : null}
@@ -4595,7 +4798,7 @@ export function AdminWritingEvalClient({
                       {selectedRunPhaseDurations.length > 0 ? (
                         <div className="mt-3 flex flex-wrap gap-2">
                           {selectedRunPhaseDurations.map((item) => (
-                            <span key={item.label} className="border border-stone-700 px-2 py-1 text-[11px] text-stone-300">
+                            <span key={item.label} className="border border-adminLineStrong px-2 py-1 text-[11px] text-adminInk">
                               {item.label} {item.value}
                             </span>
                           ))}
@@ -4604,35 +4807,35 @@ export function AdminWritingEvalClient({
                       {selectedRunTimelineEntries.length > 0 ? (
                         <div className="mt-3 grid gap-2 md:grid-cols-2">
                           {selectedRunTimelineEntries.map((item) => (
-                            <div key={`${item.key}-${item.at}`} className="border border-stone-800 bg-stone-950 px-2 py-2">
-                              <div className="text-[11px] uppercase tracking-[0.12em] text-stone-500">{item.label}</div>
-                              <div className="mt-1 text-stone-300">{formatWritingEvalDateTime(item.at)}</div>
+                            <div key={`${item.key}-${item.at}`} className="border border-adminLineStrong bg-adminBg px-2 py-2">
+                              <div className="text-[11px] uppercase tracking-[0.12em] text-adminInkMuted">{item.label}</div>
+                              <div className="mt-1 text-adminInk">{formatWritingEvalDateTime(item.at)}</div>
                             </div>
                           ))}
                         </div>
                       ) : null}
                       {selectedRunJobHistory.length > 0 || selectedRunRetryHistory.length > 0 ? (
                         <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
-                          <div className="border border-stone-800 bg-stone-950 px-3 py-3">
+                          <div className="border border-adminLineStrong bg-adminBg px-3 py-3">
                             <div className="flex flex-wrap items-center justify-between gap-3">
                               <div>
-                                <div className="text-[11px] uppercase tracking-[0.14em] text-stone-500">阶段作业台账</div>
-                                <div className="mt-1 text-stone-300">
+                                <div className="text-[11px] uppercase tracking-[0.14em] text-adminInkMuted">阶段作业台账</div>
+                                <div className="mt-1 text-adminInk">
                                   已完成 {selectedRunJobHistorySummary.completed} · 失败 {selectedRunJobHistorySummary.failed} ·
                                   执行中 {selectedRunJobHistorySummary.running} · 排队中 {selectedRunJobHistorySummary.queued}
                                 </div>
                               </div>
-                              <div className="text-[11px] text-stone-500">共 {selectedRunJobHistory.length} 条 stage job</div>
+                              <div className="text-[11px] text-adminInkMuted">共 {selectedRunJobHistory.length} 条 stage job</div>
                             </div>
                             <div className="mt-3 space-y-2">
                               {selectedRunJobHistory.map((item) => (
-                                <div key={`job-history-${item.id}`} className="border border-stone-800 bg-[#141414] px-3 py-3">
+                                <div key={`job-history-${item.id}`} className="border border-adminLineStrong bg-adminSurfaceAlt px-3 py-3">
                                   <div className="flex flex-wrap items-center justify-between gap-3">
                                     <div>
-                                      <div className="font-mono text-xs text-stone-300">
+                                      <div className="font-mono text-xs text-adminInk">
                                         {item.stageLabel} · 第 {item.attemptIndex} 次
                                       </div>
-                                      <div className="mt-1 text-[11px] text-stone-500">
+                                      <div className="mt-1 text-[11px] text-adminInkMuted">
                                         job #{item.id} · {item.jobType}
                                         {item.runCode ? ` · ${item.runCode}` : ""}
                                       </div>
@@ -4641,7 +4844,7 @@ export function AdminWritingEvalClient({
                                       {getWritingEvalStageJobStatusLabel(item.status)}
                                     </div>
                                   </div>
-                                  <div className="mt-2 flex flex-wrap gap-3 text-[11px] text-stone-500">
+                                  <div className="mt-2 flex flex-wrap gap-3 text-[11px] text-adminInkMuted">
                                     <span>入队 {formatWritingEvalDateTime(item.queuedAt)}</span>
                                     {item.startedAt ? <span>开始 {formatWritingEvalDateTime(item.startedAt)}</span> : null}
                                     {item.finishedAt ? <span>结束 {formatWritingEvalDateTime(item.finishedAt)}</span> : null}
@@ -4657,32 +4860,32 @@ export function AdminWritingEvalClient({
                             </div>
                           </div>
 
-                          <div className="border border-stone-800 bg-stone-950 px-3 py-3">
+                          <div className="border border-adminLineStrong bg-adminBg px-3 py-3">
                             <div className="flex flex-wrap items-center justify-between gap-3">
                               <div>
-                                <div className="text-[11px] uppercase tracking-[0.14em] text-stone-500">重试轨迹</div>
-                                <div className="mt-1 text-stone-300">{selectedRunRetryHistory.length} 次人工重试</div>
+                                <div className="text-[11px] uppercase tracking-[0.14em] text-adminInkMuted">重试轨迹</div>
+                                <div className="mt-1 text-adminInk">{selectedRunRetryHistory.length} 次人工重试</div>
                               </div>
-                              <div className="text-[11px] text-stone-500">retry audit</div>
+                              <div className="text-[11px] text-adminInkMuted">retry audit</div>
                             </div>
                             <div className="mt-3 space-y-2">
                               {selectedRunRetryHistory.length > 0 ? (
                                 selectedRunRetryHistory.map((item, index) => (
-                                  <div key={`retry-history-${item.id}`} className="border border-stone-800 bg-[#141414] px-3 py-3">
+                                  <div key={`retry-history-${item.id}`} className="border border-adminLineStrong bg-adminSurfaceAlt px-3 py-3">
                                     <div className="flex flex-wrap items-center justify-between gap-3">
-                                      <div className="font-mono text-xs text-stone-300">第 {index + 1} 次重试</div>
-                                      <div className="text-[11px] text-stone-500">
+                                      <div className="font-mono text-xs text-adminInk">第 {index + 1} 次重试</div>
+                                      <div className="text-[11px] text-adminInkMuted">
                                         {item.username ? item.username : "system"} · {formatWritingEvalDateTime(item.retriedAt ?? item.createdAt)}
                                       </div>
                                     </div>
-                                    <div className="mt-2 text-[11px] leading-6 text-stone-500">
+                                    <div className="mt-2 text-[11px] leading-6 text-adminInkMuted">
                                       写入审计 {formatWritingEvalDateTime(item.createdAt)}
                                       {item.runCode ? ` · ${item.runCode}` : ""}
                                     </div>
                                   </div>
                                 ))
                               ) : (
-                                <div className="border border-stone-800 bg-[#141414] px-3 py-3 text-[11px] leading-6 text-stone-500">
+                                <div className="border border-adminLineStrong bg-adminSurfaceAlt px-3 py-3 text-[11px] leading-6 text-adminInkMuted">
                                   当前 Run 还没有人工重试记录；如果后续执行失败并触发 retry，这里会保留完整轨迹。
                                 </div>
                               )}
@@ -4691,29 +4894,29 @@ export function AdminWritingEvalClient({
                         </div>
                       ) : null}
                       {selectedRunCaseLedger ? (
-                        <div className="mt-4 border border-stone-800 bg-stone-950 px-3 py-3">
+                        <div className="mt-4 border border-adminLineStrong bg-adminBg px-3 py-3">
                           <div className="flex flex-wrap items-center justify-between gap-3">
                             <div>
-                              <div className="text-[11px] uppercase tracking-[0.14em] text-stone-500">Case Fan-Out 台账</div>
-                              <div className="mt-1 text-stone-300">
+                              <div className="text-[11px] uppercase tracking-[0.14em] text-adminInkMuted">Case Fan-Out 台账</div>
+                              <div className="mt-1 text-adminInk">
                                 已完成 {selectedRunCaseLedger.counts.succeeded} · 失败 {selectedRunCaseLedger.counts.failed} ·
                                 执行中 {selectedRunCaseLedger.counts.running} · 排队中 {selectedRunCaseLedger.counts.queued}
                                 {selectedRunCaseLedger.counts.disabled > 0 ? ` · 禁用 ${selectedRunCaseLedger.counts.disabled}` : ""}
                               </div>
                             </div>
-                            <div className="text-[11px] text-stone-500">共 {selectedRunCaseLedger.items.length} 个 case</div>
+                            <div className="text-[11px] text-adminInkMuted">共 {selectedRunCaseLedger.items.length} 个 case</div>
                           </div>
                           <div className="mt-3 max-h-[320px] space-y-2 overflow-y-auto pr-1">
                             {selectedRunCaseLedger.items.map((item) => (
-                              <div key={`case-ledger-${item.caseId}`} className="border border-stone-800 bg-[#141414] px-3 py-3">
+                              <div key={`case-ledger-${item.caseId}`} className="border border-adminLineStrong bg-adminSurfaceAlt px-3 py-3">
                                 <div className="flex flex-wrap items-center justify-between gap-3">
                                   <div className="min-w-0">
-                                    <div className="font-mono text-xs text-stone-300">{item.taskCode}</div>
-                                    <div className="mt-1 text-sm text-stone-100">{item.topicTitle}</div>
+                                    <div className="font-mono text-xs text-adminInk">{item.taskCode}</div>
+                                    <div className="mt-1 text-sm text-adminInk">{item.topicTitle}</div>
                                   </div>
                                   <div className={`border px-2 py-1 text-[11px] ${item.statusTone}`}>{item.statusLabel}</div>
                                 </div>
-                                <div className="mt-2 flex flex-wrap gap-3 text-[11px] text-stone-500">
+                                <div className="mt-2 flex flex-wrap gap-3 text-[11px] text-adminInkMuted">
                                   <span>{item.difficultyLevel}</span>
                                   {item.totalScore !== null ? <span>总分 {item.totalScore.toFixed(2)}</span> : null}
                                   <span>case #{item.caseId}</span>
@@ -4740,9 +4943,9 @@ export function AdminWritingEvalClient({
                   <div className={`mt-3 ${selectedRunDetail.recommendation === "keep" ? "text-emerald-400" : "text-cinnabar"}`}>
                     建议：{selectedRunDetail.recommendation}
                   </div>
-                  <div className="mt-2 text-stone-400">{selectedRunDetail.recommendationReason}</div>
+                  <div className="mt-2 text-adminInkSoft">{selectedRunDetail.recommendationReason}</div>
                   {selectedRunRequiresRiskApproval && selectedRunDetail.resolutionStatus === "pending" ? (
-                    <div className="mt-3 border border-cinnabar/40 bg-[#241515] px-3 py-3 text-xs text-stone-300">
+                    <div className="mt-3 border border-adminAccent/40 bg-adminSurfaceAlt px-3 py-3 text-xs text-adminInk">
                       <div className="text-[11px] uppercase tracking-[0.14em] text-cinnabar">风险例外审批</div>
                       <div className="mt-2 leading-6">
                         当前系统建议 `discard`。如果仍要 keep，必须填写审批理由，理由会写入版本账本与审计日志。
@@ -4757,8 +4960,8 @@ export function AdminWritingEvalClient({
                     </div>
                   ) : null}
                   {selectedRunShowAutoExecution ? (
-                    <div className="mt-3 border border-stone-800 bg-stone-950 px-3 py-3 text-xs text-stone-400">
-                      <div className="text-[11px] uppercase tracking-[0.14em] text-stone-500">自动决议执行</div>
+                    <div className="mt-3 border border-adminLineStrong bg-adminBg px-3 py-3 text-xs text-adminInkSoft">
+                      <div className="text-[11px] uppercase tracking-[0.14em] text-adminInkMuted">自动决议执行</div>
                       <div className="mt-2 flex flex-wrap gap-3">
                         {selectedRunAutoExecutionMode ? <span>模式 {getDecisionModeLabel(selectedRunAutoExecutionMode)}</span> : null}
                         {selectedRunAutoDecision ? <span>系统建议 {selectedRunAutoDecision}</span> : null}
@@ -4772,7 +4975,7 @@ export function AdminWritingEvalClient({
                           <span>完成于 {formatWritingEvalDateTime(selectedRunAutoExecutionCompletedAt)}</span>
                         ) : null}
                       </div>
-                      {selectedRunAutoDecisionReason ? <div className="mt-2 text-stone-500">{selectedRunAutoDecisionReason}</div> : null}
+                      {selectedRunAutoDecisionReason ? <div className="mt-2 text-adminInkMuted">{selectedRunAutoDecisionReason}</div> : null}
                       {selectedRunAutoExecutionError ? <div className="mt-2 text-cinnabar">错误：{selectedRunAutoExecutionError}</div> : null}
                     </div>
                   ) : null}
@@ -4782,11 +4985,11 @@ export function AdminWritingEvalClient({
             </div>
 
             {selectedRunPostDecisionOps ? (
-              <div className="border border-stone-800 bg-stone-950 px-4 py-4 text-sm text-stone-400">
+              <div className="border border-adminLineStrong bg-adminBg px-4 py-4 text-sm text-adminInkSoft">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
-                    <div className="text-xs uppercase tracking-[0.2em] text-stone-500">决议后续动作</div>
-                    <div className="mt-3 text-base text-stone-100">
+                    <div className="text-xs uppercase tracking-[0.2em] text-adminInkMuted">决议后续动作</div>
+                    <div className="mt-3 text-base text-adminInk">
                       {selectedRunPostDecisionOps.focusSource === "candidate" ? "当前应推进候选版本" : "当前应保持基线版本"}
                     </div>
                     <div className="mt-2 leading-7">
@@ -4799,7 +5002,7 @@ export function AdminWritingEvalClient({
                         : ""}
                       {selectedRunPostDecisionOps.isFocusActive === true ? " · 当前 active" : ""}
                     </div>
-                    <div className="mt-2 text-xs leading-6 text-stone-500">
+                    <div className="mt-2 text-xs leading-6 text-adminInkMuted">
                       {selectedRunDetail.resolutionStatus === "pending"
                         ? selectedRunPostDecisionOps.focusSource === "candidate"
                           ? "系统建议先 keep 候选，再进入放量观察或回滚监控。"
@@ -4823,9 +5026,9 @@ export function AdminWritingEvalClient({
                   </div>
                 </div>
                 <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                  <div className="border border-stone-800 bg-[#141414] px-4 py-4">
-                    <div className="text-xs uppercase tracking-[0.18em] text-stone-500">灰度状态</div>
-                    <div className="mt-3 text-stone-100">
+                  <div className="border border-adminLineStrong bg-adminSurfaceAlt px-4 py-4">
+                    <div className="text-xs uppercase tracking-[0.18em] text-adminInkMuted">灰度状态</div>
+                    <div className="mt-3 text-adminInk">
                       {selectedRunPostDecisionOps.rolloutConfig
                         ? selectedRunPostDecisionOps.rolloutConfig.isEnabled
                           ? selectedRunPostDecisionOps.rolloutConfig.rolloutObserveOnly
@@ -4836,7 +5039,7 @@ export function AdminWritingEvalClient({
                           ? "当前对象无灰度配置"
                           : "暂无灰度配置"}
                     </div>
-                    <div className="mt-2 text-xs leading-6 text-stone-500">
+                    <div className="mt-2 text-xs leading-6 text-adminInkMuted">
                       {selectedRunPostDecisionOps.rolloutConfig?.rolloutPlanCodes.length
                         ? `plan=${selectedRunPostDecisionOps.rolloutConfig.rolloutPlanCodes.join(", ")}`
                         : selectedRunPostDecisionOps.rolloutConfig
@@ -4844,37 +5047,37 @@ export function AdminWritingEvalClient({
                           : "可直接在当前面板配置观察优先、比例和白名单。"}
                     </div>
                   </div>
-                  <div className="border border-stone-800 bg-[#141414] px-4 py-4">
-                    <div className="text-xs uppercase tracking-[0.18em] text-stone-500">灰度命中</div>
-                    <div className="mt-3 text-stone-100">
+                  <div className="border border-adminLineStrong bg-adminSurfaceAlt px-4 py-4">
+                    <div className="text-xs uppercase tracking-[0.18em] text-adminInkMuted">灰度命中</div>
+                    <div className="mt-3 text-adminInk">
                       {selectedRunPostDecisionOps.rolloutStats
                         ? `${selectedRunPostDecisionOps.rolloutStats.totalHitCount} 次 / ${selectedRunPostDecisionOps.rolloutStats.uniqueUserCount} 人`
                         : "暂无"}
                     </div>
-                    <div className="mt-2 text-xs leading-6 text-stone-500">
+                    <div className="mt-2 text-xs leading-6 text-adminInkMuted">
                       {selectedRunPostDecisionOps.rolloutStats?.lastHitAt
                         ? `最近命中 ${formatWritingEvalDateTime(selectedRunPostDecisionOps.rolloutStats.lastHitAt)}`
                         : "尚未记录灰度命中"}
                     </div>
                   </div>
-                  <div className="border border-stone-800 bg-[#141414] px-4 py-4">
-                    <div className="text-xs uppercase tracking-[0.18em] text-stone-500">真实回流</div>
-                    <div className="mt-3 text-stone-100">
+                  <div className="border border-adminLineStrong bg-adminSurfaceAlt px-4 py-4">
+                    <div className="text-xs uppercase tracking-[0.18em] text-adminInkMuted">真实回流</div>
+                    <div className="mt-3 text-adminInk">
                       {selectedRunPostDecisionOps.feedbackSummary.feedbackCount} 条
                     </div>
-                    <div className="mt-2 text-xs leading-6 text-stone-500">
+                    <div className="mt-2 text-xs leading-6 text-adminInkMuted">
                       爆款 {formatWritingEvalMetric(selectedRunPostDecisionOps.feedbackSummary.averageObservedViralScore, "", 2)} ·
                       打开 {formatWritingEvalMetric(selectedRunPostDecisionOps.feedbackSummary.averageOpenRate, "%", 1)}
                       {" · "}
                       读完 {formatWritingEvalMetric(selectedRunPostDecisionOps.feedbackSummary.averageReadCompletionRate, "%", 1)}
                     </div>
                   </div>
-                  <div className="border border-stone-800 bg-[#141414] px-4 py-4">
-                    <div className="text-xs uppercase tracking-[0.18em] text-stone-500">回滚能力</div>
-                    <div className="mt-3 text-stone-100">
+                  <div className="border border-adminLineStrong bg-adminSurfaceAlt px-4 py-4">
+                    <div className="text-xs uppercase tracking-[0.18em] text-adminInkMuted">回滚能力</div>
+                    <div className="mt-3 text-adminInk">
                       {selectedRunPostDecisionOps.canRollbackFocusLedger ? "可从当前账本回滚" : "当前没有可直接回滚的 keep 账本"}
                     </div>
-                    <div className="mt-2 text-xs leading-6 text-stone-500">
+                    <div className="mt-2 text-xs leading-6 text-adminInkMuted">
                       {selectedRunPostDecisionOps.canRollbackFocusLedger
                         ? "可直接在当前页执行 rollback，并继续观察回滚后的线上表现。"
                         : "若要回滚，请先确认当前运营对象是否已经形成 keep 账本。"}
@@ -4882,11 +5085,11 @@ export function AdminWritingEvalClient({
                   </div>
                 </div>
                 {canInlineRunRollout || canRollbackSelectedRunOpsLedger ? (
-                  <div className="mt-4 border border-stone-800 bg-[#141414] px-4 py-4">
+                  <div className="mt-4 border border-adminLineStrong bg-adminSurfaceAlt px-4 py-4">
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div>
-                        <div className="text-xs uppercase tracking-[0.18em] text-stone-500">内联放量与回滚</div>
-                        <div className="mt-2 text-xs leading-6 text-stone-500">
+                        <div className="text-xs uppercase tracking-[0.18em] text-adminInkMuted">内联放量与回滚</div>
+                        <div className="mt-2 text-xs leading-6 text-adminInkMuted">
                           当前页可以直接修改自动模式、观察优先、比例、套餐白名单和资产备注，并查看最近 rollout 审计。
                         </div>
                       </div>
@@ -4916,8 +5119,8 @@ export function AdminWritingEvalClient({
                     {canInlineRunRollout ? (
                       <>
                         <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                          <label className="border border-stone-800 bg-stone-950 px-4 py-4 text-xs text-stone-400">
-                            <div className="text-[11px] uppercase tracking-[0.16em] text-stone-500">启用灰度</div>
+                          <label className="border border-adminLineStrong bg-adminBg px-4 py-4 text-xs text-adminInkSoft">
+                            <div className="text-[11px] uppercase tracking-[0.16em] text-adminInkMuted">启用灰度</div>
                             <input
                               type="checkbox"
                               className="mt-3 h-4 w-4"
@@ -4925,8 +5128,8 @@ export function AdminWritingEvalClient({
                               onChange={(event) => setRunOpsRolloutForm((prev) => ({ ...prev, isEnabled: event.target.checked }))}
                             />
                           </label>
-                          <label className="border border-stone-800 bg-stone-950 px-4 py-4 text-xs text-stone-400">
-                            <div className="text-[11px] uppercase tracking-[0.16em] text-stone-500">仅观察流量</div>
+                          <label className="border border-adminLineStrong bg-adminBg px-4 py-4 text-xs text-adminInkSoft">
+                            <div className="text-[11px] uppercase tracking-[0.16em] text-adminInkMuted">仅观察流量</div>
                             <input
                               type="checkbox"
                               className="mt-3 h-4 w-4"
@@ -4934,8 +5137,8 @@ export function AdminWritingEvalClient({
                               onChange={(event) => setRunOpsRolloutForm((prev) => ({ ...prev, rolloutObserveOnly: event.target.checked }))}
                             />
                           </label>
-                          <div className="border border-stone-800 bg-stone-950 px-4 py-4 text-xs text-stone-400">
-                            <div className="text-[11px] uppercase tracking-[0.16em] text-stone-500">自动模式</div>
+                          <div className="border border-adminLineStrong bg-adminBg px-4 py-4 text-xs text-adminInkSoft">
+                            <div className="text-[11px] uppercase tracking-[0.16em] text-adminInkMuted">自动模式</div>
                             <select
                               aria-label="select control"
                               value={runOpsRolloutForm.autoMode}
@@ -4946,8 +5149,8 @@ export function AdminWritingEvalClient({
                               <option value="recommendation">recommendation</option>
                             </select>
                           </div>
-                          <div className="border border-stone-800 bg-stone-950 px-4 py-4 text-xs text-stone-400">
-                            <div className="text-[11px] uppercase tracking-[0.16em] text-stone-500">命中比例</div>
+                          <div className="border border-adminLineStrong bg-adminBg px-4 py-4 text-xs text-adminInkSoft">
+                            <div className="text-[11px] uppercase tracking-[0.16em] text-adminInkMuted">命中比例</div>
                             <input
                               aria-label="0-100"
                               value={runOpsRolloutForm.rolloutPercentage}
@@ -4958,8 +5161,8 @@ export function AdminWritingEvalClient({
                           </div>
                         </div>
                         <div className="mt-3 grid gap-3 xl:grid-cols-2">
-                          <div className="border border-stone-800 bg-stone-950 px-4 py-4 text-xs text-stone-400">
-                            <div className="text-[11px] uppercase tracking-[0.16em] text-stone-500">套餐白名单</div>
+                          <div className="border border-adminLineStrong bg-adminBg px-4 py-4 text-xs text-adminInkSoft">
+                            <div className="text-[11px] uppercase tracking-[0.16em] text-adminInkMuted">套餐白名单</div>
                             <input
                               aria-label="pro, ultra"
                               value={runOpsRolloutForm.rolloutPlanCodes}
@@ -4967,10 +5170,10 @@ export function AdminWritingEvalClient({
                               placeholder="pro, ultra"
                               className={`mt-3 ${uiPrimitives.adminInput}`}
                             />
-                            <div className="mt-2 text-[11px] leading-6 text-stone-600">多个套餐用逗号分隔；为空时只看观察优先和比例。</div>
+                            <div className="mt-2 text-[11px] leading-6 text-adminInkMuted">多个套餐用逗号分隔；为空时只看观察优先和比例。</div>
                           </div>
-                          <div className="border border-stone-800 bg-stone-950 px-4 py-4 text-xs text-stone-400">
-                            <div className="text-[11px] uppercase tracking-[0.16em] text-stone-500">
+                          <div className="border border-adminLineStrong bg-adminBg px-4 py-4 text-xs text-adminInkSoft">
+                            <div className="text-[11px] uppercase tracking-[0.16em] text-adminInkMuted">
                               {selectedRunPostDecisionOps?.rolloutKind === "asset" ? "资产备注" : "治理说明"}
                             </div>
                             {selectedRunPostDecisionOps?.rolloutKind === "asset" ? (
@@ -4982,7 +5185,7 @@ export function AdminWritingEvalClient({
                                 className={`mt-3 min-h-[110px] ${uiPrimitives.adminInput}`}
                               />
                             ) : (
-                              <div className="mt-3 text-sm leading-7 text-stone-400">
+                              <div className="mt-3 text-sm leading-7 text-adminInkSoft">
                                 Prompt 版本会保存自动模式、观察优先、比例和套餐白名单；具体治理原因以审计日志为主。
                               </div>
                             )}
@@ -5031,25 +5234,25 @@ export function AdminWritingEvalClient({
                         </div>
                       </>
                     ) : null}
-                    <div className="mt-4 border border-stone-800 bg-stone-950 px-4 py-4">
-                      <div className="text-[11px] uppercase tracking-[0.16em] text-stone-500">最近治理审计</div>
+                    <div className="mt-4 border border-adminLineStrong bg-adminBg px-4 py-4">
+                      <div className="text-[11px] uppercase tracking-[0.16em] text-adminInkMuted">最近治理审计</div>
                       {selectedRunPostDecisionOps?.rolloutAuditLogs.length ? (
                         <div className="mt-3 space-y-2">
                           {selectedRunPostDecisionOps.rolloutAuditLogs.map((item) => (
-                            <div key={`run-rollout-audit-${item.id}`} className="border border-stone-800 bg-[#141414] px-3 py-3 text-xs text-stone-400">
+                            <div key={`run-rollout-audit-${item.id}`} className="border border-adminLineStrong bg-adminSurfaceAlt px-3 py-3 text-xs text-adminInkSoft">
                               <div className="flex flex-wrap items-center justify-between gap-3">
-                                <span className="text-stone-300">{formatWritingEvalDateTime(item.createdAt)}</span>
-                                <span className={item.riskLevel === "cinnabar" ? "text-cinnabar" : item.riskLevel === "emerald" ? "text-emerald-400" : "text-stone-500"}>
+                                <span className="text-adminInk">{formatWritingEvalDateTime(item.createdAt)}</span>
+                                <span className={item.riskLevel === "cinnabar" ? "text-cinnabar" : item.riskLevel === "emerald" ? "text-emerald-400" : "text-adminInkMuted"}>
                                   {item.riskLevel}
                                 </span>
                               </div>
-                              <div className="mt-2 text-stone-500">
+                              <div className="mt-2 text-adminInkMuted">
                                 动作 {item.action}
                                 {item.username ? ` · 操作人 ${item.username}` : ""}
                               </div>
-                              {item.reason ? <div className="mt-2 leading-6 text-stone-300">{item.reason}</div> : null}
-                              {item.changes.length ? <div className="mt-2 text-stone-500">变更：{item.changes.join("；")}</div> : null}
-                              <div className="mt-2 text-stone-500">
+                              {item.reason ? <div className="mt-2 leading-6 text-adminInk">{item.reason}</div> : null}
+                              {item.changes.length ? <div className="mt-2 text-adminInkMuted">变更：{item.changes.join("；")}</div> : null}
+                              <div className="mt-2 text-adminInkMuted">
                                 回流 {formatWritingEvalMetric(item.signals.feedbackCount, "", 0)} ·
                                 用户 {formatWritingEvalMetric(item.signals.uniqueUsers, "", 0)} ·
                                 命中 {formatWritingEvalMetric(item.signals.totalHitCount, "", 0)} ·
@@ -5059,7 +5262,7 @@ export function AdminWritingEvalClient({
                           ))}
                         </div>
                       ) : (
-                        <div className="mt-3 text-xs leading-6 text-stone-500">
+                        <div className="mt-3 text-xs leading-6 text-adminInkMuted">
                           当前运营对象还没有 rollout 审计记录。保存后续配置或等待 scheduler 自动治理后，这里会显示最近轨迹。
                         </div>
                       )}
@@ -5209,13 +5412,13 @@ export function AdminWritingEvalClient({
                   label: "真实回流样本",
                   value: `${feedbackState?.realOutcome.items.length ?? 0} 条`,
                   caption: `观察爆款 ${formatWritingEvalMetric(feedbackState?.realOutcome.summary.averageObservedViralScore, "", 2)} · 打开 ${formatWritingEvalMetric(feedbackState?.realOutcome.summary.averageOpenRate, "%", 1)}`,
-                  tone: "text-stone-100",
+                  tone: "text-adminInk",
                 },
                 {
                   label: "实验反馈样本",
                   value: `${feedbackState?.items.length ?? 0} 条`,
                   caption: `观察爆款 ${formatWritingEvalMetric(feedbackState?.summary.averageObservedViralScore, "", 2)} · 打开 ${formatWritingEvalMetric(feedbackState?.summary.averageOpenRate, "%", 1)}`,
-                  tone: "text-stone-100",
+                  tone: "text-adminInk",
                 },
                 {
                   label: "打开率口径差",
@@ -5254,22 +5457,22 @@ export function AdminWritingEvalClient({
                   ),
                 },
               ].map((item) => (
-                <div key={item.label} className="border border-stone-800 bg-stone-950 px-4 py-4">
-                  <div className="text-xs uppercase tracking-[0.2em] text-stone-500">{item.label}</div>
+                <div key={item.label} className="border border-adminLineStrong bg-adminBg px-4 py-4">
+                  <div className="text-xs uppercase tracking-[0.2em] text-adminInkMuted">{item.label}</div>
                   <div className={`mt-3 text-2xl ${item.tone}`}>{item.value}</div>
-                  <div className="mt-2 text-sm leading-6 text-stone-500">{item.caption}</div>
+                  <div className="mt-2 text-sm leading-6 text-adminInkMuted">{item.caption}</div>
                 </div>
               ))}
             </div>
 
             <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_380px]">
-              <div className="border border-stone-800 bg-stone-950 px-4 py-4">
+              <div className="border border-adminLineStrong bg-adminBg px-4 py-4">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <div className="text-xs uppercase tracking-[0.2em] text-stone-500">真实回流主口径</div>
-                    <h3 className="mt-3 text-lg text-stone-100">按运行时归因回看的真实发布结果</h3>
+                    <div className="text-xs uppercase tracking-[0.2em] text-adminInkMuted">真实回流主口径</div>
+                    <h3 className="mt-3 text-lg text-adminInk">按运行时归因回看的真实发布结果</h3>
                   </div>
-                  <div className="text-xs text-stone-500">
+                  <div className="text-xs text-adminInkMuted">
                     {loadingFeedback ? "加载中…" : `${feedbackState?.realOutcome.items.length ?? 0} 条真实回流`}
                   </div>
                 </div>
@@ -5279,12 +5482,12 @@ export function AdminWritingEvalClient({
                     {
                       label: "观察爆款分",
                       value: formatWritingEvalMetric(feedbackState?.realOutcome.summary.averageObservedViralScore, "", 2),
-                      tone: "text-stone-100",
+                      tone: "text-adminInk",
                     },
                     {
                       label: "离线预测爆款分",
                       value: formatWritingEvalMetric(feedbackState?.realOutcome.summary.averagePredictedViralScore, "", 2),
-                      tone: "text-stone-300",
+                      tone: "text-adminInk",
                     },
                     {
                       label: "校准偏差",
@@ -5297,11 +5500,11 @@ export function AdminWritingEvalClient({
                     {
                       label: "平均打开率",
                       value: formatWritingEvalMetric(feedbackState?.realOutcome.summary.averageOpenRate, "%", 1),
-                      tone: "text-stone-100",
+                      tone: "text-adminInk",
                     },
                   ].map((item) => (
-                    <div key={item.label} className="border border-stone-800 bg-[#141414] px-4 py-4">
-                      <div className="text-xs uppercase tracking-[0.18em] text-stone-500">{item.label}</div>
+                    <div key={item.label} className="border border-adminLineStrong bg-adminSurfaceAlt px-4 py-4">
+                      <div className="text-xs uppercase tracking-[0.18em] text-adminInkMuted">{item.label}</div>
                       <div className={`mt-3 text-2xl ${item.tone}`}>{item.value}</div>
                     </div>
                   ))}
@@ -5345,24 +5548,24 @@ export function AdminWritingEvalClient({
                         );
                       })
                     ) : (
-                      <div className="border border-dashed border-stone-700 bg-[#141414] px-4 py-6 text-sm text-stone-500">
+                      <div className="border border-dashed border-adminLineStrong bg-adminSurfaceAlt px-4 py-6 text-sm text-adminInkMuted">
                         当前运行对应的候选版本还没有归因成功的真实回流样本。
                       </div>
                     )
                   ) : (
-                    <div className="border border-dashed border-stone-700 bg-[#141414] px-4 py-6 text-sm text-stone-500">
+                    <div className="border border-dashed border-adminLineStrong bg-adminSurfaceAlt px-4 py-6 text-sm text-adminInkMuted">
                       当前运行还没有可展示的真实回流归因结果。
                     </div>
                   )}
                 </div>
               </div>
 
-              <form onSubmit={handleCreateFeedback} className="border border-stone-800 bg-stone-950 px-4 py-4">
-                <div className="text-xs uppercase tracking-[0.2em] text-stone-500">实验反馈录入</div>
-                <div className="mt-2 text-sm leading-7 text-stone-500">
+              <form onSubmit={handleCreateFeedback} className="border border-adminLineStrong bg-adminBg px-4 py-4">
+                <div className="text-xs uppercase tracking-[0.2em] text-adminInkMuted">实验反馈录入</div>
+                <div className="mt-2 text-sm leading-7 text-adminInkMuted">
                   这里保留实验反馈录入，用于 run 样本绑定、人工补录和补充观察；左侧治理判断只看真实回流主口径。
                 </div>
-                <div className="mt-3 rounded border border-stone-800 bg-[#141414] px-3 py-3 text-xs text-stone-400">
+                <div className="mt-3 rounded border border-adminLineStrong bg-adminSurfaceAlt px-3 py-3 text-xs text-adminInkSoft">
                   当前实验反馈 {loadingFeedback ? "加载中…" : `${feedbackState?.items.length ?? 0} 条`} · 平均打开率 {formatWritingEvalMetric(feedbackState?.summary.averageOpenRate, "%", 1)} ·
                   校准偏差 {formatWritingEvalMetric(feedbackState?.summary.averageCalibrationGap, "", 2)}
                 </div>
@@ -5462,13 +5665,13 @@ export function AdminWritingEvalClient({
                   <button className={uiPrimitives.primaryButton}>写入回流结果</button>
                 </div>
 
-                <div className="mt-6 border-t border-stone-800 pt-4">
+                <div className="mt-6 border-t border-adminLineStrong pt-4">
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <div className="text-xs uppercase tracking-[0.2em] text-amber-300">实验反馈样本</div>
-                      <div className="mt-2 text-sm leading-7 text-stone-500">保留 run 级人工补录、样本绑定和 prompt 快速观察，不与真实发布回流混口径。</div>
+                      <div className="mt-2 text-sm leading-7 text-adminInkMuted">保留 run 级人工补录、样本绑定和 prompt 快速观察，不与真实发布回流混口径。</div>
                     </div>
-                    <div className="text-xs text-stone-500">{loadingFeedback ? "加载中…" : `${feedbackState?.items.length ?? 0} 条`}</div>
+                    <div className="text-xs text-adminInkMuted">{loadingFeedback ? "加载中…" : `${feedbackState?.items.length ?? 0} 条`}</div>
                   </div>
 
                   <div className="mt-4 space-y-3">
@@ -5510,7 +5713,7 @@ export function AdminWritingEvalClient({
                               signalHighlights.length ? (
                                 <div className="flex flex-wrap gap-2 text-xs">
                                   {signalHighlights.map((entry) => (
-                                    <span key={`${item.id}-${entry.label}`} className="border border-stone-700 px-3 py-1 text-stone-400">
+                                    <span key={`${item.id}-${entry.label}`} className="border border-adminLineStrong px-3 py-1 text-adminInkSoft">
                                       {entry.label} {formatWritingEvalMetric(entry.value, "", 2)}
                                     </span>
                                   ))}
@@ -5521,7 +5724,7 @@ export function AdminWritingEvalClient({
                         );
                       })
                     ) : (
-                      <div className="border border-dashed border-stone-700 bg-[#141414] px-4 py-6 text-sm text-stone-500">
+                      <div className="border border-dashed border-adminLineStrong bg-adminSurfaceAlt px-4 py-6 text-sm text-adminInkMuted">
                         当前运行还没有录入实验反馈样本。
                       </div>
                     )}
@@ -5532,7 +5735,7 @@ export function AdminWritingEvalClient({
 
             <div className="space-y-4">
               {selectedRunDetail.results.length === 0 ? (
-                <div className="border border-dashed border-stone-700 bg-stone-950 px-4 py-6 text-sm text-stone-500">当前运行还没有产出样本结果。</div>
+                <div className="border border-dashed border-adminLineStrong bg-adminBg px-4 py-6 text-sm text-adminInkMuted">当前运行还没有产出样本结果。</div>
               ) : selectedRunResult ? (
                 (() => {
                   const baseline = getRecord(selectedRunResult.judgePayload.baseline);
@@ -5664,10 +5867,10 @@ export function AdminWritingEvalClient({
                   return (
                     <>
                       {focusResult ? (
-                        <div className="flex flex-wrap items-start justify-between gap-3 border border-cinnabar bg-[#1d1413] px-4 py-4">
+                        <div className="flex flex-wrap items-start justify-between gap-3 border border-adminAccent bg-adminSurfaceAlt px-4 py-4">
                           <div>
                             <div className="text-xs uppercase tracking-[0.18em] text-cinnabar">样本聚焦模式</div>
-                            <div className="mt-2 text-sm leading-7 text-stone-200">
+                            <div className="mt-2 text-sm leading-7 text-adminInk">
                               当前通过深链聚焦 result #{focusResult.resultId}，匹配 {focusResult.matchedCount} 条。
                             </div>
                           </div>
@@ -5677,12 +5880,12 @@ export function AdminWritingEvalClient({
                         </div>
                       ) : null}
 
-                      <section id="run-result-comparator" className="border border-stone-800 bg-stone-950 px-4 py-4">
+                      <section id="run-result-comparator" className="border border-adminLineStrong bg-adminBg px-4 py-4">
                         <div className="flex items-start justify-between gap-3">
                           <div>
-                            <div className="text-xs uppercase tracking-[0.2em] text-stone-500">单样本结果对比器</div>
-                            <h3 className="mt-3 text-lg text-stone-100">{selectedRunResult.topicTitle || "未命名选题"}</h3>
-                            <div className="mt-2 text-xs uppercase tracking-[0.18em] text-stone-500">
+                            <div className="text-xs uppercase tracking-[0.2em] text-adminInkMuted">单样本结果对比器</div>
+                            <h3 className="mt-3 text-lg text-adminInk">{selectedRunResult.topicTitle || "未命名选题"}</h3>
+                            <div className="mt-2 text-xs uppercase tracking-[0.18em] text-adminInkMuted">
                               {selectedRunResult.taskCode || `case-${selectedRunResult.caseId}`} · {selectedRunResult.difficultyLevel || "unknown"}
                             </div>
                             {selectedRunCaseHref ? (
@@ -5694,9 +5897,9 @@ export function AdminWritingEvalClient({
                             ) : null}
                           </div>
                           <div className="flex flex-wrap gap-2 text-sm">
-                            <span className="border border-stone-700 px-3 py-1 text-stone-300">候选 {selectedRunResult.totalScore.toFixed(2)}</span>
-                            <span className="border border-stone-700 px-3 py-1 text-stone-300">基线 {getNumber(baselineScores.total_score)?.toFixed(2) ?? "--"}</span>
-                            <span className={`border px-3 py-1 ${winner === "candidate" ? "border-emerald-700 text-emerald-400" : winner === "base" ? "border-cinnabar text-cinnabar" : "border-stone-700 text-stone-300"}`}>
+                            <span className="border border-adminLineStrong px-3 py-1 text-adminInk">候选 {selectedRunResult.totalScore.toFixed(2)}</span>
+                            <span className="border border-adminLineStrong px-3 py-1 text-adminInk">基线 {getNumber(baselineScores.total_score)?.toFixed(2) ?? "--"}</span>
+                            <span className={`border px-3 py-1 ${winner === "candidate" ? "border-emerald-700 text-emerald-400" : winner === "base" ? "border-cinnabar text-cinnabar" : "border-adminLineStrong text-adminInk"}`}>
                               {winner === "candidate" ? "候选胜" : winner === "base" ? "基线胜" : "持平"}
                               {deltaTotal !== null ? ` · ${deltaTotal >= 0 ? "+" : ""}${deltaTotal.toFixed(2)}` : ""}
                             </span>
@@ -5717,15 +5920,15 @@ export function AdminWritingEvalClient({
                                   setSelectedResultId(result.id);
                                   replaceRunsUrl(selectedRunId, result.id, selectedDatasetId);
                                 }}
-                                className={`border px-4 py-4 text-left ${isActive ? "border-cinnabar bg-[#1d1413]" : "border-stone-800 bg-[#141414]"}`}
+                                className={`border px-4 py-4 text-left ${isActive ? "border-adminAccent bg-adminSurfaceAlt" : "border-adminLineStrong bg-adminSurfaceAlt"}`}
                               >
-                                <div className="text-xs uppercase tracking-[0.18em] text-stone-500">
+                                <div className="text-xs uppercase tracking-[0.18em] text-adminInkMuted">
                                   {result.taskCode || `case-${result.caseId}`} · {result.difficultyLevel || "unknown"}
                                 </div>
-                                <div className="mt-2 text-sm text-stone-100">{result.topicTitle || "未命名选题"}</div>
+                                <div className="mt-2 text-sm text-adminInk">{result.topicTitle || "未命名选题"}</div>
                                 <div className="mt-3 flex flex-wrap gap-2 text-xs">
-                                  <span className="border border-stone-700 px-2 py-1 text-stone-300">候选 {result.totalScore.toFixed(2)}</span>
-                                  <span className={`border px-2 py-1 ${resultWinner === "candidate" ? "border-emerald-700 text-emerald-400" : resultWinner === "base" ? "border-cinnabar text-cinnabar" : "border-stone-700 text-stone-300"}`}>
+                                  <span className="border border-adminLineStrong px-2 py-1 text-adminInk">候选 {result.totalScore.toFixed(2)}</span>
+                                  <span className={`border px-2 py-1 ${resultWinner === "candidate" ? "border-emerald-700 text-emerald-400" : resultWinner === "base" ? "border-cinnabar text-cinnabar" : "border-adminLineStrong text-adminInk"}`}>
                                     {resultWinner === "candidate" ? "候选胜" : resultWinner === "base" ? "基线胜" : "持平"}
                                   </span>
                                   <span className={`${(resultDeltaTotal ?? 0) >= 0 ? "text-emerald-400" : "text-cinnabar"}`}>
@@ -5739,52 +5942,52 @@ export function AdminWritingEvalClient({
                       </section>
 
                       <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_280px_minmax(0,1fr)]">
-                        <div className="border border-stone-800 bg-[#141414] px-4 py-4">
-                          <div className="text-xs uppercase tracking-[0.2em] text-stone-500">基线输出</div>
-                          <div className="mt-3 text-base text-stone-100">{getString(baselineGenerated.title) || "无标题"}</div>
-                          <div className="mt-2 text-sm leading-7 text-stone-400">{truncateText(getString(baselineGenerated.lead), 220)}</div>
-                          <div className="mt-4 grid gap-2 text-xs text-stone-400 md:grid-cols-3">
+                        <div className="border border-adminLineStrong bg-adminSurfaceAlt px-4 py-4">
+                          <div className="text-xs uppercase tracking-[0.2em] text-adminInkMuted">基线输出</div>
+                          <div className="mt-3 text-base text-adminInk">{getString(baselineGenerated.title) || "无标题"}</div>
+                          <div className="mt-2 text-sm leading-7 text-adminInkSoft">{truncateText(getString(baselineGenerated.lead), 220)}</div>
+                          <div className="mt-4 grid gap-2 text-xs text-adminInkSoft md:grid-cols-3">
                             <div>质量 {getNumber(baselineScores.quality_score)?.toFixed(2) ?? "--"}</div>
                             <div>爆款 {getNumber(baselineScores.viral_score)?.toFixed(2) ?? "--"}</div>
                             <div>标题 {getNumber(baselineScores.headline_score)?.toFixed(2) ?? "--"}</div>
                           </div>
-                          <div className="mt-4 text-sm leading-7 text-stone-500">{truncateText(getString(baselineGenerated.markdown), 420)}</div>
+                          <div className="mt-4 text-sm leading-7 text-adminInkMuted">{truncateText(getString(baselineGenerated.markdown), 420)}</div>
                         </div>
 
-                        <div className="border border-stone-800 bg-stone-950 px-4 py-4">
-                          <div className="text-xs uppercase tracking-[0.2em] text-stone-500">分项变化</div>
-                          <div className={`mt-3 text-sm ${winner === "candidate" ? "text-emerald-400" : winner === "base" ? "text-cinnabar" : "text-stone-300"}`}>
+                        <div className="border border-adminLineStrong bg-adminBg px-4 py-4">
+                          <div className="text-xs uppercase tracking-[0.2em] text-adminInkMuted">分项变化</div>
+                          <div className={`mt-3 text-sm ${winner === "candidate" ? "text-emerald-400" : winner === "base" ? "text-cinnabar" : "text-adminInk"}`}>
                             {winner === "candidate" ? "当前样本推荐保留候选" : winner === "base" ? "当前样本基线仍占优" : "当前样本没有明显胜者"}
                           </div>
                           {caseError ? <div className="mt-3 text-sm leading-6 text-cinnabar">失败原因：{caseError}</div> : null}
                           <div className="mt-4 space-y-2">
                             {metricDeltas.map((item) => (
-                              <div key={`${selectedRunResult.id}-${item.label}`} className="border border-stone-800 bg-[#141414] px-3 py-3 text-xs">
+                              <div key={`${selectedRunResult.id}-${item.label}`} className="border border-adminLineStrong bg-adminSurfaceAlt px-3 py-3 text-xs">
                                 <div className="flex items-center justify-between gap-3">
-                                  <span className="text-stone-300">{item.label}</span>
+                                  <span className="text-adminInk">{item.label}</span>
                                   <span className={`${(item.delta ?? 0) >= 0 ? "text-emerald-400" : "text-cinnabar"}`}>
                                     {item.delta !== null ? `${item.delta >= 0 ? "+" : ""}${item.delta.toFixed(2)}` : "--"}
                                   </span>
                                 </div>
-                                <div className="mt-2 flex items-center justify-between gap-3 text-stone-500">
+                                <div className="mt-2 flex items-center justify-between gap-3 text-adminInkMuted">
                                   <span>基线 {item.baseline !== null ? item.baseline.toFixed(2) : "--"}</span>
                                   <span>候选 {item.candidate !== null ? item.candidate.toFixed(2) : "--"}</span>
                                 </div>
                               </div>
                             ))}
                           </div>
-                          <div className="mt-4 border border-stone-800 bg-[#111111] px-3 py-3 text-xs">
+                          <div className="mt-4 border border-adminLineStrong bg-adminBg px-3 py-3 text-xs">
                             <div className="flex items-center justify-between gap-3">
-                              <span className="uppercase tracking-[0.18em] text-stone-500">Hybrid Judge</span>
-                              <span className="text-stone-400">
+                              <span className="uppercase tracking-[0.18em] text-adminInkMuted">Hybrid Judge</span>
+                              <span className="text-adminInkSoft">
                                 {getString(hybridJudge.status) || "unknown"} · {getString(hybridJudge.keepRecommendation) || "observe"}
                               </span>
                             </div>
                             {getString(hybridJudge.summary) ? (
-                              <div className="mt-2 leading-6 text-stone-300">{getString(hybridJudge.summary)}</div>
+                              <div className="mt-2 leading-6 text-adminInk">{getString(hybridJudge.summary)}</div>
                             ) : null}
                             {judgeReviewers.length > 0 ? (
-                              <div className="mt-2 text-[11px] leading-6 text-stone-500">
+                              <div className="mt-2 text-[11px] leading-6 text-adminInkMuted">
                                 reviewers {getNumber(hybridJudge.successReviewerCount) ?? 0}/{getNumber(hybridJudge.reviewerCount) ?? judgeReviewers.length}
                                 {` · `}
                                 {judgeReviewers
@@ -5794,14 +5997,14 @@ export function AdminWritingEvalClient({
                                   .join(" · ")}
                               </div>
                             ) : null}
-                            <div className="mt-2 text-[11px] leading-6 text-stone-500">
+                            <div className="mt-2 text-[11px] leading-6 text-adminInkMuted">
                               agreement {getNumber(hybridJudge.keepRecommendationAgreementRatio)?.toFixed(3) ?? "--"}
                               {` · `}
                               stddev {getNumber(hybridJudge.scoreStddev)?.toFixed(3) ?? "--"}
                               {` · `}
                               risk {getNumber(hybridJudge.disagreementRisk)?.toFixed(3) ?? "--"}
                             </div>
-                            <div className="mt-3 space-y-2 text-stone-400">
+                            <div className="mt-3 space-y-2 text-adminInkSoft">
                               {[
                                 ["标题", getString(judgeReasons.headline)],
                                 ["开头", getString(judgeReasons.hook)],
@@ -5812,7 +6015,7 @@ export function AdminWritingEvalClient({
                                 .filter(([, value]) => value)
                                 .map(([label, value]) => (
                                   <div key={`${selectedRunResult.id}-${label}`}>
-                                    <span className="text-stone-500">{label}：</span>
+                                    <span className="text-adminInkMuted">{label}：</span>
                                     {value}
                                   </div>
                                 ))}
@@ -5821,29 +6024,29 @@ export function AdminWritingEvalClient({
                           </div>
                         </div>
 
-                        <div className="border border-stone-800 bg-[#141414] px-4 py-4">
+                        <div className="border border-adminLineStrong bg-adminSurfaceAlt px-4 py-4">
                           <div className="text-xs uppercase tracking-[0.2em] text-emerald-400">候选输出</div>
-                          <div className="mt-3 text-base text-stone-100">{selectedRunResult.generatedTitle || "无标题"}</div>
-                          <div className="mt-2 text-sm leading-7 text-stone-400">{truncateText(selectedRunResult.generatedLead, 220)}</div>
-                          <div className="mt-4 grid gap-2 text-xs text-stone-400 md:grid-cols-3">
+                          <div className="mt-3 text-base text-adminInk">{selectedRunResult.generatedTitle || "无标题"}</div>
+                          <div className="mt-2 text-sm leading-7 text-adminInkSoft">{truncateText(selectedRunResult.generatedLead, 220)}</div>
+                          <div className="mt-4 grid gap-2 text-xs text-adminInkSoft md:grid-cols-3">
                             <div>质量 {selectedRunResult.qualityScore.toFixed(2)}</div>
                             <div>爆款 {selectedRunResult.viralScore.toFixed(2)}</div>
                             <div>标题 {selectedRunResult.headlineScore.toFixed(2)}</div>
                           </div>
-                          <div className="mt-4 text-sm leading-7 text-stone-500">{truncateText(selectedRunResult.generatedMarkdown, 420)}</div>
+                          <div className="mt-4 text-sm leading-7 text-adminInkMuted">{truncateText(selectedRunResult.generatedMarkdown, 420)}</div>
                         </div>
                       </section>
 
                       <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
                         <div className="grid gap-4 lg:grid-cols-2">
-                          <div className="border border-stone-800 bg-[#141414] px-4 py-4">
+                          <div className="border border-adminLineStrong bg-adminSurfaceAlt px-4 py-4">
                             <div className="flex items-center justify-between gap-3">
                               <div className="text-xs uppercase tracking-[0.2em] text-emerald-400">候选评分拆解</div>
-                              <div className="text-xs text-stone-500">
+                              <div className="text-xs text-adminInkMuted">
                                 rule {getNumber(judgeBlend.ruleWeight)?.toFixed(2) ?? "--"} / judge {getNumber(judgeBlend.judgeWeight)?.toFixed(2) ?? "--"}
                               </div>
                             </div>
-                            <div className="mt-3 grid grid-cols-[84px_repeat(3,minmax(0,1fr))] gap-2 text-[11px] uppercase tracking-[0.16em] text-stone-500">
+                            <div className="mt-3 grid grid-cols-[84px_repeat(3,minmax(0,1fr))] gap-2 text-[11px] uppercase tracking-[0.16em] text-adminInkMuted">
                               <div>维度</div>
                               <div>Rule</div>
                               <div>Judge</div>
@@ -5851,24 +6054,24 @@ export function AdminWritingEvalClient({
                             </div>
                             <div className="mt-2 space-y-2">
                               {scoreBreakdownRows.map((row) => (
-                                <div key={`candidate-breakdown-${selectedRunResult.id}-${row.label}`} className="grid grid-cols-[84px_repeat(3,minmax(0,1fr))] gap-2 border border-stone-800 bg-stone-950 px-3 py-3 text-xs">
-                                  <div className="text-stone-300">{row.label}</div>
-                                  <div className="text-stone-400">{row.candidateRule !== null ? row.candidateRule.toFixed(2) : "--"}</div>
-                                  <div className="text-stone-400">{row.candidateJudge !== null ? row.candidateJudge.toFixed(2) : "--"}</div>
+                                <div key={`candidate-breakdown-${selectedRunResult.id}-${row.label}`} className="grid grid-cols-[84px_repeat(3,minmax(0,1fr))] gap-2 border border-adminLineStrong bg-adminBg px-3 py-3 text-xs">
+                                  <div className="text-adminInk">{row.label}</div>
+                                  <div className="text-adminInkSoft">{row.candidateRule !== null ? row.candidateRule.toFixed(2) : "--"}</div>
+                                  <div className="text-adminInkSoft">{row.candidateJudge !== null ? row.candidateJudge.toFixed(2) : "--"}</div>
                                   <div className="text-emerald-400">{row.candidateBlended.toFixed(2)}</div>
                                 </div>
                               ))}
                             </div>
                           </div>
 
-                          <div className="border border-stone-800 bg-[#141414] px-4 py-4">
+                          <div className="border border-adminLineStrong bg-adminSurfaceAlt px-4 py-4">
                             <div className="flex items-center justify-between gap-3">
-                              <div className="text-xs uppercase tracking-[0.2em] text-stone-300">基线评分拆解</div>
-                              <div className="text-xs text-stone-500">
+                              <div className="text-xs uppercase tracking-[0.2em] text-adminInk">基线评分拆解</div>
+                              <div className="text-xs text-adminInkMuted">
                                 rule {getNumber(getRecord(baselineHybridJudge.blend).ruleWeight)?.toFixed(2) ?? "--"} / judge {getNumber(getRecord(baselineHybridJudge.blend).judgeWeight)?.toFixed(2) ?? "--"}
                               </div>
                             </div>
-                            <div className="mt-3 grid grid-cols-[84px_repeat(3,minmax(0,1fr))] gap-2 text-[11px] uppercase tracking-[0.16em] text-stone-500">
+                            <div className="mt-3 grid grid-cols-[84px_repeat(3,minmax(0,1fr))] gap-2 text-[11px] uppercase tracking-[0.16em] text-adminInkMuted">
                               <div>维度</div>
                               <div>Rule</div>
                               <div>Judge</div>
@@ -5876,11 +6079,11 @@ export function AdminWritingEvalClient({
                             </div>
                             <div className="mt-2 space-y-2">
                               {scoreBreakdownRows.map((row) => (
-                                <div key={`baseline-breakdown-${selectedRunResult.id}-${row.label}`} className="grid grid-cols-[84px_repeat(3,minmax(0,1fr))] gap-2 border border-stone-800 bg-stone-950 px-3 py-3 text-xs">
-                                  <div className="text-stone-300">{row.label}</div>
-                                  <div className="text-stone-400">{row.baselineRule !== null ? row.baselineRule.toFixed(2) : "--"}</div>
-                                  <div className="text-stone-400">{row.baselineJudge !== null ? row.baselineJudge.toFixed(2) : "--"}</div>
-                                  <div className="text-stone-300">{row.baselineBlended !== null ? row.baselineBlended.toFixed(2) : "--"}</div>
+                                <div key={`baseline-breakdown-${selectedRunResult.id}-${row.label}`} className="grid grid-cols-[84px_repeat(3,minmax(0,1fr))] gap-2 border border-adminLineStrong bg-adminBg px-3 py-3 text-xs">
+                                  <div className="text-adminInk">{row.label}</div>
+                                  <div className="text-adminInkSoft">{row.baselineRule !== null ? row.baselineRule.toFixed(2) : "--"}</div>
+                                  <div className="text-adminInkSoft">{row.baselineJudge !== null ? row.baselineJudge.toFixed(2) : "--"}</div>
+                                  <div className="text-adminInk">{row.baselineBlended !== null ? row.baselineBlended.toFixed(2) : "--"}</div>
                                 </div>
                               ))}
                             </div>
@@ -5888,32 +6091,32 @@ export function AdminWritingEvalClient({
                         </div>
 
                         <div className="space-y-4">
-                          <div className="border border-stone-800 bg-stone-950 px-4 py-4 text-xs">
-                            <div className="text-xs uppercase tracking-[0.2em] text-stone-500">Blend 权重</div>
+                          <div className="border border-adminLineStrong bg-adminBg px-4 py-4 text-xs">
+                            <div className="text-xs uppercase tracking-[0.2em] text-adminInkMuted">Blend 权重</div>
                             <div className="mt-3 space-y-3">
-                              <div className="border border-stone-800 bg-[#141414] px-3 py-3">
-                                <div className="text-stone-300">候选 Hybrid Judge</div>
-                                <div className="mt-2 flex items-center justify-between gap-3 text-stone-400">
+                              <div className="border border-adminLineStrong bg-adminSurfaceAlt px-3 py-3">
+                                <div className="text-adminInk">候选 Hybrid Judge</div>
+                                <div className="mt-2 flex items-center justify-between gap-3 text-adminInkSoft">
                                   <span>ruleWeight</span>
                                   <span>{getNumber(judgeBlend.ruleWeight)?.toFixed(4) ?? "--"}</span>
                                 </div>
-                                <div className="mt-1 flex items-center justify-between gap-3 text-stone-400">
+                                <div className="mt-1 flex items-center justify-between gap-3 text-adminInkSoft">
                                   <span>judgeWeight</span>
                                   <span>{getNumber(judgeBlend.judgeWeight)?.toFixed(4) ?? "--"}</span>
                                 </div>
                               </div>
-                              <div className="border border-stone-800 bg-[#141414] px-3 py-3">
-                                <div className="text-stone-300">基线 Hybrid Judge</div>
-                                <div className="mt-2 flex items-center justify-between gap-3 text-stone-400">
+                              <div className="border border-adminLineStrong bg-adminSurfaceAlt px-3 py-3">
+                                <div className="text-adminInk">基线 Hybrid Judge</div>
+                                <div className="mt-2 flex items-center justify-between gap-3 text-adminInkSoft">
                                   <span>ruleWeight</span>
                                   <span>{getNumber(getRecord(baselineHybridJudge.blend).ruleWeight)?.toFixed(4) ?? "--"}</span>
                                 </div>
-                                <div className="mt-1 flex items-center justify-between gap-3 text-stone-400">
+                                <div className="mt-1 flex items-center justify-between gap-3 text-adminInkSoft">
                                   <span>judgeWeight</span>
                                   <span>{getNumber(getRecord(baselineHybridJudge.blend).judgeWeight)?.toFixed(4) ?? "--"}</span>
                                 </div>
                               </div>
-                              <div className="border border-stone-800 bg-[#141414] px-3 py-3 text-stone-400">
+                              <div className="border border-adminLineStrong bg-adminSurfaceAlt px-3 py-3 text-adminInkSoft">
                                 <div className="flex items-center justify-between gap-3">
                                   <span>评分画像</span>
                                   <span>{getString(scoringProfile.label) || "--"}</span>
@@ -5922,8 +6125,8 @@ export function AdminWritingEvalClient({
                             </div>
                           </div>
 
-                          <div className="border border-stone-800 bg-stone-950 px-4 py-4 text-xs">
-                            <div className="text-xs uppercase tracking-[0.2em] text-stone-500">聚合分与惩罚</div>
+                          <div className="border border-adminLineStrong bg-adminBg px-4 py-4 text-xs">
+                            <div className="text-xs uppercase tracking-[0.2em] text-adminInkMuted">聚合分与惩罚</div>
                             <div className="mt-3 space-y-2">
                               {[
                                 ["质量分", selectedRunResult.qualityScore, getNumber(baselineScores.quality_score)],
@@ -5934,15 +6137,15 @@ export function AdminWritingEvalClient({
                                 ["近重复惩罚", getNumber(totalPenalties.historicalSimilarityPenalty), getNumber(baselineTotalPenalties.historicalSimilarityPenalty)],
                                 ["评审分歧惩罚", getNumber(totalPenalties.judgeDisagreementPenalty), getNumber(baselineTotalPenalties.judgeDisagreementPenalty)],
                               ].map(([label, candidate, baselineValue]) => (
-                                <div key={`aggregate-${selectedRunResult.id}-${label}`} className="border border-stone-800 bg-[#141414] px-3 py-3">
-                                  <div className="text-stone-300">{label}</div>
-                                  <div className="mt-2 flex items-center justify-between gap-3 text-stone-400">
+                                <div key={`aggregate-${selectedRunResult.id}-${label}`} className="border border-adminLineStrong bg-adminSurfaceAlt px-3 py-3">
+                                  <div className="text-adminInk">{label}</div>
+                                  <div className="mt-2 flex items-center justify-between gap-3 text-adminInkSoft">
                                     <span>候选 {typeof candidate === "number" ? candidate.toFixed(2) : "--"}</span>
                                     <span>基线 {typeof baselineValue === "number" ? baselineValue.toFixed(2) : "--"}</span>
                                   </div>
                                 </div>
                               ))}
-                              <div className="border border-stone-800 bg-[#141414] px-3 py-3 text-stone-400">
+                              <div className="border border-adminLineStrong bg-adminSurfaceAlt px-3 py-3 text-adminInkSoft">
                                 <div className="flex items-center justify-between gap-3">
                                   <span>quality 权重</span>
                                   <span>{getNumber(totalWeights.quality)?.toFixed(4) ?? "--"}</span>
@@ -5967,19 +6170,19 @@ export function AdminWritingEvalClient({
                             </div>
                           </div>
 
-                          <div className="border border-stone-800 bg-stone-950 px-4 py-4 text-xs">
-                            <div className="text-xs uppercase tracking-[0.2em] text-stone-500">规则信号与画像权重</div>
+                          <div className="border border-adminLineStrong bg-adminBg px-4 py-4 text-xs">
+                            <div className="text-xs uppercase tracking-[0.2em] text-adminInkMuted">规则信号与画像权重</div>
                             <div className="mt-3 space-y-2">
                               {signalRows.map(([label, value]) => (
-                                <div key={`signal-${selectedRunResult.id}-${label}`} className="flex items-center justify-between gap-3 border border-stone-800 bg-[#141414] px-3 py-2 text-stone-400">
+                                <div key={`signal-${selectedRunResult.id}-${label}`} className="flex items-center justify-between gap-3 border border-adminLineStrong bg-adminSurfaceAlt px-3 py-2 text-adminInkSoft">
                                   <span>{label}</span>
                                   <span>{value !== null ? value.toFixed(3) : "--"}</span>
                                 </div>
                               ))}
                             </div>
-                            <div className="mt-4 border border-stone-800 bg-[#141414] px-3 py-3">
-                              <div className="text-stone-300">质量权重</div>
-                              <div className="mt-2 space-y-1 text-stone-400">
+                            <div className="mt-4 border border-adminLineStrong bg-adminSurfaceAlt px-3 py-3">
+                              <div className="text-adminInk">质量权重</div>
+                              <div className="mt-2 space-y-1 text-adminInkSoft">
                                 {[
                                   ["style", getNumber(qualityWeights.style)],
                                   ["language", getNumber(qualityWeights.language)],
@@ -5994,9 +6197,9 @@ export function AdminWritingEvalClient({
                                 ))}
                               </div>
                             </div>
-                            <div className="mt-3 border border-stone-800 bg-[#141414] px-3 py-3">
-                              <div className="text-stone-300">爆款权重</div>
-                              <div className="mt-2 space-y-1 text-stone-400">
+                            <div className="mt-3 border border-adminLineStrong bg-adminSurfaceAlt px-3 py-3">
+                              <div className="text-adminInk">爆款权重</div>
+                              <div className="mt-2 space-y-1 text-adminInkSoft">
                                 {[
                                   ["topicMomentum", getNumber(viralWeights.topicMomentum)],
                                   ["headline", getNumber(viralWeights.headline)],
@@ -6023,7 +6226,7 @@ export function AdminWritingEvalClient({
             </div>
           </div>
         ) : (
-          <div className="mt-6 border border-dashed border-stone-700 bg-stone-950 px-4 py-6 text-sm text-stone-500">
+          <div className="mt-6 border border-dashed border-adminLineStrong bg-adminBg px-4 py-6 text-sm text-adminInkMuted">
             先选择一条运行记录，才能看到基线与候选版本的样本级对比。
           </div>
         )}

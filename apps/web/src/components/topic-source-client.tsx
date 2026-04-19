@@ -1,8 +1,18 @@
 "use client";
 
+import { Button, Input, Select, cn, surfaceCardStyles } from "@huoziwriter/ui";
 import { createTopicSourceAction, disableTopicSourceAction, updateTopicSourceAction } from "@/app/(writer)/writer-actions";
 import { useRouter } from "next/navigation";
 import { FormEvent, startTransition, useState } from "react";
+
+const summaryCardClassName = cn(surfaceCardStyles({ tone: "highlight", padding: "sm" }), "text-sm leading-7 text-inkSoft shadow-none");
+const createFormClassName = cn(
+  surfaceCardStyles({ tone: "warm", padding: "sm" }),
+  "grid gap-3 md:grid-cols-[180px_minmax(0,1fr)_140px_120px_140px]",
+);
+const sourceCardClassName = cn(surfaceCardStyles({ padding: "sm" }), "flex flex-wrap items-center justify-between gap-3");
+const sourceBadgeClassName = "border border-lineStrong bg-surfaceWarm px-2 py-1";
+const messageCardClassName = cn(surfaceCardStyles({ tone: "highlight", padding: "sm" }), "text-sm text-cinnabar");
 
 export function TopicSourceManagerClient({
   sources,
@@ -111,15 +121,15 @@ export function TopicSourceManagerClient({
   return (
     <div className="space-y-4">
       {canManage ? (
-        <div className="border border-stone-300/40 bg-[#fffdfa] px-4 py-4 text-sm leading-7 text-stone-700">
+        <div className={summaryCardClassName}>
           当前已启用 {currentCustomCount} / {maxCustomCount} 个自定义信息源。系统默认源不占额度；停用后即可释放启用名额。
         </div>
       ) : null}
       {canManage ? (
-        <form onSubmit={handleSubmit} className="grid gap-3 border border-stone-300/40 bg-[#faf7f0] p-4 md:grid-cols-[180px_minmax(0,1fr)_140px_120px_140px]">
-          <input aria-label="信息源名称" value={name} onChange={(event) => setName(event.target.value)} placeholder="信息源名称" disabled={reachedLimit} className="border border-stone-300 bg-white px-4 py-3 text-sm disabled:bg-stone-100" />
-          <input aria-label="https://example.com 或 RSS 地址" value={homepageUrl} onChange={(event) => setHomepageUrl(event.target.value)} placeholder="https://example.com 或 RSS 地址" disabled={reachedLimit} className="border border-stone-300 bg-white px-4 py-3 text-sm disabled:bg-stone-100" />
-          <select aria-label="select control" value={sourceType} onChange={(event) => setSourceType(event.target.value)} disabled={reachedLimit} className="border border-stone-300 bg-white px-4 py-3 text-sm disabled:bg-stone-100">
+        <form onSubmit={handleSubmit} className={createFormClassName}>
+          <Input aria-label="信息源名称" value={name} onChange={(event) => setName(event.target.value)} placeholder="信息源名称" disabled={reachedLimit} className="bg-surface disabled:bg-surfaceMuted" />
+          <Input aria-label="https://example.com 或 RSS 地址" value={homepageUrl} onChange={(event) => setHomepageUrl(event.target.value)} placeholder="https://example.com 或 RSS 地址" disabled={reachedLimit} className="bg-surface disabled:bg-surfaceMuted" />
+          <Select aria-label="select control" value={sourceType} onChange={(event) => setSourceType(event.target.value)} disabled={reachedLimit} className="bg-surface disabled:bg-surfaceMuted">
             <option value="youtube">YouTube</option>
             <option value="reddit">Reddit</option>
             <option value="podcast">Podcast</option>
@@ -127,42 +137,42 @@ export function TopicSourceManagerClient({
             <option value="news">News</option>
             <option value="blog">Blog</option>
             <option value="rss">RSS</option>
-          </select>
-          <input aria-label="优先级" value={priority} onChange={(event) => setPriority(event.target.value)} placeholder="优先级" disabled={reachedLimit} className="border border-stone-300 bg-white px-4 py-3 text-sm disabled:bg-stone-100" />
-          <button disabled={reachedLimit} className="bg-cinnabar px-4 py-3 text-sm text-white disabled:opacity-60">
+          </Select>
+          <Input aria-label="优先级" value={priority} onChange={(event) => setPriority(event.target.value)} placeholder="优先级" disabled={reachedLimit} className="bg-surface disabled:bg-surfaceMuted" />
+          <Button type="submit" disabled={reachedLimit} variant="primary">
             {reachedLimit ? "已达上限" : "新增信息源"}
-          </button>
+          </Button>
         </form>
       ) : (
-        <div className="border border-stone-300/40 bg-[#faf7f0] p-4 text-sm leading-7 text-stone-700">
+        <div className={cn(surfaceCardStyles({ tone: "warm", padding: "sm" }), "text-sm leading-7 text-inkSoft")}>
           当前套餐只能读取系统信息源。升级到 `pro` 或 `ultra` 后，才可新增自己的外部源。
         </div>
       )}
       <div className="space-y-3">
         {sources.map((source) => (
-          <article key={source.id} className="flex flex-wrap items-center justify-between gap-3 border border-stone-300/40 bg-white p-4">
+          <article key={source.id} className={sourceCardClassName}>
             <div>
-              <div className="text-xs uppercase tracking-[0.24em] text-stone-500">
+              <div className="text-xs uppercase tracking-[0.24em] text-inkMuted">
                 {source.scope === "system" ? "系统源" : "自定义源"}
               </div>
               <div className="mt-2 font-serifCn text-2xl text-ink text-balance">{source.name}</div>
-              <div className="mt-2 text-sm text-stone-600">{source.homepageUrl || "未配置主页地址"}</div>
-              <div className="mt-3 flex flex-wrap gap-2 text-xs text-stone-500">
-                <span className="border border-stone-300 bg-[#faf7f0] px-2 py-1">
+              <div className="mt-2 text-sm text-inkSoft">{source.homepageUrl || "未配置主页地址"}</div>
+              <div className="mt-3 flex flex-wrap gap-2 text-xs text-inkMuted">
+                <span className={sourceBadgeClassName}>
                   类型 · {formatSourceTypeLabel(source.sourceType)}
                 </span>
-                <span className="border border-stone-300 bg-[#faf7f0] px-2 py-1">
+                <span className={sourceBadgeClassName}>
                   优先级 · {source.priority}
                 </span>
-                <span className="border border-stone-300 bg-[#faf7f0] px-2 py-1">
+                <span className={sourceBadgeClassName}>
                   状态 · {formatSourceStatusLabel(source.status)}
                 </span>
-                <span className="border border-stone-300 bg-[#faf7f0] px-2 py-1">
+                <span className={sourceBadgeClassName}>
                   健康分 · {Math.round(Number(source.healthScore ?? 100))}
                 </span>
               </div>
               {source.degradedReason || source.lastError || source.nextRetryAt ? (
-                <div className="mt-3 space-y-1 text-xs leading-6 text-stone-500">
+                <div className="mt-3 space-y-1 text-xs leading-6 text-inkMuted">
                   {source.degradedReason ? <div>降级原因：{source.degradedReason}</div> : null}
                   {source.lastError ? <div>最近错误：{source.lastError}{source.lastHttpStatus ? `（HTTP ${source.lastHttpStatus}）` : ""}</div> : null}
                   {source.nextRetryAt ? <div>下次重试：{new Date(source.nextRetryAt).toLocaleString("zh-CN")}</div> : null}
@@ -174,11 +184,12 @@ export function TopicSourceManagerClient({
             </div>
             {canManage && source.scope !== "system" ? (
               <div className="flex flex-wrap items-center gap-2">
-                <select aria-label="select control"
+                <Select
+                  aria-label="select control"
                   defaultValue={source.sourceType}
                   onChange={(event) => updateSource(source.id, { sourceType: event.target.value })}
                   disabled={updatingId === source.id}
-                  className="border border-stone-300 bg-white px-3 py-3 text-sm"
+                  className="w-auto min-w-[140px] px-3"
                 >
                   <option value="youtube">YouTube</option>
                   <option value="reddit">Reddit</option>
@@ -187,27 +198,27 @@ export function TopicSourceManagerClient({
                   <option value="news">News</option>
                   <option value="blog">Blog</option>
                   <option value="rss">RSS</option>
-                </select>
-                <button
+                </Select>
+                <Button
                   onClick={() => {
                     const next = window.prompt("设置优先级（0-999）", String(source.priority));
                     if (next == null) return;
                     updateSource(source.id, { priority: Number(next) });
                   }}
                   disabled={updatingId === source.id}
-                  className="border border-stone-300 bg-white px-4 py-3 text-sm text-stone-700"
+                  variant="secondary"
                 >
                   调整优先级
-                </button>
-                <button onClick={() => disableSource(source.id)} className="border border-stone-300 bg-white px-4 py-3 text-sm text-stone-700">
+                </Button>
+                <Button onClick={() => disableSource(source.id)} variant="secondary">
                   停用
-                </button>
+                </Button>
               </div>
             ) : null}
           </article>
         ))}
       </div>
-      {message ? <div className="text-sm text-cinnabar">{message}</div> : null}
+      {message ? <div className={messageCardClassName}>{message}</div> : null}
     </div>
   );
 }

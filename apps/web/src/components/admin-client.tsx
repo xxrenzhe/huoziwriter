@@ -3,9 +3,16 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
-import { uiPrimitives } from "@huoziwriter/ui";
+import { Button, uiPrimitives } from "@huoziwriter/ui";
 import type { ResolvedPlanFeatureSnapshot } from "@/lib/plan-entitlements";
 import { MANAGED_PLAN_OPTIONS } from "@/lib/plan-labels";
+
+const adminMobileListClassName = "grid gap-3 md:hidden";
+const adminMobileCardClassName = `${uiPrimitives.adminPanel} p-4`;
+const adminMobileMetaLabelClassName = "text-xs uppercase tracking-[0.16em] text-stone-500";
+const adminMobileMetaValueClassName = "mt-1 text-sm text-stone-100";
+const adminDarkSecondaryButtonClassName = "border-stone-800 bg-stone-950 text-stone-100 hover:border-stone-800 hover:bg-stone-900 hover:text-stone-100 focus-visible:ring-stone-600 focus-visible:ring-offset-stone-950";
+const adminDarkPrimaryButtonClassName = "focus-visible:ring-offset-stone-950";
 
 function formatPromptRolloutWindowLabel(observeOnly: boolean) {
   return observeOnly ? "观察优先" : "公开灰度";
@@ -65,9 +72,16 @@ export function AdminUsersClient({
         <div className="md:col-span-5 text-xs leading-6 text-stone-500">
           {initialPasswordHint}
         </div>
-        <button className={`md:col-span-5 ${uiPrimitives.primaryButton}`}>创建用户</button>
+        <Button type="submit" variant="primary" className={`md:col-span-5 ${adminDarkPrimaryButtonClassName}`}>
+          创建用户
+        </Button>
       </form>
-      <div className={`overflow-x-auto ${uiPrimitives.adminPanel}`}>
+      <div className={`${adminMobileListClassName}`}>
+        {users.map((user) => (
+          <AdminUserMobileCard key={user.id} user={user} onUpdated={() => router.refresh()} />
+        ))}
+      </div>
+      <div className={`hidden overflow-x-auto md:block ${uiPrimitives.adminPanel}`}>
         <table className="w-full min-w-[860px] text-left text-sm">
           <thead className="bg-stone-950 text-stone-500">
             <tr>
@@ -131,17 +145,103 @@ function AdminUserRow({
         </select>
       </td>
       <td className="px-6 py-4">
-        <button onClick={() => setIsActive((value) => !value)} className={isActive ? "text-emerald-400" : "text-cinnabar"}>
+        <Button
+          type="button"
+          onClick={() => setIsActive((value) => !value)}
+          variant="secondary"
+          size="sm"
+          className={adminDarkSecondaryButtonClassName}
+        >
           {isActive ? "启用" : "停用"}
-        </button>
+        </Button>
       </td>
       <td className="px-6 py-4 text-stone-400">{user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleString("zh-CN") : "未登录"}</td>
       <td className="px-6 py-4">
-        <button onClick={handleSave} className={uiPrimitives.adminSecondaryButton}>
+        <Button
+          type="button"
+          onClick={handleSave}
+          variant="secondary"
+          size="sm"
+          className={adminDarkSecondaryButtonClassName}
+        >
           保存
-        </button>
+        </Button>
       </td>
     </tr>
+  );
+}
+
+function AdminUserMobileCard({
+  user,
+  onUpdated,
+}: {
+  user: {
+    id: number;
+    username: string;
+    role: string;
+    planCode: string;
+    isActive: boolean;
+    lastLoginAt: string | null;
+  };
+  onUpdated: () => void;
+}) {
+  const [role, setRole] = useState(user.role);
+  const [planCode, setPlanCode] = useState(user.planCode);
+  const [isActive, setIsActive] = useState(user.isActive);
+
+  async function handleSave() {
+    await fetch(`/api/admin/users/${user.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ role, planCode, isActive, mustChangePassword: false }),
+    });
+    onUpdated();
+  }
+
+  return (
+    <article className={adminMobileCardClassName}>
+      <div>
+        <div className="text-base text-stone-100">{user.username}</div>
+        <div className="mt-1 text-xs text-stone-500">
+          最近登录：{user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleString("zh-CN") : "未登录"}
+        </div>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label className="block">
+          <div className={adminMobileMetaLabelClassName}>角色</div>
+          <select aria-label="select control" value={role} onChange={(event) => setRole(event.target.value)} className={`mt-2 w-full ${uiPrimitives.adminCompactSelect}`}>
+            <option value="user">user</option>
+            <option value="admin">admin</option>
+          </select>
+        </label>
+        <label className="block">
+          <div className={adminMobileMetaLabelClassName}>套餐</div>
+          <select aria-label="select control" value={planCode} onChange={(event) => setPlanCode(event.target.value)} className={`mt-2 w-full ${uiPrimitives.adminCompactSelect}`}>
+            {MANAGED_PLAN_OPTIONS.map((option) => (
+              <option key={option.code} value={option.code}>{option.label}</option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <div className="flex flex-wrap items-center gap-3">
+        <div>
+          <div className={adminMobileMetaLabelClassName}>状态</div>
+          <div className={adminMobileMetaValueClassName}>{isActive ? "启用" : "停用"}</div>
+        </div>
+        <Button
+          type="button"
+          onClick={() => setIsActive((value) => !value)}
+          variant="secondary"
+          size="sm"
+          className={adminDarkSecondaryButtonClassName}
+        >
+          切换状态
+        </Button>
+      </div>
+      <Button type="button" onClick={handleSave} variant="secondary" size="sm" className={adminDarkSecondaryButtonClassName}>
+        保存用户设置
+      </Button>
+    </article>
   );
 }
 
@@ -1043,7 +1143,9 @@ export function AdminFinanceClient({
           <input aria-label="input control" type="checkbox" checked={planForm.canExportPdf} onChange={(event) => setPlanForm((prev) => ({ ...prev, canExportPdf: event.target.checked }))} />
           允许 PDF 导出
         </label>
-        <button className={`md:col-span-3 ${uiPrimitives.primaryButton}`}>创建套餐</button>
+        <Button type="submit" variant="primary" className={`md:col-span-3 ${adminDarkPrimaryButtonClassName}`}>
+          创建套餐
+        </Button>
       </form>
       <section className="grid gap-4 lg:grid-cols-4">
         {plans.map((plan) => (
@@ -1073,7 +1175,12 @@ export function AdminFinanceClient({
           </article>
         ))}
       </section>
-      <div className={`overflow-x-auto ${uiPrimitives.adminPanel}`}>
+      <div className={`${adminMobileListClassName}`}>
+        {subscriptions.map((subscription) => (
+          <SubscriptionMobileCard key={`${subscription.userId}-${subscription.id ?? "bootstrap"}`} subscription={subscription} plans={plans} onUpdated={() => router.refresh()} />
+        ))}
+      </div>
+      <div className={`hidden overflow-x-auto md:block ${uiPrimitives.adminPanel}`}>
         <table className="w-full min-w-[960px] text-left text-sm">
           <thead className="bg-stone-950 text-stone-500">
             <tr>
@@ -1160,9 +1267,94 @@ function SubscriptionRow({
         <input aria-label="input control" type="date" value={endAt} onChange={(event) => setEndAt(event.target.value)} className={uiPrimitives.adminCompactSelect} />
       </td>
       <td className="px-6 py-4">
-        <button onClick={handleSave} className={uiPrimitives.adminSecondaryButton}>保存</button>
+        <Button type="button" onClick={handleSave} variant="secondary" size="sm" className={adminDarkSecondaryButtonClassName}>
+          保存
+        </Button>
       </td>
     </tr>
+  );
+}
+
+function SubscriptionMobileCard({
+  subscription,
+  plans,
+  onUpdated,
+}: {
+  subscription: { id: number | null; userId: number; username: string; displayName: string | null; planCode: string; planName: string | null; status: string; startAt: string | null; endAt: string | null };
+  plans: Array<{ code: string; name: string }>;
+  onUpdated: () => void;
+}) {
+  const [planCode, setPlanCode] = useState(subscription.planCode);
+  const [status, setStatus] = useState(subscription.status);
+  const [endAt, setEndAt] = useState(subscription.endAt ? subscription.endAt.slice(0, 10) : "");
+
+  async function handleSave() {
+    const payload = {
+      planCode,
+      status,
+      endAt: endAt || null,
+      isActive: status === "active",
+      mustChangePassword: false,
+      role: "user",
+    };
+    if (subscription.id) {
+      await fetch(`/api/admin/subscriptions/${subscription.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+    } else {
+      await fetch(`/api/admin/users/${subscription.userId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          planCode,
+          isActive: status === "active",
+          mustChangePassword: false,
+        }),
+      });
+    }
+    onUpdated();
+  }
+
+  return (
+    <article className={adminMobileCardClassName}>
+      <div>
+        <div className="text-base text-stone-100">{subscription.displayName || subscription.username}</div>
+        <div className="mt-1 text-xs text-stone-500">{subscription.username}</div>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label className="block">
+          <div className={adminMobileMetaLabelClassName}>当前套餐</div>
+          <select aria-label="select control" value={planCode} onChange={(event) => setPlanCode(event.target.value)} className={`mt-2 w-full ${uiPrimitives.adminCompactSelect}`}>
+            {plans.map((plan) => (
+              <option key={plan.code} value={plan.code}>{plan.name}</option>
+            ))}
+          </select>
+        </label>
+        <label className="block">
+          <div className={adminMobileMetaLabelClassName}>订阅状态</div>
+          <select aria-label="select control" value={status} onChange={(event) => setStatus(event.target.value)} className={`mt-2 w-full ${uiPrimitives.adminCompactSelect}`}>
+            <option value="active">active</option>
+            <option value="inactive">inactive</option>
+            <option value="ended">ended</option>
+          </select>
+        </label>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div>
+          <div className={adminMobileMetaLabelClassName}>开始时间</div>
+          <div className={adminMobileMetaValueClassName}>{subscription.startAt ? new Date(subscription.startAt).toLocaleDateString("zh-CN") : "未记录"}</div>
+        </div>
+        <label className="block">
+          <div className={adminMobileMetaLabelClassName}>结束时间</div>
+          <input aria-label="input control" type="date" value={endAt} onChange={(event) => setEndAt(event.target.value)} className={`mt-2 w-full ${uiPrimitives.adminCompactSelect}`} />
+        </label>
+      </div>
+      <Button type="button" onClick={handleSave} variant="secondary" size="sm" className={adminDarkSecondaryButtonClassName}>
+        保存订阅设置
+      </Button>
+    </article>
   );
 }
 

@@ -19,7 +19,7 @@ export async function requireWriterSession() {
 export async function requireAdminSession() {
   const { session, user } = await requireWriterSession();
   if (session.role !== "admin") {
-    redirect("/dashboard");
+    redirect("/warroom");
   }
   return { session, user };
 }

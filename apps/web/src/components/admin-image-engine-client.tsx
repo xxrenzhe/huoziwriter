@@ -2,7 +2,7 @@
 
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
-import { uiPrimitives } from "@huoziwriter/ui";
+import { cn, surfaceCardStyles, uiPrimitives } from "@huoziwriter/ui";
 import type { GlobalObjectStorageConfig } from "@/lib/object-storage-config";
 import {
   getObjectStorageProviderPresetMeta,
@@ -25,6 +25,50 @@ type GlobalCoverImageEngineConfig = {
   updatedAt: string | null;
 };
 
+const adminSectionClassName = cn(
+  surfaceCardStyles(),
+  "border-adminLineStrong bg-adminSurface p-5 text-adminInk shadow-none",
+);
+const adminInsetCardClassName = cn(
+  surfaceCardStyles(),
+  "border-adminLineStrong bg-adminSurfaceMuted p-4 text-adminInk shadow-none",
+);
+const adminEyebrowClassName = "text-xs uppercase tracking-[0.24em] text-cinnabar";
+const adminTitleClassName = "mt-4 font-serifCn text-3xl text-adminInk text-balance";
+const adminDescriptionClassName = "mt-4 text-sm leading-7 text-adminInkSoft";
+const adminFormClassName = "mt-6 grid gap-4";
+const adminStatusGridClassName = "mt-5 grid gap-3 text-sm text-adminInkSoft md:grid-cols-2";
+const adminToggleCardClassName = cn(
+  adminInsetCardClassName,
+  "flex items-center gap-3 px-4 py-3 text-sm text-adminInkSoft",
+);
+const adminActionsClassName = "grid gap-3 md:grid-cols-2";
+const adminNoticeBaseClassName = cn(
+  surfaceCardStyles(),
+  "mt-4 px-4 py-3 text-sm leading-7 shadow-none",
+);
+const adminNeutralNoticeClassName = cn(
+  adminNoticeBaseClassName,
+  "border-adminLineStrong bg-adminSurfaceMuted text-adminInk",
+);
+const adminWarningNoticeClassName = cn(
+  adminNoticeBaseClassName,
+  "border-[#7d6430] bg-[#2b2518] text-[#e0c37a]",
+);
+const adminDangerNoticeClassName = cn(
+  adminNoticeBaseClassName,
+  "border-[#8f3136] bg-[#2a1718] text-[#efb5b9]",
+);
+const adminSuccessNoticeClassName = cn(
+  adminNoticeBaseClassName,
+  "border-emerald-900 bg-emerald-950/30 text-emerald-300",
+);
+
+function getFeedbackNoticeClassName(message: string) {
+  return message.includes("失败")
+    ? adminDangerNoticeClassName
+    : adminSuccessNoticeClassName;
+}
 
 export function GlobalCoverImageEngineSettings({
   config,
@@ -59,26 +103,29 @@ export function GlobalCoverImageEngineSettings({
   }
 
   return (
-    <section className={`${uiPrimitives.adminPanel} p-5`}>
-      <div className="text-xs uppercase tracking-[0.24em] text-cinnabar">Global Image Engine</div>
-      <h2 className="mt-4 font-serifCn text-3xl text-stone-100 text-balance">全局生图 AI 引擎</h2>
-      <p className="mt-4 text-sm leading-7 text-stone-400">
+    <section className={adminSectionClassName}>
+      <div className={adminEyebrowClassName}>Global Image Engine</div>
+      <h2 className={adminTitleClassName}>全局生图 AI 引擎</h2>
+      <p className={adminDescriptionClassName}>
         这是运营后台统一维护的封面图生成引擎。用户不单独配置，所有封面图请求都读取这里的 Base_URL、API Key 和默认模型。
       </p>
-      <form onSubmit={handleSubmit} className="mt-6 grid gap-4">
-        <input aria-label="Base_URL，例如 http://127.0.0.1:3301/v1"
+      <form onSubmit={handleSubmit} className={adminFormClassName}>
+        <input
+          aria-label="Base_URL，例如 http://127.0.0.1:3301/v1"
           value={baseUrl}
           onChange={(event) => setBaseUrl(event.target.value)}
           placeholder="Base_URL，例如 http://127.0.0.1:3301/v1"
           className={uiPrimitives.adminInput}
         />
-        <input aria-label="模型名称"
+        <input
+          aria-label="模型名称"
           value={model}
           onChange={(event) => setModel(event.target.value)}
           placeholder="模型名称"
           className={uiPrimitives.adminInput}
         />
-        <input aria-label="input control"
+        <input
+          aria-label="input control"
           value={apiKey}
           onChange={(event) => setApiKey(event.target.value)}
           placeholder={config.hasApiKey ? `API Key 已保存：${config.apiKeyPreview}` : "输入 API Key"}
@@ -88,19 +135,23 @@ export function GlobalCoverImageEngineSettings({
           {saving ? "保存中…" : "保存全局生图引擎"}
         </button>
       </form>
-      <div className="mt-5 grid gap-3 text-sm text-stone-400 md:grid-cols-2">
-        <div className="border border-stone-800 bg-stone-950 p-4">
+      <div className={adminStatusGridClassName}>
+        <div className={adminInsetCardClassName}>
           当前状态：{config.hasApiKey ? "已配置" : "未配置"}
           <br />
           最近检查：{config.lastCheckedAt ? new Date(config.lastCheckedAt).toLocaleString("zh-CN") : "尚未调用"}
         </div>
-        <div className="border border-stone-800 bg-stone-950 p-4">
+        <div className={adminInsetCardClassName}>
           最近错误：{config.lastError || "无"}
           <br />
           最近更新：{config.updatedAt ? new Date(config.updatedAt).toLocaleString("zh-CN") : "尚未保存"}
         </div>
       </div>
-      {message ? <div className={`mt-4 text-sm ${message.includes("失败") ? "text-cinnabar" : "text-stone-300"}`}>{message}</div> : null}
+      {message ? (
+        <div aria-live="polite" className={getFeedbackNoticeClassName(message)}>
+          {message}
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -217,14 +268,15 @@ export function GlobalObjectStorageSettings({
   }
 
   return (
-    <section className={`${uiPrimitives.adminPanel} p-5`}>
-      <div className="text-xs uppercase tracking-[0.24em] text-cinnabar">Global Object Storage</div>
-      <h2 className="mt-4 font-serifCn text-3xl text-stone-100 text-balance">图片对象存储</h2>
-      <p className="mt-4 text-sm leading-7 text-stone-400">
+    <section className={adminSectionClassName}>
+      <div className={adminEyebrowClassName}>Global Object Storage</div>
+      <h2 className={adminTitleClassName}>图片对象存储</h2>
+      <p className={adminDescriptionClassName}>
         这里统一管理封面图与图片资产的对象存储。默认走本地存储，也可以按 AWS S3、Cloudflare R2、阿里云 OSS、腾讯云 COS、MinIO 或自定义 S3 兼容预设接入。
       </p>
-      <form onSubmit={handleSubmit} className="mt-6 grid gap-4">
-        <select aria-label="select control"
+      <form onSubmit={handleSubmit} className={adminFormClassName}>
+        <select
+          aria-label="select control"
           value={providerPreset}
           onChange={(event) => applyProviderPreset(event.target.value as ObjectStorageProviderPreset)}
           className={uiPrimitives.adminSelect}
@@ -235,16 +287,22 @@ export function GlobalObjectStorageSettings({
             </option>
           ))}
         </select>
-        <div className="border border-stone-800 bg-stone-950 px-4 py-3 text-sm leading-7 text-stone-300">
+        <div className={cn(adminInsetCardClassName, "text-sm leading-7 text-adminInk")}>
           当前预设：{selectedPreset.label}
           <br />
           {selectedPreset.description}
         </div>
-        <label className="flex items-center gap-3 border border-stone-800 bg-stone-950 px-4 py-3 text-sm text-stone-300">
-          <input aria-label="input control" type="checkbox" checked={isEnabled} onChange={(event) => setIsEnabled(event.target.checked)} />
+        <label className={adminToggleCardClassName}>
+          <input
+            aria-label="input control"
+            type="checkbox"
+            checked={isEnabled}
+            onChange={(event) => setIsEnabled(event.target.checked)}
+          />
           启用当前对象存储配置
         </label>
-        <input aria-label="路径前缀，可选，例如 prod/assets"
+        <input
+          aria-label="路径前缀，可选，例如 prod/assets"
           value={pathPrefix}
           onChange={(event) => setPathPrefix(event.target.value)}
           placeholder="路径前缀，可选，例如 prod/assets"
@@ -252,39 +310,45 @@ export function GlobalObjectStorageSettings({
         />
         {providerName === "s3-compatible" ? (
           <>
-            <input aria-label="input control"
+            <input
+              aria-label="input control"
               value={endpoint}
               onChange={(event) => setEndpoint(event.target.value)}
               placeholder={`Endpoint，例如 ${selectedPreset.endpointPlaceholder}`}
               className={uiPrimitives.adminInput}
             />
             <div className="grid gap-4 md:grid-cols-2">
-              <input aria-label="Bucket 名称"
+              <input
+                aria-label="Bucket 名称"
                 value={bucketName}
                 onChange={(event) => setBucketName(event.target.value)}
                 placeholder="Bucket 名称"
                 className={uiPrimitives.adminInput}
               />
-              <input aria-label="input control"
+              <input
+                aria-label="input control"
                 value={region}
                 onChange={(event) => setRegion(event.target.value)}
                 placeholder={`Region，例如 ${selectedPreset.regionPlaceholder}`}
                 className={uiPrimitives.adminInput}
               />
             </div>
-            <input aria-label="Access Key ID"
+            <input
+              aria-label="Access Key ID"
               value={accessKeyId}
               onChange={(event) => setAccessKeyId(event.target.value)}
               placeholder="Access Key ID"
               className={uiPrimitives.adminInput}
             />
-            <input aria-label="input control"
+            <input
+              aria-label="input control"
               value={secretAccessKey}
               onChange={(event) => setSecretAccessKey(event.target.value)}
               placeholder={config.hasSecretAccessKey ? `Secret 已保存：${config.secretAccessKeyPreview}` : "Secret Access Key"}
               className={uiPrimitives.adminInput}
             />
-            <input aria-label="input control"
+            <input
+              aria-label="input control"
               value={publicBaseUrl}
               onChange={(event) => setPublicBaseUrl(event.target.value)}
               placeholder={`Public Base URL，可选，例如 ${selectedPreset.publicBaseUrlPlaceholder || "https://cdn.example.com"}`}
@@ -292,8 +356,13 @@ export function GlobalObjectStorageSettings({
             />
           </>
         ) : null}
-        <div className="grid gap-3 md:grid-cols-2">
-          <button type="button" disabled={testing} onClick={handleTestConnection} className={uiPrimitives.adminSecondaryButton}>
+        <div className={adminActionsClassName}>
+          <button
+            type="button"
+            disabled={testing}
+            onClick={handleTestConnection}
+            className={uiPrimitives.adminSecondaryButton}
+          >
             {testing ? "测试中…" : "测试对象存储连通性"}
           </button>
           <button disabled={saving} className={uiPrimitives.primaryButton}>
@@ -301,38 +370,48 @@ export function GlobalObjectStorageSettings({
           </button>
         </div>
       </form>
-      <div className="mt-5 grid gap-3 text-sm text-stone-400 md:grid-cols-2">
-        <div className="border border-stone-800 bg-stone-950 p-4">
+      <div className={adminStatusGridClassName}>
+        <div className={adminInsetCardClassName}>
           当前提供方：{resolveObjectStorageProviderLabel(config.effectiveProvider === "local" ? "local" : config.providerPreset)}
           <br />
           最近检查：{config.lastCheckedAt ? new Date(config.lastCheckedAt).toLocaleString("zh-CN") : "尚未调用"}
         </div>
-        <div className="border border-stone-800 bg-stone-950 p-4">
+        <div className={adminInsetCardClassName}>
           最近错误：{config.lastError || "无"}
           <br />
           最近更新：{config.updatedAt ? new Date(config.updatedAt).toLocaleString("zh-CN") : "尚未保存"}
         </div>
       </div>
       {providerName === "s3-compatible" ? (
-        <div className="mt-4 border border-[#7d6430] bg-[#2b2518] px-4 py-3 text-sm leading-7 text-[#e0c37a]">
+        <div className={adminWarningNoticeClassName}>
           `publicBaseUrl` 可选；不填时系统会按 `endpoint/bucket/objectKey` 生成地址，但是否可公网访问取决于 {selectedPreset.label} 的桶策略或 CDN 配置。
         </div>
       ) : null}
-      <div className={`mt-4 border px-4 py-3 text-sm leading-7 ${
-        providerName === "local"
-          ? "border-stone-800 bg-stone-950 text-stone-300"
-          : !isEnabled
-            ? "border-[#7d6430] bg-[#2b2518] text-[#e0c37a]"
-            : "border-[#d8b0b2] bg-[#fff7f7] text-[#8f3136]"
-      }`}>
+      <div
+        className={
+          providerName === "local"
+            ? adminNeutralNoticeClassName
+            : !isEnabled
+              ? adminWarningNoticeClassName
+              : adminDangerNoticeClassName
+        }
+      >
         {providerName === "local"
           ? "当前运行时直接使用 local 存储，新增图片资产会写到本地 generated-assets 目录。"
           : !isEnabled
             ? `当前 ${selectedPreset.label} 配置未启用，测试可以验证远端可用性，但运行时仍会继续回退到 local。`
             : `当前 ${selectedPreset.label} 已启用。注意：后续真实上传若失败，会直接报错并记录健康状态，不会静默回退到 local。`}
       </div>
-      {testMessage ? <div className={`mt-4 text-sm ${testMessage.includes("失败") ? "text-cinnabar" : "text-stone-300"}`}>{testMessage}</div> : null}
-      {message ? <div className={`mt-4 text-sm ${message.includes("失败") ? "text-cinnabar" : "text-stone-300"}`}>{message}</div> : null}
+      {testMessage ? (
+        <div aria-live="polite" className={getFeedbackNoticeClassName(testMessage)}>
+          {testMessage}
+        </div>
+      ) : null}
+      {message ? (
+        <div aria-live="polite" className={getFeedbackNoticeClassName(message)}>
+          {message}
+        </div>
+      ) : null}
     </section>
   );
 }

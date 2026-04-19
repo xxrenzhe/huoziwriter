@@ -1,5 +1,6 @@
 "use client";
 
+import { buttonStyles, cn, surfaceCardStyles } from "@huoziwriter/ui";
 import { refreshKnowledgeCardAction } from "@/app/(writer)/writer-actions";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -99,6 +100,70 @@ function summarizeText(value: string | null | undefined, maxLength = 68) {
   return text.length > maxLength ? `${text.slice(0, maxLength).trimEnd()}…` : text;
 }
 
+function formatDateTime(value: string | null | undefined) {
+  if (!value) return "时间未知";
+  return new Date(value).toLocaleString("zh-CN");
+}
+
+const sectionClassName = cn(surfaceCardStyles({ padding: "md" }), "flex h-full flex-col gap-5");
+const sectionHeaderClassName = "flex items-start justify-between gap-4";
+const sectionEyebrowClassName = "text-xs uppercase tracking-[0.24em] text-cinnabar";
+const sectionTitleClassName = "mt-2 font-serifCn text-2xl text-ink text-balance";
+const countBadgeClassName = cn(
+  surfaceCardStyles({ tone: "highlight", padding: "sm" }),
+  "min-w-[88px] shrink-0 text-right shadow-none",
+);
+const itemCardClassName = cn(
+  surfaceCardStyles({ tone: "warm", padding: "sm" }),
+  "space-y-3 shadow-none",
+);
+const emptyStateClassName = cn(
+  surfaceCardStyles({ tone: "highlight", padding: "sm" }),
+  "border-dashed text-sm leading-7 text-inkSoft shadow-none",
+);
+const statusMessageClassName = cn(
+  surfaceCardStyles({ tone: "highlight", padding: "sm" }),
+  "text-sm text-inkSoft shadow-none",
+);
+const imagePreviewFallbackClassName = cn(
+  surfaceCardStyles({ tone: "subtle", padding: "none" }),
+  "flex aspect-[16/9] items-center justify-center border-dashed text-xs text-inkMuted shadow-none",
+);
+const chipClassName = "inline-flex items-center rounded-full border border-lineStrong bg-surface px-3 py-1 text-xs text-inkSoft";
+const mutedChipClassName = "inline-flex items-center rounded-full border border-lineStrong bg-surface px-3 py-1 text-xs text-inkMuted";
+const warningChipClassName =
+  "inline-flex items-center rounded-full border border-warning/40 bg-surfaceWarning px-2.5 py-1 text-xs text-warning";
+const actionClassName = buttonStyles({ variant: "secondary", size: "sm" });
+
+function getKnowledgeStatusChipClassName(status: string) {
+  if (status === "active") {
+    return "inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs text-emerald-700";
+  }
+  if (status === "conflicted") {
+    return "inline-flex items-center rounded-full border border-warning/40 bg-surfaceWarning px-3 py-1 text-xs text-warning";
+  }
+  if (status === "stale") {
+    return "inline-flex items-center rounded-full border border-lineStrong bg-surfaceWarm px-3 py-1 text-xs text-inkSoft";
+  }
+  if (status === "draft" || status === "archived") {
+    return "inline-flex items-center rounded-full border border-lineStrong bg-surface px-3 py-1 text-xs text-inkMuted";
+  }
+  return chipClassName;
+}
+
+function getImageStatusChipClassName(status: string) {
+  if (status === "ready") {
+    return "inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs text-emerald-700";
+  }
+  if (status === "failed") {
+    return "inline-flex items-center rounded-full border border-warning/40 bg-surfaceWarning px-3 py-1 text-xs text-warning";
+  }
+  if (status === "pending") {
+    return "inline-flex items-center rounded-full border border-lineStrong bg-surfaceWarm px-3 py-1 text-xs text-inkSoft";
+  }
+  return chipClassName;
+}
+
 export function WriterAssetCenterClient({
   fragments,
   knowledgeCards: initialKnowledgeCards,
@@ -148,152 +213,203 @@ export function WriterAssetCenterClient({
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       {message ? (
-        <div className="border border-stone-300/40 bg-[#fffdfa] px-4 py-3 text-sm text-stone-700">
+        <div aria-live="polite" className={statusMessageClassName}>
           {message}
         </div>
       ) : null}
-      <div className="grid gap-4 xl:grid-cols-3">
-        <section className="border border-stone-300/40 bg-white p-5 shadow-ink">
-          <div className="flex items-center justify-between gap-3">
+      <div className="grid items-start gap-4 xl:grid-cols-3">
+        <section aria-labelledby="asset-center-fragments-title" className={sectionClassName}>
+          <div className={sectionHeaderClassName}>
             <div>
-              <div className="text-xs uppercase tracking-[0.24em] text-cinnabar">素材库</div>
-              <div className="mt-2 font-serifCn text-2xl text-ink text-balance">最近素材</div>
+              <div className={sectionEyebrowClassName}>素材库</div>
+              <h2 id="asset-center-fragments-title" className={sectionTitleClassName}>
+                最近素材
+              </h2>
             </div>
-            <div className="text-sm text-stone-500">{fragments.length} 条</div>
+            <div aria-label={`最近素材共 ${fragments.length} 条`} className={countBadgeClassName}>
+              <div className="text-lg font-semibold tabular-nums text-ink">{fragments.length}</div>
+              <div className="mt-1 text-[11px] uppercase tracking-[0.18em] text-inkMuted">条</div>
+            </div>
           </div>
-          <div className="mt-4 space-y-3">
+          <div className="space-y-4">
             {fragments.length > 0 ? (
               fragments.map((fragment) => (
-                <article key={fragment.id} className="border border-stone-300/40 bg-[#faf7f0] p-4">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="text-xs uppercase tracking-[0.18em] text-stone-500">
-                      {formatFragmentSourceType(fragment.sourceType)} · {new Date(fragment.createdAt).toLocaleString("zh-CN")}
+                <article key={fragment.id} className={itemCardClassName}>
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className={chipClassName}>{formatFragmentSourceType(fragment.sourceType)}</span>
+                      <span className={mutedChipClassName}>{fragment.shared ? "共享素材" : `#${fragment.id}`}</span>
                     </div>
-                    <div className="text-xs text-stone-500">{fragment.shared ? "共享素材" : `#${fragment.id}`}</div>
+                    <time dateTime={fragment.createdAt} className="text-xs tabular-nums text-inkMuted">
+                      {formatDateTime(fragment.createdAt)}
+                    </time>
                   </div>
-                  <div className="mt-2 font-medium text-ink">{fragment.title || `素材 #${fragment.id}`}</div>
-                  <div className="mt-2 text-sm leading-7 text-stone-700">{summarizeText(fragment.distilledContent, 72)}</div>
-                  <div className="mt-3 flex flex-wrap gap-2">
+                  <div className="space-y-2">
+                    <h3 className="font-medium text-ink">{fragment.title || `素材 #${fragment.id}`}</h3>
+                    <p className="text-sm leading-7 text-inkSoft">{summarizeText(fragment.distilledContent, 72)}</p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
                     {fragment.sourceUrl ? (
-                      <a href={fragment.sourceUrl} target="_blank" rel="noreferrer" className="border border-stone-300 bg-white px-3 py-1 text-xs text-stone-700">
+                      <a href={fragment.sourceUrl} target="_blank" rel="noreferrer" className={actionClassName}>
                         打开来源
                       </a>
                     ) : null}
                     {fragment.screenshotPath ? (
-                      <span className="border border-stone-300 bg-white px-3 py-1 text-xs text-stone-700">
-                        含截图
-                      </span>
+                      <span className={mutedChipClassName}>含截图</span>
                     ) : null}
                   </div>
                 </article>
               ))
             ) : (
-              <div className="border border-dashed border-stone-300 bg-[#fffdfa] px-4 py-4 text-sm leading-7 text-stone-600">
+              <div className={emptyStateClassName}>
                 当前还没有素材。先去任一稿件的「证据」步骤挂 2 条最小素材集。
               </div>
             )}
           </div>
         </section>
 
-        <section className="border border-stone-300/40 bg-white p-5 shadow-ink">
-          <div className="flex items-center justify-between gap-3">
+        <section aria-labelledby="asset-center-knowledge-title" className={sectionClassName}>
+          <div className={sectionHeaderClassName}>
             <div>
-              <div className="text-xs uppercase tracking-[0.24em] text-cinnabar">背景卡</div>
-              <div className="mt-2 font-serifCn text-2xl text-ink text-balance">最近背景卡</div>
+              <div className={sectionEyebrowClassName}>背景卡</div>
+              <h2 id="asset-center-knowledge-title" className={sectionTitleClassName}>
+                最近背景卡
+              </h2>
             </div>
-            <div className="text-sm text-stone-500">{knowledgeCards.length} 张</div>
+            <div aria-label={`最近背景卡共 ${knowledgeCards.length} 张`} className={countBadgeClassName}>
+              <div className="text-lg font-semibold tabular-nums text-ink">{knowledgeCards.length}</div>
+              <div className="mt-1 text-[11px] uppercase tracking-[0.18em] text-inkMuted">张</div>
+            </div>
           </div>
-          <div className="mt-4 space-y-3">
+          <div className="space-y-4">
             {knowledgeCards.length > 0 ? (
               knowledgeCards.map((card) => (
-                <article key={card.id} className="border border-stone-300/40 bg-[#faf7f0] p-4">
+                <article key={card.id} className={itemCardClassName}>
                   <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                      <div className="text-xs uppercase tracking-[0.18em] text-stone-500">
-                        {card.cardType} · {formatKnowledgeStatus(card.status)}
+                    <div className="space-y-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className={chipClassName}>{card.cardType}</span>
+                        <span className={getKnowledgeStatusChipClassName(card.status)}>
+                          {formatKnowledgeStatus(card.status)}
+                        </span>
                       </div>
-                      <div className="mt-2 font-medium text-ink">{card.title}</div>
+                      <h3 className="font-medium text-ink">{card.title}</h3>
                     </div>
-                    <div className="text-xs text-stone-500">置信度 {Math.round(card.confidenceScore * 100)}%</div>
+                    <div className="min-w-[72px] text-right">
+                      <div className="text-[11px] uppercase tracking-[0.18em] text-inkMuted">置信度</div>
+                      <div className="mt-1 text-sm font-medium tabular-nums text-ink">
+                        {Math.round(card.confidenceScore * 100)}%
+                      </div>
+                    </div>
                   </div>
-                  <div className="mt-2 text-sm leading-7 text-stone-700">{summarizeText(card.summary || card.latestChangeSummary, 72)}</div>
-                  <div className="mt-3 flex flex-wrap gap-2 text-xs text-stone-500">
-                    <span className="border border-stone-300 bg-white px-3 py-1">来源素材 {card.sourceFragmentCount} 条</span>
-                    <span className="border border-stone-300 bg-white px-3 py-1">{card.shared ? "共享背景卡" : "个人背景卡"}</span>
+                  <p className="text-sm leading-7 text-inkSoft">
+                    {summarizeText(card.summary || card.latestChangeSummary, 72)}
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    <span className={mutedChipClassName}>来源素材 {card.sourceFragmentCount} 条</span>
+                    <span className={mutedChipClassName}>{card.shared ? "共享背景卡" : "个人背景卡"}</span>
                     {card.lastCompiledAt ? (
-                      <span className="border border-stone-300 bg-white px-3 py-1">
-                        最近编译 {new Date(card.lastCompiledAt).toLocaleString("zh-CN")}
+                      <span className={mutedChipClassName}>
+                        最近编译 {formatDateTime(card.lastCompiledAt)}
                       </span>
                     ) : null}
                   </div>
                   {card.conflictFlags.length > 0 ? (
-                    <div className="mt-3 flex flex-wrap gap-2">
+                    <div className="flex flex-wrap gap-2">
                       {card.conflictFlags.slice(0, 3).map((flag) => (
-                        <span key={`${card.id}-${flag}`} className="border border-[#dfd2b0] bg-[#fff8e8] px-2 py-1 text-xs text-[#7d6430]">
+                        <span key={`${card.id}-${flag}`} className={warningChipClassName}>
                           {flag}
                         </span>
                       ))}
                     </div>
                   ) : null}
-                  <div className="mt-4 flex flex-wrap gap-2">
+                  <div className="flex flex-wrap gap-2 pt-1">
                     <button
+                      aria-busy={refreshingKnowledgeId === card.id || undefined}
                       type="button"
                       onClick={() => void refreshKnowledgeCard(card.id)}
                       disabled={refreshingKnowledgeId === card.id}
-                      className="border border-stone-300 bg-white px-3 py-2 text-xs text-stone-700 disabled:opacity-60"
+                      className={actionClassName}
                     >
                       {refreshingKnowledgeId === card.id ? "刷新中…" : "刷新背景卡"}
                     </button>
-                    <Link href="/articles" className="border border-stone-300 bg-white px-3 py-2 text-xs text-stone-700">
+                    <Link href="/articles" className={actionClassName}>
                       去稿件区调用
                     </Link>
                   </div>
                 </article>
               ))
             ) : (
-              <div className="border border-dashed border-stone-300 bg-[#fffdfa] px-4 py-4 text-sm leading-7 text-stone-600">
+              <div className={emptyStateClassName}>
                 当前还没有背景卡。系统在稿件写作和补证时命中相关素材后，会逐步在这里沉淀。
               </div>
             )}
           </div>
         </section>
 
-        <section className="border border-stone-300/40 bg-white p-5 shadow-ink">
-          <div className="flex items-center justify-between gap-3">
+        <section aria-labelledby="asset-center-images-title" className={sectionClassName}>
+          <div className={sectionHeaderClassName}>
             <div>
-              <div className="text-xs uppercase tracking-[0.24em] text-cinnabar">图片资产</div>
-              <div className="mt-2 font-serifCn text-2xl text-ink text-balance">最近封面与配图</div>
+              <div className={sectionEyebrowClassName}>图片资产</div>
+              <h2 id="asset-center-images-title" className={sectionTitleClassName}>
+                最近封面与配图
+              </h2>
             </div>
-            <div className="text-sm text-stone-500">{imageAssets.length} 项</div>
+            <div aria-label={`最近图片资产共 ${imageAssets.length} 项`} className={countBadgeClassName}>
+              <div className="text-lg font-semibold tabular-nums text-ink">{imageAssets.length}</div>
+              <div className="mt-1 text-[11px] uppercase tracking-[0.18em] text-inkMuted">项</div>
+            </div>
           </div>
-          <div className="mt-4 space-y-3">
+          <div className="space-y-4">
             {imageAssets.length > 0 ? (
               imageAssets.map((asset) => (
-                <article key={asset.id} className="border border-stone-300/40 bg-[#faf7f0] p-4">
+                <article key={asset.id} className={itemCardClassName}>
                   {asset.publicUrl ? (
-                    <img src={asset.publicUrl} alt={asset.articleTitle || "图片资产"} width={800} height={450} className="aspect-[16/9] w-full border border-stone-300 object-cover" />
+                    <div className="overflow-hidden border border-lineStrong bg-surface">
+                      <img
+                        src={asset.publicUrl}
+                        alt={`${asset.articleTitle || "未绑定稿件"}${formatImageAssetType(asset.assetType)}`}
+                        width={800}
+                        height={450}
+                        className="aspect-[16/9] w-full object-cover"
+                      />
+                    </div>
                   ) : (
-                    <div className="flex aspect-[16/9] items-center justify-center border border-dashed border-stone-300 bg-white text-xs text-stone-500">
+                    <div className={imagePreviewFallbackClassName}>
                       暂无可预览地址
                     </div>
                   )}
-                  <div className="mt-3 text-xs uppercase tracking-[0.18em] text-stone-500">
-                    {formatImageAssetScope(asset.assetScope)} · {formatImageAssetType(asset.assetType)}{asset.variantLabel ? ` · ${asset.variantLabel}` : ""}
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className={chipClassName}>{formatImageAssetScope(asset.assetScope)}</span>
+                      <span className={mutedChipClassName}>
+                        {formatImageAssetType(asset.assetType)}
+                        {asset.variantLabel ? ` · ${asset.variantLabel}` : ""}
+                      </span>
+                      <span className={getImageStatusChipClassName(asset.status)}>
+                        {formatImageAssetStatus(asset.status)}
+                      </span>
+                    </div>
+                    <time dateTime={asset.updatedAt} className="text-xs tabular-nums text-inkMuted">
+                      {formatDateTime(asset.updatedAt)}
+                    </time>
                   </div>
-                  <div className="mt-2 font-medium text-ink">{asset.articleTitle || "未绑定稿件"}</div>
-                  <div className="mt-2 text-sm leading-7 text-stone-700">
-                    状态 {formatImageAssetStatus(asset.status)} · {formatImageMimeType(asset.mimeType)} · {formatBytes(asset.byteLength)}
+                  <div className="space-y-2">
+                    <h3 className="font-medium text-ink">{asset.articleTitle || "未绑定稿件"}</h3>
+                    <p className="text-sm leading-7 text-inkSoft">
+                      {formatImageMimeType(asset.mimeType)} · {formatBytes(asset.byteLength)}
+                    </p>
                   </div>
-                  <div className="mt-3 flex flex-wrap gap-2">
+                  <div className="flex flex-wrap gap-2">
                     {asset.articleId ? (
-                      <Link href={`/articles/${asset.articleId}?step=publish`} className="border border-stone-300 bg-white px-3 py-2 text-xs text-stone-700">
+                      <Link href={`/articles/${asset.articleId}?step=publish`} className={actionClassName}>
                         打开对应稿件
                       </Link>
                     ) : null}
                     {asset.publicUrl ? (
-                      <a href={asset.publicUrl} target="_blank" rel="noreferrer" className="border border-stone-300 bg-white px-3 py-2 text-xs text-stone-700">
+                      <a href={asset.publicUrl} target="_blank" rel="noreferrer" className={actionClassName}>
                         查看原图
                       </a>
                     ) : null}
@@ -301,7 +417,7 @@ export function WriterAssetCenterClient({
                 </article>
               ))
             ) : (
-              <div className="border border-dashed border-stone-300 bg-[#fffdfa] px-4 py-4 text-sm leading-7 text-stone-600">
+              <div className={emptyStateClassName}>
                 当前还没有图片资产。去稿件的「发布」步骤生成封面图后，这里会集中沉淀。
               </div>
             )}

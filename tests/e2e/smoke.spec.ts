@@ -1111,6 +1111,98 @@ test("writer shell keeps four primary entries", async ({ request, baseURL }) => 
   expect(html).toContain("设置");
 });
 
+test("command menu opens only from explicit click trigger", async ({ page, request, baseURL }) => {
+  const adminCookie = await loginAsAdmin(baseURL!, request);
+  const user = await createE2EUser(baseURL!, request, adminCookie, { planCode: "free" });
+  const userCookie = await loginWithPassword(baseURL!, request, {
+    username: user.username,
+    password: user.password,
+  });
+  await ensurePersona(baseURL!, request, userCookie);
+  await seedPageSession(page, baseURL!, userCookie);
+
+  await page.goto(`${baseURL}/warroom`);
+
+  const trigger = page.getByRole("button", { name: "搜索素材、稿件、打法" });
+  const dialog = page.getByRole("dialog", { name: "命令菜单" });
+
+  await expect(trigger).toBeVisible();
+  await expect(dialog).toHaveCount(0);
+
+  await page.keyboard.press("Control+K");
+  await expect(dialog).toHaveCount(0);
+
+  await trigger.click();
+  await expect(dialog).toBeVisible();
+});
+
+test("writer mobile shell keeps bottom tabs visible without horizontal overflow", async ({ page, request, baseURL }) => {
+  const adminCookie = await loginAsAdmin(baseURL!, request);
+  const user = await createE2EUser(baseURL!, request, adminCookie, { planCode: "free" });
+  const userCookie = await loginWithPassword(baseURL!, request, {
+    username: user.username,
+    password: user.password,
+  });
+  await ensurePersona(baseURL!, request, userCookie);
+  await seedPageSession(page, baseURL!, userCookie);
+  await page.setViewportSize({ width: 375, height: 812 });
+
+  await page.goto(`${baseURL}/warroom`);
+
+  const mobileNav = page.getByRole("navigation", { name: "写作区主导航" }).last();
+  await expect(mobileNav).toBeVisible();
+  await expect(mobileNav.getByRole("link", { name: /作战台/ })).toBeVisible();
+  await expect(mobileNav.getByRole("link", { name: "稿件" })).toBeVisible();
+  await expect(mobileNav.getByRole("link", { name: "复盘" })).toBeVisible();
+  await expect(mobileNav.getByRole("link", { name: "设置" })).toBeVisible();
+
+  await page.goto(`${baseURL}/settings`);
+
+  const viewportMetrics = await page.evaluate(() => ({
+    documentWidth: document.documentElement.scrollWidth,
+    bodyWidth: document.body.scrollWidth,
+    viewportWidth: window.innerWidth,
+  }));
+  expect(viewportMetrics.documentWidth).toBeLessThanOrEqual(viewportMetrics.viewportWidth + 1);
+  expect(viewportMetrics.bodyWidth).toBeLessThanOrEqual(viewportMetrics.viewportWidth + 1);
+});
+
+test("legacy writer routes redirect to vNext destinations", async ({ request, baseURL }) => {
+  const adminCookie = await loginAsAdmin(baseURL!, request);
+  await ensurePersona(baseURL!, request, adminCookie);
+  const { articleId } = await createArticleForTest(baseURL!, request, adminCookie, {
+    title: "Legacy Redirect E2E",
+  });
+
+  const dashboardRedirect = await request.get(`${baseURL}/dashboard`, {
+    headers: { Cookie: adminCookie },
+    maxRedirects: 0,
+  });
+  expect([301, 302, 307, 308]).toContain(dashboardRedirect.status());
+  expect(dashboardRedirect.headers()["location"]).toContain("/warroom");
+
+  const reviewRedirect = await request.get(`${baseURL}/review`, {
+    headers: { Cookie: adminCookie },
+    maxRedirects: 0,
+  });
+  expect([301, 302, 307, 308]).toContain(reviewRedirect.status());
+  expect(reviewRedirect.headers()["location"]).toContain("/reviews");
+
+  const editorRedirect = await request.get(`${baseURL}/editor/${articleId}?source=legacy`, {
+    headers: { Cookie: adminCookie },
+    maxRedirects: 0,
+  });
+  expect([301, 302, 307, 308]).toContain(editorRedirect.status());
+  expect(editorRedirect.headers()["location"]).toContain(`/articles/${articleId}?source=legacy`);
+
+  const editorCommandRedirect = await request.get(`${baseURL}/editor/${articleId}/command?source=legacy-command`, {
+    headers: { Cookie: adminCookie },
+    maxRedirects: 0,
+  });
+  expect([301, 302, 307, 308]).toContain(editorCommandRedirect.status());
+  expect(editorCommandRedirect.headers()["location"]).toContain(`/articles/${articleId}?source=legacy-command`);
+});
+
 test("writer core flow supports capture, generate, template extract and export", async ({ request, baseURL }) => {
   const cookie = await loginAsAdmin(baseURL!, request);
   await ensurePersona(baseURL!, request, cookie);

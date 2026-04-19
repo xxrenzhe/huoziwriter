@@ -1,3 +1,4 @@
+import { cn, surfaceCardStyles } from "@huoziwriter/ui";
 import { buildSuggestedEvidenceItems } from "@/lib/article-evidence";
 import { getArticleOutcomeData, getCurrentSeriesPlaybook } from "@/lib/article-outcomes";
 import { normalizeArticleStatus } from "@/lib/article-status-label";
@@ -12,6 +13,7 @@ import { getActiveTemplates } from "@/lib/layout-templates";
 import { requireWriterSession } from "@/lib/page-auth";
 import { getCoverImageQuotaStatus, getImageAssetStorageQuotaStatus, getUserPlanContext } from "@/lib/plan-access";
 import { hasPersona } from "@/lib/personas";
+import type { ArticleMainStepCode } from "@/lib/article-workflow-registry";
 import {
   getArticleEvidenceItems,
   getArticleImagePrompts,
@@ -26,12 +28,17 @@ import {
 } from "@/lib/repositories";
 import { getSeries } from "@/lib/series";
 
+const missingArticleStateClassName = cn(
+  surfaceCardStyles({ tone: "highlight", padding: "md" }),
+  "text-sm leading-7 text-stone-700",
+);
+
 export async function ArticleDetailPage({
   params,
   requestedMainStepCode,
 }: {
   params: { articleId: string };
-  requestedMainStepCode?: "evidence" | null;
+  requestedMainStepCode?: ArticleMainStepCode | null;
 }) {
   const { session } = await requireWriterSession();
   if (!(await hasPersona(session.userId))) {
@@ -60,7 +67,11 @@ export async function ArticleDetailPage({
   ]);
 
   if (!articleOutcomeData) {
-    return <div className="border border-stone-300/40 bg-white p-6">稿件不存在。</div>;
+    return (
+      <div className={missingArticleStateClassName}>
+        稿件不存在。
+      </div>
+    );
   }
   const { article, nodes, workflow, stageArtifacts, outcomeBundle: initialOutcomeBundle } = articleOutcomeData;
   const snapshots = await getArticleSnapshots(articleId, { retentionDays: planContext.planSnapshot.snapshotRetentionDays });

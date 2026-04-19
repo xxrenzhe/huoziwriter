@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { AdminWritingEvalNav } from "@/components/admin-writing-eval-nav";
 import { AdminWritingEvalVersionsClient } from "@/components/admin-writing-eval-versions-client";
 import { getWritingEvalRolloutAuditLogs } from "@/lib/audit";
@@ -8,9 +7,20 @@ import { getPromptRolloutAssessments } from "@/lib/prompt-rollout";
 import { getPromptRolloutStats, getPromptVersions } from "@/lib/repositories";
 import { getArticleOutcomeVersionSummaries, getWritingEvalApplyCommandTemplates, getWritingEvalFeedbackSummaries, getWritingEvalLayoutStrategies, getWritingEvalRuns, getWritingEvalScoringProfiles, getWritingEvalVersions } from "@/lib/writing-eval";
 import { listWritingAssetRollouts, type WritingRolloutAssetType } from "@/lib/writing-rollout";
-import { uiPrimitives } from "@huoziwriter/ui";
+import { cn, surfaceCardStyles } from "@huoziwriter/ui";
 
 type RolloutManagedVersionType = WritingRolloutAssetType | "prompt_version";
+type WritingEvalVersionSummaryCard = {
+  label: string;
+  value: number;
+  detail: string;
+};
+
+const ROLLOUT_MANAGED_VERSION_TYPES: readonly RolloutManagedVersionType[] = ["prompt_version", "layout_strategy", "apply_command_template", "scoring_profile"];
+const adminWritingEvalVersionsPanelBaseClassName = cn(surfaceCardStyles(), "border-stone-800 bg-[#171718] shadow-none");
+const adminWritingEvalVersionsHeroClassName = cn(adminWritingEvalVersionsPanelBaseClassName, "bg-stone-950 p-6 md:p-8");
+const adminWritingEvalVersionsMetricCardClassName = cn(adminWritingEvalVersionsPanelBaseClassName, "p-5");
+const adminWritingEvalVersionsNavClassName = "flex flex-wrap gap-3";
 
 function parsePromptRef(value: string) {
   const trimmed = String(value || "").trim();
@@ -29,6 +39,15 @@ function getRecord(value: unknown) {
 
 function getNumber(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function getScoreSummaryRunId(scoreSummary: Record<string, unknown>) {
+  const runId = scoreSummary.runId;
+  return typeof runId === "number" && Number.isInteger(runId) && runId > 0 ? runId : null;
+}
+
+function isRolloutManagedVersionType(value: string): value is RolloutManagedVersionType {
+  return ROLLOUT_MANAGED_VERSION_TYPES.includes(value as RolloutManagedVersionType);
 }
 
 export default async function AdminWritingEvalVersionsPage({
@@ -51,7 +70,7 @@ export default async function AdminWritingEvalVersionsPage({
   const { rolloutAuditLogs, promptRolloutAuditLogs } = rolloutAudits;
   const runs = await getWritingEvalRuns();
   const runIds = versions
-    .map((item) => (typeof item.scoreSummary.runId === "number" ? item.scoreSummary.runId : null))
+    .map((item) => getScoreSummaryRunId(item.scoreSummary))
     .filter((item): item is number => typeof item === "number" && Number.isInteger(item) && item > 0);
   const [feedbackSummaries, outcomeSummaries] = await Promise.all([
     getWritingEvalFeedbackSummaries(runIds),
@@ -321,17 +340,75 @@ export default async function AdminWritingEvalVersionsPage({
       : null)
     ?? versions[0]?.id
     ?? null;
+  const keepCount = versions.filter((item) => item.decision === "keep").length;
+  const discardCount = versions.filter((item) => item.decision === "discard").length;
+  const promptBackedVersionCount = versions.filter((item) => isPromptBackedVersionType(item.versionType)).length;
+  const rolloutManagedVersionCount = versions.filter((item) => isRolloutManagedVersionType(item.versionType)).length;
+  const enabledPromptRolloutCount = Array.from(promptRolloutConfigMap.values()).filter((item) => item.isEnabled).length;
+  const rolloutManagedConfigs = [...promptRolloutConfigMap.values(), ...assetRolloutMap.values()];
+  const enabledRolloutManagedConfigCount = rolloutManagedConfigs.filter((item) => item.isEnabled).length;
+  const recommendationManagedConfigCount = rolloutManagedConfigs.filter((item) => item.autoMode === "recommendation").length;
+  const linkedRunCount = versions.filter((item) => {
+    const runId = getScoreSummaryRunId(item.scoreSummary);
+    return runId !== null && runMap.has(runId);
+  }).length;
+  const feedbackLinkedCount = versions.filter((item) => {
+    const runId = getScoreSummaryRunId(item.scoreSummary);
+    return runId !== null && feedbackMap.has(runId);
+  }).length;
+  const outcomeLinkedCount = versions.filter((item) => outcomeSummaryMap.has(`${item.versionType}@@${item.candidateContent}`)).length;
+  const summaryCards: WritingEvalVersionSummaryCard[] = [
+    {
+      label: "账本记录",
+      value: versions.length,
+      detail: `keep ${keepCount} · discard ${discardCount}`,
+    },
+    {
+      label: "Prompt 版本",
+      value: promptBackedVersionCount,
+      detail: `当前激活 ${activePromptMap.size} · 已挂灰度 ${enabledPromptRolloutCount}`,
+    },
+    {
+      label: "可治理版本",
+      value: rolloutManagedVersionCount,
+      detail: `已挂灰度 ${enabledRolloutManagedConfigCount} · recommendation ${recommendationManagedConfigCount}`,
+    },
+    requestedAssetType && requestedAssetRef
+      ? {
+          label: "当前聚焦",
+          value: focusedVersions.length,
+          detail: `${requestedAssetType} · 账本命中`,
+        }
+      : {
+          label: "实验关联",
+          value: linkedRunCount,
+          detail: `回流 ${feedbackLinkedCount} · 实际结果 ${outcomeLinkedCount}`,
+        },
+  ];
 
   return (
     <div className="space-y-6">
-      <section className={uiPrimitives.adminPanel + " p-6"}>
-        <div className="flex items-center justify-between gap-4">
+      <section className={adminWritingEvalVersionsHeroClassName}>
+        <div className="flex items-start justify-between gap-4">
           <div>
             <div className="text-xs uppercase tracking-[0.28em] text-cinnabar">Writing Eval Versions</div>
             <h1 className="mt-4 font-serifCn text-4xl text-stone-100 text-balance">保留与回滚账本</h1>
+            <p className="mt-4 max-w-4xl text-sm leading-7 text-stone-400">
+              在同一页核对写作评测版本的实验来源、账本决策和灰度治理状态，再决定是继续放量、保持观察，还是回滚到上一版资产。
+            </p>
           </div>
-          <AdminWritingEvalNav sections={["overview", "datasets", "runs"]} className="flex gap-3" />
+          <AdminWritingEvalNav sections={["overview", "datasets", "runs"]} className={adminWritingEvalVersionsNavClassName} />
         </div>
+      </section>
+
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        {summaryCards.map((item) => (
+          <article key={item.label} className={adminWritingEvalVersionsMetricCardClassName}>
+            <div className="text-xs uppercase tracking-[0.18em] text-stone-500">{item.label}</div>
+            <div className="mt-3 text-3xl text-stone-100 text-balance">{item.value}</div>
+            <div className="mt-3 text-sm text-stone-500">{item.detail}</div>
+          </article>
+        ))}
       </section>
 
       <AdminWritingEvalVersionsClient
@@ -347,9 +424,9 @@ export default async function AdminWritingEvalVersionsPage({
         }
         initialSelectedVersionId={initialSelectedVersionId}
         initialVersions={versions.map((item) => {
-          const runId = typeof item.scoreSummary.runId === "number" ? item.scoreSummary.runId : null;
+          const runId = getScoreSummaryRunId(item.scoreSummary);
           const relatedRun = runId ? runMap.get(runId) ?? null : null;
-          const isRolloutManagedVersion = ["prompt_version", "layout_strategy", "apply_command_template", "scoring_profile"].includes(item.versionType);
+          const isRolloutManagedVersion = isRolloutManagedVersionType(item.versionType);
           const rolloutAssetType = isRolloutManagedVersion ? (item.versionType as RolloutManagedVersionType) : null;
           const rolloutConfig =
             rolloutAssetType

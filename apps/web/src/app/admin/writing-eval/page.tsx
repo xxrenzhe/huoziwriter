@@ -18,7 +18,34 @@ import {
   isWritingEvalScheduleExecutable,
 } from "@/lib/writing-eval-view";
 import { getWritingEvalDatasets, getWritingEvalInsights, getWritingEvalRunSchedules, getWritingEvalScoringProfiles, getWritingEvalRuns, getWritingEvalVersions } from "@/lib/writing-eval";
-import { uiPrimitives } from "@huoziwriter/ui";
+import { buttonStyles, cn, surfaceCardStyles } from "@huoziwriter/ui";
+
+const adminOverviewPanelClassName = cn(surfaceCardStyles(), "border-adminLineStrong bg-adminSurface shadow-none");
+const adminHeroSectionClassName = cn(adminOverviewPanelClassName, "p-6");
+const adminMetricCardClassName = cn(adminOverviewPanelClassName, "bg-adminSurfaceAlt p-5");
+const adminSectionCardClassName = cn(adminOverviewPanelClassName, "p-5");
+const adminInsetCardClassName = cn(surfaceCardStyles({ padding: "sm" }), "border-adminLineStrong bg-adminSurfaceMuted shadow-none");
+const adminActionLinkClassName = cn(
+  buttonStyles({ variant: "secondary", size: "sm" }),
+  "min-h-0 border-adminLineStrong bg-adminSurfaceMuted text-adminInk hover:border-adminLineStrong hover:bg-adminSurfaceAlt hover:text-adminInk focus-visible:ring-adminAccent focus-visible:ring-offset-adminBg",
+);
+const adminModuleLinkClassName = cn(
+  surfaceCardStyles({ padding: "md" }),
+  "border-adminLineStrong bg-adminSurfaceMuted shadow-none transition hover:border-adminAccent hover:bg-adminSurfaceAlt",
+);
+const adminInlineLinkClassName = "transition hover:text-adminAccent";
+const adminStatusChipClassName = "border px-2 py-1 uppercase tracking-[0.16em]";
+
+function getAutomationItemToneClassName(tone: string | null | undefined) {
+  if (tone === "cinnabar") return "text-cinnabar";
+  if (tone === "amber") return "text-amber-200";
+  if (tone === "emerald") return "text-emerald-400";
+  return "text-adminInkSoft";
+}
+
+function getExecutionBadgeClassName(status: string | null | undefined) {
+  return cn(adminStatusChipClassName, getWritingEvalExecutionTone(status));
+}
 
 function getStrategyActionLabel(item: { executionState: string | null | undefined; primaryExecutableScheduleId: number | null | undefined }) {
   if (item.primaryExecutableScheduleId) return "打开可执行调度";
@@ -104,12 +131,12 @@ export default async function AdminWritingEvalPage() {
 
   return (
     <div className="space-y-6">
-      <section className={uiPrimitives.adminPanel + " p-6"}>
+      <section className={adminHeroSectionClassName}>
         <div className="flex items-start justify-between gap-4">
           <div>
             <div className="text-xs uppercase tracking-[0.28em] text-cinnabar">Writing Eval Overview</div>
-            <h1 className="mt-4 font-serifCn text-4xl text-stone-100 text-balance">写作评测总览</h1>
-            <p className="mt-4 max-w-4xl text-sm leading-7 text-stone-400">
+            <h1 className="mt-4 font-serifCn text-4xl text-adminInk text-balance">写作评测总览</h1>
+            <p className="mt-4 max-w-4xl text-sm leading-7 text-adminInkSoft">
               这里作为写作版 autoresearch 的总入口，统一查看评测集、实验运行、版本账本和长期校准状态，再决定该去哪个子页继续操作。
             </p>
           </div>
@@ -142,48 +169,48 @@ export default async function AdminWritingEvalPage() {
             detail: `due ${scheduleStats.dueCount} · error ${erroredSchedules.length} · 高风险动作 ${highRiskActionCount}`,
           },
         ].map((item) => (
-          <div key={item.label} className={uiPrimitives.adminPanel + " p-5"}>
-            <div className="text-xs uppercase tracking-[0.18em] text-stone-500">{item.label}</div>
-            <div className="mt-3 text-3xl text-stone-100 text-balance">{item.value}</div>
-            <div className="mt-3 text-sm text-stone-500">{item.detail}</div>
+          <div key={item.label} className={adminMetricCardClassName}>
+            <div className="text-xs uppercase tracking-[0.18em] text-adminInkMuted">{item.label}</div>
+            <div className="mt-3 text-3xl text-adminInk text-balance">{item.value}</div>
+            <div className="mt-3 text-sm text-adminInkMuted">{item.detail}</div>
           </div>
         ))}
       </section>
 
       <section className="grid gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
-        <div className={uiPrimitives.adminPanel + " p-5"}>
+        <div className={adminSectionCardClassName}>
           <div className="flex items-center justify-between gap-3">
             <div>
-              <div className="text-xs uppercase tracking-[0.24em] text-stone-500">自动运营时间线</div>
-              <h2 className="mt-3 font-serifCn text-2xl text-stone-100 text-balance">Scheduler 最近做了什么</h2>
+              <div className="text-xs uppercase tracking-[0.24em] text-adminInkMuted">自动运营时间线</div>
+              <h2 className="mt-3 font-serifCn text-2xl text-adminInk text-balance">Scheduler 最近做了什么</h2>
             </div>
-            <div className="text-sm text-stone-500">
+            <div className="text-sm text-adminInkMuted">
               24h 提案 {automationCounts24h.autoCandidate} · 决议 {automationCounts24h.autoResolve} · 治理 {automationCounts24h.autoGovern} · 放量 {automationCounts24h.autoRollout} · 校准 {automationCounts24h.autoCalibrate}
             </div>
           </div>
           <div className="mt-5 space-y-3">
             {automationOverview.items.slice(0, 10).map((item) => (
-              <div key={`automation-feed-${item.kind}-${item.id}`} className="border border-stone-800 bg-stone-950 px-4 py-4">
+              <div key={`automation-feed-${item.kind}-${item.id}`} className={adminInsetCardClassName}>
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div className="min-w-0">
-                    <div className="text-xs uppercase tracking-[0.16em] text-stone-500">{item.kind}</div>
-                    <div className="mt-2 text-sm text-stone-100">{item.title}</div>
+                    <div className="text-xs uppercase tracking-[0.16em] text-adminInkMuted">{item.kind}</div>
+                    <div className="mt-2 text-sm text-adminInk">{item.title}</div>
                   </div>
-                  <div className="text-xs text-stone-500">{formatWritingEvalDateTime(item.createdAt)}</div>
+                  <div className="text-xs text-adminInkMuted">{formatWritingEvalDateTime(item.createdAt)}</div>
                 </div>
-                <div className={`mt-3 text-sm ${item.tone === "cinnabar" ? "text-cinnabar" : item.tone === "amber" ? "text-amber-200" : item.tone === "emerald" ? "text-emerald-400" : "text-stone-400"}`}>
+                <div className={cn("mt-3 text-sm", getAutomationItemToneClassName(item.tone))}>
                   {item.summary}
                 </div>
-                {item.detail ? <div className="mt-2 text-xs leading-6 text-stone-500">{item.detail}</div> : null}
+                {item.detail ? <div className="mt-2 text-xs leading-6 text-adminInkMuted">{item.detail}</div> : null}
                 {item.href || item.secondaryHref ? (
                   <div className="mt-3 flex flex-wrap gap-3">
                     {item.href && item.hrefLabel ? (
-                      <Link href={item.href} className={uiPrimitives.adminSecondaryButton}>
+                      <Link href={item.href} className={adminActionLinkClassName}>
                         {item.hrefLabel}
                       </Link>
                     ) : null}
                     {item.secondaryHref && item.secondaryHrefLabel ? (
-                      <Link href={item.secondaryHref} className={uiPrimitives.adminSecondaryButton}>
+                      <Link href={item.secondaryHref} className={adminActionLinkClassName}>
                         {item.secondaryHrefLabel}
                       </Link>
                     ) : null}
@@ -191,28 +218,28 @@ export default async function AdminWritingEvalPage() {
                 ) : null}
               </div>
             ))}
-            {automationOverview.items.length === 0 ? <div className="text-sm text-stone-500">最近还没有写作评测自动运营轨迹。</div> : null}
+            {automationOverview.items.length === 0 ? <div className="text-sm text-adminInkMuted">最近还没有写作评测自动运营轨迹。</div> : null}
           </div>
         </div>
 
-        <div className={uiPrimitives.adminPanel + " p-5"}>
+        <div className={adminSectionCardClassName}>
           <div className="flex items-center justify-between gap-3">
             <div>
-              <div className="text-xs uppercase tracking-[0.24em] text-stone-500">当前告警</div>
-              <h2 className="mt-3 font-serifCn text-2xl text-stone-100 text-balance">先处理这些异常</h2>
+              <div className="text-xs uppercase tracking-[0.24em] text-adminInkMuted">当前告警</div>
+              <h2 className="mt-3 font-serifCn text-2xl text-adminInk text-balance">先处理这些异常</h2>
             </div>
-            <div className="text-sm text-stone-500">{automationAlertCount} 项</div>
+            <div className="text-sm text-adminInkMuted">{automationAlertCount} 项</div>
           </div>
           <div className="mt-5 space-y-4">
-            <div className="border border-stone-800 bg-stone-950 px-4 py-4">
-              <div className="text-xs uppercase tracking-[0.18em] text-stone-500">调度阻断</div>
-              <div className="mt-3 text-stone-100">{scheduleStats.blockedEnabledCount} 条启用中的 schedule 当前不可执行</div>
-              <div className="mt-2 text-sm text-stone-500">通常是评测集 readiness 不满足，或自动决议模式要求更高的样本守卫。</div>
+            <div className={adminInsetCardClassName}>
+              <div className="text-xs uppercase tracking-[0.18em] text-adminInkMuted">调度阻断</div>
+              <div className="mt-3 text-adminInk">{scheduleStats.blockedEnabledCount} 条启用中的 schedule 当前不可执行</div>
+              <div className="mt-2 text-sm text-adminInkMuted">通常是评测集 readiness 不满足，或自动决议模式要求更高的样本守卫。</div>
               {blockedSchedules.length > 0 ? (
                 <div className="mt-3 space-y-2">
                   {blockedSchedules.map((item) => (
-                    <div key={`blocked-schedule-${item.id}`} className="text-xs leading-6 text-stone-400">
-                      <Link href={buildAdminWritingEvalRunsHref({ scheduleId: item.id })} className="transition hover:text-cinnabar">
+                    <div key={`blocked-schedule-${item.id}`} className="text-xs leading-6 text-adminInkSoft">
+                      <Link href={buildAdminWritingEvalRunsHref({ scheduleId: item.id })} className={adminInlineLinkClassName}>
                         {item.name}
                       </Link>
                       {` · ${item.readiness.status} · ${(item.readiness.blockers[0] || item.readiness.warnings[0] || "待补样本覆盖").trim()}`}
@@ -222,15 +249,15 @@ export default async function AdminWritingEvalPage() {
               ) : null}
             </div>
 
-            <div className="border border-stone-800 bg-stone-950 px-4 py-4">
-              <div className="text-xs uppercase tracking-[0.18em] text-stone-500">到点未处理</div>
-              <div className="mt-3 text-stone-100">{scheduleStats.dueCount} 条启用中的 schedule 已到派发时间</div>
-              <div className="mt-2 text-sm text-stone-500">如果这个数字持续累积，优先排查 scheduler 心跳和 service token。</div>
+            <div className={adminInsetCardClassName}>
+              <div className="text-xs uppercase tracking-[0.18em] text-adminInkMuted">到点未处理</div>
+              <div className="mt-3 text-adminInk">{scheduleStats.dueCount} 条启用中的 schedule 已到派发时间</div>
+              <div className="mt-2 text-sm text-adminInkMuted">如果这个数字持续累积，优先排查 scheduler 心跳和 service token。</div>
               {dueSchedules.length > 0 ? (
                 <div className="mt-3 space-y-2">
                   {dueSchedules.map((item) => (
-                    <div key={`due-schedule-${item.id}`} className="text-xs leading-6 text-stone-400">
-                      <Link href={buildAdminWritingEvalRunsHref({ scheduleId: item.id })} className="transition hover:text-cinnabar">
+                    <div key={`due-schedule-${item.id}`} className="text-xs leading-6 text-adminInkSoft">
+                      <Link href={buildAdminWritingEvalRunsHref({ scheduleId: item.id })} className={adminInlineLinkClassName}>
                         {item.name}
                       </Link>
                       {` · next ${item.nextRunAt ? formatWritingEvalDateTime(item.nextRunAt) : "--"} · 上次派发 ${item.lastDispatchedAt ? formatWritingEvalDateTime(item.lastDispatchedAt) : "暂无"}`}
@@ -240,15 +267,15 @@ export default async function AdminWritingEvalPage() {
               ) : null}
             </div>
 
-            <div className="border border-stone-800 bg-stone-950 px-4 py-4">
-              <div className="text-xs uppercase tracking-[0.18em] text-stone-500">派发报错与高风险动作</div>
-              <div className="mt-3 text-stone-100">error {erroredSchedules.length} · 高风险自动动作 {highRiskActionCount}</div>
-              <div className="mt-2 text-sm text-stone-500">调度报错看 Runs 调度面板，高风险自动放量动作建议回到 Versions / Runs 复核。</div>
+            <div className={adminInsetCardClassName}>
+              <div className="text-xs uppercase tracking-[0.18em] text-adminInkMuted">派发报错与高风险动作</div>
+              <div className="mt-3 text-adminInk">error {erroredSchedules.length} · 高风险自动动作 {highRiskActionCount}</div>
+              <div className="mt-2 text-sm text-adminInkMuted">调度报错看 Runs 调度面板，高风险自动放量动作建议回到 Versions / Runs 复核。</div>
               {erroredSchedules.length > 0 ? (
                 <div className="mt-3 space-y-2">
                   {erroredSchedules.map((item) => (
                     <div key={`errored-schedule-${item.id}`} className="text-xs leading-6 text-cinnabar">
-                      <Link href={buildAdminWritingEvalRunsHref({ scheduleId: item.id })} className="transition hover:text-cinnabar">
+                      <Link href={buildAdminWritingEvalRunsHref({ scheduleId: item.id })} className={adminInlineLinkClassName}>
                         {item.name}
                       </Link>
                       {` · ${item.lastError}`}
@@ -257,7 +284,7 @@ export default async function AdminWritingEvalPage() {
                 </div>
               ) : null}
               {latestAutoRolloutAction ? (
-                <div className="mt-3 text-xs leading-6 text-stone-400">
+                <div className="mt-3 text-xs leading-6 text-adminInkSoft">
                   最近自动放量：{latestAutoRolloutAction.assetRef || latestAutoRolloutAction.assetType} · {latestAutoRolloutAction.directionLabel} · 风险 {latestAutoRolloutAction.riskLevel}
                 </div>
               ) : null}
@@ -267,13 +294,13 @@ export default async function AdminWritingEvalPage() {
       </section>
 
       <section className="grid gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
-        <div className={uiPrimitives.adminPanel + " p-5"}>
+        <div className={adminSectionCardClassName}>
           <div className="flex items-center justify-between gap-3">
             <div>
-              <div className="text-xs uppercase tracking-[0.24em] text-stone-500">模块导航</div>
-              <h2 className="mt-3 font-serifCn text-2xl text-stone-100 text-balance">下一步去哪</h2>
+              <div className="text-xs uppercase tracking-[0.24em] text-adminInkMuted">模块导航</div>
+              <h2 className="mt-3 font-serifCn text-2xl text-adminInk text-balance">下一步去哪</h2>
             </div>
-            <div className="text-sm text-stone-500">按任务拆分入口</div>
+            <div className="text-sm text-adminInkMuted">按任务拆分入口</div>
           </div>
           <div className="mt-5 grid gap-4 md:grid-cols-2">
             {[
@@ -302,30 +329,30 @@ export default async function AdminWritingEvalPage() {
                 meta: `${insights.trend.length} 条趋势点 · 回流 ${onlineCalibration.feedbackCount} 条 · 高风险自动动作 ${highRiskActionCount} 条`,
               },
             ].map((item) => (
-              <Link key={item.href} href={item.href} className="border border-stone-800 bg-stone-950 px-5 py-5 transition hover:border-cinnabar hover:bg-[#1d1413]">
-                <div className="text-xs uppercase tracking-[0.2em] text-stone-500">{item.title}</div>
-                <div className="mt-3 text-xl text-stone-100">{item.description}</div>
-                <div className="mt-4 text-sm text-stone-500">{item.meta}</div>
+              <Link key={item.href} href={item.href} className={adminModuleLinkClassName}>
+                <div className="text-xs uppercase tracking-[0.2em] text-adminInkMuted">{item.title}</div>
+                <div className="mt-3 text-xl text-adminInk">{item.description}</div>
+                <div className="mt-4 text-sm text-adminInkMuted">{item.meta}</div>
               </Link>
             ))}
           </div>
         </div>
 
         <div className="space-y-6">
-          <section className={uiPrimitives.adminPanel + " p-5"}>
-            <div className="text-xs uppercase tracking-[0.24em] text-stone-500">当前重点</div>
+          <section className={adminSectionCardClassName}>
+            <div className="text-xs uppercase tracking-[0.24em] text-adminInkMuted">当前重点</div>
             <div className="mt-4 space-y-4">
-              <div className="border border-stone-800 bg-stone-950 px-4 py-4">
-                <div className="text-xs uppercase tracking-[0.18em] text-stone-500">活跃评分画像</div>
-                <div className="mt-3 text-stone-100">{activeScoringProfile ? `${activeScoringProfile.name} · ${activeScoringProfile.code}` : "暂无"}</div>
-                <div className="mt-2 text-sm text-stone-500">{activeScoringProfile?.description || "还没有可用说明。"}</div>
+              <div className={adminInsetCardClassName}>
+                <div className="text-xs uppercase tracking-[0.18em] text-adminInkMuted">活跃评分画像</div>
+                <div className="mt-3 text-adminInk">{activeScoringProfile ? `${activeScoringProfile.name} · ${activeScoringProfile.code}` : "暂无"}</div>
+                <div className="mt-2 text-sm text-adminInkMuted">{activeScoringProfile?.description || "还没有可用说明。"}</div>
               </div>
-              <div className="border border-stone-800 bg-stone-950 px-4 py-4">
-                <div className="text-xs uppercase tracking-[0.18em] text-stone-500">评测集就绪度</div>
-                <div className="mt-3 text-stone-100">
+              <div className={adminInsetCardClassName}>
+                <div className="text-xs uppercase tracking-[0.18em] text-adminInkMuted">评测集就绪度</div>
+                <div className="mt-3 text-adminInk">
                   ready {datasetStats.readyCount} · warning {datasetStats.warningCount} · blocked {datasetStats.blockedCount}
                 </div>
-                <div className="mt-2 text-sm text-stone-500">
+                <div className="mt-2 text-sm text-adminInkMuted">
                   {datasetStats.blockedCount > 0
                     ? "存在会阻断自动实验的数据集，建议优先回到 Datasets 补齐目标与事实素材。"
                     : datasetStats.warningCount > 0
@@ -335,10 +362,10 @@ export default async function AdminWritingEvalPage() {
                 {datasetStats.prioritizedIssues.length > 0 ? (
                   <div className="mt-3 space-y-2">
                     {datasetStats.prioritizedIssues.map((dataset) => (
-                      <div key={dataset.id} className="text-xs leading-6 text-stone-400">
+                      <div key={dataset.id} className="text-xs leading-6 text-adminInkSoft">
                         <Link
                           href={buildAdminWritingEvalDatasetsHref({ datasetId: dataset.id })}
-                          className={`transition hover:text-cinnabar ${getWritingEvalReadinessTone(dataset.readiness.status)}`}
+                          className={cn(adminInlineLinkClassName, getWritingEvalReadinessTone(dataset.readiness.status))}
                         >
                           {dataset.name}
                         </Link>
@@ -349,10 +376,10 @@ export default async function AdminWritingEvalPage() {
                   </div>
                 ) : null}
               </div>
-              <div className="border border-stone-800 bg-stone-950 px-4 py-4">
-                <div className="text-xs uppercase tracking-[0.18em] text-stone-500">最新运行</div>
-                <div className="mt-3 text-stone-100">{latestRun ? `${latestRun.runCode} · ${latestRun.status}` : "暂无运行"}</div>
-                <div className="mt-2 text-sm text-stone-500">
+              <div className={adminInsetCardClassName}>
+                <div className="text-xs uppercase tracking-[0.18em] text-adminInkMuted">最新运行</div>
+                <div className="mt-3 text-adminInk">{latestRun ? `${latestRun.runCode} · ${latestRun.status}` : "暂无运行"}</div>
+                <div className="mt-2 text-sm text-adminInkMuted">
                   {latestRun
                     ? `候选 ${formatWritingEvalMetric(typeof latestRun.scoreSummary.totalScore === "number" ? latestRun.scoreSummary.totalScore : null)} · Delta ${formatWritingEvalMetric(typeof latestRun.scoreSummary.deltaTotalScore === "number" ? latestRun.scoreSummary.deltaTotalScore : null)}`
                     : "创建第一条运行后，这里会显示最新实验状态。"}
@@ -360,53 +387,53 @@ export default async function AdminWritingEvalPage() {
                 {latestRunHref || latestRunDatasetHref || latestRunBasePromptHref || latestRunCandidatePromptHref ? (
                   <div className="mt-3 flex flex-wrap gap-3">
                     {latestRunHref ? (
-                      <Link href={latestRunHref} className={uiPrimitives.adminSecondaryButton}>
+                      <Link href={latestRunHref} className={adminActionLinkClassName}>
                         打开对应 Run
                       </Link>
                     ) : null}
                     {latestRunDatasetHref ? (
-                      <Link href={latestRunDatasetHref} className={uiPrimitives.adminSecondaryButton}>
+                      <Link href={latestRunDatasetHref} className={adminActionLinkClassName}>
                         打开评测集
                       </Link>
                     ) : null}
                     {latestRunBasePromptHref ? (
-                      <Link href={latestRunBasePromptHref} className={uiPrimitives.adminSecondaryButton}>
+                      <Link href={latestRunBasePromptHref} className={adminActionLinkClassName}>
                         基线 Prompt
                       </Link>
                     ) : null}
                     {latestRunCandidatePromptHref ? (
-                      <Link href={latestRunCandidatePromptHref} className={uiPrimitives.adminSecondaryButton}>
+                      <Link href={latestRunCandidatePromptHref} className={adminActionLinkClassName}>
                         候选 Prompt
                       </Link>
                     ) : null}
                   </div>
                 ) : null}
               </div>
-              <div className="border border-stone-800 bg-stone-950 px-4 py-4">
-                <div className="text-xs uppercase tracking-[0.18em] text-stone-500">最新账本动作</div>
-                <div className="mt-3 text-stone-100">{latestDecision ? `${latestDecision.decision} · ${latestDecision.targetKey}` : "暂无账本动作"}</div>
-                <div className="mt-2 text-sm text-stone-500">{latestDecision?.decisionReason || "保留、discard 或 rollback 后会在这里出现。"}</div>
+              <div className={adminInsetCardClassName}>
+                <div className="text-xs uppercase tracking-[0.18em] text-adminInkMuted">最新账本动作</div>
+                <div className="mt-3 text-adminInk">{latestDecision ? `${latestDecision.decision} · ${latestDecision.targetKey}` : "暂无账本动作"}</div>
+                <div className="mt-2 text-sm text-adminInkMuted">{latestDecision?.decisionReason || "保留、discard 或 rollback 后会在这里出现。"}</div>
                 {latestDecisionHref || latestDecisionPromptHref ? (
                   <div className="mt-3 flex flex-wrap gap-3">
                     {latestDecisionHref ? (
-                      <Link href={latestDecisionHref} className={uiPrimitives.adminSecondaryButton}>
+                      <Link href={latestDecisionHref} className={adminActionLinkClassName}>
                         打开聚焦账本
                       </Link>
                     ) : null}
                     {latestDecisionPromptHref ? (
-                      <Link href={latestDecisionPromptHref} className={uiPrimitives.adminSecondaryButton}>
+                      <Link href={latestDecisionPromptHref} className={adminActionLinkClassName}>
                         打开 Prompts 页
                       </Link>
                     ) : null}
                   </div>
                 ) : null}
               </div>
-              <div className="border border-stone-800 bg-stone-950 px-4 py-4">
-                <div className="text-xs uppercase tracking-[0.18em] text-stone-500">自动调度状态</div>
-                <div className="mt-3 text-stone-100">
+              <div className={adminInsetCardClassName}>
+                <div className="text-xs uppercase tracking-[0.18em] text-adminInkMuted">自动调度状态</div>
+                <div className="mt-3 text-adminInk">
                   {latestSchedule ? (
                     <>
-                      <Link href={runsSchedulesHref} className="transition hover:text-cinnabar">
+                      <Link href={runsSchedulesHref} className={adminInlineLinkClassName}>
                         {latestSchedule.name}
                       </Link>
                       {` · ${latestSchedule.isEnabled ? "enabled" : "disabled"}`}
@@ -415,12 +442,12 @@ export default async function AdminWritingEvalPage() {
                     "暂无调度规则"
                   )}
                 </div>
-                <div className="mt-2 text-sm text-stone-500">
+                <div className="mt-2 text-sm text-adminInkMuted">
                   {latestSchedule ? (
                     <>
                       下次执行 {latestSchedule.nextRunAt ? formatWritingEvalDateTime(latestSchedule.nextRunAt) : "未设置"} · 最近 Run{" "}
                       {latestScheduleLastRunHref && latestSchedule.lastRunCode ? (
-                        <Link href={latestScheduleLastRunHref} className="transition hover:text-cinnabar">
+                        <Link href={latestScheduleLastRunHref} className={adminInlineLinkClassName}>
                           {latestSchedule.lastRunCode}
                         </Link>
                       ) : (
@@ -433,8 +460,8 @@ export default async function AdminWritingEvalPage() {
                 </div>
                 {latestSchedule ? (
                   <>
-                    <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-stone-500">
-                      <span className={`border px-2 py-1 uppercase tracking-[0.16em] ${getWritingEvalExecutionTone(latestSchedule.readiness.status)}`}>
+                    <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-adminInkMuted">
+                      <span className={getExecutionBadgeClassName(latestSchedule.readiness.status)}>
                         {latestSchedule.readiness.status}
                       </span>
                       <span>{latestSchedule.datasetStatus}</span>
@@ -451,46 +478,46 @@ export default async function AdminWritingEvalPage() {
                 ) : null}
                 {latestSchedule ? (
                   <div className="mt-3 flex flex-wrap gap-3">
-                    <Link href={runsSchedulesHref} className={uiPrimitives.adminSecondaryButton}>
+                    <Link href={runsSchedulesHref} className={adminActionLinkClassName}>
                       打开 Runs 调度面板
                     </Link>
                     {latestScheduleLastRunHref ? (
-                      <Link href={latestScheduleLastRunHref} className={uiPrimitives.adminSecondaryButton}>
+                      <Link href={latestScheduleLastRunHref} className={adminActionLinkClassName}>
                         打开最近 Run
                       </Link>
                     ) : null}
                     {latestScheduleDatasetHref ? (
-                      <Link href={latestScheduleDatasetHref} className={uiPrimitives.adminSecondaryButton}>
+                      <Link href={latestScheduleDatasetHref} className={adminActionLinkClassName}>
                         打开评测集
                       </Link>
                     ) : null}
                     {latestScheduleBasePromptHref ? (
-                      <Link href={latestScheduleBasePromptHref} className={uiPrimitives.adminSecondaryButton}>
+                      <Link href={latestScheduleBasePromptHref} className={adminActionLinkClassName}>
                         基线 Prompt
                       </Link>
                     ) : null}
                     {latestScheduleCandidatePromptHref ? (
-                      <Link href={latestScheduleCandidatePromptHref} className={uiPrimitives.adminSecondaryButton}>
+                      <Link href={latestScheduleCandidatePromptHref} className={adminActionLinkClassName}>
                         候选 Prompt
                       </Link>
                     ) : null}
                   </div>
                 ) : null}
               </div>
-              <div className="border border-stone-800 bg-stone-950 px-4 py-4">
-                <div className="text-xs uppercase tracking-[0.18em] text-stone-500">策略建议</div>
-                <div className="mt-3 text-stone-100">
+              <div className={adminInsetCardClassName}>
+                <div className="text-xs uppercase tracking-[0.18em] text-adminInkMuted">策略建议</div>
+                <div className="mt-3 text-adminInk">
                   {topStrategyRecommendation
                     ? `${topStrategyRecommendation.label} · P${topStrategyRecommendation.recommendedPriority} · ${topStrategyRecommendation.recommendedCadenceHours}h`
                     : "暂无建议"}
                 </div>
-                <div className="mt-2 text-sm text-stone-500">
+                <div className="mt-2 text-sm text-adminInkMuted">
                   {topStrategyRecommendation?.reason || "线上回流和近期趋势积累后，这里会显示最紧急的 agentStrategy 调整建议。"}
                 </div>
                 {topStrategyRecommendation ? (
                   <>
-                    <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-stone-500">
-                      <span className={`border px-2 py-1 uppercase tracking-[0.16em] ${getWritingEvalExecutionTone(topStrategyRecommendation.executionState)}`}>
+                    <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-adminInkMuted">
+                      <span className={getExecutionBadgeClassName(topStrategyRecommendation.executionState)}>
                         {topStrategyRecommendation.executionState}
                       </span>
                       <span>启用 {topStrategyRecommendation.enabledScheduleCount}</span>
@@ -498,45 +525,45 @@ export default async function AdminWritingEvalPage() {
                       {topStrategyRecommendation.blockedScheduleCount > 0 ? <span>阻断 {topStrategyRecommendation.blockedScheduleCount}</span> : null}
                     </div>
                     {topStrategyRecommendation.executionBlocker ? (
-                      <div className={`mt-2 text-xs leading-6 ${topStrategyRecommendation.executionState === "blocked" ? "text-cinnabar" : "text-stone-500"}`}>
+                      <div className={`mt-2 text-xs leading-6 ${topStrategyRecommendation.executionState === "blocked" ? "text-cinnabar" : "text-adminInkMuted"}`}>
                         执行提示：{topStrategyRecommendation.executionBlocker}
                       </div>
                     ) : null}
                     <div className="mt-3">
-                      <Link href={topStrategyHref} className={uiPrimitives.adminSecondaryButton}>
+                      <Link href={topStrategyHref} className={adminActionLinkClassName}>
                         {getStrategyActionLabel(topStrategyRecommendation)}
                       </Link>
                     </div>
                   </>
                 ) : null}
               </div>
-              <div className="border border-stone-800 bg-stone-950 px-4 py-4">
-                <div className="text-xs uppercase tracking-[0.18em] text-stone-500">自动放量状态</div>
-                <div className="mt-3 text-stone-100">
+              <div className={adminInsetCardClassName}>
+                <div className="text-xs uppercase tracking-[0.18em] text-adminInkMuted">自动放量状态</div>
+                <div className="mt-3 text-adminInk">
                   {latestAutoRolloutAction
                     ? `${latestAutoRolloutAction.assetType || "asset"} · ${latestAutoRolloutAction.directionLabel}`
                     : "暂无自动动作"}
                 </div>
-                <div className="mt-2 text-sm text-stone-500">
+                <div className="mt-2 text-sm text-adminInkMuted">
                   {latestAutoRolloutAction
                     ? `${formatWritingEvalDateTime(latestAutoRolloutAction.createdAt)} · 风险 ${latestAutoRolloutAction.riskLevel} · ${latestAutoRolloutAction.reason || "无原因"}`
                     : "scheduler 写入自动放量审计后，这里会显示最近一次自动收缩或扩量。"}
                 </div>
                 {latestAutoRolloutAction ? (
                   <>
-                    <div className="mt-3 text-xs text-stone-500">
+                    <div className="mt-3 text-xs text-adminInkMuted">
                       回流 {formatWritingEvalMetric(latestAutoRolloutAction.feedbackCount, 0)} · 用户 {formatWritingEvalMetric(latestAutoRolloutAction.uniqueUsers, 0)} ·
                       打开 {formatWritingEvalMetric(latestAutoRolloutAction.openRate, 1)}%
                     </div>
                     {latestAutoRolloutHref || latestAutoRolloutPromptHref ? (
                       <div className="mt-3 flex flex-wrap gap-3">
                         {latestAutoRolloutHref ? (
-                          <Link href={latestAutoRolloutHref} className={uiPrimitives.adminSecondaryButton}>
+                          <Link href={latestAutoRolloutHref} className={adminActionLinkClassName}>
                             打开聚焦账本
                           </Link>
                         ) : null}
                         {latestAutoRolloutPromptHref ? (
-                          <Link href={latestAutoRolloutPromptHref} className={uiPrimitives.adminSecondaryButton}>
+                          <Link href={latestAutoRolloutPromptHref} className={adminActionLinkClassName}>
                             打开 Prompts 页
                           </Link>
                         ) : null}
@@ -548,18 +575,18 @@ export default async function AdminWritingEvalPage() {
             </div>
           </section>
 
-          <section className={uiPrimitives.adminPanel + " p-5"}>
-            <div className="text-xs uppercase tracking-[0.24em] text-stone-500">最近趋势</div>
+          <section className={adminSectionCardClassName}>
+            <div className="text-xs uppercase tracking-[0.24em] text-adminInkMuted">最近趋势</div>
             <div className="mt-4 space-y-3">
               {insights.trend.slice(-5).reverse().map((item) => (
-                <div key={item.runId} className="border border-stone-800 bg-stone-950 px-4 py-4">
+                <div key={item.runId} className={adminInsetCardClassName}>
                   <div className="flex items-center justify-between gap-3">
-                    <Link href={buildAdminWritingEvalRunsHref({ runId: item.runId })} className="font-mono text-xs text-stone-300 transition hover:text-cinnabar">
+                    <Link href={buildAdminWritingEvalRunsHref({ runId: item.runId })} className={cn("font-mono text-xs text-adminInk", adminInlineLinkClassName)}>
                       {item.runCode}
                     </Link>
-                    <div className="text-xs text-stone-500">{formatWritingEvalDateTime(item.createdAt)}</div>
+                    <div className="text-xs text-adminInkMuted">{formatWritingEvalDateTime(item.createdAt)}</div>
                   </div>
-                  <div className="mt-3 text-sm text-stone-400">
+                  <div className="mt-3 text-sm text-adminInkSoft">
                     质量 {formatWritingEvalMetric(item.qualityScore)} · 爆款 {formatWritingEvalMetric(item.viralScore)} · 总分 {formatWritingEvalMetric(item.totalScore)}
                   </div>
                   <div className={`mt-2 text-sm ${item.deltaTotalScore >= 0 ? "text-emerald-400" : "text-cinnabar"}`}>
@@ -568,7 +595,7 @@ export default async function AdminWritingEvalPage() {
                   </div>
                 </div>
               ))}
-              {insights.trend.length === 0 ? <div className="text-sm text-stone-500">还没有趋势记录。</div> : null}
+              {insights.trend.length === 0 ? <div className="text-sm text-adminInkMuted">还没有趋势记录。</div> : null}
             </div>
           </section>
         </div>

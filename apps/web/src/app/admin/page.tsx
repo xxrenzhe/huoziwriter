@@ -1,5 +1,6 @@
 import { access } from "node:fs/promises";
 import path from "node:path";
+import { cn, surfaceCardStyles } from "@huoziwriter/ui";
 import { AdminImageAssetMaintenance } from "@/components/admin-image-assets-client";
 import { AdminTopicSourcesClient } from "@/components/admin-client";
 import { AdminOverview } from "@/components/admin-views";
@@ -111,6 +112,32 @@ function formatCompressionDelta(originalBytes: number | null | undefined, compre
     return "0%";
   }
   return `${ratio}%`;
+}
+
+const adminSectionCardClassName = cn(surfaceCardStyles(), "border-adminLineStrong bg-adminSurface p-6 text-adminInk shadow-none");
+const adminInsetCardClassName = cn(surfaceCardStyles(), "border-adminLineStrong bg-adminSurfaceMuted px-4 py-3 text-adminInk shadow-none");
+const adminInsetCardBodyClassName = cn(adminInsetCardClassName, "text-sm text-adminInk");
+const adminDetailCardClassName = cn(surfaceCardStyles(), "border-adminLineStrong bg-adminSurfaceMuted px-4 py-4 text-sm text-adminInk shadow-none");
+const adminEmptyStateCardClassName = cn(adminDetailCardClassName, "text-adminInkSoft");
+const adminTerminalCardClassName = cn(surfaceCardStyles(), "border-adminLineStrong bg-adminBg p-4 font-mono text-xs leading-7 text-adminInk shadow-none");
+const adminAssetMetaCardClassName = cn(surfaceCardStyles(), "border-adminLineStrong bg-adminSurfaceAlt px-3 py-3 text-xs leading-6 text-adminInkSoft shadow-none");
+const adminSectionEyebrowClassName = "text-xs uppercase tracking-[0.24em] text-cinnabar";
+const adminSectionTitleClassName = "mt-4 font-serifCn text-3xl text-adminInk text-balance";
+const adminSectionDescriptionClassName = "mt-3 text-sm leading-7 text-adminInkSoft";
+const adminStatusBadgeClassName = cn(surfaceCardStyles(), "border border-adminLineStrong bg-adminSurfaceMuted px-2 py-1 text-adminInk shadow-none");
+const adminSuccessBadgeClassName = cn(adminStatusBadgeClassName, "border-emerald-900 bg-emerald-950/30 text-emerald-300");
+const adminWarningBadgeClassName = cn(adminStatusBadgeClassName, "border-[#7d6430] bg-[#2b2518] text-[#e0c37a]");
+const adminDangerBadgeClassName = cn(adminStatusBadgeClassName, "border-[#8f3136] bg-[#2a1718] text-[#efb5b9]");
+const adminWarningNoticeClassName = cn(surfaceCardStyles(), "border-[#7d6430] bg-[#2b2518] px-3 py-3 text-xs leading-6 text-[#e0c37a] shadow-none");
+
+function getImageAssetHealthBadgeClassName(health: "ready" | "remote" | "missing" | "missing-meta") {
+  if (health === "ready") {
+    return adminSuccessBadgeClassName;
+  }
+  if (health === "remote") {
+    return adminWarningBadgeClassName;
+  }
+  return adminDangerBadgeClassName;
 }
 
 export default async function AdminOverviewPage() {
@@ -347,43 +374,43 @@ export default async function AdminOverviewPage() {
         ]}
       />
       <section className="grid gap-4 xl:grid-cols-3">
-        <article className="border border-stone-800 bg-[#171718] p-6">
-          <div className="text-xs uppercase tracking-[0.28em] text-cinnabar">Celery 任务队列</div>
-          <h2 className="mt-4 font-serifCn text-3xl text-stone-100 text-balance">后台任务运行态</h2>
+        <article className={adminSectionCardClassName}>
+          <div className={adminSectionEyebrowClassName}>Celery 任务队列</div>
+          <h2 className={adminSectionTitleClassName}>后台任务运行态</h2>
           <div className="mt-6 grid gap-3 text-sm text-stone-300">
-            <div className="flex items-center justify-between border border-stone-800 bg-stone-950 px-4 py-3">
+            <div className={cn(adminInsetCardBodyClassName, "flex items-center justify-between")}>
               <span>Queued</span>
               <span>{queueSummary.get("queued") ?? 0}</span>
             </div>
-            <div className="flex items-center justify-between border border-stone-800 bg-stone-950 px-4 py-3">
+            <div className={cn(adminInsetCardBodyClassName, "flex items-center justify-between")}>
               <span>Running</span>
               <span>{queueSummary.get("running") ?? 0}</span>
             </div>
-            <div className="flex items-center justify-between border border-stone-800 bg-stone-950 px-4 py-3">
+            <div className={cn(adminInsetCardBodyClassName, "flex items-center justify-between")}>
               <span>Completed</span>
               <span>{queueSummary.get("completed") ?? 0}</span>
             </div>
-            <div className="flex items-center justify-between border border-stone-800 bg-stone-950 px-4 py-3 text-cinnabar">
+            <div className={cn(adminInsetCardBodyClassName, "flex items-center justify-between text-cinnabar")}>
               <span>Failed</span>
               <span>{queueSummary.get("failed") ?? 0}</span>
             </div>
           </div>
         </article>
-        <article className="border border-stone-800 bg-[#171718] p-6">
-          <div className="text-xs uppercase tracking-[0.28em] text-cinnabar">Token 刷新引擎状态</div>
-          <h2 className="mt-4 font-serifCn text-3xl text-stone-100 text-balance">公众号连接健康度</h2>
+        <article className={adminSectionCardClassName}>
+          <div className={adminSectionEyebrowClassName}>Token 刷新引擎状态</div>
+          <h2 className={adminSectionTitleClassName}>公众号连接健康度</h2>
           <div className="mt-6 space-y-3 text-sm text-stone-300">
-            <div className="border border-stone-800 bg-stone-950 px-4 py-3">即将过期（24h 内）：{expiringTokens?.count ?? 0}</div>
-            <div className="border border-stone-800 bg-stone-950 px-4 py-3">已过期：{expiredTokens?.count ?? 0}</div>
-            <div className="border border-stone-800 bg-stone-950 px-4 py-3">凭证失效：{invalidTokens?.count ?? 0}</div>
-            <div className="border border-stone-800 bg-stone-950 px-4 py-3">
+            <div className={adminInsetCardBodyClassName}>即将过期（24h 内）：{expiringTokens?.count ?? 0}</div>
+            <div className={adminInsetCardBodyClassName}>已过期：{expiredTokens?.count ?? 0}</div>
+            <div className={adminInsetCardBodyClassName}>凭证失效：{invalidTokens?.count ?? 0}</div>
+            <div className={adminInsetCardBodyClassName}>
               当前异常总量：{(expiredTokens?.count ?? 0) + (invalidTokens?.count ?? 0)}
             </div>
           </div>
         </article>
-        <article className="border border-stone-800 bg-[#171718] p-6">
-          <div className="text-xs uppercase tracking-[0.28em] text-cinnabar">System Pulse</div>
-          <h2 className="mt-4 font-serifCn text-3xl text-stone-100 text-balance">运行提醒</h2>
+        <article className={adminSectionCardClassName}>
+          <div className={adminSectionEyebrowClassName}>System Pulse</div>
+          <h2 className={adminSectionTitleClassName}>运行提醒</h2>
           <ul className="mt-6 space-y-3 text-sm leading-7 text-stone-300">
             <li>失败任务 {failedJobs.length} 条，优先检查知识刷新与热点抓取。</li>
             <li>微信失败推送 {failedSyncs.length} 条，建议先排查 token 与草稿内容。</li>
@@ -392,21 +419,21 @@ export default async function AdminOverviewPage() {
         </article>
       </section>
       <section className="grid gap-4 xl:grid-cols-3">
-        <article className="border border-stone-800 bg-[#171718] p-6">
-          <div className="text-xs uppercase tracking-[0.28em] text-cinnabar">External Fetch</div>
-          <h2 className="mt-4 font-serifCn text-3xl text-stone-100 text-balance">外采稳定性</h2>
+        <article className={adminSectionCardClassName}>
+          <div className={adminSectionEyebrowClassName}>External Fetch</div>
+          <h2 className={adminSectionTitleClassName}>外采稳定性</h2>
           <div className="mt-6 space-y-3 text-sm text-stone-300">
-            <div className="border border-stone-800 bg-stone-950 px-4 py-3">抓取降级：{degradedCaptureJobs.length}</div>
-            <div className="border border-stone-800 bg-stone-950 px-4 py-3">待重试 URL 采集：{pendingRetryCaptureJobs.length}</div>
-            <div className="border border-stone-800 bg-stone-950 px-4 py-3">热点抓取失败：{failedTopicFetchJobs.length}</div>
+            <div className={adminInsetCardBodyClassName}>抓取降级：{degradedCaptureJobs.length}</div>
+            <div className={adminInsetCardBodyClassName}>待重试 URL 采集：{pendingRetryCaptureJobs.length}</div>
+            <div className={adminInsetCardBodyClassName}>热点抓取失败：{failedTopicFetchJobs.length}</div>
           </div>
         </article>
-        <article className="border border-stone-800 bg-[#171718] p-6 xl:col-span-2">
-          <div className="text-xs uppercase tracking-[0.24em] text-cinnabar">Fetch Incidents</div>
-          <h2 className="mt-4 font-serifCn text-3xl text-stone-100 text-balance">最近外采异常</h2>
+        <article className={cn(adminSectionCardClassName, "xl:col-span-2")}>
+          <div className={adminSectionEyebrowClassName}>Fetch Incidents</div>
+          <h2 className={adminSectionTitleClassName}>最近外采异常</h2>
           <div className="mt-5 space-y-3">
             {recentExternalIncidents.length === 0 ? (
-              <div className="border border-stone-800 bg-stone-950 px-4 py-4 text-sm text-stone-400">最近没有新的外采异常，热点抓取与链接采集都处于正常区间。</div>
+              <div className={adminEmptyStateCardClassName}>最近没有新的外采异常，热点抓取与链接采集都处于正常区间。</div>
             ) : (
               recentExternalIncidents.slice(0, 8).map((job) => {
                 const degradedReason =
@@ -428,7 +455,7 @@ export default async function AdminOverviewPage() {
                       ? job.payload.url.trim()
                       : label;
                 return (
-                  <div key={job.id} className="border border-stone-800 bg-stone-950 px-4 py-4 text-sm text-stone-300">
+                  <div key={job.id} className={adminDetailCardClassName}>
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div className="font-medium text-stone-100">{title}</div>
                       <div className="text-xs text-stone-500">{new Date(job.updated_at).toLocaleString("zh-CN")}</div>
@@ -438,12 +465,12 @@ export default async function AdminOverviewPage() {
                       <span>{job.status}</span>
                       <span>attempts {job.attempts}</span>
                       {retryFlags.map((flag) => (
-                        <span key={`${job.id}-${flag}`} className="border border-[#7d6430] bg-[#2b2518] px-2 py-1 text-[#e0c37a]">
+                        <span key={`${job.id}-${flag}`} className={adminWarningBadgeClassName}>
                           {flag}
                         </span>
                       ))}
                       {degradedReason ? (
-                        <span className="border border-[#8f3136] bg-[#2a1718] px-2 py-1 text-[#efb5b9]">degraded</span>
+                        <span className={adminDangerBadgeClassName}>degraded</span>
                       ) : null}
                     </div>
                     <div className="mt-3 text-xs leading-6 text-stone-400">
@@ -457,15 +484,15 @@ export default async function AdminOverviewPage() {
         </article>
       </section>
       <section className="grid gap-4 xl:grid-cols-2">
-        <article className="border border-stone-800 bg-[#171718] p-6">
-          <div className="text-xs uppercase tracking-[0.24em] text-cinnabar">Queue Errors</div>
-          <h2 className="mt-4 font-serifCn text-3xl text-stone-100 text-balance">最近失败任务</h2>
+        <article className={adminSectionCardClassName}>
+          <div className={adminSectionEyebrowClassName}>Queue Errors</div>
+          <h2 className={adminSectionTitleClassName}>最近失败任务</h2>
           <div className="mt-5 space-y-3">
             {failedJobs.length === 0 ? (
-              <div className="border border-stone-800 bg-stone-950 px-4 py-4 text-sm text-stone-400">当前没有失败任务。</div>
+              <div className={adminEmptyStateCardClassName}>当前没有失败任务。</div>
             ) : (
               failedJobs.map((job) => (
-                <div key={job.id} className="border border-stone-800 bg-stone-950 px-4 py-4 text-sm text-stone-300">
+                <div key={job.id} className={adminDetailCardClassName}>
                   <div className="flex items-center justify-between gap-4">
                     <div className="font-medium text-stone-100">{job.job_type}</div>
                     <div className="text-xs text-stone-500">{new Date(job.updated_at).toLocaleString("zh-CN")}</div>
@@ -477,10 +504,10 @@ export default async function AdminOverviewPage() {
             )}
           </div>
         </article>
-        <article className="border border-stone-800 bg-[#171718] p-6">
-          <div className="text-xs uppercase tracking-[0.24em] text-cinnabar">Terminal Logs</div>
-          <h2 className="mt-4 font-serifCn text-3xl text-stone-100 text-balance">最近异常与审计</h2>
-          <div className="mt-5 border border-stone-800 bg-[#0b0b0c] p-4 font-mono text-xs leading-7 text-stone-300">
+        <article className={adminSectionCardClassName}>
+          <div className={adminSectionEyebrowClassName}>Terminal Logs</div>
+          <h2 className={adminSectionTitleClassName}>最近异常与审计</h2>
+          <div className={cn("mt-5", adminTerminalCardClassName)}>
             {failedSyncs.length === 0 && recentAuditLogs.length === 0 ? (
               <div>[system] no recent logs</div>
             ) : (
@@ -501,46 +528,48 @@ export default async function AdminOverviewPage() {
         </article>
       </section>
       <section className="grid gap-4 xl:grid-cols-[320px_minmax(0,1fr)]">
-        <article className="border border-stone-800 bg-[#171718] p-6">
-          <div className="text-xs uppercase tracking-[0.24em] text-cinnabar">Image Assets</div>
-          <h2 className="mt-4 font-serifCn text-3xl text-stone-100 text-balance">图片资产与存储健康</h2>
+        <article className={adminSectionCardClassName}>
+          <div className={adminSectionEyebrowClassName}>Image Assets</div>
+          <h2 className={adminSectionTitleClassName}>图片资产与存储健康</h2>
           <div className="mt-6 space-y-3 text-sm text-stone-300">
-            <div className="border border-stone-800 bg-stone-950 px-4 py-3">固化封面：{coverImages?.count ?? 0}</div>
-            <div className="border border-stone-800 bg-stone-950 px-4 py-3">候选图片：{coverImageCandidates?.count ?? 0}</div>
-            <div className="border border-stone-800 bg-stone-950 px-4 py-3">提供方分布：{imageProviderSummary}</div>
-            <div className="border border-stone-800 bg-stone-950 px-4 py-3">
+            <div className={adminInsetCardBodyClassName}>固化封面：{coverImages?.count ?? 0}</div>
+            <div className={adminInsetCardBodyClassName}>候选图片：{coverImageCandidates?.count ?? 0}</div>
+            <div className={adminInsetCardBodyClassName}>提供方分布：{imageProviderSummary}</div>
+            <div className={adminInsetCardBodyClassName}>
               最近 8 条本地健康：{readyRecentImageAssets}/{recentImageAssets.filter((asset) => asset.storage_provider === "local").length || 0} ready
             </div>
-            <div className="border border-stone-800 bg-stone-950 px-4 py-3">
+            <div className={adminInsetCardBodyClassName}>
               最近衍生分布：sharp {recentSharpDerivatives} · fallback {recentDerivativeFallbacks}
             </div>
-            <div className="border border-stone-800 bg-stone-950 px-4 py-3">
+            <div className={adminInsetCardBodyClassName}>
               当前衍生模式：{recentImageAssets[0]?.manifest?.derivativeMode || "未记录"}
             </div>
           </div>
         </article>
-        <article className="border border-stone-800 bg-[#171718] p-6">
-          <div className="text-xs uppercase tracking-[0.24em] text-cinnabar">Recent Image Assets</div>
-          <h2 className="mt-4 font-serifCn text-3xl text-stone-100 text-balance">最近图片资产记录</h2>
+        <article className={adminSectionCardClassName}>
+          <div className={adminSectionEyebrowClassName}>Recent Image Assets</div>
+          <h2 className={adminSectionTitleClassName}>最近图片资产记录</h2>
           <AdminImageAssetMaintenance />
           <div className="mt-5 space-y-3">
             {recentImageAssets.length === 0 ? (
-              <div className="border border-stone-800 bg-stone-950 px-4 py-4 text-sm text-stone-400">当前还没有任何封面图或候选图片资产。</div>
+              <div className={adminEmptyStateCardClassName}>当前还没有任何封面图或候选图片资产。</div>
             ) : (
               recentImageAssets.map((asset) => {
-                const healthTone =
-                  asset.health === "ready"
-                    ? "border-emerald-900 bg-emerald-950/30 text-emerald-300"
-                    : asset.health === "remote"
-                      ? "border-[#7d6430] bg-[#2b2518] text-[#e0c37a]"
-                      : "border-[#8f3136] bg-[#2a1718] text-[#efb5b9]";
                 const derivativeMode = asset.manifest?.derivativeMode || "unknown";
                 const originalBytes = asset.manifest?.original?.byteLength ?? asset.manifest?.byteLength;
                 const compressedBytes = asset.manifest?.compressed?.byteLength ?? null;
                 const thumbnailBytes = asset.manifest?.thumbnail?.byteLength ?? null;
                 const derivativeWarning = String(asset.manifest?.derivativeWarning || "").trim();
+                const healthLabel =
+                  asset.health === "ready"
+                    ? "ready"
+                    : asset.health === "remote"
+                      ? "remote"
+                      : asset.health === "missing-meta"
+                        ? "missing-meta"
+                        : "missing";
                 return (
-                  <div key={`${asset.asset_scope}-${asset.id}`} className="border border-stone-800 bg-stone-950 px-4 py-4 text-sm text-stone-300">
+                  <div key={`${asset.asset_scope}-${asset.id}`} className={adminDetailCardClassName}>
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div className="font-medium text-stone-100">
                         {asset.asset_scope === "cover" ? "已选封面" : `候选图 · ${asset.variant_label || "未命名"}`}
@@ -552,30 +581,22 @@ export default async function AdminOverviewPage() {
                       <span>{asset.storage_provider || "unknown"}</span>
                       <span>{derivativeMode}</span>
                       <span>{formatBytes(originalBytes)}</span>
-                      <span className={`border px-2 py-1 ${healthTone}`}>{
-                        asset.health === "ready"
-                          ? "ready"
-                          : asset.health === "remote"
-                            ? "remote"
-                            : asset.health === "missing-meta"
-                              ? "missing-meta"
-                              : "missing"
-                      }</span>
+                      <span className={getImageAssetHealthBadgeClassName(asset.health)}>{healthLabel}</span>
                     </div>
                     <div className="mt-3 grid gap-2 md:grid-cols-3">
-                      <div className="border border-stone-800 bg-[#111214] px-3 py-3 text-xs leading-6 text-stone-400">
+                      <div className={adminAssetMetaCardClassName}>
                         <div className="uppercase tracking-[0.18em] text-stone-500">Original</div>
                         <div className="mt-2 text-stone-300">{formatDimensions(asset.manifest?.original?.width, asset.manifest?.original?.height)}</div>
                         <div>{formatBytes(originalBytes)}</div>
                         <div>{asset.manifest?.original?.contentType || asset.manifest?.contentType || "未记录格式"}</div>
                       </div>
-                      <div className="border border-stone-800 bg-[#111214] px-3 py-3 text-xs leading-6 text-stone-400">
+                      <div className={adminAssetMetaCardClassName}>
                         <div className="uppercase tracking-[0.18em] text-stone-500">Compressed</div>
                         <div className="mt-2 text-stone-300">{formatDimensions(asset.manifest?.compressed?.width, asset.manifest?.compressed?.height)}</div>
                         <div>{formatBytes(compressedBytes)}</div>
                         <div>{asset.manifest?.compressed?.contentType || "未记录格式"}</div>
                       </div>
-                      <div className="border border-stone-800 bg-[#111214] px-3 py-3 text-xs leading-6 text-stone-400">
+                      <div className={adminAssetMetaCardClassName}>
                         <div className="uppercase tracking-[0.18em] text-stone-500">Thumbnail</div>
                         <div className="mt-2 text-stone-300">{formatDimensions(asset.manifest?.thumbnail?.width, asset.manifest?.thumbnail?.height)}</div>
                         <div>{formatBytes(thumbnailBytes)}</div>
@@ -593,7 +614,7 @@ export default async function AdminOverviewPage() {
                       {asset.image_url}
                     </div>
                     {derivativeWarning ? (
-                      <div className="mt-3 border border-[#7d6430] bg-[#2b2518] px-3 py-3 text-xs leading-6 text-[#e0c37a]">
+                      <div className={cn("mt-3", adminWarningNoticeClassName)}>
                         衍生降级：{derivativeWarning}
                       </div>
                     ) : null}
@@ -604,10 +625,10 @@ export default async function AdminOverviewPage() {
           </div>
         </article>
       </section>
-      <section className="border border-stone-800 bg-[#171718] p-6">
-        <div className="text-xs uppercase tracking-[0.24em] text-cinnabar">Default Sources</div>
-        <h2 className="mt-4 font-serifCn text-3xl text-stone-100 text-balance">系统默认信息源</h2>
-        <div className="mt-3 text-sm leading-7 text-stone-400">
+      <section className={adminSectionCardClassName}>
+        <div className={adminSectionEyebrowClassName}>Default Sources</div>
+        <h2 className={adminSectionTitleClassName}>系统默认信息源</h2>
+        <div className={adminSectionDescriptionClassName}>
           运营后台在这里维护全局默认信源，新增后会立即尝试同步一轮热点；普通作者只能在此基础上叠加自己的自定义源。
         </div>
         <div className="mt-5">
@@ -642,15 +663,15 @@ export default async function AdminOverviewPage() {
           />
         </div>
       </section>
-      <section className="border border-stone-800 bg-[#171718] p-6">
-        <div className="text-xs uppercase tracking-[0.24em] text-cinnabar">Support Inbox</div>
-        <h2 className="mt-4 font-serifCn text-3xl text-stone-100 text-balance">最近支持消息</h2>
+      <section className={adminSectionCardClassName}>
+        <div className={adminSectionEyebrowClassName}>Support Inbox</div>
+        <h2 className={adminSectionTitleClassName}>最近支持消息</h2>
         <div className="mt-5 grid gap-3">
           {supportMessages.length === 0 ? (
-            <div className="border border-stone-800 bg-stone-950 px-4 py-4 text-sm text-stone-400">当前还没有新的支持提交。</div>
+            <div className={adminEmptyStateCardClassName}>当前还没有新的支持提交。</div>
           ) : (
             supportMessages.map((message) => (
-              <div key={message.id} className="border border-stone-800 bg-stone-950 px-4 py-4">
+              <div key={message.id} className={adminDetailCardClassName}>
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div className="font-medium text-stone-100">{message.name} · {message.email}</div>
                   <div className="text-xs text-stone-500">{new Date(message.created_at).toLocaleString("zh-CN")}</div>

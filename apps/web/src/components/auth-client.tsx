@@ -1,7 +1,27 @@
 "use client";
+import { Button, Input, cn } from "@huoziwriter/ui";
 import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
-import { uiPrimitives } from "@huoziwriter/ui";
+
+const authFormClassName = cn("space-y-5");
+const authFieldClassName = cn("space-y-2");
+const authLabelClassName = cn("text-sm", "text-inkSoft");
+const authDescriptionClassName = cn("text-sm", "leading-7", "text-inkSoft");
+const authErrorClassName = cn("text-sm", "text-cinnabar");
+
+function FormError({
+  error,
+  errorId,
+}: {
+  error: string | null;
+  errorId?: string;
+}) {
+  return (
+    <div aria-live="polite">
+      {error ? <div id={errorId} role="alert" className={authErrorClassName}>{error}</div> : null}
+    </div>
+  );
+}
 
 export function LoginForm() {
   const router = useRouter();
@@ -9,6 +29,7 @@ export function LoginForm() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const errorId = error ? "login-form-error" : undefined;
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -28,43 +49,47 @@ export function LoginForm() {
     if (json.data.mustChangePassword) {
       router.push("/change-password");
     } else {
-      router.push(json.data.role === "admin" ? "/admin" : "/dashboard");
+      router.push(json.data.role === "admin" ? "/admin" : "/warroom");
     }
     router.refresh();
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-5">
-      <div className="space-y-2">
-        <label className="text-sm text-stone-600">用户名</label>
-        <input aria-label="输入用户名"
+    <form onSubmit={handleSubmit} className={authFormClassName}>
+      <div className={authFieldClassName}>
+        <label htmlFor="login-username" className={authLabelClassName}>用户名</label>
+        <Input
+          id="login-username"
+          name="username"
           value={username}
           onChange={(event) => setUsername(event.target.value)}
-          className={uiPrimitives.input}
           placeholder="输入用户名"
           spellCheck={false}
           autoCapitalize="none"
           autoCorrect="off"
           autoComplete="username"
+          aria-invalid={error ? true : undefined}
+          aria-describedby={errorId}
         />
       </div>
-      <div className="space-y-2">
-        <label className="text-sm text-stone-600">密码</label>
-        <input aria-label="输入管理账号或已分配账号密码"
+      <div className={authFieldClassName}>
+        <label htmlFor="login-password" className={authLabelClassName}>密码</label>
+        <Input
+          id="login-password"
+          name="current-password"
           type="password"
           value={password}
           onChange={(event) => setPassword(event.target.value)}
-          className={uiPrimitives.input}
           placeholder="输入管理账号或已分配账号密码"
           autoComplete="current-password"
+          aria-invalid={error ? true : undefined}
+          aria-describedby={errorId}
         />
       </div>
-      <div aria-live="polite">
-        {error ? <div className="text-sm text-cinnabar">{error}</div> : null}
-      </div>
-      <button disabled={loading} className={uiPrimitives.primaryButtonFull}>
+      <FormError error={error} errorId={errorId} />
+      <Button type="submit" variant="primary" fullWidth disabled={loading}>
         {loading ? "登录中…" : "进入系统"}
-      </button>
+      </Button>
     </form>
   );
 }
@@ -80,6 +105,7 @@ export function ChangePasswordForm({
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const errorId = error ? "change-password-form-error" : undefined;
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -101,33 +127,58 @@ export function ChangePasswordForm({
       setError(json.error || "修改密码失败");
       return;
     }
-    router.push(json.data.role === "admin" ? "/admin" : "/dashboard");
+    router.push(json.data.role === "admin" ? "/admin" : "/warroom");
     router.refresh();
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-5">
-      <div className="text-sm leading-7 text-stone-600">
+    <form onSubmit={handleSubmit} className={authFormClassName}>
+      <div className={authDescriptionClassName}>
         {mustChange ? "这是运营后台发放的初始密码，首次登录后必须立即修改。" : "为了账号安全，建议定期轮换密码。"}
       </div>
-      <div className="space-y-2">
-        <label className="text-sm text-stone-600">当前密码</label>
-        <input aria-label="input control" type="password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} className={uiPrimitives.input} autoComplete="current-password" />
+      <div className={authFieldClassName}>
+        <label htmlFor="current-password" className={authLabelClassName}>当前密码</label>
+        <Input
+          id="current-password"
+          name="currentPassword"
+          type="password"
+          value={currentPassword}
+          onChange={(event) => setCurrentPassword(event.target.value)}
+          autoComplete="current-password"
+          aria-invalid={error ? true : undefined}
+          aria-describedby={errorId}
+        />
       </div>
-      <div className="space-y-2">
-        <label className="text-sm text-stone-600">新密码</label>
-        <input aria-label="input control" type="password" value={nextPassword} onChange={(event) => setNextPassword(event.target.value)} className={uiPrimitives.input} autoComplete="new-password" />
+      <div className={authFieldClassName}>
+        <label htmlFor="next-password" className={authLabelClassName}>新密码</label>
+        <Input
+          id="next-password"
+          name="nextPassword"
+          type="password"
+          value={nextPassword}
+          onChange={(event) => setNextPassword(event.target.value)}
+          autoComplete="new-password"
+          aria-invalid={error ? true : undefined}
+          aria-describedby={errorId}
+        />
       </div>
-      <div className="space-y-2">
-        <label className="text-sm text-stone-600">确认新密码</label>
-        <input aria-label="input control" type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} className={uiPrimitives.input} autoComplete="new-password" />
+      <div className={authFieldClassName}>
+        <label htmlFor="confirm-password" className={authLabelClassName}>确认新密码</label>
+        <Input
+          id="confirm-password"
+          name="confirmPassword"
+          type="password"
+          value={confirmPassword}
+          onChange={(event) => setConfirmPassword(event.target.value)}
+          autoComplete="new-password"
+          aria-invalid={error ? true : undefined}
+          aria-describedby={errorId}
+        />
       </div>
-      <div aria-live="polite">
-        {error ? <div className="text-sm text-cinnabar">{error}</div> : null}
-      </div>
-      <button disabled={loading} className={uiPrimitives.primaryButtonFull}>
+      <FormError error={error} errorId={errorId} />
+      <Button type="submit" variant="primary" fullWidth disabled={loading}>
         {loading ? "提交中…" : "更新密码"}
-      </button>
+      </Button>
     </form>
   );
 }
@@ -142,8 +193,8 @@ export function LogoutButton() {
   }
 
   return (
-    <button onClick={handleLogout} className={uiPrimitives.secondaryButton}>
+    <Button onClick={handleLogout} variant="secondary">
       退出登录
-    </button>
+    </Button>
   );
 }

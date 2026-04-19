@@ -1,18 +1,18 @@
 export default function ManifestoPage() {
   return (
     <div className="mx-auto max-w-5xl space-y-8">
-      <section className="border border-stone-300/40 bg-white px-6 py-12 text-center shadow-ink md:px-10">
+      <section className="border border-lineStrong/40 bg-surface px-6 py-12 text-center shadow-ink md:px-10">
         <div className="mx-auto flex h-12 w-12 items-center justify-center border border-cinnabar/40 bg-cinnabar/5 text-xs uppercase tracking-[0.28em] text-cinnabar">
           印
         </div>
         <h1 className="mt-6 font-serifCn text-5xl font-semibold leading-tight text-ink md:text-6xl text-balance">文字不该是算法的排泄物</h1>
-        <p className="mx-auto mt-6 max-w-3xl text-lg leading-9 text-stone-700">
+        <p className="mx-auto mt-6 max-w-3xl text-lg leading-9 text-inkSoft">
           活字不是把大模型套进一个更好看的壳里，而是给中文写作重新造一条生产线。机器负责脏活，判断、立场和语感仍然必须来自人。
         </p>
       </section>
 
-      <section className="mx-auto max-w-3xl border border-stone-300/40 bg-white px-6 py-10 shadow-ink md:px-10">
-        <div className="space-y-10 text-lg leading-10 text-stone-700">
+      <section className="mx-auto max-w-3xl border border-lineStrong/40 bg-surface px-6 py-10 shadow-ink md:px-10">
+        <div className="space-y-10 text-lg leading-10 text-inkSoft">
           <section>
             <h2 className="font-serifCn text-3xl font-semibold text-ink text-balance">为什么做活字？因为我们受够了“总而言之”。</h2>
             <p className="mt-4">
@@ -20,7 +20,7 @@ export default function ManifestoPage() {
             </p>
           </section>
 
-          <blockquote className="border-l-4 border-cinnabar bg-[#f5f4ef] px-6 py-5 font-serifCn text-2xl leading-10 text-ink text-balance">
+          <blockquote className="border-l-4 border-cinnabar bg-paperStrong px-6 py-5 font-serifCn text-2xl leading-10 text-ink text-balance">
             我们坚信，AI 只是印书机的活字盘，而灵魂必须来自你的记忆、观察与判断。
           </blockquote>
 
@@ -39,10 +39,10 @@ export default function ManifestoPage() {
           </section>
         </div>
 
-        <div className="mt-12 flex items-end justify-between gap-4 border-t border-stone-200 pt-8">
+        <div className="mt-12 flex items-end justify-between gap-4 border-t border-line pt-8">
           <div>
             <div className="font-serifCn text-3xl text-ink text-balance">独立开发者：阿水</div>
-            <div className="mt-2 text-sm uppercase tracking-[0.24em] text-stone-500">HuoZi Writer Manifesto</div>
+            <div className="mt-2 text-sm uppercase tracking-[0.24em] text-inkMuted">HuoZi Writer Manifesto</div>
           </div>
           <div className="flex h-14 w-14 items-center justify-center border border-cinnabar bg-cinnabar/5 text-cinnabar">
             朱印

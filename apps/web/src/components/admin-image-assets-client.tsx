@@ -2,6 +2,35 @@
 
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
+import { Button, Input, cn, surfaceCardStyles } from "@huoziwriter/ui";
+
+const adminMaintenanceFormClassName = cn(
+  surfaceCardStyles({ padding: "sm" }),
+  "mt-5 border-adminLineStrong bg-adminBg text-adminInk shadow-none",
+);
+const adminMaintenanceInputClassName = cn(
+  "w-24 min-h-10 px-3 py-2",
+  "border-adminLineStrong bg-adminSurfaceAlt text-adminInk",
+  "focus-visible:ring-adminAccent focus-visible:ring-offset-adminBg",
+);
+const adminMaintenanceMessageBaseClassName = cn(
+  surfaceCardStyles({ padding: "sm" }),
+  "mt-3 text-sm shadow-none",
+);
+const adminMaintenanceMessageSuccessClassName = cn(
+  adminMaintenanceMessageBaseClassName,
+  "border-adminLineStrong bg-adminSurfaceAlt text-adminInkSoft",
+);
+const adminMaintenanceMessageErrorClassName = cn(
+  adminMaintenanceMessageBaseClassName,
+  "border-[#8f3136] bg-[#2a1718] text-[#efb5b9]",
+);
+
+function getMaintenanceMessageClassName(message: string) {
+  return message.includes("失败")
+    ? adminMaintenanceMessageErrorClassName
+    : adminMaintenanceMessageSuccessClassName;
+}
 
 export function AdminImageAssetMaintenance() {
   const router = useRouter();
@@ -35,28 +64,32 @@ export function AdminImageAssetMaintenance() {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="mt-5 border border-stone-800 bg-stone-950 px-4 py-4">
-      <div className="text-xs uppercase tracking-[0.18em] text-stone-500">Image Maintenance</div>
-      <div className="mt-2 text-sm leading-7 text-stone-300">
+    <form onSubmit={handleSubmit} className={adminMaintenanceFormClassName}>
+      <div className="text-xs uppercase tracking-[0.18em] text-adminInkMuted">Image Maintenance</div>
+      <div className="mt-2 text-sm leading-7 text-adminInkSoft">
         对历史 `passthrough` / `passthrough-fallback` 资产执行一次重建，补齐真实压缩图和缩略图。单次建议先跑小批量。
       </div>
       <div className="mt-4 flex flex-wrap items-center gap-3">
-        <input aria-label="20"
+        <Input
+          aria-label="重建数量上限"
           value={limit}
           onChange={(event) => setLimit(event.target.value)}
           inputMode="numeric"
-          className="w-24 border border-stone-700 bg-[#111214] px-3 py-2 text-sm text-stone-200"
+          className={adminMaintenanceInputClassName}
           placeholder="20"
         />
-        <button
-          disabled={running}
-          className="border border-cinnabar bg-cinnabar px-4 py-2 text-sm text-white disabled:opacity-60"
+        <Button
+          type="submit"
+          variant="primary"
+          size="sm"
+          loading={running}
+          className="px-4"
         >
           {running ? "重建中…" : "重建旧资产衍生"}
-        </button>
+        </Button>
       </div>
       {message ? (
-        <div className={`mt-3 text-sm ${message.includes("失败") ? "text-cinnabar" : "text-stone-300"}`}>
+        <div className={getMaintenanceMessageClassName(message)}>
           {message}
         </div>
       ) : null}

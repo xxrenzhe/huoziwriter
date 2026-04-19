@@ -13,7 +13,7 @@ export default async function AdminAiRoutingPage() {
     getGlobalObjectStorageConfig(),
   ]);
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <RouteManagerClient
         routes={routes.map((route) => ({
           sceneCode: route.scene_code,
@@ -22,8 +22,10 @@ export default async function AdminAiRoutingPage() {
           description: route.description,
         }))}
       />
-      <GlobalCoverImageEngineSettings config={coverImageEngine} />
-      <GlobalObjectStorageSettings config={objectStorage} />
+      <div className="grid gap-6 2xl:grid-cols-[minmax(0,360px)_minmax(0,1fr)]">
+        <GlobalCoverImageEngineSettings config={coverImageEngine} />
+        <GlobalObjectStorageSettings config={objectStorage} />
+      </div>
     </div>
   );
 }

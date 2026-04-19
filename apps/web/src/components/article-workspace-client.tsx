@@ -9,8 +9,9 @@ import {
   selectCoverCandidateAction,
   upsertWechatConnectionAction,
 } from "@/app/(writer)/writer-actions";
+import { Button, Input, Select, Textarea } from "@huoziwriter/ui";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { ChangeEvent, FormEvent, type ReactNode, startTransition, useEffect, useMemo, useRef, useState } from "react";
 import type { ReviewSeriesPlaybook } from "@/lib/article-outcomes";
 import { analyzeAiNoise } from "@/lib/ai-noise-scan";
@@ -39,6 +40,7 @@ import { buildWritingDiversityReport } from "@/lib/writing-diversity";
 import { buildWritingQualityPanel } from "@/lib/writing-quality";
 import type { ArticleStatus } from "@/lib/domain";
 import { ArticleOutlineClient } from "./article-outline-client";
+import { useCommandMenu } from "./command-menu";
 import { WechatNativePreview } from "./wechat-native-preview";
 import { SentenceRhythmMap } from "./sentence-rhythm-map";
 
@@ -57,6 +59,7 @@ function escapeRegex(text: string) {
 
 type EditorialAnnotation = {
   id: string;
+  anchorId: string;
   order: number;
   ruleId: string;
   ruleKind: LanguageGuardHit["ruleKind"];
@@ -68,6 +71,12 @@ type EditorialAnnotation = {
   count: number;
   sampleContext: string;
 };
+
+const ARTICLE_AUTOSAVE_DEBOUNCE_MS = 500;
+
+function buildEditorialAnnotationAnchorId(order: number) {
+  return `editorial-annotation-${order}`;
+}
 
 const CLASSIC_OPENING_PATTERNS: Array<{ title: string; detail: string }> = [
   {
@@ -97,7 +106,15 @@ function buildEditorialReview(markdown: string, hits: LanguageGuardHit[]) {
     };
   }
 
-  const ranges: Array<{ start: number; end: number; annotationId: string; order: number; severity: LanguageGuardHit["severity"] }> = [];
+  const ranges: Array<{
+    start: number;
+    end: number;
+    annotationId: string;
+    anchorId: string;
+    order: number;
+    severity: LanguageGuardHit["severity"];
+    isPrimary: boolean;
+  }> = [];
   const annotations: EditorialAnnotation[] = [];
   const sortedHits = [...hits]
     .map((hit) => ({
@@ -119,6 +136,7 @@ function buildEditorialReview(markdown: string, hits: LanguageGuardHit[]) {
 
   sortedHits.forEach((hit, index) => {
     const annotationId = `${hit.ruleId}-${index}`;
+    const anchorId = buildEditorialAnnotationAnchorId(index + 1);
     let count = 0;
     let searchIndex = 0;
     let sampleContext = hit.matched;
@@ -138,8 +156,10 @@ function buildEditorialReview(markdown: string, hits: LanguageGuardHit[]) {
           start: foundAt,
           end: rangeEnd,
           annotationId,
+          anchorId,
           order: index + 1,
           severity: hit.severity,
+          isPrimary: count === 1,
         });
       }
       searchIndex = rangeEnd;
@@ -148,6 +168,7 @@ function buildEditorialReview(markdown: string, hits: LanguageGuardHit[]) {
     if (count > 0) {
       annotations.push({
         id: annotationId,
+        anchorId,
         order: index + 1,
         ruleId: hit.ruleId,
         ruleKind: hit.ruleKind,
@@ -179,7 +200,10 @@ function buildEditorialReview(markdown: string, hits: LanguageGuardHit[]) {
       range.severity === "high"
         ? "color:#7f1d1d;background:rgba(167,48,50,0.10);text-decoration-line:underline;text-decoration-style:wavy;text-decoration-color:#a73032;text-decoration-thickness:1.5px;box-shadow:inset 0 -1px 0 rgba(167,48,50,0.18);"
         : "color:#7d6430;background:rgba(196,138,58,0.14);text-decoration-line:underline;text-decoration-style:wavy;text-decoration-color:#c48a3a;text-decoration-thickness:1.5px;";
-    html += `<span style="${tone}">${matchedText}<sup style="margin-left:2px;color:${range.severity === "high" ? "#a73032" : "#8a651e"};font-size:10px;font-weight:700;">${range.order}</sup></span>`;
+    const primaryAttrs = range.isPrimary
+      ? ` id="${range.anchorId}" tabindex="-1"`
+      : "";
+    html += `<span data-annotation-id="${range.annotationId}"${primaryAttrs} style="${tone}">${matchedText}<sup style="margin-left:2px;color:${range.severity === "high" ? "#a73032" : "#8a651e"};font-size:10px;font-weight:700;">${range.order}</sup></span>`;
     cursor = range.end;
   }
   html += escapeHtml(text.slice(cursor));
@@ -486,89 +510,92 @@ export function WechatConnectionsManager({
   return (
     <div className="space-y-6">
       {!canManage ? (
-        <div className="border border-dashed border-[#d8b0b2] bg-[#fff3f3] px-4 py-4 text-sm leading-7 text-[#8f3136]">
+        <div className="border border-dashed border-danger/30 bg-surface px-4 py-4 text-sm leading-7 text-danger">
           {displayPlanName}当前不开放微信公众号授权。你仍可继续写作、导出 Markdown，并在升级到 Pro 或更高套餐后解锁公众号连接和草稿箱推送。
         </div>
       ) : null}
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
-        <div className="border border-stone-300/40 bg-[#faf7f0] p-5">
-          <div className="text-xs uppercase tracking-[0.24em] text-stone-500">授权说明</div>
-          <div className="mt-3 space-y-2 text-sm leading-7 text-stone-700">
+        <div className="border border-lineStrong/40 bg-paperStrong p-5">
+          <div className="text-xs uppercase tracking-[0.24em] text-inkMuted">授权说明</div>
+          <div className="mt-3 space-y-2 text-sm leading-7 text-inkSoft">
             <div>这里直接录入公众号 `AppID / AppSecret`，系统会立即向微信校验并换取访问令牌。</div>
             <div>编辑器发布区默认优先使用“默认连接”，也可以临时切换到其他已授权公众号。</div>
             <div>如果你只是改名称、原始 ID 或默认状态，不必重复填写密钥。</div>
           </div>
         </div>
-        <div className="border border-stone-300/40 bg-white p-5 shadow-ink">
+        <div className="border border-lineStrong/40 bg-surface p-5 shadow-ink">
           <div className="text-xs uppercase tracking-[0.24em] text-cinnabar">当前默认连接</div>
           {defaultConnection ? (
-            <div className="mt-3 space-y-2 text-sm leading-7 text-stone-700">
+            <div className="mt-3 space-y-2 text-sm leading-7 text-inkSoft">
               <div className="font-serifCn text-2xl text-ink text-balance">{defaultConnection.accountName || "未命名公众号"}</div>
               <div>原始 ID：{defaultConnection.originalId || "未填写"}</div>
               <div>状态：{formatConnectionStatus(defaultConnection.status)}</div>
               <div>{defaultConnection.accessTokenExpiresAt ? `访问令牌到期：${new Date(defaultConnection.accessTokenExpiresAt).toLocaleString("zh-CN")}` : "尚未记录访问令牌到期时间"}</div>
             </div>
           ) : (
-            <div className="mt-3 text-sm leading-7 text-stone-600">当前还没有默认公众号。新增连接后可直接设为默认。</div>
+            <div className="mt-3 text-sm leading-7 text-inkMuted">当前还没有默认公众号。新增连接后可直接设为默认。</div>
           )}
         </div>
       </div>
-      <form onSubmit={handleSubmit} className="grid gap-3 border border-stone-300/40 bg-white p-5 shadow-ink">
+      <form onSubmit={handleSubmit} className="grid gap-3 border border-lineStrong/40 bg-surface p-5 shadow-ink">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="text-xs uppercase tracking-[0.24em] text-stone-500">{editingId ? "编辑公众号连接" : "新增公众号连接"}</div>
+          <div className="text-xs uppercase tracking-[0.24em] text-inkMuted">{editingId ? "编辑公众号连接" : "新增公众号连接"}</div>
           {editingId ? (
-            <button
+            <Button
               type="button"
               onClick={resetForm}
-              className="border border-stone-300 px-3 py-2 text-sm text-stone-700"
+              variant="secondary"
+              size="sm"
             >
               取消编辑
-            </button>
+            </Button>
           ) : null}
         </div>
-        <input aria-label="公众号名称" value={accountName} disabled={!canManage} onChange={(event) => setAccountName(event.target.value)} placeholder="公众号名称" className="border border-stone-300 px-4 py-3 text-sm disabled:bg-stone-100 disabled:text-stone-400" />
-        <input aria-label="原始 ID" value={originalId} disabled={!canManage} onChange={(event) => setOriginalId(event.target.value)} placeholder="原始 ID" className="border border-stone-300 px-4 py-3 text-sm disabled:bg-stone-100 disabled:text-stone-400" />
-        <input aria-label="公众号 AppID" value={appId} disabled={!canManage} onChange={(event) => setAppId(event.target.value)} placeholder="公众号 AppID" className="border border-stone-300 px-4 py-3 text-sm disabled:bg-stone-100 disabled:text-stone-400" />
-        <input aria-label="input control" value={appSecret} disabled={!canManage} onChange={(event) => setAppSecret(event.target.value)} placeholder={editingId ? "公众号 AppSecret（仅轮换密钥时填写）" : "公众号 AppSecret"} type="password" className="border border-stone-300 px-4 py-3 text-sm disabled:bg-stone-100 disabled:text-stone-400" />
-        <label className="flex items-center gap-3 border border-stone-300 px-4 py-3 text-sm text-stone-700">
+        <Input aria-label="公众号名称" value={accountName} disabled={!canManage} onChange={(event) => setAccountName(event.target.value)} placeholder="公众号名称" className="disabled:bg-surfaceMuted disabled:text-inkMuted" />
+        <Input aria-label="原始 ID" value={originalId} disabled={!canManage} onChange={(event) => setOriginalId(event.target.value)} placeholder="原始 ID" className="disabled:bg-surfaceMuted disabled:text-inkMuted" />
+        <Input aria-label="公众号 AppID" value={appId} disabled={!canManage} onChange={(event) => setAppId(event.target.value)} placeholder="公众号 AppID" className="disabled:bg-surfaceMuted disabled:text-inkMuted" />
+        <Input aria-label="input control" value={appSecret} disabled={!canManage} onChange={(event) => setAppSecret(event.target.value)} placeholder={editingId ? "公众号 AppSecret（仅轮换密钥时填写）" : "公众号 AppSecret"} type="password" className="disabled:bg-surfaceMuted disabled:text-inkMuted" />
+        <label className="flex items-center gap-3 border border-lineStrong px-4 py-3 text-sm text-inkSoft">
           <input aria-label="input control" type="checkbox" checked={isDefault} disabled={!canManage} onChange={(event) => setIsDefault(event.target.checked)} />
           保存后设为默认公众号
         </label>
-        <button disabled={loading || !canManage} className="bg-cinnabar px-5 py-3 text-sm text-white disabled:opacity-60">
+        <Button type="submit" disabled={loading || !canManage} variant="primary">
           {!canManage ? "当前套餐不可绑定公众号" : loading ? (editingId ? "更新中…" : "校验中…") : editingId ? "保存公众号连接" : "添加公众号连接"}
-        </button>
+        </Button>
       </form>
       {message ? <div className="text-sm text-cinnabar">{message}</div> : null}
       <div className="space-y-3">
         {connections.map((connection) => (
-          <div key={connection.id} className="flex flex-wrap items-center justify-between gap-3 border border-stone-300/40 bg-white p-4">
+          <div key={connection.id} className="flex flex-wrap items-center justify-between gap-3 border border-lineStrong/40 bg-surface p-4">
             <div>
               <div className="font-serifCn text-xl text-ink">{connection.accountName || "未命名公众号"}</div>
-              <div className="mt-1 text-sm text-stone-600">
+              <div className="mt-1 text-sm text-inkSoft">
                 状态：{formatConnectionStatus(connection.status)}
                 {connection.isDefault ? " · 默认连接" : ""}
                 {connection.accessTokenExpiresAt ? ` · 访问令牌到期 ${new Date(connection.accessTokenExpiresAt).toLocaleString("zh-CN")}` : ""}
               </div>
-              <div className="mt-1 text-xs text-stone-500">
+              <div className="mt-1 text-xs text-inkMuted">
                 原始 ID：{connection.originalId || "未填写"} · 更新于 {new Date(connection.updatedAt).toLocaleString("zh-CN")}
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
               {!connection.isDefault ? (
-                <button
+                <Button
+                  type="button"
                   onClick={() => handleSetDefault(connection)}
                   disabled={switchingDefaultId === connection.id || !canManage}
-                  className="border border-cinnabar px-4 py-2 text-sm text-cinnabar disabled:opacity-60"
+                  variant="secondary"
+                  className="border-cinnabar text-cinnabar hover:border-cinnabar hover:bg-surface hover:text-cinnabar"
                 >
                   {switchingDefaultId === connection.id ? "切换中…" : "设为默认"}
-                </button>
+                </Button>
               ) : null}
-              <button onClick={() => handleEdit(connection)} disabled={!canManage} className="border border-stone-300 px-4 py-2 text-sm text-stone-700 disabled:text-stone-400">
+              <Button type="button" onClick={() => handleEdit(connection)} disabled={!canManage} variant="secondary">
                 编辑
-              </button>
-              <button onClick={() => handleDelete(connection.id)} disabled={!canManage} className="border border-stone-300 px-4 py-2 text-sm text-stone-700 disabled:text-stone-400">
+              </Button>
+              <Button type="button" onClick={() => handleDelete(connection.id)} disabled={!canManage} variant="secondary">
                 删除
-              </button>
+              </Button>
             </div>
           </div>
         ))}
@@ -1717,11 +1744,20 @@ function extractPlainText(value: string) {
     .trim();
 }
 
-function formatWorkspaceViewLabel(view: "workspace" | "edit" | "preview" | "audit") {
+type WorkspaceView = "workspace" | "edit" | "preview" | "audit";
+
+function formatWorkspaceViewLabel(view: WorkspaceView) {
   if (view === "workspace") return "阶段工作台";
   if (view === "preview") return "微信预览";
   if (view === "audit") return "红笔校阅";
   return "稿纸";
+}
+
+function getDefaultWorkspaceViewForStageCode(stageCode: string): WorkspaceView {
+  if (["deepWriting", "refine"].includes(stageCode)) return "edit";
+  if (stageCode === "prosePolish") return "audit";
+  if (stageCode === "publish") return "preview";
+  return "workspace";
 }
 
 function hashSeed(value: string) {
@@ -1936,15 +1972,15 @@ function AuthoringBlankSlate({
     <div className={`relative overflow-hidden border border-stone-300/70 bg-[radial-gradient(circle_at_top_left,rgba(196,138,58,0.14),transparent_30%),linear-gradient(180deg,#fffdfa_0%,#faf7f0_100%)] ${compact ? "px-4 py-4" : "px-6 py-6"}`}>
       <div className="pointer-events-none absolute inset-x-0 top-0 h-20 bg-[linear-gradient(180deg,rgba(255,255,255,0.72),rgba(255,255,255,0))]" />
       <div className="relative">
-        <div className="inline-flex items-center border border-stone-300/70 bg-white/80 px-3 py-1 text-[11px] uppercase tracking-[0.24em] text-stone-500">
+        <div className="inline-flex items-center border border-lineStrong/70 bg-surface/80 px-3 py-1 text-[11px] uppercase tracking-[0.24em] text-inkMuted">
           {eyebrow}
         </div>
         <div className={`mt-4 font-serifCn text-ink text-balance ${compact ? "text-2xl" : "text-3xl"}`}>{title}</div>
-        <div className={`mt-3 max-w-3xl text-stone-700 ${compact ? "text-sm leading-7" : "text-sm leading-8"}`}>{detail}</div>
+        <div className={`mt-3 max-w-3xl text-inkSoft ${compact ? "text-sm leading-7" : "text-sm leading-8"}`}>{detail}</div>
         {prompts && prompts.length > 0 ? (
           <div className={`mt-4 grid gap-2 ${compact ? "" : "md:grid-cols-3"}`}>
             {prompts.map((prompt) => (
-              <div key={prompt} className="border border-stone-300/60 bg-white/80 px-3 py-3 text-xs leading-6 text-stone-600">
+              <div key={prompt} className="border border-lineStrong/60 bg-surface/80 px-3 py-3 text-xs leading-6 text-inkSoft">
                 {prompt}
               </div>
             ))}
@@ -2037,6 +2073,9 @@ export function ArticleEditorClient({
   requestedMainStepCode?: ArticleMainStepCode | null;
 }) {
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const { theme, focusMode: isFocusMode, toggleTheme, toggleFocusMode } = useCommandMenu();
   const displayPlanName = formatPlanDisplayName(planName);
   const [title, setTitle] = useState(article.title);
   const [markdown, setMarkdown] = useState(article.markdownContent);
@@ -2077,13 +2116,7 @@ export function ArticleEditorClient({
   const [knowledgeCardItems, setKnowledgeCardItems] = useState(knowledgeCards);
   const [workflow, setWorkflow] = useState(initialWorkflow);
   const [stageArtifacts, setStageArtifacts] = useState(initialStageArtifacts);
-  const [view, setView] = useState<"workspace" | "edit" | "preview" | "audit">(() => {
-    if (["deepWriting", "refine"].includes(initialWorkflow.currentStageCode)) return "edit";
-    if (initialWorkflow.currentStageCode === "prosePolish") return "audit";
-    if (initialWorkflow.currentStageCode === "publish") return "preview";
-    return "workspace";
-  });
-  const [isFocusMode, setIsFocusMode] = useState(false);
+  const [view, setView] = useState<WorkspaceView>(() => getDefaultWorkspaceViewForStageCode(initialWorkflow.currentStageCode));
   const [selectedConnectionId, setSelectedConnectionId] = useState(() => {
     const preferred = initialConnections.find((connection) => connection.isDefault) ?? initialConnections[0];
     return preferred?.id ? String(preferred.id) : "";
@@ -2091,6 +2124,7 @@ export function ArticleEditorClient({
   const [snapshots, setSnapshots] = useState(initialSnapshots);
   const [snapshotNote, setSnapshotNote] = useState("");
   const requestedMainStepHandledRef = useRef<string | null>(null);
+  const currentSearchParams = searchParams.toString();
   const [diffState, setDiffState] = useState<DiffState>(null);
   const [saveState, setSaveState] = useState("未保存");
   const [message, setMessage] = useState("");
@@ -2284,6 +2318,7 @@ export function ArticleEditorClient({
     wechatTemplateId: article.wechatTemplateId,
   });
   const outlineMaterialScreenshotInputRef = useRef<HTMLInputElement | null>(null);
+  const editorialPreviewRef = useRef<HTMLDivElement | null>(null);
 
   const bannedWords = useMemo(
     () =>
@@ -2833,6 +2868,16 @@ export function ArticleEditorClient({
       };
     });
   }, [currentArticleMainStep.code, editorStageChecklist]);
+  function handleArticleMainStepSelect(step: (typeof ARTICLE_MAIN_STEPS)[number]) {
+    if (step.code === "result") {
+      if (status !== "published") {
+        return;
+      }
+      setView("workspace");
+      return;
+    }
+    void updateWorkflow(step.primaryStageCode as typeof workflow.currentStageCode, "set");
+  }
   const currentArticleMainStepDisplay = useMemo(
     () => articleMainSteps.find((step) => step.code === currentArticleMainStep.code) ?? null,
     [articleMainSteps, currentArticleMainStep.code],
@@ -2874,6 +2919,7 @@ export function ArticleEditorClient({
     const plainText = extractPlainText(htmlPreview);
     return plainText.length > 0 || /<(img|blockquote|h[1-6])\b/i.test(String(htmlPreview || ""));
   }, [htmlPreview]);
+  const currentArticleLabel = title.trim() || article.title || "未命名稿件";
   const draftStarterOptions = useMemo(
     () => getDraftStarterOptions(currentAuthoringPhase.code, title),
     [currentAuthoringPhase.code, title],
@@ -3995,12 +4041,21 @@ export function ArticleEditorClient({
     setSaveState("自动保存中…");
     const timer = window.setTimeout(() => {
       void saveArticleDraft(undefined, undefined, true);
-    }, 1200);
+    }, ARTICLE_AUTOSAVE_DEBOUNCE_MS);
 
     return () => {
       window.clearTimeout(timer);
     };
   }, [generating, markdown, seriesId, title, wechatTemplateId]);
+
+  function jumpToEditorialAnnotation(anchorId: string) {
+    const target = editorialPreviewRef.current?.querySelector<HTMLElement>(`#${anchorId}`);
+    if (!target) {
+      return;
+    }
+    target.scrollIntoView({ behavior: "smooth", block: "center" });
+    target.focus({ preventScroll: true });
+  }
 
   useEffect(() => {
     setPublishPreview(null);
@@ -4243,6 +4298,15 @@ export function ArticleEditorClient({
     setWechatConnectAppSecret("");
     setWechatConnectIsDefault(wechatConnections.length === 0);
     setWechatConnectMessage("");
+  }
+
+  function closeWechatConnectModal() {
+    if (wechatConnectSubmitting) {
+      return;
+    }
+    setShowWechatConnectModal(false);
+    setContinuePublishAfterWechatConnect(false);
+    resetWechatConnectDraft();
   }
 
   async function persistPendingPublishIntent(intentOverride?: PendingPublishIntent, options?: { silent?: boolean }) {
@@ -5165,16 +5229,9 @@ export function ArticleEditorClient({
       }
       setWorkflow(json.data);
       if (action === "set" || action === "complete") {
-        if (["deepWriting", "refine"].includes(stageCode)) {
-          setView("edit");
-        } else if (stageCode === "prosePolish") {
-          setView("audit");
-        } else if (stageCode === "publish") {
-          setView("preview");
-        } else {
-          setView("workspace");
-        }
-      }    } catch (error) {
+        setView(getDefaultWorkspaceViewForStageCode(stageCode));
+      }
+    } catch (error) {
       if (!silent) {
         setMessage(error instanceof Error ? error.message : "稿件步骤更新失败");
       }
@@ -5205,6 +5262,23 @@ export function ArticleEditorClient({
     setMessage(`已切换到「${targetStep.title}」步骤。`);
   }, [currentArticleMainStep.code, article.id, requestedMainStepCode]);
 
+  useEffect(() => {
+    if (!pathname) {
+      return;
+    }
+    const nextParams = new URLSearchParams(currentSearchParams);
+    if (nextParams.get("step") === currentArticleMainStep.code) {
+      return;
+    }
+    nextParams.set("step", currentArticleMainStep.code);
+    const nextQuery = nextParams.toString();
+    const nextHref = nextQuery ? `${pathname}?${nextQuery}` : pathname;
+    const currentHref = currentSearchParams ? `${pathname}?${currentSearchParams}` : pathname;
+    if (nextHref !== currentHref) {
+      router.replace(nextHref, { scroll: false });
+    }
+  }, [currentArticleMainStep.code, currentSearchParams, pathname, router]);
+
   function renderResearchWorkspacePanel() {
     const researchAction = GENERATABLE_STAGE_ACTIONS.researchBrief;
     const researchSourceCoverage = getPayloadRecord(researchArtifact?.payload, "sourceCoverage");
@@ -5219,8 +5293,8 @@ export function ArticleEditorClient({
     const researchCoverageTone = researchCoverageSufficiency === "ready"
       ? "border-emerald-200 bg-emerald-50 text-emerald-700"
       : researchCoverageSufficiency === "limited"
-        ? "border-[#dfd2b0] bg-[#fff8e8] text-[#7d6430]"
-        : "border-[#d8b0b2] bg-[#fff7f7] text-[#8f3136]";
+        ? "border-warning/40 bg-surfaceWarning text-warning"
+        : "border-danger/30 bg-surface text-danger";
     const researchCoverageItems = [
       { key: "official", label: "官方源" },
       { key: "industry", label: "行业源" },
@@ -5279,7 +5353,7 @@ export function ArticleEditorClient({
       }
       return (
         <div className="mt-3 space-y-2">
-          <div className="text-xs uppercase tracking-[0.14em] text-stone-500">来源追溯</div>
+          <div className="text-xs uppercase tracking-[0.14em] text-inkMuted">来源追溯</div>
           <div className="space-y-2">
             {sources.map((source, index) => {
               const label = String(source.label || `来源 ${index + 1}`).trim();
@@ -5287,16 +5361,16 @@ export function ArticleEditorClient({
               const detail = String(source.detail || "").trim();
               const sourceUrl = String(source.sourceUrl || "").trim();
               return (
-                <div key={`${label}-${sourceType}-${sourceUrl || index}`} className="border border-stone-300/60 bg-white px-3 py-3">
+                <div key={`${label}-${sourceType}-${sourceUrl || index}`} className="border border-lineStrong/60 bg-surface px-3 py-3">
                   <div className="flex flex-wrap items-center gap-2">
                     <div className="font-medium text-ink">{label}</div>
                     {sourceType ? (
-                      <span className="border border-stone-300 px-2 py-1 text-[11px] text-stone-500">
+                      <span className="border border-lineStrong px-2 py-1 text-[11px] text-inkMuted">
                         {formatResearchSourceTraceLabel(sourceType)}
                       </span>
                     ) : null}
                   </div>
-                  {detail ? <div className="mt-2 text-xs leading-6 text-stone-500">{detail}</div> : null}
+                  {detail ? <div className="mt-2 text-xs leading-6 text-inkMuted">{detail}</div> : null}
                   {sourceUrl ? (
                     <a
                       href={sourceUrl}
@@ -5315,69 +5389,70 @@ export function ArticleEditorClient({
     };
 
     return (
-      <div className="space-y-4 border border-[#dcc8a6] bg-[#fffaf1] px-4 py-4">
+      <div className="space-y-4 border border-warning/30 bg-surfaceWarm px-4 py-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <div className="text-xs uppercase tracking-[0.18em] text-stone-500">Research Workspace</div>
+            <div className="text-xs uppercase tracking-[0.18em] text-inkMuted">Research Workspace</div>
             <div className="mt-2 font-serifCn text-2xl text-ink text-balance">hv-analysis 轻量研究面板</div>
-            <div className="mt-2 text-sm leading-7 text-stone-700">
+            <div className="mt-2 text-sm leading-7 text-inkSoft">
               先把时间脉络、横向比较和交汇洞察补齐，再让策略卡、大纲和正文判断吃到这层研究底座。
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {researchArtifact?.updatedAt ? (
-              <div className="text-xs leading-6 text-stone-500">
+              <div className="text-xs leading-6 text-inkMuted">
                 更新于 {new Date(researchArtifact.updatedAt).toLocaleString("zh-CN")}
               </div>
             ) : null}
-            <button
+            <Button
               type="button"
               onClick={() => generateStageArtifact("researchBrief")}
               disabled={Boolean(generatingStageArtifactCode) || Boolean(updatingWorkflowCode) || Boolean(applyingStageArtifactCode)}
-              className="bg-cinnabar px-4 py-2 text-sm text-white disabled:opacity-60"
+              variant="primary"
+              size="sm"
             >
               {generatingStageArtifactCode === "researchBrief"
                 ? "生成中…"
                 : researchArtifact
                   ? "刷新研究简报"
                   : researchAction.label}
-            </button>
+            </Button>
           </div>
         </div>
 
         {researchArtifact ? (
           <>
             {researchArtifact.summary ? (
-              <div className="border border-stone-300/60 bg-white px-4 py-4 text-sm leading-7 text-stone-700">
+              <div className="border border-lineStrong/60 bg-surface px-4 py-4 text-sm leading-7 text-inkSoft">
                 {researchArtifact.summary}
               </div>
             ) : null}
 
             <div className="grid gap-3 lg:grid-cols-2">
-              <div className="border border-stone-300/60 bg-white px-4 py-4">
-                <div className="text-xs uppercase tracking-[0.16em] text-stone-500">Research Brief</div>
-                <div className="mt-3 space-y-3 text-sm leading-7 text-stone-700">
+              <div className="border border-lineStrong/60 bg-surface px-4 py-4">
+                <div className="text-xs uppercase tracking-[0.16em] text-inkMuted">Research Brief</div>
+                <div className="mt-3 space-y-3 text-sm leading-7 text-inkSoft">
                   {String(researchArtifact.payload?.researchObject || "").trim() ? (
                     <div>
-                      <div className="text-xs uppercase tracking-[0.14em] text-stone-500">研究对象</div>
+                      <div className="text-xs uppercase tracking-[0.14em] text-inkMuted">研究对象</div>
                       <div className="mt-1">{String(researchArtifact.payload?.researchObject)}</div>
                     </div>
                   ) : null}
                   {String(researchArtifact.payload?.coreQuestion || "").trim() ? (
                     <div>
-                      <div className="text-xs uppercase tracking-[0.14em] text-stone-500">核心研究问题</div>
+                      <div className="text-xs uppercase tracking-[0.14em] text-inkMuted">核心研究问题</div>
                       <div className="mt-1">{String(researchArtifact.payload?.coreQuestion)}</div>
                     </div>
                   ) : null}
                   {String(researchArtifact.payload?.authorHypothesis || "").trim() ? (
                     <div>
-                      <div className="text-xs uppercase tracking-[0.14em] text-stone-500">待验证假设</div>
+                      <div className="text-xs uppercase tracking-[0.14em] text-inkMuted">待验证假设</div>
                       <div className="mt-1">{String(researchArtifact.payload?.authorHypothesis)}</div>
                     </div>
                   ) : null}
                   {String(researchArtifact.payload?.targetReader || "").trim() ? (
                     <div>
-                      <div className="text-xs uppercase tracking-[0.14em] text-stone-500">默认读者</div>
+                      <div className="text-xs uppercase tracking-[0.14em] text-inkMuted">默认读者</div>
                       <div className="mt-1">{String(researchArtifact.payload?.targetReader)}</div>
                     </div>
                   ) : null}
@@ -5421,9 +5496,9 @@ export function ArticleEditorClient({
             {(researchMustCoverAngles.length > 0 || researchHypothesesToVerify.length > 0 || researchForbiddenConclusions.length > 0) ? (
               <div className="grid gap-3 lg:grid-cols-3">
                 {researchMustCoverAngles.length > 0 ? (
-                  <div className="border border-stone-300/60 bg-white px-4 py-4">
-                    <div className="text-xs uppercase tracking-[0.16em] text-stone-500">必查维度</div>
-                    <div className="mt-2 space-y-2 text-sm leading-7 text-stone-700">
+                  <div className="border border-lineStrong/60 bg-surface px-4 py-4">
+                    <div className="text-xs uppercase tracking-[0.16em] text-inkMuted">必查维度</div>
+                    <div className="mt-2 space-y-2 text-sm leading-7 text-inkSoft">
                       {researchMustCoverAngles.map((item) => (
                         <div key={item}>- {item}</div>
                       ))}
@@ -5431,9 +5506,9 @@ export function ArticleEditorClient({
                   </div>
                 ) : null}
                 {researchHypothesesToVerify.length > 0 ? (
-                  <div className="border border-stone-300/60 bg-white px-4 py-4">
-                    <div className="text-xs uppercase tracking-[0.16em] text-stone-500">重点验证</div>
-                    <div className="mt-2 space-y-2 text-sm leading-7 text-stone-700">
+                  <div className="border border-lineStrong/60 bg-surface px-4 py-4">
+                    <div className="text-xs uppercase tracking-[0.16em] text-inkMuted">重点验证</div>
+                    <div className="mt-2 space-y-2 text-sm leading-7 text-inkSoft">
                       {researchHypothesesToVerify.map((item) => (
                         <div key={item}>- {item}</div>
                       ))}
@@ -5441,9 +5516,9 @@ export function ArticleEditorClient({
                   </div>
                 ) : null}
                 {researchForbiddenConclusions.length > 0 ? (
-                  <div className="border border-stone-300/60 bg-white px-4 py-4">
-                    <div className="text-xs uppercase tracking-[0.16em] text-stone-500">禁止先下结论</div>
-                    <div className="mt-2 space-y-2 text-sm leading-7 text-stone-700">
+                  <div className="border border-lineStrong/60 bg-surface px-4 py-4">
+                    <div className="text-xs uppercase tracking-[0.16em] text-inkMuted">禁止先下结论</div>
+                    <div className="mt-2 space-y-2 text-sm leading-7 text-inkSoft">
                       {researchForbiddenConclusions.map((item) => (
                         <div key={item}>- {item}</div>
                       ))}
@@ -5454,27 +5529,27 @@ export function ArticleEditorClient({
             ) : null}
 
             <div className="grid gap-4 xl:grid-cols-[1.05fr_0.95fr]">
-              <div className="space-y-3 border border-stone-300/60 bg-white px-4 py-4">
+              <div className="space-y-3 border border-lineStrong/60 bg-surface px-4 py-4">
                 <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div className="text-xs uppercase tracking-[0.16em] text-stone-500">时间脉络</div>
-                  <div className="text-xs text-stone-500">{researchTimelineCards.length} 张卡</div>
+                  <div className="text-xs uppercase tracking-[0.16em] text-inkMuted">时间脉络</div>
+                  <div className="text-xs text-inkMuted">{researchTimelineCards.length} 张卡</div>
                 </div>
                 {researchTimelineCards.length > 0 ? (
                   researchTimelineCards.map((item, index) => (
-                    <div key={`${String(item.title || index)}`} className="border border-stone-300/60 bg-[#fffdfa] px-4 py-4">
+                    <div key={`${String(item.title || index)}`} className="border border-lineStrong/60 bg-surfaceWarm px-4 py-4">
                       <div className="flex flex-wrap items-center gap-2">
                         {String(item.phase || "").trim() ? (
-                          <span className="border border-[#dcc8a6] bg-[#fff8eb] px-2 py-1 text-[11px] text-stone-700">
+                          <span className="border border-warning/30 bg-surfaceWarning px-2 py-1 text-[11px] text-inkSoft">
                             {String(item.phase)}
                           </span>
                         ) : null}
                         <div className="font-medium text-ink">{String(item.title || `阶段 ${index + 1}`)}</div>
                       </div>
                       {String(item.summary || "").trim() ? (
-                        <div className="mt-2 text-sm leading-7 text-stone-700">{String(item.summary)}</div>
+                        <div className="mt-2 text-sm leading-7 text-inkSoft">{String(item.summary)}</div>
                       ) : null}
                       {getPayloadStringArray(item, "signals").length > 0 ? (
-                        <div className="mt-2 text-xs leading-6 text-stone-500">
+                        <div className="mt-2 text-xs leading-6 text-inkMuted">
                           线索：{getPayloadStringArray(item, "signals").join("；")}
                         </div>
                       ) : null}
@@ -5482,31 +5557,31 @@ export function ArticleEditorClient({
                     </div>
                   ))
                 ) : (
-                  <div className="border border-dashed border-stone-300 px-4 py-4 text-sm leading-7 text-stone-600">
+                  <div className="border border-dashed border-lineStrong px-4 py-4 text-sm leading-7 text-inkMuted">
                     还没有时间脉络卡。没有这层，文章会更容易只写“现在发生了什么”。
                   </div>
                 )}
               </div>
 
-              <div className="space-y-3 border border-stone-300/60 bg-white px-4 py-4">
+              <div className="space-y-3 border border-lineStrong/60 bg-surface px-4 py-4">
                 <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div className="text-xs uppercase tracking-[0.16em] text-stone-500">横向对比</div>
-                  <div className="text-xs text-stone-500">{researchComparisonCards.length} 张卡</div>
+                  <div className="text-xs uppercase tracking-[0.16em] text-inkMuted">横向对比</div>
+                  <div className="text-xs text-inkMuted">{researchComparisonCards.length} 张卡</div>
                 </div>
                 {researchComparisonCards.length > 0 ? (
                   researchComparisonCards.map((item, index) => (
-                    <div key={`${String(item.subject || index)}`} className="border border-stone-300/60 bg-[#fffdfa] px-4 py-4">
+                    <div key={`${String(item.subject || index)}`} className="border border-lineStrong/60 bg-surfaceWarm px-4 py-4">
                       <div className="font-medium text-ink">{String(item.subject || `对比对象 ${index + 1}`)}</div>
                       {String(item.position || "").trim() ? (
-                        <div className="mt-2 text-sm leading-7 text-stone-700">{String(item.position)}</div>
+                        <div className="mt-2 text-sm leading-7 text-inkSoft">{String(item.position)}</div>
                       ) : null}
                       {getPayloadStringArray(item, "differences").length > 0 ? (
-                        <div className="mt-2 text-xs leading-6 text-stone-500">
+                        <div className="mt-2 text-xs leading-6 text-inkMuted">
                           关键差异：{getPayloadStringArray(item, "differences").join("；")}
                         </div>
                       ) : null}
                       {getPayloadStringArray(item, "userVoices").length > 0 ? (
-                        <div className="mt-1 text-xs leading-6 text-stone-500">
+                        <div className="mt-1 text-xs leading-6 text-inkMuted">
                           用户反馈：{getPayloadStringArray(item, "userVoices").join("；")}
                         </div>
                       ) : null}
@@ -5518,7 +5593,7 @@ export function ArticleEditorClient({
                             </div>
                           ) : null}
                           {getPayloadStringArray(item, "risks").length > 0 ? (
-                            <div className="border border-[#d8b0b2] bg-[#fff7f7] px-3 py-2 text-xs leading-6 text-[#8f3136]">
+                            <div className="border border-danger/30 bg-surface px-3 py-2 text-xs leading-6 text-danger">
                               风险：{getPayloadStringArray(item, "risks").join("；")}
                             </div>
                           ) : null}
@@ -5528,7 +5603,7 @@ export function ArticleEditorClient({
                     </div>
                   ))
                 ) : (
-                  <div className="border border-dashed border-stone-300 px-4 py-4 text-sm leading-7 text-stone-600">
+                  <div className="border border-dashed border-lineStrong px-4 py-4 text-sm leading-7 text-inkMuted">
                     还没有横向比较卡。没有同类或替代路径，后续判断更容易写成单点观察。
                   </div>
                 )}
@@ -5536,25 +5611,25 @@ export function ArticleEditorClient({
             </div>
 
             <div className="grid gap-4 xl:grid-cols-[1.05fr_0.95fr]">
-              <div className="space-y-3 border border-stone-300/60 bg-white px-4 py-4">
+              <div className="space-y-3 border border-lineStrong/60 bg-surface px-4 py-4">
                 <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div className="text-xs uppercase tracking-[0.16em] text-stone-500">交汇洞察</div>
-                  <div className="text-xs text-stone-500">{researchIntersectionInsights.length} 条</div>
+                  <div className="text-xs uppercase tracking-[0.16em] text-inkMuted">交汇洞察</div>
+                  <div className="text-xs text-inkMuted">{researchIntersectionInsights.length} 条</div>
                 </div>
                 {researchIntersectionInsights.length > 0 ? (
                   researchIntersectionInsights.map((item, index) => (
-                    <div key={`${String(item.insight || index)}`} className="border border-stone-300/60 bg-[#fffdfa] px-4 py-4">
+                    <div key={`${String(item.insight || index)}`} className="border border-lineStrong/60 bg-surfaceWarm px-4 py-4">
                       <div className="font-medium text-ink">{String(item.insight || `洞察 ${index + 1}`)}</div>
                       {String(item.whyNow || "").trim() ? (
-                        <div className="mt-2 text-sm leading-7 text-stone-700">Why now：{String(item.whyNow)}</div>
+                        <div className="mt-2 text-sm leading-7 text-inkSoft">Why now：{String(item.whyNow)}</div>
                       ) : null}
                       {getPayloadStringArray(item, "support").length > 0 ? (
-                        <div className="mt-2 text-xs leading-6 text-stone-500">
+                        <div className="mt-2 text-xs leading-6 text-inkMuted">
                           支撑线索：{getPayloadStringArray(item, "support").join("；")}
                         </div>
                       ) : null}
                       {String(item.caution || "").trim() ? (
-                        <div className="mt-2 border border-[#dfd2b0] bg-[#fff8e8] px-3 py-2 text-xs leading-6 text-[#7d6430]">
+                        <div className="mt-2 border border-warning/40 bg-surfaceWarning px-3 py-2 text-xs leading-6 text-warning">
                           注意：{String(item.caution)}
                         </div>
                       ) : null}
@@ -5562,40 +5637,44 @@ export function ArticleEditorClient({
                     </div>
                   ))
                 ) : (
-                  <div className="border border-dashed border-stone-300 px-4 py-4 text-sm leading-7 text-stone-600">
+                  <div className="border border-dashed border-lineStrong px-4 py-4 text-sm leading-7 text-inkMuted">
                     还没有交汇洞察。时间脉络和横向比较没有合流前，正文主判断最好保持克制。
                   </div>
                 )}
               </div>
 
-              <div className="space-y-3 border border-stone-300/60 bg-white px-4 py-4">
+              <div className="space-y-3 border border-lineStrong/60 bg-surface px-4 py-4">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
-                    <div className="text-xs uppercase tracking-[0.16em] text-stone-500">策略写回</div>
-                    <div className="mt-1 text-xs text-stone-500">
+                    <div className="text-xs uppercase tracking-[0.16em] text-inkMuted">策略写回</div>
+                    <div className="mt-1 text-xs text-inkMuted">
                       {currentArticleMainStep.code === "strategy" ? "可直接回填策略卡" : "会继续喂给大纲与正文"}
                     </div>
                   </div>
                   <div className="flex flex-wrap gap-2">
                     {currentArticleMainStep.code === "strategy" && strategyWritebackFields.length > 0 ? (
-                      <button
+                      <Button
                         type="button"
                         onClick={() => void applyResearchWritebackToStrategyCard()}
                         disabled={savingStrategyCard}
-                        className="border border-cinnabar bg-white px-3 py-2 text-xs text-cinnabar"
+                        variant="secondary"
+                        size="sm"
+                        className="border-cinnabar text-cinnabar hover:border-cinnabar hover:bg-surface hover:text-cinnabar"
                       >
                         {savingStrategyCard ? "写回中…" : "一键写回策略卡"}
-                      </button>
+                      </Button>
                     ) : null}
                     {currentArticleMainStep.code === "evidence" && suggestedEvidenceItems.length > 0 ? (
-                      <button
+                      <Button
                         type="button"
                         onClick={() => void applyResearchSuggestedEvidence()}
                         disabled={savingEvidenceItems}
-                        className="border border-stone-300 bg-white px-3 py-2 text-xs text-stone-700"
+                        variant="secondary"
+                        size="sm"
+                        className="text-xs"
                       >
                         {savingEvidenceItems ? "写回中…" : "一键写回证据包"}
-                      </button>
+                      </Button>
                     ) : null}
                   </div>
                 </div>
@@ -5603,21 +5682,21 @@ export function ArticleEditorClient({
                   strategyWritebackFields.map((item) => {
                     const synced = item.currentValue && item.currentValue === item.value;
                     return (
-                      <div key={item.key} className="border border-stone-300/60 bg-[#fffdfa] px-4 py-4">
+                      <div key={item.key} className="border border-lineStrong/60 bg-surfaceWarm px-4 py-4">
                         <div className="flex flex-wrap items-center justify-between gap-3">
-                          <div className="text-xs uppercase tracking-[0.14em] text-stone-500">{item.label}</div>
+                          <div className="text-xs uppercase tracking-[0.14em] text-inkMuted">{item.label}</div>
                           {item.currentValue ? (
-                            <div className={`text-xs ${synced ? "text-emerald-700" : "text-[#7d6430]"}`}>
+                            <div className={`text-xs ${synced ? "text-emerald-700" : "text-warning"}`}>
                               {synced ? "已与当前策略一致" : "可用于补当前策略"}
                             </div>
                           ) : null}
                         </div>
-                        <div className="mt-2 text-sm leading-7 text-stone-700">{item.value}</div>
+                        <div className="mt-2 text-sm leading-7 text-inkSoft">{item.value}</div>
                       </div>
                     );
                   })
                 ) : (
-                  <div className="border border-dashed border-stone-300 px-4 py-4 text-sm leading-7 text-stone-600">
+                  <div className="border border-dashed border-lineStrong px-4 py-4 text-sm leading-7 text-inkMuted">
                     当前研究简报还没有产出可写回的策略字段。
                   </div>
                 )}
@@ -5625,7 +5704,7 @@ export function ArticleEditorClient({
             </div>
           </>
         ) : (
-          <div className="border border-dashed border-stone-300 bg-white px-4 py-4 text-sm leading-7 text-stone-600">
+          <div className="border border-dashed border-lineStrong bg-surface px-4 py-4 text-sm leading-7 text-inkMuted">
             当前还没有研究简报。建议先生成一版，把时间脉络、同类对比和交汇洞察补齐后，再继续策略确认或证据整理。
           </div>
         )}
@@ -5635,9 +5714,9 @@ export function ArticleEditorClient({
 
   function renderStrategyCardPanel() {
     const strategyStatusTone = !strategyCardIsComplete
-      ? "border-[#d8b0b2] bg-[#fff7f7] text-[#8f3136]"
+      ? "border-danger/30 bg-surface text-danger"
       : !savedStrategyCardIsComplete || strategyCardHasUnsavedChanges
-        ? "border-[#dfd2b0] bg-[#fff8e8] text-[#7d6430]"
+        ? "border-warning/40 bg-surfaceWarning text-warning"
         : "border-emerald-200 bg-emerald-50 text-emerald-700";
     const strategyStatusText = !strategyCardIsComplete
       ? `还缺 ${strategyCardMissingFields.length} 个必填项`
@@ -5774,16 +5853,16 @@ export function ArticleEditorClient({
     const humanSignalTone = strategyCardDraft.humanSignalScore >= 3
       ? "border-emerald-200 bg-emerald-50 text-emerald-700"
       : strategyCardDraft.humanSignalScore >= 2
-        ? "border-[#dfd2b0] bg-[#fff8e8] text-[#7d6430]"
-        : "border-[#d8b0b2] bg-[#fff7f7] text-[#8f3136]";
+        ? "border-warning/40 bg-surfaceWarning text-warning"
+        : "border-danger/30 bg-surface text-danger";
 
     return (
-      <div className="space-y-4 border border-[#dcc8a6] bg-[#fffaf1] px-4 py-4">
+      <div className="space-y-4 border border-warning/30 bg-surfaceWarm px-4 py-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <div className="text-xs uppercase tracking-[0.18em] text-stone-500">Strategy Card</div>
+            <div className="text-xs uppercase tracking-[0.18em] text-inkMuted">Strategy Card</div>
             <div className="mt-2 font-serifCn text-2xl text-ink text-balance">发布前必须确认的策略卡</div>
-            <div className="mt-2 text-sm leading-7 text-stone-700">
+            <div className="mt-2 text-sm leading-7 text-inkSoft">
               这六项会直接进入发布守门。系统会先按受众分析、大纲和系列洞察给你预填建议，但只有手动保存后才算正式确认。
             </div>
           </div>
@@ -5803,39 +5882,43 @@ export function ArticleEditorClient({
             const suggestion = field.suggestion.trim();
             const isConfirmed = strategyCardDraft.completion[field.key];
             return (
-              <label key={field.key} className="block border border-stone-300 bg-white px-4 py-4 text-sm text-stone-700">
+              <label key={field.key} className="block border border-lineStrong bg-surface px-4 py-4 text-sm text-inkSoft">
                 <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div className="text-xs uppercase tracking-[0.16em] text-stone-500">{ARTICLE_STRATEGY_FIELD_LABELS[field.key]}</div>
-                  <div className={`text-xs ${isConfirmed ? "text-emerald-700" : "text-[#8f3136]"}`}>
+                  <div className="text-xs uppercase tracking-[0.16em] text-inkMuted">{ARTICLE_STRATEGY_FIELD_LABELS[field.key]}</div>
+                  <div className={`text-xs ${isConfirmed ? "text-emerald-700" : "text-danger"}`}>
                     {isConfirmed ? "已填写" : "必填"}
                   </div>
                 </div>
                 {field.multiline ? (
-                  <textarea
+                  <Textarea
+                    aria-label={ARTICLE_STRATEGY_FIELD_LABELS[field.key]}
                     value={field.value}
                     onChange={(event) => field.setValue(event.target.value)}
                     placeholder={field.placeholder}
-                    className="mt-3 min-h-[104px] w-full border border-stone-300 px-3 py-2 text-sm leading-7"
+                    className="mt-3 min-h-[104px] px-3 py-2"
                   />
                 ) : (
-                  <input aria-label="input control"
+                  <Input
+                    aria-label={ARTICLE_STRATEGY_FIELD_LABELS[field.key]}
                     value={field.value}
                     onChange={(event) => field.setValue(event.target.value)}
                     placeholder={field.placeholder}
-                    className="mt-3 w-full border border-stone-300 px-3 py-2 text-sm"
+                    className="mt-3 px-3 py-2"
                   />
                 )}
                 {suggestion ? (
                   <div className="mt-3 space-y-2">
-                    <div className="text-xs leading-6 text-stone-500">建议来源：{suggestion}</div>
+                    <div className="text-xs leading-6 text-inkMuted">建议来源：{suggestion}</div>
                     {field.value.trim() !== suggestion ? (
-                      <button
+                      <Button
                         type="button"
                         onClick={() => field.setValue(suggestion)}
-                        className="border border-stone-300 px-3 py-1 text-xs text-stone-700"
+                        variant="secondary"
+                        size="sm"
+                        className="text-xs"
                       >
                         用建议填入
-                      </button>
+                      </Button>
                     ) : null}
                   </div>
                 ) : null}
@@ -5844,27 +5927,28 @@ export function ArticleEditorClient({
           })}
         </div>
 
-        <div className="border border-stone-300/60 bg-white px-4 py-4">
+        <div className="border border-lineStrong/60 bg-surface px-4 py-4">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <div className="text-xs uppercase tracking-[0.16em] text-stone-500">研究写回字段</div>
-              <div className="mt-2 text-sm leading-7 text-stone-700">
+              <div className="text-xs uppercase tracking-[0.16em] text-inkMuted">研究写回字段</div>
+              <div className="mt-2 text-sm leading-7 text-inkSoft">
                 这三项不参与发布必填，但会把 research brief 的判断链正式沉到策略卡里，后续深写、事实核查和复盘都能继续引用。
               </div>
             </div>
-            <div className="text-xs text-stone-500">
+            <div className="text-xs text-inkMuted">
               {strategyResearchFields.filter((field) => field.value.trim()).length} / {strategyResearchFields.length} 已补
             </div>
           </div>
           <div className="mt-3 grid gap-3 md:grid-cols-3">
             {strategyResearchFields.map((field) => (
-              <label key={field.key} className="block border border-stone-300 bg-[#fffdfa] px-4 py-4 text-sm text-stone-700">
-                <div className="text-xs uppercase tracking-[0.16em] text-stone-500">{field.label}</div>
-                <textarea aria-label="textarea control"
+              <label key={field.key} className="block border border-lineStrong bg-surfaceWarm px-4 py-4 text-sm text-inkSoft">
+                <div className="text-xs uppercase tracking-[0.16em] text-inkMuted">{field.label}</div>
+                <Textarea
+                  aria-label={field.label}
                   value={field.value}
                   onChange={(event) => field.setValue(event.target.value)}
                   placeholder={field.placeholder}
-                  className="mt-3 min-h-[120px] w-full border border-stone-300 px-3 py-2 text-sm leading-7"
+                  className="mt-3 min-h-[120px] px-3 py-2"
                 />
               </label>
             ))}
@@ -5872,11 +5956,11 @@ export function ArticleEditorClient({
         </div>
 
         {strategyCardDraft.whyNowHints.length > 0 ? (
-          <div className="border border-stone-300/60 bg-white px-4 py-4">
-            <div className="text-xs uppercase tracking-[0.16em] text-stone-500">系列给出的 Why Now 线索</div>
-            <div className="mt-3 flex flex-wrap gap-2 text-sm text-stone-700">
-              {strategyCardDraft.whyNowHints.map((item) => (
-                <button
+          <div className="border border-lineStrong/60 bg-surface px-4 py-4">
+              <div className="text-xs uppercase tracking-[0.16em] text-inkMuted">系列给出的 Why Now 线索</div>
+              <div className="mt-3 flex flex-wrap gap-2 text-sm text-inkSoft">
+                {strategyCardDraft.whyNowHints.map((item) => (
+                <Button
                   key={item}
                   type="button"
                   onClick={() =>
@@ -5885,25 +5969,27 @@ export function ArticleEditorClient({
                       return currentValue ? `${currentValue}；${item}` : item;
                     })
                   }
-                  className="border border-stone-300 bg-[#faf7f0] px-3 py-2 text-left"
+                  variant="secondary"
+                  size="sm"
+                  className="bg-paperStrong text-left text-sm"
                 >
                   {item}
-                </button>
+                </Button>
               ))}
             </div>
           </div>
         ) : null}
 
-        <div className="border border-stone-300/60 bg-white px-4 py-4">
-          <div className="text-xs uppercase tracking-[0.16em] text-stone-500">完成度</div>
-          <div className="mt-3 flex flex-wrap gap-2 text-xs text-stone-700">
+        <div className="border border-lineStrong/60 bg-surface px-4 py-4">
+          <div className="text-xs uppercase tracking-[0.16em] text-inkMuted">完成度</div>
+          <div className="mt-3 flex flex-wrap gap-2 text-xs text-inkSoft">
             {(Object.entries(ARTICLE_STRATEGY_FIELD_LABELS) as Array<[keyof typeof ARTICLE_STRATEGY_FIELD_LABELS, string]>).map(([key, label]) => (
               <span
                 key={key}
                 className={`border px-3 py-2 ${
                   strategyCardDraft.completion[key]
                     ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                    : "border-[#d8b0b2] bg-[#fff7f7] text-[#8f3136]"
+                    : "border-danger/30 bg-surface text-danger"
                 }`}
               >
                 {label}
@@ -5912,11 +5998,11 @@ export function ArticleEditorClient({
           </div>
         </div>
 
-        <div className="space-y-3 border border-stone-300/60 bg-white px-4 py-4">
+        <div className="space-y-3 border border-lineStrong/60 bg-surface px-4 py-4">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <div className="text-xs uppercase tracking-[0.16em] text-stone-500">Human Only Signals</div>
-              <div className="mt-2 text-sm leading-7 text-stone-700">
+              <div className="text-xs uppercase tracking-[0.16em] text-inkMuted">Human Only Signals</div>
+              <div className="mt-2 text-sm leading-7 text-inkSoft">
                 这里填的是 AI 不该替你编的东西。没有这些信号，系统最多只能给你一篇结构正确的稿，给不了真正像人的稿。
               </div>
             </div>
@@ -5935,18 +6021,19 @@ export function ArticleEditorClient({
             {humanSignalFields.map((field) => {
               const isConfirmed = strategyCardDraft.humanSignalCompletion[field.key];
               return (
-                <label key={field.key} className="block border border-stone-300 bg-[#fffdfa] px-4 py-4 text-sm text-stone-700">
+                <label key={field.key} className="block border border-lineStrong bg-surfaceWarm px-4 py-4 text-sm text-inkSoft">
                   <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div className="text-xs uppercase tracking-[0.16em] text-stone-500">{ARTICLE_HUMAN_SIGNAL_FIELD_LABELS[field.key]}</div>
-                    <div className={`text-xs ${isConfirmed ? "text-emerald-700" : "text-stone-500"}`}>
+                    <div className="text-xs uppercase tracking-[0.16em] text-inkMuted">{ARTICLE_HUMAN_SIGNAL_FIELD_LABELS[field.key]}</div>
+                    <div className={`text-xs ${isConfirmed ? "text-emerald-700" : "text-inkMuted"}`}>
                       {isConfirmed ? "已填写" : "建议填写"}
                     </div>
                   </div>
-                  <textarea aria-label="textarea control"
+                  <Textarea
+                    aria-label={ARTICLE_HUMAN_SIGNAL_FIELD_LABELS[field.key]}
                     value={field.value}
                     onChange={(event) => field.setValue(event.target.value)}
                     placeholder={field.placeholder}
-                    className="mt-3 min-h-[104px] w-full border border-stone-300 px-3 py-2 text-sm leading-7"
+                    className="mt-3 min-h-[104px] px-3 py-2"
                   />
                 </label>
               );
@@ -5955,15 +6042,15 @@ export function ArticleEditorClient({
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
-          <button
+          <Button
             type="button"
             onClick={saveStrategyCard}
             disabled={savingStrategyCard}
-            className="bg-cinnabar px-4 py-3 text-sm text-white disabled:opacity-60"
+            variant="primary"
           >
             {savingStrategyCard ? "保存中…" : "确认并保存策略卡"}
-          </button>
-          <div className="text-xs leading-6 text-stone-500">
+          </Button>
+          <div className="text-xs leading-6 text-inkMuted">
             保存后，发布预检和正式推送都会按这张卡判断是否放行。
           </div>
         </div>
@@ -5973,20 +6060,20 @@ export function ArticleEditorClient({
 
   function renderEvidencePackagePanel() {
     const evidenceStatusTone = !evidenceDraftStats.ready
-      ? "border-[#d8b0b2] bg-[#fff7f7] text-[#8f3136]"
+      ? "border-danger/30 bg-surface text-danger"
       : !savedEvidenceStats.ready || evidenceHasUnsavedChanges
-        ? "border-[#dfd2b0] bg-[#fff8e8] text-[#7d6430]"
+        ? "border-warning/40 bg-surfaceWarning text-warning"
         : "border-emerald-200 bg-emerald-50 text-emerald-700";
     const selectedKeys = new Set(evidenceDraftItems.map(buildEvidenceItemSignature));
     const availableSuggestedItems = suggestedEvidenceItems.filter((item) => !selectedKeys.has(buildEvidenceItemSignature(item)));
 
     return (
-      <div className="space-y-4 border border-[#dcc8a6] bg-[#fffaf1] px-4 py-4">
+      <div className="space-y-4 border border-warning/30 bg-surfaceWarm px-4 py-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <div className="text-xs uppercase tracking-[0.18em] text-stone-500">Evidence Package</div>
+            <div className="text-xs uppercase tracking-[0.18em] text-inkMuted">Evidence Package</div>
             <div className="mt-2 font-serifCn text-2xl text-ink text-balance">发布前必须确认的证据包</div>
-            <div className="mt-2 text-sm leading-7 text-stone-700">
+            <div className="mt-2 text-sm leading-7 text-inkSoft">
               证据步骤不再只看素材挂载数量。这里需要明确保存一组真正用于发布守门的证据条目，至少 3 条，且至少 1 条外部来源或截图证据。
             </div>
           </div>
@@ -6008,80 +6095,86 @@ export function ArticleEditorClient({
         </div>
 
         <div className="grid gap-3 md:grid-cols-4">
-          <div className="border border-stone-300 bg-white px-4 py-3">
-            <div className="text-xs uppercase tracking-[0.16em] text-stone-500">已选证据</div>
+          <div className="border border-lineStrong bg-surface px-4 py-3">
+            <div className="text-xs uppercase tracking-[0.16em] text-inkMuted">已选证据</div>
             <div className="mt-2 font-serifCn text-2xl text-ink text-balance">{evidenceDraftStats.itemCount}</div>
           </div>
-          <div className="border border-stone-300 bg-white px-4 py-3">
-            <div className="text-xs uppercase tracking-[0.16em] text-stone-500">外部来源</div>
+          <div className="border border-lineStrong bg-surface px-4 py-3">
+            <div className="text-xs uppercase tracking-[0.16em] text-inkMuted">外部来源</div>
             <div className="mt-2 font-serifCn text-2xl text-ink text-balance">{evidenceDraftStats.externalEvidenceCount}</div>
           </div>
-          <div className="border border-stone-300 bg-white px-4 py-3">
-            <div className="text-xs uppercase tracking-[0.16em] text-stone-500">截图证据</div>
+          <div className="border border-lineStrong bg-surface px-4 py-3">
+            <div className="text-xs uppercase tracking-[0.16em] text-inkMuted">截图证据</div>
             <div className="mt-2 font-serifCn text-2xl text-ink text-balance">{evidenceDraftStats.screenshotEvidenceCount}</div>
           </div>
-          <div className="border border-stone-300 bg-white px-4 py-3">
-            <div className="text-xs uppercase tracking-[0.16em] text-stone-500">来源类型</div>
+          <div className="border border-lineStrong bg-surface px-4 py-3">
+            <div className="text-xs uppercase tracking-[0.16em] text-inkMuted">来源类型</div>
             <div className="mt-2 font-serifCn text-2xl text-ink text-balance">{evidenceDraftStats.uniqueSourceTypeCount}</div>
           </div>
         </div>
 
         <div className="space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="text-xs uppercase tracking-[0.16em] text-stone-500">当前已选证据</div>
+            <div className="text-xs uppercase tracking-[0.16em] text-inkMuted">当前已选证据</div>
             <div className="flex flex-wrap gap-2">
-              <button
+              <Button
                 type="button"
                 onClick={() => setEvidenceDraftItems(suggestedEvidenceItems.map((item, index) => ({ ...item, sortOrder: index + 1 })))}
-                className="border border-stone-300 bg-white px-3 py-2 text-xs text-stone-700"
+                variant="secondary"
+                size="sm"
+                className="text-xs"
               >
                 采用当前建议包
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
                 onClick={() => setEvidenceDraftItems([])}
-                className="border border-stone-300 bg-white px-3 py-2 text-xs text-stone-700"
+                variant="secondary"
+                size="sm"
+                className="text-xs"
               >
                 清空草稿
-              </button>
+              </Button>
             </div>
           </div>
           {evidenceDraftItems.length > 0 ? (
             <div className="space-y-3">
               {evidenceDraftItems.map((item, index) => (
-                <div key={`${buildEvidenceItemSignature(item)}-${index}`} className="border border-stone-300 bg-white px-4 py-4">
+                <div key={`${buildEvidenceItemSignature(item)}-${index}`} className="border border-lineStrong bg-surface px-4 py-4">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
                       <div className="font-medium text-ink">{item.title || `证据 ${index + 1}`}</div>
-                      <div className="mt-1 flex flex-wrap gap-2 text-[11px] uppercase tracking-[0.16em] text-stone-500">
+                      <div className="mt-1 flex flex-wrap gap-2 text-[11px] uppercase tracking-[0.16em] text-inkMuted">
                         <span>{formatFragmentSourceType(item.sourceType)}</span>
-                        <span className="border border-stone-300 px-2 py-1 normal-case tracking-normal">{formatEvidenceRoleLabel(item.evidenceRole)}</span>
+                        <span className="border border-lineStrong px-2 py-1 normal-case tracking-normal">{formatEvidenceRoleLabel(item.evidenceRole)}</span>
                         {formatEvidenceResearchTagLabel(item.researchTag) ? (
-                          <span className="border border-stone-300 px-2 py-1 normal-case tracking-normal">{formatEvidenceResearchTagLabel(item.researchTag)}</span>
+                          <span className="border border-lineStrong px-2 py-1 normal-case tracking-normal">{formatEvidenceResearchTagLabel(item.researchTag)}</span>
                         ) : null}
-                        {item.claim ? <span className="border border-stone-300 px-2 py-1 normal-case tracking-normal">支撑判断：{item.claim}</span> : null}
+                        {item.claim ? <span className="border border-lineStrong px-2 py-1 normal-case tracking-normal">支撑判断：{item.claim}</span> : null}
                       </div>
                     </div>
-                    <button
+                    <Button
                       type="button"
                       onClick={() => toggleEvidenceDraftItem(item)}
-                      className="border border-stone-300 bg-white px-3 py-2 text-xs text-stone-700"
+                      variant="secondary"
+                      size="sm"
+                      className="text-xs"
                     >
                       移出证据包
-                    </button>
+                    </Button>
                   </div>
-                  <div className="mt-2 text-sm leading-7 text-stone-700">{item.excerpt}</div>
-                  {item.rationale ? <div className="mt-2 text-xs leading-6 text-stone-500">{item.rationale}</div> : null}
-                  <div className="mt-3 flex flex-wrap gap-2 text-xs text-stone-500">
-                    {item.fragmentId ? <span className="border border-stone-300 bg-[#faf7f0] px-3 py-2">素材 #{item.fragmentId}</span> : null}
-                    {item.nodeId ? <span className="border border-stone-300 bg-[#faf7f0] px-3 py-2">节点 #{item.nodeId}</span> : null}
-                    {item.screenshotPath ? <span className="border border-stone-300 bg-[#faf7f0] px-3 py-2">截图证据</span> : null}
+                  <div className="mt-2 text-sm leading-7 text-inkSoft">{item.excerpt}</div>
+                  {item.rationale ? <div className="mt-2 text-xs leading-6 text-inkMuted">{item.rationale}</div> : null}
+                  <div className="mt-3 flex flex-wrap gap-2 text-xs text-inkMuted">
+                    {item.fragmentId ? <span className="border border-lineStrong bg-paperStrong px-3 py-2">素材 #{item.fragmentId}</span> : null}
+                    {item.nodeId ? <span className="border border-lineStrong bg-paperStrong px-3 py-2">节点 #{item.nodeId}</span> : null}
+                    {item.screenshotPath ? <span className="border border-lineStrong bg-paperStrong px-3 py-2">截图证据</span> : null}
                   </div>
                   {item.sourceUrl ? (
                     <a
                       href={item.sourceUrl}
                       target="_blank" rel="noreferrer"
-                      className="mt-3 inline-block border border-stone-300 bg-white px-3 py-2 text-xs text-stone-700"
+                      className="mt-3 inline-block border border-lineStrong bg-surface px-3 py-2 text-xs text-inkSoft"
                     >
                       打开原始链接
                     </a>
@@ -6090,7 +6183,7 @@ export function ArticleEditorClient({
               ))}
             </div>
           ) : (
-            <div className="border border-dashed border-stone-300 bg-white px-4 py-4 text-sm leading-7 text-stone-600">
+            <div className="border border-dashed border-lineStrong bg-surface px-4 py-4 text-sm leading-7 text-inkMuted">
               当前还没有选入证据包的条目。你可以先采用建议包，再手动删减到真正要守门的证据。
             </div>
           )}
@@ -6098,31 +6191,33 @@ export function ArticleEditorClient({
 
         {availableSuggestedItems.length > 0 ? (
           <div className="space-y-3">
-            <div className="text-xs uppercase tracking-[0.16em] text-stone-500">可追加的建议证据</div>
+            <div className="text-xs uppercase tracking-[0.16em] text-inkMuted">可追加的建议证据</div>
             <div className="space-y-3">
               {availableSuggestedItems.slice(0, 8).map((item, index) => (
-                <div key={`${buildEvidenceItemSignature(item)}-suggested-${index}`} className="border border-stone-300/60 bg-white px-4 py-4">
+                <div key={`${buildEvidenceItemSignature(item)}-suggested-${index}`} className="border border-lineStrong/60 bg-surface px-4 py-4">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
                       <div className="font-medium text-ink">{item.title || `建议证据 ${index + 1}`}</div>
-                      <div className="mt-1 flex flex-wrap gap-2 text-xs uppercase tracking-[0.16em] text-stone-500">
+                      <div className="mt-1 flex flex-wrap gap-2 text-xs uppercase tracking-[0.16em] text-inkMuted">
                         <span>{formatFragmentSourceType(item.sourceType)}</span>
-                        <span className="border border-stone-300 px-2 py-1 normal-case tracking-normal">{formatEvidenceRoleLabel(item.evidenceRole)}</span>
+                        <span className="border border-lineStrong px-2 py-1 normal-case tracking-normal">{formatEvidenceRoleLabel(item.evidenceRole)}</span>
                         {formatEvidenceResearchTagLabel(item.researchTag) ? (
-                          <span className="border border-stone-300 px-2 py-1 normal-case tracking-normal">{formatEvidenceResearchTagLabel(item.researchTag)}</span>
+                          <span className="border border-lineStrong px-2 py-1 normal-case tracking-normal">{formatEvidenceResearchTagLabel(item.researchTag)}</span>
                         ) : null}
                       </div>
                     </div>
-                    <button
+                    <Button
                       type="button"
                       onClick={() => toggleEvidenceDraftItem(item)}
-                      className="border border-cinnabar bg-white px-3 py-2 text-xs text-cinnabar"
+                      variant="secondary"
+                      size="sm"
+                      className="border-cinnabar text-cinnabar hover:border-cinnabar hover:bg-surface hover:text-cinnabar"
                     >
                       加入证据包
-                    </button>
+                    </Button>
                   </div>
-                  <div className="mt-2 text-sm leading-7 text-stone-700">{item.excerpt}</div>
-                  {item.rationale ? <div className="mt-2 text-xs leading-6 text-stone-500">{item.rationale}</div> : null}
+                  <div className="mt-2 text-sm leading-7 text-inkSoft">{item.excerpt}</div>
+                  {item.rationale ? <div className="mt-2 text-xs leading-6 text-inkMuted">{item.rationale}</div> : null}
                 </div>
               ))}
             </div>
@@ -6130,15 +6225,15 @@ export function ArticleEditorClient({
         ) : null}
 
         <div className="flex flex-wrap items-center gap-3">
-          <button
+          <Button
             type="button"
             onClick={saveEvidenceItems}
             disabled={savingEvidenceItems}
-            className="bg-cinnabar px-4 py-3 text-sm text-white disabled:opacity-60"
+            variant="primary"
           >
             {savingEvidenceItems ? "保存中…" : "确认并保存证据包"}
-          </button>
-          <div className="text-xs leading-6 text-stone-500">
+          </Button>
+          <div className="text-xs leading-6 text-inkMuted">
             发布预检只看已保存的证据包，不看临时草稿。
           </div>
         </div>
@@ -6149,7 +6244,7 @@ export function ArticleEditorClient({
   function renderOutcomeWorkspace() {
     if (status !== "published") {
       return (
-        <div className="mt-4 border border-dashed border-stone-300 bg-white px-4 py-4 text-sm leading-7 text-stone-600">
+        <div className="mt-4 border border-dashed border-lineStrong bg-surface px-4 py-4 text-sm leading-7 text-inkMuted">
           稿件还没正式发布，结果阶段暂不可录入。发布完成后，这里会接管 24h / 72h / 7d 快照、命中判定和复盘建议。
         </div>
       );
@@ -6157,54 +6252,54 @@ export function ArticleEditorClient({
 
     return (
       <div className="mt-4 space-y-4">
-        <div className="border border-stone-300 bg-[#fffdfa] p-4">
+        <div className="border border-lineStrong bg-surfaceWarm p-4">
           <div className="text-xs uppercase tracking-[0.2em] text-cinnabar">结果回流</div>
           <div className="mt-2 grid gap-3 md:grid-cols-4">
-            <div className="border border-stone-300/60 bg-white px-4 py-3">
-              <div className="text-xs uppercase tracking-[0.18em] text-stone-500">当前判定</div>
+            <div className="border border-lineStrong/60 bg-surface px-4 py-3">
+              <div className="text-xs uppercase tracking-[0.18em] text-inkMuted">当前判定</div>
               <div className="mt-2 font-serifCn text-2xl text-ink text-balance">{formatOutcomeHitStatus(currentArticleOutcome?.hitStatus ?? "pending")}</div>
             </div>
-            <div className="border border-stone-300/60 bg-white px-4 py-3">
-              <div className="text-xs uppercase tracking-[0.18em] text-stone-500">目标包</div>
-              <div className="mt-2 text-sm leading-7 text-stone-700">{currentArticleOutcome?.targetPackage || "未填写"}</div>
+            <div className="border border-lineStrong/60 bg-surface px-4 py-3">
+              <div className="text-xs uppercase tracking-[0.18em] text-inkMuted">目标包</div>
+              <div className="mt-2 text-sm leading-7 text-inkSoft">{currentArticleOutcome?.targetPackage || "未填写"}</div>
             </div>
-            <div className="border border-stone-300/60 bg-white px-4 py-3">
-              <div className="text-xs uppercase tracking-[0.18em] text-stone-500">预测分</div>
-              <div className="mt-2 text-sm leading-7 text-stone-700">
+            <div className="border border-lineStrong/60 bg-surface px-4 py-3">
+              <div className="text-xs uppercase tracking-[0.18em] text-inkMuted">预测分</div>
+              <div className="mt-2 text-sm leading-7 text-inkSoft">
                 {articleScorecardSummary?.predictedScore != null ? `${Math.round(articleScorecardSummary.predictedScore)} / 100` : "暂未接入"}
               </div>
             </div>
-            <div className="border border-stone-300/60 bg-white px-4 py-3">
-              <div className="text-xs uppercase tracking-[0.18em] text-stone-500">已补快照</div>
-              <div className="mt-2 text-sm leading-7 text-stone-700">
+            <div className="border border-lineStrong/60 bg-surface px-4 py-3">
+              <div className="text-xs uppercase tracking-[0.18em] text-inkMuted">已补快照</div>
+              <div className="mt-2 text-sm leading-7 text-inkSoft">
                 {articleOutcomeBundle.completedWindowCodes.length > 0 ? articleOutcomeBundle.completedWindowCodes.join(" / ") : "暂无"}
               </div>
             </div>
           </div>
-          <div className="mt-3 text-sm leading-7 text-stone-700">
+          <div className="mt-3 text-sm leading-7 text-inkSoft">
             {articleOutcomeBundle.missingWindowCodes.length > 0
               ? `当前还缺 ${articleOutcomeBundle.missingWindowCodes.join(" / ")} 快照。`
               : "24h / 72h / 7d 快照已补齐，可以专注写命中判定与复盘动作。"}
           </div>
-          <div className="mt-4 border border-stone-300/60 bg-white px-4 py-4">
-            <div className="text-xs uppercase tracking-[0.18em] text-stone-500">写作状态回流</div>
+          <div className="mt-4 border border-lineStrong/60 bg-surface px-4 py-4">
+            <div className="text-xs uppercase tracking-[0.18em] text-inkMuted">写作状态回流</div>
             {currentOutcomeSnapshot?.writingStateFeedback ? (
               <>
                 <div className="mt-3 grid gap-3 md:grid-cols-3">
-                  <div className="border border-stone-300/60 bg-[#faf7f0] px-4 py-3">
-                    <div className="text-xs uppercase tracking-[0.16em] text-stone-500">推荐原型</div>
+                  <div className="border border-lineStrong/60 bg-paperStrong px-4 py-3">
+                    <div className="text-xs uppercase tracking-[0.16em] text-inkMuted">推荐原型</div>
                     <div className="mt-2 text-sm leading-7 text-ink">
                       {currentOutcomeSnapshot.writingStateFeedback.recommendedPrototypeLabel || currentOutcomeSnapshot.writingStateFeedback.recommendedPrototypeCode || "未记录"}
                     </div>
                   </div>
-                  <div className="border border-stone-300/60 bg-[#faf7f0] px-4 py-3">
-                    <div className="text-xs uppercase tracking-[0.16em] text-stone-500">采用原型</div>
+                  <div className="border border-lineStrong/60 bg-paperStrong px-4 py-3">
+                    <div className="text-xs uppercase tracking-[0.16em] text-inkMuted">采用原型</div>
                     <div className="mt-2 text-sm leading-7 text-ink">
                       {currentOutcomeSnapshot.writingStateFeedback.adoptedPrototypeLabel || currentOutcomeSnapshot.writingStateFeedback.adoptedPrototypeCode || "未记录"}
                     </div>
                   </div>
-                  <div className="border border-stone-300/60 bg-[#faf7f0] px-4 py-3">
-                    <div className="text-xs uppercase tracking-[0.16em] text-stone-500">原型是否跟随推荐</div>
+                  <div className="border border-lineStrong/60 bg-paperStrong px-4 py-3">
+                    <div className="text-xs uppercase tracking-[0.16em] text-inkMuted">原型是否跟随推荐</div>
                     <div className="mt-2 text-sm leading-7 text-ink">
                       {currentOutcomeSnapshot.writingStateFeedback.followedPrototypeRecommendation === null
                         ? "未记录"
@@ -6215,20 +6310,20 @@ export function ArticleEditorClient({
                   </div>
                 </div>
                 <div className="mt-3 grid gap-3 md:grid-cols-3">
-                  <div className="border border-stone-300/60 bg-[#faf7f0] px-4 py-3">
-                    <div className="text-xs uppercase tracking-[0.16em] text-stone-500">推荐状态</div>
+                  <div className="border border-lineStrong/60 bg-paperStrong px-4 py-3">
+                    <div className="text-xs uppercase tracking-[0.16em] text-inkMuted">推荐状态</div>
                     <div className="mt-2 text-sm leading-7 text-ink">
                       {currentOutcomeSnapshot.writingStateFeedback.recommendedVariantLabel || currentOutcomeSnapshot.writingStateFeedback.recommendedVariantCode || "未记录"}
                     </div>
                   </div>
-                  <div className="border border-stone-300/60 bg-[#faf7f0] px-4 py-3">
-                    <div className="text-xs uppercase tracking-[0.16em] text-stone-500">采用状态</div>
+                  <div className="border border-lineStrong/60 bg-paperStrong px-4 py-3">
+                    <div className="text-xs uppercase tracking-[0.16em] text-inkMuted">采用状态</div>
                     <div className="mt-2 text-sm leading-7 text-ink">
                       {currentOutcomeSnapshot.writingStateFeedback.adoptedVariantLabel || currentOutcomeSnapshot.writingStateFeedback.adoptedVariantCode || "未记录"}
                     </div>
                   </div>
-                  <div className="border border-stone-300/60 bg-[#faf7f0] px-4 py-3">
-                    <div className="text-xs uppercase tracking-[0.16em] text-stone-500">状态是否跟随推荐</div>
+                  <div className="border border-lineStrong/60 bg-paperStrong px-4 py-3">
+                    <div className="text-xs uppercase tracking-[0.16em] text-inkMuted">状态是否跟随推荐</div>
                     <div className="mt-2 text-sm leading-7 text-ink">
                       {currentOutcomeSnapshot.writingStateFeedback.followedRecommendation === null
                         ? "未记录"
@@ -6239,8 +6334,8 @@ export function ArticleEditorClient({
                   </div>
                 </div>
                 <div className="mt-3 grid gap-3 md:grid-cols-3">
-                  <div className="border border-stone-300/60 bg-[#faf7f0] px-4 py-3">
-                    <div className="text-xs uppercase tracking-[0.16em] text-stone-500">推荐写法呼吸</div>
+                  <div className="border border-lineStrong/60 bg-paperStrong px-4 py-3">
+                    <div className="text-xs uppercase tracking-[0.16em] text-inkMuted">推荐写法呼吸</div>
                     <div className="mt-2 text-sm leading-7 text-ink">
                       {[
                         currentOutcomeSnapshot.writingStateFeedback.recommendedOpeningPatternLabel,
@@ -6249,8 +6344,8 @@ export function ArticleEditorClient({
                       ].filter(Boolean).join(" / ") || "未记录"}
                     </div>
                   </div>
-                  <div className="border border-stone-300/60 bg-[#faf7f0] px-4 py-3">
-                    <div className="text-xs uppercase tracking-[0.16em] text-stone-500">实际写法呼吸</div>
+                  <div className="border border-lineStrong/60 bg-paperStrong px-4 py-3">
+                    <div className="text-xs uppercase tracking-[0.16em] text-inkMuted">实际写法呼吸</div>
                     <div className="mt-2 text-sm leading-7 text-ink">
                       {[
                         currentOutcomeSnapshot.writingStateFeedback.adoptedOpeningPatternLabel,
@@ -6259,8 +6354,8 @@ export function ArticleEditorClient({
                       ].filter(Boolean).join(" / ") || "未记录"}
                     </div>
                   </div>
-                  <div className="border border-stone-300/60 bg-[#faf7f0] px-4 py-3">
-                    <div className="text-xs uppercase tracking-[0.16em] text-stone-500">模式是否跟随推荐</div>
+                  <div className="border border-lineStrong/60 bg-paperStrong px-4 py-3">
+                    <div className="text-xs uppercase tracking-[0.16em] text-inkMuted">模式是否跟随推荐</div>
                     <div className="mt-2 text-sm leading-7 text-ink">
                       {currentOutcomeSnapshot.writingStateFeedback.followedPatternRecommendation === null
                         ? "未记录"
@@ -6270,64 +6365,64 @@ export function ArticleEditorClient({
                     </div>
                   </div>
                 </div>
-                <div className="mt-3 text-xs leading-6 text-stone-500">
+                <div className="mt-3 text-xs leading-6 text-inkMuted">
                   本次回流记录覆盖 {currentOutcomeSnapshot.writingStateFeedback.availableVariantCount} 个候选状态，
                   其中纳入 {currentOutcomeSnapshot.writingStateFeedback.comparisonSampleCount} 个对比样本。
                 </div>
               </>
             ) : (
-              <div className="mt-2 text-sm leading-7 text-stone-600">
+              <div className="mt-2 text-sm leading-7 text-inkMuted">
                 这个时间窗还没有写作回流。保存结果快照时，系统会自动记录当时采用的是不是推荐原型、推荐状态和推荐写法呼吸。
               </div>
             )}
             {currentOutcomeSnapshot?.writingStateFeedback?.recommendationReason ? (
-              <div className="mt-3 text-xs leading-6 text-stone-500">
+              <div className="mt-3 text-xs leading-6 text-inkMuted">
                 推荐理由：{currentOutcomeSnapshot.writingStateFeedback.recommendationReason}
               </div>
             ) : null}
             {currentOutcomeSnapshot?.writingStateFeedback?.adoptedReason ? (
-              <div className="mt-1 text-xs leading-6 text-stone-500">
+              <div className="mt-1 text-xs leading-6 text-inkMuted">
                 实际采用原因：{currentOutcomeSnapshot.writingStateFeedback.adoptedReason}
               </div>
             ) : null}
           </div>
           {articleScorecardSummary ? (
-            <div className="mt-4 border border-stone-300/60 bg-white px-4 py-4">
-              <div className="text-xs uppercase tracking-[0.18em] text-stone-500">当前文章分数卡</div>
+            <div className="mt-4 border border-lineStrong/60 bg-surface px-4 py-4">
+              <div className="text-xs uppercase tracking-[0.18em] text-inkMuted">当前文章分数卡</div>
               <div className="mt-3 grid gap-3 md:grid-cols-3">
-                <div className="border border-stone-300/60 bg-[#faf7f0] px-4 py-3">
-                  <div className="text-xs uppercase tracking-[0.16em] text-stone-500">质量分</div>
+                <div className="border border-lineStrong/60 bg-paperStrong px-4 py-3">
+                  <div className="text-xs uppercase tracking-[0.16em] text-inkMuted">质量分</div>
                   <div className="mt-2 text-lg text-ink">
                     {articleScorecardSummary.qualityScore != null ? Math.round(articleScorecardSummary.qualityScore) : "--"}
                   </div>
                 </div>
-                <div className="border border-stone-300/60 bg-[#faf7f0] px-4 py-3">
-                  <div className="text-xs uppercase tracking-[0.16em] text-stone-500">爆款分</div>
+                <div className="border border-lineStrong/60 bg-paperStrong px-4 py-3">
+                  <div className="text-xs uppercase tracking-[0.16em] text-inkMuted">爆款分</div>
                   <div className="mt-2 text-lg text-ink">
                     {articleScorecardSummary.viralScore != null ? Math.round(articleScorecardSummary.viralScore) : "--"}
                   </div>
                 </div>
-                <div className="border border-stone-300/60 bg-[#faf7f0] px-4 py-3">
-                  <div className="text-xs uppercase tracking-[0.16em] text-stone-500">风险扣分</div>
+                <div className="border border-lineStrong/60 bg-paperStrong px-4 py-3">
+                  <div className="text-xs uppercase tracking-[0.16em] text-inkMuted">风险扣分</div>
                   <div className="mt-2 text-lg text-cinnabar">
                     {articleScorecardSummary.riskPenalty != null ? Math.round(articleScorecardSummary.riskPenalty) : "--"}
                   </div>
                 </div>
               </div>
               {articleScorecardSummary.summary ? (
-                <div className="mt-3 text-sm leading-7 text-stone-700">{articleScorecardSummary.summary}</div>
+                <div className="mt-3 text-sm leading-7 text-inkSoft">{articleScorecardSummary.summary}</div>
               ) : null}
               {articleScorecardSummary.blockers.length > 0 ? (
                 <div className="mt-3 flex flex-wrap gap-2">
                   {articleScorecardSummary.blockers.map((item) => (
-                    <span key={item} className="border border-cinnabar/20 bg-[#fff4f1] px-2 py-1 text-xs text-cinnabar">
+                    <span key={item} className="border border-cinnabar/20 bg-surfaceWarning px-2 py-1 text-xs text-cinnabar">
                       {item}
                     </span>
                   ))}
                 </div>
               ) : null}
               {articleScorecardSummary.aiNoiseScore != null || articleScorecardSummary.aiNoiseLevel ? (
-                <div className="mt-3 text-xs leading-6 text-stone-500">
+                <div className="mt-3 text-xs leading-6 text-inkMuted">
                   AI 噪声 {articleScorecardSummary.aiNoiseScore != null ? Math.round(articleScorecardSummary.aiNoiseScore) : "--"} ·{" "}
                   {articleScorecardSummary.aiNoiseLevel || "unknown"}
                 </div>
@@ -6335,57 +6430,63 @@ export function ArticleEditorClient({
             </div>
           ) : null}
           {latestSyncLog ? (
-            <div className="mt-2 text-xs leading-6 text-stone-500">
+            <div className="mt-2 text-xs leading-6 text-inkMuted">
               最近发布记录：{new Date(latestSyncLog.createdAt).toLocaleString("zh-CN")} · {latestSyncLog.connectionName || "未命名公众号"}
             </div>
           ) : null}
         </div>
 
         <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
-          <div className="border border-stone-300 bg-white p-4">
-            <div className="text-xs uppercase tracking-[0.2em] text-stone-500">结果快照</div>
+          <div className="border border-lineStrong bg-surface p-4">
+            <div className="text-xs uppercase tracking-[0.2em] text-inkMuted">结果快照</div>
             <div className="mt-4 grid gap-3 md:grid-cols-3">
               {OUTCOME_WINDOWS.map((windowItem) => {
                 const snapshot = articleOutcomeBundle.snapshots.find((item) => item.windowCode === windowItem.code) ?? null;
                 const isActive = selectedOutcomeWindowCode === windowItem.code;
                 return (
-                  <button
+                  <Button
                     key={windowItem.code}
                     type="button"
                     onClick={() => setSelectedOutcomeWindowCode(windowItem.code)}
-                    className={`border px-4 py-4 text-left ${
-                      isActive ? "border-cinnabar bg-[#fff4f1]" : snapshot ? "border-stone-300 bg-[#faf7f0]" : "border-stone-300/60 bg-white"
+                    variant="secondary"
+                    fullWidth
+                    className={`h-full whitespace-normal px-4 py-4 text-left [&>span]:flex [&>span]:w-full [&>span]:flex-col [&>span]:items-start ${
+                      isActive
+                        ? "border-cinnabar bg-surfaceWarning hover:border-cinnabar hover:bg-surfaceWarning"
+                        : snapshot
+                          ? "border-lineStrong bg-paperStrong hover:border-lineStrong hover:bg-paperStrong"
+                          : "border-lineStrong/60 bg-surface"
                     }`}
                   >
-                    <div className="text-xs uppercase tracking-[0.18em] text-stone-500">{windowItem.label}</div>
-                    <div className="mt-2 text-sm leading-7 text-stone-700">
+                    <span className="text-xs uppercase tracking-[0.18em] text-inkMuted">{windowItem.label}</span>
+                    <span className="mt-2 text-sm leading-7 text-inkSoft">
                       {snapshot
                         ? `阅读 ${snapshot.readCount} · 分享 ${snapshot.shareCount} · 在看 ${snapshot.likeCount}`
                         : "尚未录入"}
-                    </div>
-                    <div className="mt-2 text-xs leading-6 text-stone-500">
+                    </span>
+                    <span className="mt-2 text-xs leading-6 text-inkMuted">
                       {snapshot?.updatedAt ? `更新于 ${new Date(snapshot.updatedAt).toLocaleString("zh-CN")}` : "点击后可开始录入"}
-                    </div>
-                  </button>
+                    </span>
+                  </Button>
                 );
               })}
             </div>
           </div>
 
           <div className="space-y-4">
-            <div className="border border-stone-300 bg-white p-4">
-              <div className="text-xs uppercase tracking-[0.2em] text-stone-500">命中复盘</div>
-              <div className="mt-3 space-y-3 text-sm leading-7 text-stone-700">
+            <div className="border border-lineStrong bg-surface p-4">
+              <div className="text-xs uppercase tracking-[0.2em] text-inkMuted">命中复盘</div>
+              <div className="mt-3 space-y-3 text-sm leading-7 text-inkSoft">
                 <div>
-                  <div className="text-xs uppercase tracking-[0.16em] text-stone-500">复盘结论</div>
+                  <div className="text-xs uppercase tracking-[0.16em] text-inkMuted">复盘结论</div>
                   <div className="mt-1">{currentArticleOutcome?.reviewSummary || "还没有复盘结论。先补数据，再写本次命中或失手的关键原因。"}</div>
                 </div>
                 <div>
-                  <div className="text-xs uppercase tracking-[0.16em] text-stone-500">下一步动作</div>
+                  <div className="text-xs uppercase tracking-[0.16em] text-inkMuted">下一步动作</div>
                   <div className="mt-1">{currentArticleOutcome?.nextAction || "还没有下一步动作。建议明确下一篇继续复用或立刻停用的打法。"}</div>
                 </div>
                 <div>
-                  <div className="text-xs uppercase tracking-[0.16em] text-stone-500">打法标签</div>
+                  <div className="text-xs uppercase tracking-[0.16em] text-inkMuted">打法标签</div>
                   <div className="mt-1">
                     {currentArticleOutcome?.playbookTags.length ? currentArticleOutcome.playbookTags.join(" / ") : "还没有沉淀打法标签。"}
                   </div>
@@ -6393,49 +6494,49 @@ export function ArticleEditorClient({
               </div>
             </div>
 
-            <div className="border border-stone-300 bg-white p-4">
-              <div className="text-xs uppercase tracking-[0.2em] text-stone-500">当前系列推荐打法</div>
-              <div className="mt-3 text-sm leading-7 text-stone-700">
+            <div className="border border-lineStrong bg-surface p-4">
+              <div className="text-xs uppercase tracking-[0.2em] text-inkMuted">当前系列推荐打法</div>
+              <div className="mt-3 text-sm leading-7 text-inkSoft">
                 {selectedSeries
                   ? `当前稿件归属「${selectedSeries.name}」，绑定人设为 ${selectedSeries.personaName}。`
                   : "当前稿件还没有绑定系列，请先完成系列绑定，再沉淀可复用打法。"}
               </div>
               {loadingSeriesPlaybook ? (
-                <div className="mt-4 border border-dashed border-stone-300 px-4 py-4 text-sm leading-7 text-stone-600">
+                <div className="mt-4 border border-dashed border-lineStrong px-4 py-4 text-sm leading-7 text-inkMuted">
                   正在刷新当前系列的推荐打法...
                 </div>
               ) : seriesPlaybook ? (
                 <>
-                  <div className="mt-4 flex flex-wrap gap-2 text-xs text-stone-600">
-                    <span className="border border-stone-300 bg-[#faf7f0] px-3 py-1">
+                  <div className="mt-4 flex flex-wrap gap-2 text-xs text-inkSoft">
+                    <span className="border border-lineStrong bg-paperStrong px-3 py-1">
                       命中 {seriesPlaybook.hitCount} 篇
                     </span>
-                    <span className="border border-stone-300 bg-[#faf7f0] px-3 py-1">
+                    <span className="border border-lineStrong bg-paperStrong px-3 py-1">
                       差一点 {seriesPlaybook.nearMissCount} 篇
                     </span>
-                    <span className="border border-stone-300 bg-[#faf7f0] px-3 py-1">
+                    <span className="border border-lineStrong bg-paperStrong px-3 py-1">
                       已沉淀 {seriesPlaybook.articleCount} 篇
                     </span>
                   </div>
                   <div className="mt-4 space-y-2">
                     {seriesPlaybook.topLabels.slice(0, 3).map((item) => (
-                      <div key={item.label} className="border border-stone-300/60 bg-[#fffdfa] px-3 py-3 text-sm leading-7 text-stone-700">
+                      <div key={item.label} className="border border-lineStrong/60 bg-surfaceWarm px-3 py-3 text-sm leading-7 text-inkSoft">
                         <div className="font-medium text-ink">{item.label}</div>
-                        <div className="mt-1 text-xs leading-6 text-stone-500">
+                        <div className="mt-1 text-xs leading-6 text-inkMuted">
                           命中 {item.hitCount} 篇 · 差一点 {item.nearMissCount} 篇 · 最近出现在
                           {item.latestArticleTitle ? `《${item.latestArticleTitle}》` : "结果样本中"}
                         </div>
                       </div>
                     ))}
                   </div>
-                  <div className="mt-4 text-xs leading-6 text-stone-500">
+                  <div className="mt-4 text-xs leading-6 text-inkMuted">
                     {seriesPlaybook.latestArticleTitle
                       ? `最近一次系列沉淀来自《${seriesPlaybook.latestArticleTitle}》。`
                       : "当前系列已有结果样本，但还缺最近命中标题。"}
                   </div>
                 </>
               ) : (
-                <div className="mt-4 border border-dashed border-stone-300 px-4 py-4 text-sm leading-7 text-stone-600">
+                <div className="mt-4 border border-dashed border-lineStrong px-4 py-4 text-sm leading-7 text-inkMuted">
                   当前系列还没有足够的真实回流样本。先补 24h / 72h / 7d 快照，并给结果写清楚打法标签。
                 </div>
               )}
@@ -6443,80 +6544,80 @@ export function ArticleEditorClient({
           </div>
         </div>
 
-        <div className="border border-stone-300 bg-white p-4">
-          <div className="text-xs uppercase tracking-[0.2em] text-stone-500">录入结果</div>
+        <div className="border border-lineStrong bg-surface p-4">
+          <div className="text-xs uppercase tracking-[0.2em] text-inkMuted">录入结果</div>
           <div className="mt-4 grid gap-4 xl:grid-cols-2">
             <div className="space-y-3">
-              <label className="block text-sm text-stone-700">
-                <div className="mb-2 text-xs uppercase tracking-[0.16em] text-stone-500">时间窗</div>
-                <select aria-label="select control"
+              <label className="block text-sm text-inkSoft">
+                <div className="mb-2 text-xs uppercase tracking-[0.16em] text-inkMuted">时间窗</div>
+                <Select aria-label="结果时间窗"
                   value={selectedOutcomeWindowCode}
                   onChange={(event) => setSelectedOutcomeWindowCode(event.target.value as "24h" | "72h" | "7d")}
-                  className="w-full border border-stone-300 bg-white px-3 py-2"
+                  className="px-3 py-2"
                 >
                   {OUTCOME_WINDOWS.map((windowItem) => (
                     <option key={windowItem.code} value={windowItem.code}>{windowItem.label}</option>
                   ))}
-                </select>
+                </Select>
               </label>
               <div className="grid gap-3 md:grid-cols-3">
-                <label className="block text-sm text-stone-700">
-                  <div className="mb-2 text-xs uppercase tracking-[0.16em] text-stone-500">阅读</div>
-                  <input aria-label="input control" value={outcomeReadCount} onChange={(event) => setOutcomeReadCount(event.target.value)} inputMode="numeric" className="w-full border border-stone-300 px-3 py-2" />
+                <label className="block text-sm text-inkSoft">
+                  <div className="mb-2 text-xs uppercase tracking-[0.16em] text-inkMuted">阅读</div>
+                  <Input aria-label="阅读数" value={outcomeReadCount} onChange={(event) => setOutcomeReadCount(event.target.value)} inputMode="numeric" className="px-3 py-2" />
                 </label>
-                <label className="block text-sm text-stone-700">
-                  <div className="mb-2 text-xs uppercase tracking-[0.16em] text-stone-500">分享</div>
-                  <input aria-label="input control" value={outcomeShareCount} onChange={(event) => setOutcomeShareCount(event.target.value)} inputMode="numeric" className="w-full border border-stone-300 px-3 py-2" />
+                <label className="block text-sm text-inkSoft">
+                  <div className="mb-2 text-xs uppercase tracking-[0.16em] text-inkMuted">分享</div>
+                  <Input aria-label="分享数" value={outcomeShareCount} onChange={(event) => setOutcomeShareCount(event.target.value)} inputMode="numeric" className="px-3 py-2" />
                 </label>
-                <label className="block text-sm text-stone-700">
-                  <div className="mb-2 text-xs uppercase tracking-[0.16em] text-stone-500">在看 / 点赞</div>
-                  <input aria-label="input control" value={outcomeLikeCount} onChange={(event) => setOutcomeLikeCount(event.target.value)} inputMode="numeric" className="w-full border border-stone-300 px-3 py-2" />
+                <label className="block text-sm text-inkSoft">
+                  <div className="mb-2 text-xs uppercase tracking-[0.16em] text-inkMuted">在看 / 点赞</div>
+                  <Input aria-label="在看或点赞数" value={outcomeLikeCount} onChange={(event) => setOutcomeLikeCount(event.target.value)} inputMode="numeric" className="px-3 py-2" />
                 </label>
               </div>
-              <label className="block text-sm text-stone-700">
-                <div className="mb-2 text-xs uppercase tracking-[0.16em] text-stone-500">快照备注</div>
-                <textarea value={outcomeNotes} onChange={(event) => setOutcomeNotes(event.target.value)} className="min-h-[96px] w-full border border-stone-300 px-3 py-2" />
+              <label className="block text-sm text-inkSoft">
+                <div className="mb-2 text-xs uppercase tracking-[0.16em] text-inkMuted">快照备注</div>
+                <Textarea aria-label="结果快照备注" value={outcomeNotes} onChange={(event) => setOutcomeNotes(event.target.value)} className="min-h-[96px] px-3 py-2" />
               </label>
             </div>
 
             <div className="space-y-3">
-              <label className="block text-sm text-stone-700">
-                <div className="mb-2 text-xs uppercase tracking-[0.16em] text-stone-500">目标包</div>
-                <input aria-label="例如：5k / 10w+" value={outcomeTargetPackage} onChange={(event) => setOutcomeTargetPackage(event.target.value)} placeholder="例如：5k / 10w+" className="w-full border border-stone-300 px-3 py-2" />
+              <label className="block text-sm text-inkSoft">
+                <div className="mb-2 text-xs uppercase tracking-[0.16em] text-inkMuted">目标包</div>
+                <Input aria-label="例如：5k / 10w+" value={outcomeTargetPackage} onChange={(event) => setOutcomeTargetPackage(event.target.value)} placeholder="例如：5k / 10w+" className="px-3 py-2" />
               </label>
-              <label className="block text-sm text-stone-700">
-                <div className="mb-2 text-xs uppercase tracking-[0.16em] text-stone-500">命中判定</div>
-                <select aria-label="select control"
+              <label className="block text-sm text-inkSoft">
+                <div className="mb-2 text-xs uppercase tracking-[0.16em] text-inkMuted">命中判定</div>
+                <Select aria-label="命中判定"
                   value={outcomeHitStatus}
                   onChange={(event) => setOutcomeHitStatus(event.target.value as "pending" | "hit" | "near_miss" | "miss")}
-                  className="w-full border border-stone-300 bg-white px-3 py-2"
+                  className="px-3 py-2"
                 >
                   <option value="pending">待判定</option>
                   <option value="hit">已命中</option>
                   <option value="near_miss">差一点命中</option>
                   <option value="miss">未命中</option>
-                </select>
+                </Select>
               </label>
-              <label className="block text-sm text-stone-700">
-                <div className="mb-2 text-xs uppercase tracking-[0.16em] text-stone-500">复盘结论</div>
-                <textarea aria-label="textarea control" value={outcomeReviewSummary} onChange={(event) => setOutcomeReviewSummary(event.target.value)} className="min-h-[96px] w-full border border-stone-300 px-3 py-2" />
+              <label className="block text-sm text-inkSoft">
+                <div className="mb-2 text-xs uppercase tracking-[0.16em] text-inkMuted">复盘结论</div>
+                <Textarea aria-label="复盘结论" value={outcomeReviewSummary} onChange={(event) => setOutcomeReviewSummary(event.target.value)} className="min-h-[96px] px-3 py-2" />
               </label>
-              <label className="block text-sm text-stone-700">
-                <div className="mb-2 text-xs uppercase tracking-[0.16em] text-stone-500">下一步动作</div>
-                <textarea value={outcomeNextAction} onChange={(event) => setOutcomeNextAction(event.target.value)} className="min-h-[96px] w-full border border-stone-300 px-3 py-2" />
+              <label className="block text-sm text-inkSoft">
+                <div className="mb-2 text-xs uppercase tracking-[0.16em] text-inkMuted">下一步动作</div>
+                <Textarea aria-label="下一步动作" value={outcomeNextAction} onChange={(event) => setOutcomeNextAction(event.target.value)} className="min-h-[96px] px-3 py-2" />
               </label>
-              <label className="block text-sm text-stone-700">
-                <div className="mb-2 text-xs uppercase tracking-[0.16em] text-stone-500">打法标签</div>
-                <input aria-label="用逗号分隔，例如：反直觉开头，案例拆解，强结论收束" value={outcomePlaybookTagsInput} onChange={(event) => setOutcomePlaybookTagsInput(event.target.value)} placeholder="用逗号分隔，例如：反直觉开头，案例拆解，强结论收束" className="w-full border border-stone-300 px-3 py-2" />
+              <label className="block text-sm text-inkSoft">
+                <div className="mb-2 text-xs uppercase tracking-[0.16em] text-inkMuted">打法标签</div>
+                <Input aria-label="用逗号分隔，例如：反直觉开头，案例拆解，强结论收束" value={outcomePlaybookTagsInput} onChange={(event) => setOutcomePlaybookTagsInput(event.target.value)} placeholder="用逗号分隔，例如：反直觉开头，案例拆解，强结论收束" className="px-3 py-2" />
               </label>
-              <button
+              <Button
                 type="button"
                 onClick={saveOutcomeSnapshot}
                 disabled={savingOutcomeSnapshot}
-                className="bg-cinnabar px-4 py-3 text-sm text-white disabled:opacity-60"
+                variant="primary"
               >
                 {savingOutcomeSnapshot ? "保存中…" : "保存结果快照"}
-              </button>
+              </Button>
             </div>
           </div>
         </div>
@@ -6527,7 +6628,7 @@ export function ArticleEditorClient({
   function renderCurrentStageArtifact() {
     if (currentArticleMainStep.code === "result") {
       return (
-        <div className="mt-4 border border-dashed border-stone-300 bg-white px-4 py-4 text-sm leading-7 text-stone-600">
+        <div className="mt-4 border border-dashed border-lineStrong bg-surface px-4 py-4 text-sm leading-7 text-inkMuted">
           结果阶段不再生成结构化阶段产物。这里的重点已经切到真实回流、命中判定和下一篇可复用的打法。
         </div>
       );
@@ -6581,46 +6682,46 @@ export function ArticleEditorClient({
       );
       return (
         <div className="mt-4 space-y-4">
-          <div className="border border-stone-300 bg-white px-4 py-4 text-sm leading-7 text-stone-700">
+          <div className="border border-lineStrong bg-surface px-4 py-4 text-sm leading-7 text-inkSoft">
             <div className="font-medium text-ink">{currentStageAction?.label || "生成写作执行卡"}</div>
             <div className="mt-2">
               深度写作继续沿用中间栏的 Markdown 编辑与流式生成。这里会先把标题、论点、段落推进、文风约束和关键事实整理成执行卡，再驱动正文生成。
             </div>
           </div>
           {deepWritingPrototypeOptions.length > 0 ? (
-            <div className="border border-[#dcc8a6] bg-[#fff8eb] px-4 py-4 text-sm leading-7 text-stone-700">
-              <div className="text-xs uppercase tracking-[0.18em] text-stone-500">文章原型切换</div>
+            <div className="border border-warning/30 bg-surfaceWarning px-4 py-4 text-sm leading-7 text-inkSoft">
+              <div className="text-xs uppercase tracking-[0.18em] text-inkMuted">文章原型切换</div>
               <div className="mt-2">
                 先定这篇到底按哪种推进骨架写，再决定具体声部。默认按系统推荐原型生成；如果你想主动换掉题型骨架，可以先切原型再重生执行卡。
               </div>
               <div className="mt-3 flex flex-wrap gap-2">
-                <button
+                <Button
                   type="button"
                   onClick={() => setDeepWritingPrototypeOverride(null)}
-                  className={`border px-3 py-2 text-xs ${
-                    !deepWritingPrototypeOverride ? "border-cinnabar bg-white text-cinnabar" : "border-stone-300 bg-white text-stone-700"
-                  }`}
+                  variant={!deepWritingPrototypeOverride ? "primary" : "secondary"}
+                  size="sm"
+                  className="text-xs"
                 >
                   自动推荐
-                </button>
+                </Button>
                 {deepWritingPrototypeOptions.map((item, index) => {
                   const optionCode = String(item.code || "").trim();
                   const optionLabel = String(item.label || optionCode || `原型 ${index + 1}`);
                   return (
-                    <button
+                    <Button
                       key={`deep-writing-prototype-${optionCode || index}`}
                       type="button"
                       onClick={() => setDeepWritingPrototypeOverride(optionCode || null)}
-                      className={`border px-3 py-2 text-xs ${
-                        deepWritingPrototypeOverride === optionCode ? "border-cinnabar bg-white text-cinnabar" : "border-stone-300 bg-white text-stone-700"
-                      }`}
+                      variant={deepWritingPrototypeOverride === optionCode ? "primary" : "secondary"}
+                      size="sm"
+                      className="text-xs"
                     >
                       {optionLabel}
-                    </button>
+                    </Button>
                   );
                 })}
               </div>
-              <div className="mt-3 text-xs leading-6 text-stone-500">
+              <div className="mt-3 text-xs leading-6 text-inkMuted">
                 {!deepWritingPrototypeOverride
                   ? `当前保持自动推荐${deepWritingCurrentPrototypeLabel ? `，最近一次执行卡采用的是「${deepWritingCurrentPrototypeLabel}」` : ""}。`
                   : `下次重生会强制切到「${String(deepWritingSelectedPrototypeOption?.label || deepWritingPrototypeOverride)}」。`}
@@ -6628,15 +6729,15 @@ export function ArticleEditorClient({
             </div>
           ) : null}
           {deepWritingPrototypeComparisons.length > 0 ? (
-            <div className="border border-stone-300/60 bg-white px-4 py-4">
+            <div className="border border-lineStrong/60 bg-surface px-4 py-4">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <div className="text-xs uppercase tracking-[0.18em] text-stone-500">原型对比预览</div>
-                  <div className="mt-2 text-sm leading-7 text-stone-700">
+                  <div className="text-xs uppercase tracking-[0.18em] text-inkMuted">原型对比预览</div>
+                  <div className="mt-2 text-sm leading-7 text-inkSoft">
                     先看 2-3 个可用题型骨架的差异，再决定这篇更适合调查、体验、解读还是方法论。第一张默认就是当前推荐。
                   </div>
                 </div>
-                <button
+                <Button
                   type="button"
                   onClick={() =>
                     sampleDeepWritingPrototypeOpenings({
@@ -6651,10 +6752,12 @@ export function ArticleEditorClient({
                     })
                   }
                   disabled={Boolean(deepWritingOpeningPreviewLoadingKey) || Boolean(generatingStageArtifactCode) || Boolean(updatingWorkflowCode)}
-                  className="border border-stone-300 bg-white px-3 py-2 text-xs text-stone-700 disabled:opacity-60"
+                  variant="secondary"
+                  size="sm"
+                  className="text-xs"
                 >
                   {deepWritingOpeningPreviewLoadingKey === "prototype-batch" ? "采样中…" : "一键采样 3 个原型开头"}
-                </button>
+                </Button>
               </div>
               <div className="mt-3 grid gap-3 md:grid-cols-3">
                 {deepWritingPrototypeComparisons.map((item, index) => {
@@ -6669,22 +6772,22 @@ export function ArticleEditorClient({
                       key={`deep-writing-prototype-comparison-${comparisonCode || index}`}
                       className={`border px-4 py-4 ${
                         isCurrent || isRecommended
-                          ? "border-[#dcc8a6] bg-[#fff8eb]"
-                          : "border-stone-300/60 bg-[#faf7f0]"
+                          ? "border-warning/30 bg-surfaceWarning"
+                          : "border-lineStrong/60 bg-paperStrong"
                       }`}
                     >
-                      <div className="flex flex-wrap items-center gap-2 text-xs text-stone-500">
+                      <div className="flex flex-wrap items-center gap-2 text-xs text-inkMuted">
                         <span className="font-medium text-ink">{comparisonLabel}</span>
-                        {isCurrent ? <span className="border border-stone-300 bg-white px-2 py-1">当前执行卡</span> : null}
-                        {!isCurrent && isRecommended ? <span className="border border-stone-300 bg-white px-2 py-1">系统推荐</span> : null}
+                        {isCurrent ? <span className="border border-lineStrong bg-surface px-2 py-1">当前执行卡</span> : null}
+                        {!isCurrent && isRecommended ? <span className="border border-lineStrong bg-surface px-2 py-1">系统推荐</span> : null}
                       </div>
                       {String(item.suitableWhen || "").trim() ? (
-                        <div className="mt-2 text-xs leading-6 text-stone-500">适用：{String(item.suitableWhen)}</div>
+                        <div className="mt-2 text-xs leading-6 text-inkMuted">适用：{String(item.suitableWhen)}</div>
                       ) : null}
                       {String(item.reason || "").trim() ? (
-                        <div className="mt-2 text-sm leading-7 text-stone-700">{String(item.reason)}</div>
+                        <div className="mt-2 text-sm leading-7 text-inkSoft">{String(item.reason)}</div>
                       ) : null}
-                      <div className="mt-3 space-y-1 text-xs leading-6 text-stone-500">
+                      <div className="mt-3 space-y-1 text-xs leading-6 text-inkMuted">
                         {String(item.recommendedStateVariantLabel || "").trim() ? <div>默认状态：{String(item.recommendedStateVariantLabel)}</div> : null}
                         {String(item.openingPatternLabel || "").trim() ? <div>开头模式：{String(item.openingPatternLabel)}</div> : null}
                         {String(item.syntaxPatternLabel || "").trim() ? <div>句法模式：{String(item.syntaxPatternLabel)}</div> : null}
@@ -6695,21 +6798,21 @@ export function ArticleEditorClient({
                         ) : null}
                       </div>
                       {String(item.diversitySummary || "").trim() ? (
-                        <div className="mt-3 border border-stone-300/60 bg-white px-3 py-3 text-xs leading-6 text-stone-700">
+                        <div className="mt-3 border border-lineStrong/60 bg-surface px-3 py-3 text-xs leading-6 text-inkSoft">
                           {String(item.diversitySummary)}
                         </div>
                       ) : null}
                       <div className="mt-3 flex flex-wrap gap-2">
-                        <button
+                        <Button
                           type="button"
                           onClick={() => setDeepWritingPrototypeOverride(comparisonCode || null)}
-                          className={`border px-3 py-2 text-xs ${
-                            isSelected ? "border-cinnabar bg-white text-cinnabar" : "border-stone-300 bg-white text-stone-700"
-                          }`}
+                          variant={isSelected ? "primary" : "secondary"}
+                          size="sm"
+                          className="text-xs"
                         >
                           {isSelected ? "已选中" : "选这个原型"}
-                        </button>
-                        <button
+                        </Button>
+                        <Button
                           type="button"
                           onClick={() =>
                             generateStageArtifact("deepWriting", {
@@ -6718,11 +6821,13 @@ export function ArticleEditorClient({
                             })
                           }
                           disabled={Boolean(generatingStageArtifactCode) || Boolean(updatingWorkflowCode) || Boolean(applyingStageArtifactCode)}
-                          className="border border-stone-300 bg-white px-3 py-2 text-xs text-stone-700 disabled:opacity-60"
+                          variant="secondary"
+                          size="sm"
+                          className="text-xs"
                         >
                           直接按此重生
-                        </button>
-                        <button
+                        </Button>
+                        <Button
                           type="button"
                           onClick={() =>
                             loadDeepWritingOpeningPreview({
@@ -6732,13 +6837,15 @@ export function ArticleEditorClient({
                             })
                           }
                           disabled={Boolean(deepWritingOpeningPreviewLoadingKey) || Boolean(generatingStageArtifactCode) || Boolean(updatingWorkflowCode)}
-                          className="border border-stone-300 bg-white px-3 py-2 text-xs text-stone-700 disabled:opacity-60"
+                          variant="secondary"
+                          size="sm"
+                          className="text-xs"
                         >
                           {deepWritingOpeningPreviewLoadingKey === previewKey ? "生成中…" : "看开头预览"}
-                        </button>
+                        </Button>
                       </div>
                       {String(deepWritingOpeningPreviews[previewKey] || "").trim() ? (
-                        <div className="mt-3 border border-stone-300/60 bg-white px-3 py-3 text-sm leading-7 text-stone-700 whitespace-pre-wrap">
+                        <div className="mt-3 border border-lineStrong/60 bg-surface px-3 py-3 text-sm leading-7 text-inkSoft whitespace-pre-wrap">
                           {String(deepWritingOpeningPreviews[previewKey])}
                         </div>
                       ) : null}
@@ -6749,39 +6856,39 @@ export function ArticleEditorClient({
             </div>
           ) : null}
           {deepWritingStateOptions.length > 0 ? (
-            <div className="border border-[#dcc8a6] bg-[#fff8eb] px-4 py-4 text-sm leading-7 text-stone-700">
-              <div className="text-xs uppercase tracking-[0.18em] text-stone-500">风格变体切换</div>
+            <div className="border border-warning/30 bg-surfaceWarning px-4 py-4 text-sm leading-7 text-inkSoft">
+              <div className="text-xs uppercase tracking-[0.18em] text-inkMuted">风格变体切换</div>
               <div className="mt-2">
                 默认按系统推荐状态生成；如果你想避免同一篇总写成一个声部，可以强制切到别的写作状态后重生执行卡。
               </div>
               <div className="mt-3 flex flex-wrap gap-2">
-                <button
+                <Button
                   type="button"
                   onClick={() => setDeepWritingStateVariantOverride(null)}
-                  className={`border px-3 py-2 text-xs ${
-                    !deepWritingStateVariantOverride ? "border-cinnabar bg-white text-cinnabar" : "border-stone-300 bg-white text-stone-700"
-                  }`}
+                  variant={!deepWritingStateVariantOverride ? "primary" : "secondary"}
+                  size="sm"
+                  className="text-xs"
                 >
                   自动推荐
-                </button>
+                </Button>
                 {deepWritingStateOptions.map((item, index) => {
                   const optionCode = String(item.code || "").trim();
                   const optionLabel = String(item.label || optionCode || `状态 ${index + 1}`);
                   return (
-                    <button
+                    <Button
                       key={`deep-writing-variant-${optionCode || index}`}
                       type="button"
                       onClick={() => setDeepWritingStateVariantOverride(optionCode || null)}
-                      className={`border px-3 py-2 text-xs ${
-                        deepWritingStateVariantOverride === optionCode ? "border-cinnabar bg-white text-cinnabar" : "border-stone-300 bg-white text-stone-700"
-                      }`}
+                      variant={deepWritingStateVariantOverride === optionCode ? "primary" : "secondary"}
+                      size="sm"
+                      className="text-xs"
                     >
                       {optionLabel}
-                    </button>
+                    </Button>
                   );
                 })}
               </div>
-              <div className="mt-3 text-xs leading-6 text-stone-500">
+              <div className="mt-3 text-xs leading-6 text-inkMuted">
                 {!deepWritingStateVariantOverride
                   ? `当前保持自动推荐${deepWritingCurrentVariantLabel ? `，最近一次执行卡采用的是「${deepWritingCurrentVariantLabel}」` : ""}。`
                   : `下次重生会强制切到「${String(deepWritingSelectedVariantOption?.label || deepWritingStateVariantOverride)}」。`}
@@ -6789,15 +6896,15 @@ export function ArticleEditorClient({
             </div>
           ) : null}
           {deepWritingStateComparisons.length > 0 ? (
-            <div className="border border-stone-300/60 bg-white px-4 py-4">
+            <div className="border border-lineStrong/60 bg-surface px-4 py-4">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <div className="text-xs uppercase tracking-[0.18em] text-stone-500">状态对比预览</div>
-                  <div className="mt-2 text-sm leading-7 text-stone-700">
+                  <div className="text-xs uppercase tracking-[0.18em] text-inkMuted">状态对比预览</div>
+                  <div className="mt-2 text-sm leading-7 text-inkSoft">
                     先看 2-3 个可用声部的差异，再决定是否切状态重生执行卡。第一张默认就是当前推荐。
                   </div>
                 </div>
-                <button
+                <Button
                   type="button"
                   onClick={() =>
                     sampleDeepWritingStateOpenings({
@@ -6812,10 +6919,12 @@ export function ArticleEditorClient({
                     })
                   }
                   disabled={Boolean(deepWritingOpeningPreviewLoadingKey) || Boolean(generatingStageArtifactCode) || Boolean(updatingWorkflowCode)}
-                  className="border border-stone-300 bg-white px-3 py-2 text-xs text-stone-700 disabled:opacity-60"
+                  variant="secondary"
+                  size="sm"
+                  className="text-xs"
                 >
                   {deepWritingOpeningPreviewLoadingKey === "state-batch" ? "采样中…" : "一键采样 3 个状态开头"}
-                </button>
+                </Button>
               </div>
               <div className="mt-3 grid gap-3 md:grid-cols-3">
                 {deepWritingStateComparisons.map((item, index) => {
@@ -6830,22 +6939,22 @@ export function ArticleEditorClient({
                       key={`deep-writing-comparison-${comparisonCode || index}`}
                       className={`border px-4 py-4 ${
                         isCurrent || isRecommended
-                          ? "border-[#dcc8a6] bg-[#fff8eb]"
-                          : "border-stone-300/60 bg-[#faf7f0]"
+                          ? "border-warning/30 bg-surfaceWarning"
+                          : "border-lineStrong/60 bg-paperStrong"
                       }`}
                     >
-                      <div className="flex flex-wrap items-center gap-2 text-xs text-stone-500">
+                      <div className="flex flex-wrap items-center gap-2 text-xs text-inkMuted">
                         <span className="font-medium text-ink">{comparisonLabel}</span>
-                        {isCurrent ? <span className="border border-stone-300 bg-white px-2 py-1">当前执行卡</span> : null}
-                        {!isCurrent && isRecommended ? <span className="border border-stone-300 bg-white px-2 py-1">系统推荐</span> : null}
+                        {isCurrent ? <span className="border border-lineStrong bg-surface px-2 py-1">当前执行卡</span> : null}
+                        {!isCurrent && isRecommended ? <span className="border border-lineStrong bg-surface px-2 py-1">系统推荐</span> : null}
                       </div>
                       {String(item.suitableWhen || "").trim() ? (
-                        <div className="mt-2 text-xs leading-6 text-stone-500">适用：{String(item.suitableWhen)}</div>
+                        <div className="mt-2 text-xs leading-6 text-inkMuted">适用：{String(item.suitableWhen)}</div>
                       ) : null}
                       {String(item.reason || "").trim() ? (
-                        <div className="mt-2 text-sm leading-7 text-stone-700">{String(item.reason)}</div>
+                        <div className="mt-2 text-sm leading-7 text-inkSoft">{String(item.reason)}</div>
                       ) : null}
-                      <div className="mt-3 space-y-1 text-xs leading-6 text-stone-500">
+                      <div className="mt-3 space-y-1 text-xs leading-6 text-inkMuted">
                         {String(item.openingPatternLabel || "").trim() ? <div>开头模式：{String(item.openingPatternLabel)}</div> : null}
                         {String(item.syntaxPatternLabel || "").trim() ? <div>句法模式：{String(item.syntaxPatternLabel)}</div> : null}
                         {String(item.endingPatternLabel || "").trim() ? <div>结尾模式：{String(item.endingPatternLabel)}</div> : null}
@@ -6855,28 +6964,28 @@ export function ArticleEditorClient({
                         ) : null}
                       </div>
                       {String(item.diversitySummary || "").trim() ? (
-                        <div className="mt-3 border border-stone-300/60 bg-white px-3 py-3 text-xs leading-6 text-stone-700">
+                        <div className="mt-3 border border-lineStrong/60 bg-surface px-3 py-3 text-xs leading-6 text-inkSoft">
                           {String(item.diversitySummary)}
                         </div>
                       ) : null}
                       {getPayloadStringArray(item, "diversitySuggestions").length > 0 ? (
-                        <div className="mt-3 space-y-1 text-xs leading-6 text-stone-500">
+                        <div className="mt-3 space-y-1 text-xs leading-6 text-inkMuted">
                           {getPayloadStringArray(item, "diversitySuggestions").map((suggestion) => (
                             <div key={suggestion}>- {suggestion}</div>
                           ))}
                         </div>
                       ) : null}
                       <div className="mt-3 flex flex-wrap gap-2">
-                        <button
+                        <Button
                           type="button"
                           onClick={() => setDeepWritingStateVariantOverride(comparisonCode || null)}
-                          className={`border px-3 py-2 text-xs ${
-                            isSelected ? "border-cinnabar bg-white text-cinnabar" : "border-stone-300 bg-white text-stone-700"
-                          }`}
+                          variant={isSelected ? "primary" : "secondary"}
+                          size="sm"
+                          className="text-xs"
                         >
                           {isSelected ? "已选中" : "选这个状态"}
-                        </button>
-                        <button
+                        </Button>
+                        <Button
                           type="button"
                           onClick={() =>
                             generateStageArtifact("deepWriting", {
@@ -6887,11 +6996,13 @@ export function ArticleEditorClient({
                             })
                           }
                           disabled={Boolean(generatingStageArtifactCode) || Boolean(updatingWorkflowCode) || Boolean(applyingStageArtifactCode)}
-                          className="border border-stone-300 bg-white px-3 py-2 text-xs text-stone-700 disabled:opacity-60"
+                          variant="secondary"
+                          size="sm"
+                          className="text-xs"
                         >
                           直接按此重生
-                        </button>
-                        <button
+                        </Button>
+                        <Button
                           type="button"
                           onClick={() =>
                             loadDeepWritingOpeningPreview({
@@ -6901,13 +7012,15 @@ export function ArticleEditorClient({
                             })
                           }
                           disabled={Boolean(deepWritingOpeningPreviewLoadingKey) || Boolean(generatingStageArtifactCode) || Boolean(updatingWorkflowCode)}
-                          className="border border-stone-300 bg-white px-3 py-2 text-xs text-stone-700 disabled:opacity-60"
+                          variant="secondary"
+                          size="sm"
+                          className="text-xs"
                         >
                           {deepWritingOpeningPreviewLoadingKey === previewKey ? "生成中…" : "看开头预览"}
-                        </button>
+                        </Button>
                       </div>
                       {String(deepWritingOpeningPreviews[previewKey] || "").trim() ? (
-                        <div className="mt-3 border border-stone-300/60 bg-white px-3 py-3 text-sm leading-7 text-stone-700 whitespace-pre-wrap">
+                        <div className="mt-3 border border-lineStrong/60 bg-surface px-3 py-3 text-sm leading-7 text-inkSoft whitespace-pre-wrap">
                           {String(deepWritingOpeningPreviews[previewKey])}
                         </div>
                       ) : null}
@@ -6919,32 +7032,32 @@ export function ArticleEditorClient({
           ) : null}
           <div className={`border px-4 py-4 text-sm leading-7 ${
             editorDiversityReport.status === "needs_attention"
-              ? "border-[#dcc8a6] bg-[#fff8eb] text-stone-700"
-              : "border-stone-300/60 bg-[#faf7f0] text-stone-700"
+              ? "border-warning/30 bg-surfaceWarning text-inkSoft"
+              : "border-lineStrong/60 bg-paperStrong text-inkSoft"
           }`}>
-            <div className="text-xs uppercase tracking-[0.18em] text-stone-500">长期去重监控</div>
+            <div className="text-xs uppercase tracking-[0.18em] text-inkMuted">长期去重监控</div>
             <div className="mt-2">{editorDiversityReport.summary}</div>
-            <div className="mt-3 flex flex-wrap gap-2 text-xs text-stone-700">
-              <span className="border border-stone-300 bg-white px-3 py-2">当前原型：{editorDiversityReport.currentPrototypeLabel || "未记录"}</span>
-              <span className="border border-stone-300 bg-white px-3 py-2">当前状态：{editorDiversityReport.currentStateVariantLabel || "未记录"}</span>
-              <span className="border border-stone-300 bg-white px-3 py-2">当前开头：{editorDiversityReport.currentOpeningPatternLabel}</span>
-              <span className="border border-stone-300 bg-white px-3 py-2">当前句法：{editorDiversityReport.currentSyntaxPatternLabel}</span>
-              <span className="border border-stone-300 bg-white px-3 py-2">当前结尾：{editorDiversityReport.currentEndingPatternLabel}</span>
+            <div className="mt-3 flex flex-wrap gap-2 text-xs text-inkSoft">
+              <span className="border border-lineStrong bg-surface px-3 py-2">当前原型：{editorDiversityReport.currentPrototypeLabel || "未记录"}</span>
+              <span className="border border-lineStrong bg-surface px-3 py-2">当前状态：{editorDiversityReport.currentStateVariantLabel || "未记录"}</span>
+              <span className="border border-lineStrong bg-surface px-3 py-2">当前开头：{editorDiversityReport.currentOpeningPatternLabel}</span>
+              <span className="border border-lineStrong bg-surface px-3 py-2">当前句法：{editorDiversityReport.currentSyntaxPatternLabel}</span>
+              <span className="border border-lineStrong bg-surface px-3 py-2">当前结尾：{editorDiversityReport.currentEndingPatternLabel}</span>
             </div>
             {editorDiversityReport.issues.length > 0 ? (
-              <div className="mt-3 space-y-1 text-xs leading-6 text-stone-500">
+              <div className="mt-3 space-y-1 text-xs leading-6 text-inkMuted">
                 {editorDiversityReport.issues.map((item) => (
                   <div key={item}>- {item}</div>
                 ))}
               </div>
             ) : null}
             {editorDiversityReport.suggestions.length > 0 ? (
-              <div className="mt-3 border border-stone-300/60 bg-white px-3 py-3 text-xs leading-6 text-stone-700">
+              <div className="mt-3 border border-lineStrong/60 bg-surface px-3 py-3 text-xs leading-6 text-inkSoft">
                 {editorDiversityReport.suggestions[0]}
               </div>
             ) : null}
           </div>
-          <button
+          <Button
             onClick={() =>
               generateStageArtifact("deepWriting", {
                 articlePrototypeCode: deepWritingPrototypeOverride,
@@ -6954,7 +7067,7 @@ export function ArticleEditorClient({
               })
             }
             disabled={Boolean(generatingStageArtifactCode) || Boolean(updatingWorkflowCode) || Boolean(applyingStageArtifactCode)}
-            className="bg-cinnabar px-4 py-3 text-sm text-white disabled:opacity-60"
+            variant="primary"
           >
             {generatingStageArtifactCode === "deepWriting"
               ? "生成中…"
@@ -6966,158 +7079,158 @@ export function ArticleEditorClient({
                 : currentStageArtifact
                   ? "刷新写作执行卡"
                   : "生成写作执行卡"}
-          </button>
+          </Button>
           {currentStageArtifact ? (
-            <div className="space-y-4 border border-stone-300 bg-white p-4">
+            <div className="space-y-4 border border-lineStrong bg-surface p-4">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <div className="font-serifCn text-2xl text-ink text-balance">{currentStageArtifact.title}</div>
-                  <div className="mt-1 text-xs text-stone-500">
+                  <div className="mt-1 text-xs text-inkMuted">
                     {currentStageArtifact.updatedAt ? `更新于 ${new Date(currentStageArtifact.updatedAt).toLocaleString("zh-CN")}` : "暂无更新时间"}
                   </div>
                 </div>
-                <div className="text-xs text-stone-500">
+                <div className="text-xs text-inkMuted">
                   {currentStageArtifact.provider || "local"}
                   {currentStageArtifact.model ? ` / ${currentStageArtifact.model}` : ""}
                 </div>
               </div>
               {currentStageArtifact.summary ? (
-                <div className="border border-stone-300/60 bg-[#faf7f0] px-4 py-3 text-sm leading-7 text-stone-700">
+                <div className="border border-lineStrong/60 bg-paperStrong px-4 py-3 text-sm leading-7 text-inkSoft">
                   {currentStageArtifact.summary}
                 </div>
               ) : null}
               <div className="grid gap-3 md:grid-cols-2">
                 {String(currentStageArtifact.payload?.selectedTitle || "").trim() ? (
-                  <div className="border border-stone-300/60 px-4 py-3 text-sm leading-7 text-stone-700">
-                    <div className="text-xs uppercase tracking-[0.2em] text-stone-500">采用标题</div>
+                  <div className="border border-lineStrong/60 px-4 py-3 text-sm leading-7 text-inkSoft">
+                    <div className="text-xs uppercase tracking-[0.2em] text-inkMuted">采用标题</div>
                     <div className="mt-2 font-medium text-ink">{String(currentStageArtifact.payload?.selectedTitle)}</div>
                   </div>
                 ) : null}
                 {String(currentStageArtifact.payload?.writingAngle || "").trim() ? (
-                  <div className="border border-stone-300/60 px-4 py-3 text-sm leading-7 text-stone-700">
-                    <div className="text-xs uppercase tracking-[0.2em] text-stone-500">写作角度</div>
+                  <div className="border border-lineStrong/60 px-4 py-3 text-sm leading-7 text-inkSoft">
+                    <div className="text-xs uppercase tracking-[0.2em] text-inkMuted">写作角度</div>
                     <div className="mt-2">{String(currentStageArtifact.payload?.writingAngle)}</div>
                   </div>
                 ) : null}
                 {String(currentStageArtifact.payload?.articlePrototypeLabel || currentStageArtifact.payload?.articlePrototype || "").trim() ? (
-                  <div className="border border-stone-300/60 px-4 py-3 text-sm leading-7 text-stone-700">
-                    <div className="text-xs uppercase tracking-[0.2em] text-stone-500">文章原型</div>
+                  <div className="border border-lineStrong/60 px-4 py-3 text-sm leading-7 text-inkSoft">
+                    <div className="text-xs uppercase tracking-[0.2em] text-inkMuted">文章原型</div>
                     <div className="mt-2 font-medium text-ink">
                       {String(currentStageArtifact.payload?.articlePrototypeLabel || currentStageArtifact.payload?.articlePrototype)}
                     </div>
                     {String(currentStageArtifact.payload?.articlePrototypeReason || "").trim() ? (
-                      <div className="mt-2 text-xs leading-6 text-stone-500">{String(currentStageArtifact.payload?.articlePrototypeReason)}</div>
+                      <div className="mt-2 text-xs leading-6 text-inkMuted">{String(currentStageArtifact.payload?.articlePrototypeReason)}</div>
                     ) : null}
                     {getDeepWritingHistorySignalSummary(deepWritingPrototypeHistorySignal) ? (
-                      <div className="mt-2 text-xs leading-6 text-stone-500">
+                      <div className="mt-2 text-xs leading-6 text-inkMuted">
                         历史验证：{getDeepWritingHistorySignalSummary(deepWritingPrototypeHistorySignal)}
                       </div>
                     ) : null}
                     {String(currentStageArtifact.payload?.sectionRhythm || "").trim() ? (
-                      <div className="mt-2 text-xs leading-6 text-stone-500">{String(currentStageArtifact.payload?.sectionRhythm)}</div>
+                      <div className="mt-2 text-xs leading-6 text-inkMuted">{String(currentStageArtifact.payload?.sectionRhythm)}</div>
                     ) : null}
                   </div>
                 ) : null}
                 {String(currentStageArtifact.payload?.stateVariantLabel || "").trim() ? (
-                  <div className="border border-[#dcc8a6] bg-[#fff8eb] px-4 py-3 text-sm leading-7 text-stone-700">
-                    <div className="text-xs uppercase tracking-[0.2em] text-stone-500">当前状态</div>
+                  <div className="border border-warning/30 bg-surfaceWarning px-4 py-3 text-sm leading-7 text-inkSoft">
+                    <div className="text-xs uppercase tracking-[0.2em] text-inkMuted">当前状态</div>
                     <div className="mt-2 font-medium text-ink">{String(currentStageArtifact.payload?.stateVariantLabel)}</div>
                     {String(currentStageArtifact.payload?.stateVariantReason || "").trim() ? (
-                      <div className="mt-2 text-xs leading-6 text-stone-500">{String(currentStageArtifact.payload?.stateVariantReason)}</div>
+                      <div className="mt-2 text-xs leading-6 text-inkMuted">{String(currentStageArtifact.payload?.stateVariantReason)}</div>
                     ) : null}
                     {getDeepWritingHistorySignalSummary(deepWritingStateHistorySignal) ? (
-                      <div className="mt-2 text-xs leading-6 text-stone-500">
+                      <div className="mt-2 text-xs leading-6 text-inkMuted">
                         历史验证：{getDeepWritingHistorySignalSummary(deepWritingStateHistorySignal)}
                       </div>
                     ) : null}
                   </div>
                 ) : null}
                 {String(currentStageArtifact.payload?.openingStrategy || "").trim() ? (
-                  <div className="border border-stone-300/60 px-4 py-3 text-sm leading-7 text-stone-700">
-                    <div className="text-xs uppercase tracking-[0.2em] text-stone-500">开头策略</div>
+                  <div className="border border-lineStrong/60 px-4 py-3 text-sm leading-7 text-inkSoft">
+                    <div className="text-xs uppercase tracking-[0.2em] text-inkMuted">开头策略</div>
                     <div className="mt-2">{String(currentStageArtifact.payload?.openingStrategy)}</div>
                     {String(currentStageArtifact.payload?.openingMove || "").trim() ? (
-                      <div className="mt-2 text-xs leading-6 text-stone-500">{String(currentStageArtifact.payload?.openingMove)}</div>
+                      <div className="mt-2 text-xs leading-6 text-inkMuted">{String(currentStageArtifact.payload?.openingMove)}</div>
                     ) : null}
                   </div>
                 ) : null}
                 {String(currentStageArtifact.payload?.endingStrategy || "").trim() ? (
-                  <div className="border border-stone-300/60 px-4 py-3 text-sm leading-7 text-stone-700">
-                    <div className="text-xs uppercase tracking-[0.2em] text-stone-500">结尾策略</div>
+                  <div className="border border-lineStrong/60 px-4 py-3 text-sm leading-7 text-inkSoft">
+                    <div className="text-xs uppercase tracking-[0.2em] text-inkMuted">结尾策略</div>
                     <div className="mt-2">{String(currentStageArtifact.payload?.endingStrategy)}</div>
                   </div>
                 ) : null}
               </div>
               {String(currentStageArtifact.payload?.centralThesis || "").trim() ? (
-                <div className="text-sm leading-7 text-stone-700">核心观点：{String(currentStageArtifact.payload?.centralThesis)}</div>
+                <div className="text-sm leading-7 text-inkSoft">核心观点：{String(currentStageArtifact.payload?.centralThesis)}</div>
               ) : null}
               {String(currentStageArtifact.payload?.targetEmotion || "").trim() ? (
-                <div className="text-sm leading-7 text-stone-700">目标情绪：{String(currentStageArtifact.payload?.targetEmotion)}</div>
+                <div className="text-sm leading-7 text-inkSoft">目标情绪：{String(currentStageArtifact.payload?.targetEmotion)}</div>
               ) : null}
               {(deepWritingOpeningPatternLabel || deepWritingSyntaxPatternLabel || deepWritingEndingPatternLabel) ? (
                 <div className="grid gap-3 md:grid-cols-3">
                   {deepWritingOpeningPatternLabel ? (
-                    <div className="border border-stone-300/60 bg-[#faf7f0] px-4 py-3 text-sm leading-7 text-stone-700">
-                      <div className="text-xs uppercase tracking-[0.2em] text-stone-500">开头模式</div>
+                    <div className="border border-lineStrong/60 bg-paperStrong px-4 py-3 text-sm leading-7 text-inkSoft">
+                      <div className="text-xs uppercase tracking-[0.2em] text-inkMuted">开头模式</div>
                       <div className="mt-2 text-ink">{deepWritingOpeningPatternLabel}</div>
                     </div>
                   ) : null}
                   {deepWritingSyntaxPatternLabel ? (
-                    <div className="border border-stone-300/60 bg-[#faf7f0] px-4 py-3 text-sm leading-7 text-stone-700">
-                      <div className="text-xs uppercase tracking-[0.2em] text-stone-500">句法模式</div>
+                    <div className="border border-lineStrong/60 bg-paperStrong px-4 py-3 text-sm leading-7 text-inkSoft">
+                      <div className="text-xs uppercase tracking-[0.2em] text-inkMuted">句法模式</div>
                       <div className="mt-2 text-ink">{deepWritingSyntaxPatternLabel}</div>
                     </div>
                   ) : null}
                   {deepWritingEndingPatternLabel ? (
-                    <div className="border border-stone-300/60 bg-[#faf7f0] px-4 py-3 text-sm leading-7 text-stone-700">
-                      <div className="text-xs uppercase tracking-[0.2em] text-stone-500">结尾模式</div>
+                    <div className="border border-lineStrong/60 bg-paperStrong px-4 py-3 text-sm leading-7 text-inkSoft">
+                      <div className="text-xs uppercase tracking-[0.2em] text-inkMuted">结尾模式</div>
                       <div className="mt-2 text-ink">{deepWritingEndingPatternLabel}</div>
                     </div>
                   ) : null}
                 </div>
               ) : null}
               {String(currentStageArtifact.payload?.evidenceMode || "").trim() ? (
-                <div className="text-sm leading-7 text-stone-700">证据组织：{String(currentStageArtifact.payload?.evidenceMode)}</div>
+                <div className="text-sm leading-7 text-inkSoft">证据组织：{String(currentStageArtifact.payload?.evidenceMode)}</div>
               ) : null}
               {(deepWritingResearchFocus || deepWritingResearchLens || String(currentStageArtifact.payload?.openingMove || "").trim()) ? (
                 <div className="grid gap-3 md:grid-cols-3">
                   {deepWritingResearchFocus ? (
-                    <div className="border border-[#dcc8a6] bg-[#fff8eb] px-4 py-4">
-                      <div className="text-xs uppercase tracking-[0.2em] text-stone-500">研究焦点</div>
-                      <div className="mt-2 text-sm leading-7 text-stone-700">{deepWritingResearchFocus}</div>
+                    <div className="border border-warning/30 bg-surfaceWarning px-4 py-4">
+                      <div className="text-xs uppercase tracking-[0.2em] text-inkMuted">研究焦点</div>
+                      <div className="mt-2 text-sm leading-7 text-inkSoft">{deepWritingResearchFocus}</div>
                     </div>
                   ) : null}
                   {deepWritingResearchLens ? (
-                    <div className="border border-[#dcc8a6] bg-[#fff8eb] px-4 py-4">
-                      <div className="text-xs uppercase tracking-[0.2em] text-stone-500">研究镜头</div>
-                      <div className="mt-2 text-sm leading-7 text-stone-700">{deepWritingResearchLens}</div>
+                    <div className="border border-warning/30 bg-surfaceWarning px-4 py-4">
+                      <div className="text-xs uppercase tracking-[0.2em] text-inkMuted">研究镜头</div>
+                      <div className="mt-2 text-sm leading-7 text-inkSoft">{deepWritingResearchLens}</div>
                     </div>
                   ) : null}
                   {String(currentStageArtifact.payload?.openingMove || "").trim() ? (
-                    <div className="border border-[#dcc8a6] bg-[#fff8eb] px-4 py-4">
-                      <div className="text-xs uppercase tracking-[0.2em] text-stone-500">研究驱动起手</div>
-                      <div className="mt-2 text-sm leading-7 text-stone-700">{String(currentStageArtifact.payload?.openingMove)}</div>
+                    <div className="border border-warning/30 bg-surfaceWarning px-4 py-4">
+                      <div className="text-xs uppercase tracking-[0.2em] text-inkMuted">研究驱动起手</div>
+                      <div className="mt-2 text-sm leading-7 text-inkSoft">{String(currentStageArtifact.payload?.openingMove)}</div>
                     </div>
                   ) : null}
                 </div>
               ) : null}
               {(String(currentStageArtifact.payload?.progressiveRevealLabel || "").trim() || deepWritingProgressiveRevealSteps.length > 0) ? (
-                <div className="border border-[#dcc8a6] bg-[#fff8eb] px-4 py-4">
-                  <div className="text-xs uppercase tracking-[0.2em] text-stone-500">节奏插件</div>
+                <div className="border border-warning/30 bg-surfaceWarning px-4 py-4">
+                  <div className="text-xs uppercase tracking-[0.2em] text-inkMuted">节奏插件</div>
                   {String(currentStageArtifact.payload?.progressiveRevealLabel || "").trim() ? (
                     <div className="mt-2 font-medium text-ink">{String(currentStageArtifact.payload?.progressiveRevealLabel)}</div>
                   ) : null}
                   {String(currentStageArtifact.payload?.progressiveRevealReason || "").trim() ? (
-                    <div className="mt-2 text-sm leading-7 text-stone-700">{String(currentStageArtifact.payload?.progressiveRevealReason)}</div>
+                    <div className="mt-2 text-sm leading-7 text-inkSoft">{String(currentStageArtifact.payload?.progressiveRevealReason)}</div>
                   ) : null}
                   {String(currentStageArtifact.payload?.climaxPlacement || "").trim() ? (
-                    <div className="mt-2 text-xs leading-6 text-stone-500">高潮位置：{String(currentStageArtifact.payload?.climaxPlacement)}</div>
+                    <div className="mt-2 text-xs leading-6 text-inkMuted">高潮位置：{String(currentStageArtifact.payload?.climaxPlacement)}</div>
                   ) : null}
                   {String(currentStageArtifact.payload?.escalationRule || "").trim() ? (
-                    <div className="mt-1 text-xs leading-6 text-stone-500">升番规则：{String(currentStageArtifact.payload?.escalationRule)}</div>
+                    <div className="mt-1 text-xs leading-6 text-inkMuted">升番规则：{String(currentStageArtifact.payload?.escalationRule)}</div>
                   ) : null}
                   {deepWritingProgressiveRevealSteps.length > 0 ? (
-                    <div className="mt-3 space-y-2 text-sm leading-7 text-stone-700">
+                    <div className="mt-3 space-y-2 text-sm leading-7 text-inkSoft">
                       {deepWritingProgressiveRevealSteps.map((item, index) => (
                         <div key={`${String(item.label || index)}`}>
                           <span className="font-medium text-ink">{String(item.label || `步骤 ${index + 1}`)}</span>
@@ -7131,9 +7244,9 @@ export function ArticleEditorClient({
               {(deepWritingStateChecklist.length > 0 || deepWritingStateOptions.length > 0) ? (
                 <div className="grid gap-3 md:grid-cols-2">
                   {deepWritingStateChecklist.length > 0 ? (
-                    <div className="border border-stone-300/60 bg-[#faf7f0] px-4 py-4">
-                      <div className="text-xs uppercase tracking-[0.2em] text-stone-500">状态自检</div>
-                      <div className="mt-2 space-y-2 text-sm leading-7 text-stone-700">
+                    <div className="border border-lineStrong/60 bg-paperStrong px-4 py-4">
+                      <div className="text-xs uppercase tracking-[0.2em] text-inkMuted">状态自检</div>
+                      <div className="mt-2 space-y-2 text-sm leading-7 text-inkSoft">
                         {deepWritingStateChecklist.map((item) => (
                           <div key={item}>- {item}</div>
                         ))}
@@ -7141,9 +7254,9 @@ export function ArticleEditorClient({
                     </div>
                   ) : null}
                   {deepWritingStateOptions.length > 0 ? (
-                    <div className="border border-stone-300/60 bg-white px-4 py-4">
-                      <div className="text-xs uppercase tracking-[0.2em] text-stone-500">状态候选</div>
-                      <div className="mt-2 space-y-3 text-sm leading-7 text-stone-700">
+                    <div className="border border-lineStrong/60 bg-surface px-4 py-4">
+                      <div className="text-xs uppercase tracking-[0.2em] text-inkMuted">状态候选</div>
+                      <div className="mt-2 space-y-3 text-sm leading-7 text-inkSoft">
                         {deepWritingStateOptions.map((item, index) => (
                           <div key={`${String(item.label || item.code || index)}`}>
                             <div className="font-medium text-ink">
@@ -7151,14 +7264,14 @@ export function ArticleEditorClient({
                                 ? "当前采用："
                                 : index === 0
                                   ? "系统推荐："
-                                  : "备选："}
+                                : "备选："}
                               {String(item.label || item.code || `状态 ${index + 1}`)}
                             </div>
                             {String(item.suitableWhen || "").trim() ? (
-                              <div className="text-xs leading-6 text-stone-500">适用：{String(item.suitableWhen)}</div>
+                              <div className="text-xs leading-6 text-inkMuted">适用：{String(item.suitableWhen)}</div>
                             ) : null}
                             {String(item.triggerReason || "").trim() ? (
-                              <div className="text-xs leading-6 text-stone-500">触发：{String(item.triggerReason)}</div>
+                              <div className="text-xs leading-6 text-inkMuted">触发：{String(item.triggerReason)}</div>
                             ) : null}
                           </div>
                         ))}
@@ -7171,23 +7284,23 @@ export function ArticleEditorClient({
                 <div
                   className={`border px-4 py-4 ${
                     deepWritingDiversityIssues.length > 0
-                      ? "border-[#dcc8a6] bg-[#fff8eb]"
-                      : "border-stone-300/60 bg-[#faf7f0]"
+                      ? "border-warning/30 bg-surfaceWarning"
+                      : "border-lineStrong/60 bg-paperStrong"
                   }`}
                 >
-                  <div className="text-xs uppercase tracking-[0.18em] text-stone-500">执行卡去重约束</div>
+                  <div className="text-xs uppercase tracking-[0.18em] text-inkMuted">执行卡去重约束</div>
                   {deepWritingDiversitySummary ? (
-                    <div className="mt-2 text-sm leading-7 text-stone-700">{deepWritingDiversitySummary}</div>
+                    <div className="mt-2 text-sm leading-7 text-inkSoft">{deepWritingDiversitySummary}</div>
                   ) : null}
                   {deepWritingDiversityIssues.length > 0 ? (
-                    <div className="mt-3 space-y-1 text-xs leading-6 text-stone-500">
+                    <div className="mt-3 space-y-1 text-xs leading-6 text-inkMuted">
                       {deepWritingDiversityIssues.map((item) => (
                         <div key={item}>- {item}</div>
                       ))}
                     </div>
                   ) : null}
                   {deepWritingDiversitySuggestions.length > 0 ? (
-                    <div className="mt-3 space-y-2 text-sm leading-7 text-stone-700">
+                    <div className="mt-3 space-y-2 text-sm leading-7 text-inkSoft">
                       {deepWritingDiversitySuggestions.map((item) => (
                         <div key={item}>- {item}</div>
                       ))}
@@ -7196,25 +7309,25 @@ export function ArticleEditorClient({
                 </div>
               ) : null}
               {(seriesInsight || deepWritingSeriesInsight) ? (
-                <div className="border border-[#dcc8a6] bg-[#fff8eb] px-4 py-4">
-                  <div className="text-xs uppercase tracking-[0.18em] text-stone-500">当前文章所属系列</div>
+                <div className="border border-warning/30 bg-surfaceWarning px-4 py-4">
+                  <div className="text-xs uppercase tracking-[0.18em] text-inkMuted">当前文章所属系列</div>
                   <div className="mt-2 font-medium text-ink">
                     {String((deepWritingSeriesInsight?.label as string | undefined) || seriesInsight?.label || "连续观察主题")}
                   </div>
                   {String((deepWritingSeriesInsight?.reason as string | undefined) || seriesInsight?.reason || "").trim() ? (
-                    <div className="mt-2 text-sm leading-7 text-stone-700">
+                    <div className="mt-2 text-sm leading-7 text-inkSoft">
                       {String((deepWritingSeriesInsight?.reason as string | undefined) || seriesInsight?.reason || "")}
                     </div>
                   ) : null}
                   {((Array.isArray(deepWritingSeriesInsight?.commonTerms) ? deepWritingSeriesInsight?.commonTerms : seriesInsight?.commonTerms) ?? []).length > 0 ? (
-                    <div className="mt-3 flex flex-wrap gap-2 text-xs text-stone-700">
+                    <div className="mt-3 flex flex-wrap gap-2 text-xs text-inkSoft">
                       {((Array.isArray(deepWritingSeriesInsight?.commonTerms) ? deepWritingSeriesInsight?.commonTerms : seriesInsight?.commonTerms) ?? []).map((item) => (
-                        <span key={`series-term-${item}`} className="border border-stone-300 bg-white px-3 py-2">{item}</span>
+                        <span key={`series-term-${item}`} className="border border-lineStrong bg-surface px-3 py-2">{item}</span>
                       ))}
                     </div>
                   ) : null}
                   {deepWritingSeriesChecklist.length > 0 ? (
-                    <div className="mt-3 space-y-2 text-sm leading-7 text-stone-700">
+                    <div className="mt-3 space-y-2 text-sm leading-7 text-inkSoft">
                       {deepWritingSeriesChecklist.map((item) => (
                         <div key={item}>- {item}</div>
                       ))}
@@ -7225,33 +7338,33 @@ export function ArticleEditorClient({
               {deepWritingSections.length > 0 ? (
                 <div className="space-y-3">
                   {deepWritingSections.map((section, index) => (
-                    <div key={`${section.heading || index}`} className="border border-stone-300/60 px-4 py-4">
+                    <div key={`${section.heading || index}`} className="border border-lineStrong/60 px-4 py-4">
                       <div className="font-medium text-ink">{index + 1}. {String(section.heading || `章节 ${index + 1}`)}</div>
                       {String(section.revealRole || "").trim() ? (
-                        <div className="mt-2 inline-flex border border-[#dcc8a6] bg-[#fff8eb] px-2 py-1 text-xs text-stone-700">
+                        <div className="mt-2 inline-flex border border-warning/30 bg-surfaceWarning px-2 py-1 text-xs text-inkSoft">
                           节奏角色：{String(section.revealRole)}
                         </div>
                       ) : null}
-                      {String(section.goal || "").trim() ? <div className="mt-2 text-sm leading-7 text-stone-700">目标：{String(section.goal)}</div> : null}
-                      {String(section.paragraphMission || "").trim() ? <div className="mt-1 text-sm leading-7 text-stone-700">段落任务：{String(section.paragraphMission)}</div> : null}
+                      {String(section.goal || "").trim() ? <div className="mt-2 text-sm leading-7 text-inkSoft">目标：{String(section.goal)}</div> : null}
+                      {String(section.paragraphMission || "").trim() ? <div className="mt-1 text-sm leading-7 text-inkSoft">段落任务：{String(section.paragraphMission)}</div> : null}
                       {getPayloadStringArray(section, "evidenceHints").length > 0 ? (
-                        <div className="mt-2 text-xs leading-6 text-stone-500">
+                        <div className="mt-2 text-xs leading-6 text-inkMuted">
                           证据提示：{getPayloadStringArray(section, "evidenceHints").join("；")}
                         </div>
                       ) : null}
                       {String(section.transition || "").trim() ? (
-                        <div className="mt-1 text-xs leading-6 text-stone-500">衔接：{String(section.transition)}</div>
+                        <div className="mt-1 text-xs leading-6 text-inkMuted">衔接：{String(section.transition)}</div>
                       ) : null}
                     </div>
                   ))}
                 </div>
               ) : null}
               {deepWritingMustUseFacts.length > 0 ? (
-                <div className="border border-stone-300/60 bg-[#faf7f0] px-4 py-4">
-                  <div className="text-xs uppercase tracking-[0.2em] text-stone-500">必须吃透的事实</div>
-                  <div className="mt-2 flex flex-wrap gap-2 text-xs text-stone-700">
+                <div className="border border-lineStrong/60 bg-paperStrong px-4 py-4">
+                  <div className="text-xs uppercase tracking-[0.2em] text-inkMuted">必须吃透的事实</div>
+                  <div className="mt-2 flex flex-wrap gap-2 text-xs text-inkSoft">
                     {deepWritingMustUseFacts.map((item) => (
-                      <span key={item} className="border border-stone-300 bg-white px-3 py-2">{item}</span>
+                      <span key={item} className="border border-lineStrong bg-surface px-3 py-2">{item}</span>
                     ))}
                   </div>
                 </div>
@@ -7259,9 +7372,9 @@ export function ArticleEditorClient({
               {(deepWritingVoiceChecklist.length > 0 || deepWritingBannedWatchlist.length > 0 || deepWritingFinalChecklist.length > 0) ? (
                 <div className="grid gap-3 md:grid-cols-3">
                   {deepWritingVoiceChecklist.length > 0 ? (
-                    <div className="border border-stone-300/60 px-4 py-4">
-                      <div className="text-xs uppercase tracking-[0.2em] text-stone-500">表达约束</div>
-                      <div className="mt-2 space-y-2 text-sm leading-7 text-stone-700">
+                    <div className="border border-lineStrong/60 px-4 py-4">
+                      <div className="text-xs uppercase tracking-[0.2em] text-inkMuted">表达约束</div>
+                      <div className="mt-2 space-y-2 text-sm leading-7 text-inkSoft">
                         {deepWritingVoiceChecklist.map((item) => (
                           <div key={item}>- {item}</div>
                         ))}
@@ -7269,19 +7382,19 @@ export function ArticleEditorClient({
                     </div>
                   ) : null}
                   {deepWritingBannedWatchlist.length > 0 ? (
-                    <div className="border border-stone-300/60 px-4 py-4">
-                      <div className="text-xs uppercase tracking-[0.2em] text-stone-500">重点避开</div>
-                      <div className="mt-2 flex flex-wrap gap-2 text-xs text-stone-700">
+                    <div className="border border-lineStrong/60 px-4 py-4">
+                      <div className="text-xs uppercase tracking-[0.2em] text-inkMuted">重点避开</div>
+                      <div className="mt-2 flex flex-wrap gap-2 text-xs text-inkSoft">
                         {deepWritingBannedWatchlist.map((item) => (
-                          <span key={item} className="border border-[#d8b0b2] bg-[#fff7f7] px-3 py-2 text-[#8f3136]">{item}</span>
+                          <span key={item} className="border border-danger/30 bg-surface px-3 py-2 text-danger">{item}</span>
                         ))}
                       </div>
                     </div>
                   ) : null}
                   {deepWritingFinalChecklist.length > 0 ? (
-                    <div className="border border-stone-300/60 px-4 py-4">
-                      <div className="text-xs uppercase tracking-[0.2em] text-stone-500">终稿自检</div>
-                      <div className="mt-2 space-y-2 text-sm leading-7 text-stone-700">
+                    <div className="border border-lineStrong/60 px-4 py-4">
+                      <div className="text-xs uppercase tracking-[0.2em] text-inkMuted">终稿自检</div>
+                      <div className="mt-2 space-y-2 text-sm leading-7 text-inkSoft">
                         {deepWritingFinalChecklist.map((item) => (
                           <div key={item}>- {item}</div>
                         ))}
@@ -7291,9 +7404,9 @@ export function ArticleEditorClient({
                 </div>
               ) : null}
               {deepWritingHistoryPlans.length > 0 ? (
-                <div className="border border-stone-300/60 bg-[#fff8eb] px-4 py-4">
-                  <div className="text-xs uppercase tracking-[0.2em] text-stone-500">旧文自然引用计划</div>
-                  <div className="mt-2 space-y-3 text-sm leading-7 text-stone-700">
+                <div className="border border-warning/30 bg-surfaceWarning px-4 py-4">
+                  <div className="text-xs uppercase tracking-[0.2em] text-inkMuted">旧文自然引用计划</div>
+                  <div className="mt-2 space-y-3 text-sm leading-7 text-inkSoft">
                     {deepWritingHistoryPlans.map((item, index) => (
                       <div key={`${item.title || index}`}>
                         <div className="font-medium text-ink">《{String(item.title || `旧文 ${index + 1}`)}》</div>
@@ -7305,157 +7418,158 @@ export function ArticleEditorClient({
                 </div>
               ) : null}
               {currentStageArtifact.errorMessage ? (
-                <div className="border border-dashed border-[#d8b0b2] bg-[#fff7f7] px-4 py-4 text-sm leading-7 text-[#8f3136]">
+                <div className="border border-dashed border-danger/30 bg-surface px-4 py-4 text-sm leading-7 text-danger">
                   本次结果使用了降级产物：{currentStageArtifact.errorMessage}
                 </div>
               ) : null}
             </div>
           ) : null}
           {!canUseHistoryReferences ? (
-            <div className="border border-dashed border-[#d8b0b2] bg-[#fff7f7] px-4 py-4 text-sm leading-7 text-[#8f3136]">
+            <div className="border border-dashed border-danger/30 bg-surface px-4 py-4 text-sm leading-7 text-danger">
               {displayPlanName}当前不支持历史文章自然引用。升级到 Pro 或更高套餐后，才可推荐、选择并保存最多 2 篇旧文作为正文内自然承接。
             </div>
           ) : null}
           {canUseHistoryReferences ? (
-          <div className="border border-stone-300 bg-white px-4 py-4">
+          <div className="border border-lineStrong bg-surface px-4 py-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <div className="text-xs uppercase tracking-[0.2em] text-stone-500">历史文章自然引用</div>
-                <div className="mt-2 text-sm leading-7 text-stone-700">建议优先引用与你当前主题连续、判断互补的旧文。引用只作为自然上下文回带，不喧宾夺主。</div>
+                <div className="text-xs uppercase tracking-[0.2em] text-inkMuted">历史文章自然引用</div>
+                <div className="mt-2 text-sm leading-7 text-inkSoft">建议优先引用与你当前主题连续、判断互补的旧文。引用只作为自然上下文回带，不喧宾夺主。</div>
               </div>
-              <button
+              <Button
                 type="button"
                 onClick={() => loadHistoryReferences(true)}
                 disabled={loadingHistoryReferences || savingHistoryReferences}
-                className="border border-stone-300 px-3 py-2 text-sm text-stone-700 disabled:opacity-60"
+                variant="secondary"
+                size="sm"
               >
                 {loadingHistoryReferences ? "刷新中…" : "刷新建议"}
-              </button>
+              </Button>
             </div>
             {selectedHistoryReferences.length > 0 ? (
               <div className="mt-4 space-y-3">
                 {selectedHistoryReferences.map((item) => (
-                  <div key={item.referencedArticleId} className="border border-[#dcc8a6] bg-[#fff8eb] px-4 py-4">
+                  <div key={item.referencedArticleId} className="border border-warning/30 bg-surfaceWarning px-4 py-4">
                     <div className="flex items-center justify-between gap-3">
                       <div className="font-medium text-ink">《{item.title}》</div>
-                      <button
+                      <Button
                         type="button"
                         onClick={() =>
                           setSelectedHistoryReferences((current) =>
                             current.filter((reference) => reference.referencedArticleId !== item.referencedArticleId),
                           )
                         }
-                        className="text-xs text-stone-500 underline"
+                        variant="link"
+                        size="sm"
+                        className="min-h-0 text-xs text-inkMuted hover:text-ink"
                       >
                         移除
-                      </button>
+                      </Button>
                     </div>
-                    <textarea aria-label="这篇旧文和当前文章的关系，例如：之前谈过供给端，这次补需求端。"
+                    <Textarea aria-label="这篇旧文和当前文章的关系，例如：之前谈过供给端，这次补需求端。"
                       value={item.relationReason || ""}
                       onChange={(event) => updateHistoryReferenceField(item.referencedArticleId, "relationReason", event.target.value)}
                       placeholder="这篇旧文和当前文章的关系，例如：之前谈过供给端，这次补需求端。"
-                      className="mt-3 min-h-[72px] w-full border border-stone-300 bg-white px-3 py-2 text-sm leading-7"
+                      className="mt-3 min-h-[72px] px-3 py-2"
                     />
-                    <textarea aria-label="可选：给 AI 一个更自然的衔接句"
+                    <Textarea aria-label="可选：给 AI 一个更自然的衔接句"
                       value={item.bridgeSentence || ""}
                       onChange={(event) => updateHistoryReferenceField(item.referencedArticleId, "bridgeSentence", event.target.value)}
                       placeholder="可选：给 AI 一个更自然的衔接句"
-                      className="mt-3 min-h-[72px] w-full border border-stone-300 bg-white px-3 py-2 text-sm leading-7"
+                      className="mt-3 min-h-[72px] px-3 py-2"
                     />
                   </div>
                 ))}
-                <button
+                <Button
                   type="button"
                   onClick={saveHistoryReferenceSelection}
                   disabled={savingHistoryReferences}
-                  className="border border-cinnabar px-4 py-2 text-sm text-cinnabar disabled:opacity-60"
+                  variant="secondary"
+                  className="border-cinnabar text-cinnabar hover:border-cinnabar hover:bg-surface hover:text-cinnabar"
                 >
                   {savingHistoryReferences ? "保存中…" : "保存自然引用设置"}
-                </button>
+                </Button>
               </div>
             ) : null}
             <div className="mt-4 space-y-3">
               {loadingHistoryReferences ? (
-                <div className="text-sm text-stone-600">正在加载历史文章建议…</div>
+                <div className="text-sm text-inkMuted">正在加载历史文章建议…</div>
               ) : historyReferenceSuggestions.length > 0 ? (
                 historyReferenceSuggestions.map((item) => {
                   const selected = selectedReferenceIds.has(item.referencedArticleId);
                   return (
-                    <div key={item.referencedArticleId} className="border border-stone-300/60 px-4 py-4">
+                    <div key={item.referencedArticleId} className="border border-lineStrong/60 px-4 py-4">
                       <div className="flex items-center justify-between gap-3">
                         <div>
                           <div className="font-medium text-ink">《{item.title}》</div>
-                          {item.seriesLabel ? <div className="mt-1 text-xs text-stone-500">{item.seriesLabel}</div> : null}
+                          {item.seriesLabel ? <div className="mt-1 text-xs text-inkMuted">{item.seriesLabel}</div> : null}
                         </div>
-                        <button
+                        <Button
                           type="button"
                           onClick={() => toggleHistoryReferenceSelection(item)}
                           disabled={!selected && selectedHistoryReferences.length >= 2}
-                          className={`border px-3 py-2 text-xs ${
-                            selected
-                              ? "border-cinnabar bg-cinnabar text-white"
-                              : "border-stone-300 text-stone-700"
-                          } disabled:opacity-60`}
+                          variant={selected ? "primary" : "secondary"}
+                          size="sm"
                         >
                           {selected ? "已选中" : "加入引用"}
-                        </button>
+                        </Button>
                       </div>
-                      {item.relationReason ? <div className="mt-2 text-sm leading-7 text-stone-700">{item.relationReason}</div> : null}
-                      {item.consistencyHint ? <div className="mt-2 text-xs leading-6 text-[#7d6430]">{item.consistencyHint}</div> : null}
-                      {item.bridgeSentence ? <div className="mt-2 text-xs leading-6 text-stone-500">桥接句建议：{item.bridgeSentence}</div> : null}
+                      {item.relationReason ? <div className="mt-2 text-sm leading-7 text-inkSoft">{item.relationReason}</div> : null}
+                      {item.consistencyHint ? <div className="mt-2 text-xs leading-6 text-warning">{item.consistencyHint}</div> : null}
+                      {item.bridgeSentence ? <div className="mt-2 text-xs leading-6 text-inkMuted">桥接句建议：{item.bridgeSentence}</div> : null}
                     </div>
                   );
                 })
               ) : (
-                <div className="border border-dashed border-stone-300 px-4 py-4 text-sm leading-7 text-stone-600">
+                <div className="border border-dashed border-lineStrong px-4 py-4 text-sm leading-7 text-inkMuted">
                   当前没有可用的已发布旧文建议。先发布过往文章后，这里才会出现自然回带候选。
                 </div>
               )}
             </div>
           </div>
           ) : null}
-          <button onClick={generate} disabled={generating || generateBlockedByResearch} className="bg-cinnabar px-4 py-3 text-sm text-white disabled:opacity-60">
+          <Button onClick={generate} disabled={generating || generateBlockedByResearch} variant="primary">
             {generating ? "生成中…" : generateBlockedByResearch ? "先补研究信源" : "开始深度写作"}
-          </button>
+          </Button>
         </div>
       );
     }
     if (currentStage.code === "layout") {
       return (
         <div className="mt-4 space-y-3">
-          <div className="border border-stone-300 bg-white px-4 py-4 text-sm leading-7 text-stone-700">
+          <div className="border border-lineStrong bg-surface px-4 py-4 text-sm leading-7 text-inkSoft">
             当前排版会把所选模板直接应用到 HTML 预览、导出 HTML 与后续微信稿箱渲染，尽量保持三者一致。
           </div>
           {selectedTemplate ? (
-            <div className="border border-stone-300 bg-white px-4 py-4">
-              <div className="text-xs uppercase tracking-[0.18em] text-stone-500">
+            <div className="border border-lineStrong bg-surface px-4 py-4">
+              <div className="text-xs uppercase tracking-[0.18em] text-inkMuted">
                 {selectedTemplate.meta || "模板"} · {selectedTemplate.version} · {formatTemplateAssetOwner(selectedTemplate)}
               </div>
               <div className="mt-2 font-serifCn text-2xl text-ink text-balance">{selectedTemplate.name}</div>
-              <div className="mt-2 text-sm leading-7 text-stone-700">{selectedTemplate.description || "当前模板未填写说明。"} </div>
-              <div className="mt-2 text-xs leading-6 text-stone-500">来源：{formatTemplateSourceSummary(selectedTemplate)}</div>
+              <div className="mt-2 text-sm leading-7 text-inkSoft">{selectedTemplate.description || "当前模板未填写说明。"} </div>
+              <div className="mt-2 text-xs leading-6 text-inkMuted">来源：{formatTemplateSourceSummary(selectedTemplate)}</div>
               <div className="mt-3 flex flex-wrap gap-2">
                 {formatTemplateConfigSummary(selectedTemplate).map((item) => (
-                  <span key={`${selectedTemplate.id}-${item}`} className="border border-stone-300 bg-[#faf7f0] px-3 py-1 text-xs text-stone-700">
+                  <span key={`${selectedTemplate.id}-${item}`} className="border border-lineStrong bg-paperStrong px-3 py-1 text-xs text-inkSoft">
                     {item}
                   </span>
                 ))}
               </div>
             </div>
           ) : (
-            <div className="border border-dashed border-stone-300 bg-white px-4 py-4 text-sm leading-7 text-stone-600">
+            <div className="border border-dashed border-lineStrong bg-surface px-4 py-4 text-sm leading-7 text-inkMuted">
               当前未显式选择模板，应用排版时会使用默认微信渲染样式。
             </div>
           )}
-          <button onClick={applyLayoutTemplate} disabled={applyingLayout} className="bg-cinnabar px-4 py-3 text-sm text-white disabled:opacity-60">
+          <Button onClick={applyLayoutTemplate} disabled={applyingLayout} variant="primary">
             {applyingLayout ? "应用中…" : "应用排版并查看 HTML"}
-          </button>
+          </Button>
         </div>
       );
     }
     if (!currentStageAction) {
       return (
-        <div className="mt-4 border border-dashed border-stone-300 bg-white px-4 py-4 text-sm leading-7 text-stone-600">
+        <div className="mt-4 border border-dashed border-lineStrong bg-surface px-4 py-4 text-sm leading-7 text-inkMuted">
           当前步骤暂时没有可生成的结构化洞察卡。你仍可通过右侧其他模块继续配图、排版和发布。
         </div>
       );
@@ -7463,64 +7577,67 @@ export function ArticleEditorClient({
 
     return (
       <div className="mt-4 space-y-4">
-        <div className="border border-stone-300 bg-white px-4 py-4 text-sm leading-7 text-stone-700">
+        <div className="border border-lineStrong bg-surface px-4 py-4 text-sm leading-7 text-inkSoft">
           <div className="font-medium text-ink">{currentStageAction.label}</div>
           <div className="mt-2">{currentStageAction.helper}</div>
         </div>
-        <button
+        <Button
           onClick={() => generateStageArtifact(currentStage.code)}
           disabled={Boolean(generatingStageArtifactCode) || Boolean(updatingWorkflowCode) || Boolean(applyingStageArtifactCode)}
-          className="bg-cinnabar px-4 py-3 text-sm text-white disabled:opacity-60"
+          variant="primary"
         >
           {generatingStageArtifactCode === currentStage.code ? "生成中…" : currentStageArtifact ? "刷新阶段产物" : currentStageAction.label}
-        </button>
+        </Button>
         {currentArticleMainStep.code === "strategy" || currentArticleMainStep.code === "evidence" ? renderResearchWorkspacePanel() : null}
         {currentArticleMainStep.code === "strategy" ? renderStrategyCardPanel() : null}
         {currentArticleMainStep.code === "evidence" ? renderEvidencePackagePanel() : null}
         {currentStageArtifact ? (
-          <div className="space-y-4 border border-stone-300 bg-white p-4">
+          <div className="space-y-4 border border-lineStrong bg-surface p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <div className="font-serifCn text-2xl text-ink text-balance">{currentStageArtifact.title}</div>
-                <div className="mt-1 text-xs text-stone-500">
+                <div className="mt-1 text-xs text-inkMuted">
                   {currentStageArtifact.updatedAt ? `更新于 ${new Date(currentStageArtifact.updatedAt).toLocaleString("zh-CN")}` : "暂无更新时间"}
                 </div>
               </div>
-              <div className="text-xs text-stone-500">
+              <div className="text-xs text-inkMuted">
                 {currentStageArtifact.provider || "local"}
                 {currentStageArtifact.model ? ` / ${currentStageArtifact.model}` : ""}
               </div>
             </div>
 
             {currentStageArtifact.summary ? (
-              <div className="border border-stone-300/60 bg-[#faf7f0] px-4 py-3 text-sm leading-7 text-stone-700">
+              <div className="border border-lineStrong/60 bg-paperStrong px-4 py-3 text-sm leading-7 text-inkSoft">
                 {currentStageArtifact.summary}
               </div>
             ) : null}
 
             <div className="flex flex-wrap gap-2">
-              <button
+              <Button
+                type="button"
                 onClick={() => applyStageArtifact(currentStage.code)}
                 disabled={Boolean(applyingStageArtifactCode) || Boolean(generatingStageArtifactCode)}
-                className="border border-cinnabar px-4 py-2 text-sm text-cinnabar disabled:opacity-60"
+                variant="secondary"
+                className="border-cinnabar text-cinnabar hover:border-cinnabar hover:bg-surface hover:text-cinnabar"
               >
                 {applyingStageArtifactCode === currentStage.code ? "应用中…" : getStageApplyButtonLabel(currentStage.code)}
-              </button>
+              </Button>
               {currentStage.code === "outlinePlanning" ? (
-                <button
+                <Button
+                  type="button"
                   onClick={syncOutlineArtifactToNodes}
                   disabled={syncingOutlineArtifact || Boolean(generatingStageArtifactCode) || Boolean(applyingStageArtifactCode)}
-                  className="border border-stone-300 px-4 py-2 text-sm text-stone-700 disabled:opacity-60"
+                  variant="secondary"
                 >
                   {syncingOutlineArtifact ? "同步中…" : "同步到大纲树"}
-                </button>
+                </Button>
               ) : null}
             </div>
 
             {currentStage.code === "audienceAnalysis" ? (
               <>
                 {String(currentStageArtifact.payload?.coreReaderLabel || "").trim() ? (
-                  <div className="text-sm text-stone-700">核心受众：{String(currentStageArtifact.payload?.coreReaderLabel)}</div>
+                  <div className="text-sm text-inkSoft">核心受众：{String(currentStageArtifact.payload?.coreReaderLabel)}</div>
                 ) : null}
                 {audienceReaderSegments.length > 0 ? (
                   <div className="space-y-3">
@@ -7528,17 +7645,15 @@ export function ArticleEditorClient({
                       <div key={`${segment.label || index}`} className="border border-stone-300/60 px-4 py-3">
                         <div className="flex items-center justify-between gap-3">
                           <div className="font-medium text-ink">{String(segment.label || `人群 ${index + 1}`)}</div>
-                          <button
+                          <Button
                             type="button"
                             onClick={() => setAudienceSelectionDraft((current) => ({ ...current, selectedReaderLabel: String(segment.label || "").trim() }))}
-                            className={`border px-3 py-1 text-xs ${
-                              audienceSelectionDraft.selectedReaderLabel === String(segment.label || "").trim()
-                                ? "border-cinnabar bg-cinnabar text-white"
-                                : "border-stone-300 text-stone-700"
-                            }`}
+                            variant={audienceSelectionDraft.selectedReaderLabel === String(segment.label || "").trim() ? "primary" : "secondary"}
+                            size="sm"
+                            className="min-h-0 px-3 py-1 text-xs"
                           >
                             {audienceSelectionDraft.selectedReaderLabel === String(segment.label || "").trim() ? "已选中" : "设为目标读者"}
-                          </button>
+                          </Button>
                         </div>
                         <div className="mt-2 text-sm leading-7 text-stone-700">痛点：{String(segment.painPoint || "暂无")}</div>
                         <div className="mt-1 text-sm leading-7 text-stone-700">动机：{String(segment.motivation || "暂无")}</div>
@@ -7552,18 +7667,16 @@ export function ArticleEditorClient({
                     <div className="text-xs uppercase tracking-[0.2em] text-stone-500">表达建议确认</div>
                     <div className="mt-2 flex flex-wrap gap-2 text-sm">
                       {audienceLanguageGuidance.map((item) => (
-                        <button
+                        <Button
                           key={item}
                           type="button"
                           onClick={() => setAudienceSelectionDraft((current) => ({ ...current, selectedLanguageGuidance: item }))}
-                          className={`border px-3 py-2 text-left ${
-                            audienceSelectionDraft.selectedLanguageGuidance === item
-                              ? "border-cinnabar bg-cinnabar text-white"
-                              : "border-stone-300 bg-white text-stone-700"
-                          }`}
+                          variant={audienceSelectionDraft.selectedLanguageGuidance === item ? "primary" : "secondary"}
+                          size="sm"
+                          className="text-left"
                         >
                           {item}
-                        </button>
+                        </Button>
                       ))}
                     </div>
                   </div>
@@ -7573,18 +7686,16 @@ export function ArticleEditorClient({
                     <div className="text-xs uppercase tracking-[0.2em] text-stone-500">背景预设确认</div>
                     <div className="mt-2 flex flex-wrap gap-2 text-sm">
                       {audienceBackgroundAwarenessOptions.map((item) => (
-                        <button
+                        <Button
                           key={item}
                           type="button"
                           onClick={() => setAudienceSelectionDraft((current) => ({ ...current, selectedBackgroundAwareness: item }))}
-                          className={`border px-3 py-2 text-left ${
-                            audienceSelectionDraft.selectedBackgroundAwareness === item
-                              ? "border-cinnabar bg-cinnabar text-white"
-                              : "border-stone-300 bg-white text-stone-700"
-                          }`}
+                          variant={audienceSelectionDraft.selectedBackgroundAwareness === item ? "primary" : "secondary"}
+                          size="sm"
+                          className="text-left"
                         >
                           {item}
-                        </button>
+                        </Button>
                       ))}
                     </div>
                   </div>
@@ -7594,18 +7705,16 @@ export function ArticleEditorClient({
                     <div className="text-xs uppercase tracking-[0.2em] text-stone-500">语言通俗度确认</div>
                     <div className="mt-2 flex flex-wrap gap-2 text-sm">
                       {audienceReadabilityOptions.map((item) => (
-                        <button
+                        <Button
                           key={item}
                           type="button"
                           onClick={() => setAudienceSelectionDraft((current) => ({ ...current, selectedReadabilityLevel: item }))}
-                          className={`border px-3 py-2 text-left ${
-                            audienceSelectionDraft.selectedReadabilityLevel === item
-                              ? "border-cinnabar bg-cinnabar text-white"
-                              : "border-stone-300 bg-white text-stone-700"
-                          }`}
+                          variant={audienceSelectionDraft.selectedReadabilityLevel === item ? "primary" : "secondary"}
+                          size="sm"
+                          className="text-left"
                         >
                           {item}
-                        </button>
+                        </Button>
                       ))}
                     </div>
                   </div>
@@ -7614,25 +7723,24 @@ export function ArticleEditorClient({
                   <div className="text-xs uppercase tracking-[0.2em] text-stone-500">结尾动作确认</div>
                   <div className="mt-2 flex flex-wrap gap-2 text-sm">
                     {audienceCallToActionOptions.map((item) => (
-                      <button
+                      <Button
                         key={item}
                         type="button"
                         onClick={() => setAudienceSelectionDraft((current) => ({ ...current, selectedCallToAction: item }))}
-                        className={`border px-3 py-2 text-left ${
-                          audienceSelectionDraft.selectedCallToAction === item
-                            ? "border-cinnabar bg-cinnabar text-white"
-                            : "border-stone-300 bg-white text-stone-700"
-                        }`}
+                        variant={audienceSelectionDraft.selectedCallToAction === item ? "primary" : "secondary"}
+                        size="sm"
+                        className="text-left"
                       >
                         {item}
-                      </button>
+                      </Button>
                     ))}
                   </div>
-                  <textarea aria-label="也可以手动补充你希望文末收束成什么动作"
+                  <Textarea
+                    aria-label="也可以手动补充你希望文末收束成什么动作"
                     value={audienceSelectionDraft.selectedCallToAction}
                     onChange={(event) => setAudienceSelectionDraft((current) => ({ ...current, selectedCallToAction: event.target.value }))}
                     placeholder="也可以手动补充你希望文末收束成什么动作"
-                    className="mt-3 min-h-[88px] w-full border border-stone-300 px-3 py-2 text-sm leading-7"
+                    className="mt-3 min-h-[88px] px-3 py-2"
                   />
                 </div>
                 <div className="border border-stone-300/60 bg-[#faf7f0] px-4 py-3 text-sm leading-7 text-stone-700">
@@ -7642,14 +7750,15 @@ export function ArticleEditorClient({
                   <div className="mt-1">已确认语言通俗度：{audienceSelectionDraft.selectedReadabilityLevel || "未确认"}</div>
                   <div className="mt-1">已确认结尾动作：{audienceSelectionDraft.selectedCallToAction || "未确认"}</div>
                 </div>
-                <button
+                <Button
                   type="button"
                   onClick={saveAudienceSelection}
                   disabled={savingAudienceSelection}
-                  className="border border-cinnabar px-4 py-2 text-sm text-cinnabar disabled:opacity-60"
+                  variant="secondary"
+                  className="border-cinnabar text-cinnabar hover:border-cinnabar hover:bg-white hover:text-cinnabar"
                 >
                   {savingAudienceSelection ? "保存中…" : "确认这组受众选择"}
-                </button>
+                </Button>
                 {getPayloadStringArray(currentStageArtifact.payload, "contentWarnings").length > 0 ? (
                   <div>
                     <div className="text-xs uppercase tracking-[0.2em] text-stone-500">注意事项</div>
@@ -7673,22 +7782,25 @@ export function ArticleEditorClient({
                         这里的“用户观点”只作为补充校正，不会覆盖整篇文章的主判断。素材可以是可改写文字，也可以是必须原样插入的截图。
                       </div>
                     </div>
-                    <button
+                    <Button
                       type="button"
                       onClick={() => loadOutlineMaterials(true)}
                       disabled={loadingOutlineMaterials || savingOutlineMaterials}
-                      className="border border-stone-300 px-3 py-2 text-sm text-stone-700 disabled:opacity-60"
+                      variant="secondary"
+                      size="sm"
                     >
                       {loadingOutlineMaterials ? "刷新中…" : "刷新素材面板"}
-                    </button>
+                    </Button>
                   </div>
-                <div className={`border px-4 py-4 text-sm leading-7 ${
-                  outlineMaterialReadiness.status === "passed"
-                    ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                      : outlineMaterialReadiness.status === "warning"
-                        ? "border-[#dfd2b0] bg-[#fff8e8] text-[#7d6430]"
-                        : "border-[#d8b0b2] bg-[#fff7f7] text-[#8f3136]"
-                  }`}>
+                  <div
+                    className={`border px-4 py-4 text-sm leading-7 ${
+                      outlineMaterialReadiness.status === "passed"
+                        ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                        : outlineMaterialReadiness.status === "warning"
+                          ? "border-[#dfd2b0] bg-[#fff8e8] text-[#7d6430]"
+                          : "border-[#d8b0b2] bg-[#fff7f7] text-[#8f3136]"
+                    }`}
+                  >
                     <div className="text-xs uppercase tracking-[0.18em]">素材可用性评分</div>
                     <div className="mt-2 font-serifCn text-2xl text-balance">{outlineMaterialReadiness.score}</div>
                     <div className="mt-2">{outlineMaterialReadiness.detail}</div>
@@ -7750,7 +7862,7 @@ export function ArticleEditorClient({
                   </div>
                   <div className="grid gap-3">
                     {Array.from({ length: 3 }).map((_, index) => (
-                      <textarea aria-label="textarea control"
+                      <Textarea aria-label={`补充观点 ${index + 1}`}
                         key={`viewpoint-${index}`}
                         value={supplementalViewpointsDraft[index] || ""}
                         onChange={(event) =>
@@ -7761,25 +7873,25 @@ export function ArticleEditorClient({
                           )
                         }
                         placeholder={`补充观点 ${index + 1}，例如：这篇不要只讲结论，要补清楚代价落在谁身上`}
-                        className="min-h-[72px] w-full border border-stone-300 bg-white px-3 py-2 text-sm leading-7"
+                        className="min-h-[72px] bg-white px-3 py-2"
                       />
                     ))}
                   </div>
-                  <button
+                  <Button
                     type="button"
                     onClick={saveSupplementalViewpoints}
                     disabled={savingOutlineMaterials}
-                    className="border border-cinnabar px-4 py-2 text-sm text-cinnabar disabled:opacity-60"
+                    variant="primary"
                   >
                     {savingOutlineMaterials ? "保存中…" : "保存补充观点"}
-                  </button>
+                  </Button>
                   <div className="grid gap-4 lg:grid-cols-2">
                     <div className="border border-stone-300 bg-white px-4 py-4">
                       <div className="text-xs uppercase tracking-[0.18em] text-stone-500">挂载已有素材</div>
-                      <select aria-label="select control"
+                      <Select aria-label="大纲节点"
                         value={outlineMaterialNodeId}
                         onChange={(event) => setOutlineMaterialNodeId(event.target.value)}
-                        className="mt-3 w-full border border-stone-300 bg-[#faf7f0] px-3 py-2 text-sm"
+                        className="mt-3 bg-[#faf7f0] px-3 py-2"
                       >
                         <option value="">选择大纲节点</option>
                         {(outlineMaterials?.nodes ?? nodes).map((node) => (
@@ -7787,19 +7899,19 @@ export function ArticleEditorClient({
                             {node.title}
                           </option>
                         ))}
-                      </select>
-                      <select aria-label="select control"
+                      </Select>
+                      <Select aria-label="素材挂载方式"
                         value={outlineMaterialUsageMode}
                         onChange={(event) => setOutlineMaterialUsageMode(event.target.value === "image" ? "image" : "rewrite")}
-                        className="mt-3 w-full border border-stone-300 bg-[#faf7f0] px-3 py-2 text-sm"
+                        className="mt-3 bg-[#faf7f0] px-3 py-2"
                       >
                         <option value="rewrite">作为可改写素材</option>
                         <option value="image">作为原样截图插入</option>
-                      </select>
-                      <select aria-label="select control"
+                      </Select>
+                      <Select aria-label="已有素材"
                         value={outlineMaterialFragmentId}
                         onChange={(event) => setOutlineMaterialFragmentId(event.target.value)}
-                        className="mt-3 w-full border border-stone-300 bg-[#faf7f0] px-3 py-2 text-sm"
+                        className="mt-3 bg-[#faf7f0] px-3 py-2"
                       >
                         <option value="">选择已有素材</option>
                         {fragmentPool
@@ -7813,60 +7925,67 @@ export function ArticleEditorClient({
                               {formatFragmentSourceType(fragment.sourceType)} · {fragment.distilledContent.slice(0, 28)}
                             </option>
                           ))}
-                      </select>
+                      </Select>
                       <div className="mt-2 text-xs leading-6 text-stone-500">如果截图已经在素材库里，可直接在这里选择“原样截图插入”；也可以在右侧直接上传新截图。</div>
-                      <button
+                      <Button
                         type="button"
                         onClick={() => submitOutlineMaterial("attachExisting")}
                         disabled={savingOutlineMaterials}
-                        className="mt-3 border border-cinnabar px-4 py-2 text-sm text-cinnabar disabled:opacity-60"
+                        variant="primary"
+                        className="mt-3"
                       >
                         {savingOutlineMaterials ? "处理中…" : "挂到当前节点"}
-                      </button>
+                      </Button>
                     </div>
                     <div className="border border-stone-300 bg-white px-4 py-4">
-                      <div className="flex gap-2">
-                        <button
+                      <div className="flex flex-wrap gap-2">
+                        <Button
                           type="button"
                           onClick={() => setOutlineMaterialCreateMode("manual")}
-                          className={`border px-3 py-2 text-sm ${outlineMaterialCreateMode === "manual" ? "border-cinnabar bg-cinnabar text-white" : "border-stone-300 text-stone-700"}`}
+                          variant={outlineMaterialCreateMode === "manual" ? "primary" : "secondary"}
+                          size="sm"
+                          className="flex-1"
                         >
                           新建文字素材
-                        </button>
-                        <button
+                        </Button>
+                        <Button
                           type="button"
                           onClick={() => setOutlineMaterialCreateMode("url")}
-                          className={`border px-3 py-2 text-sm ${outlineMaterialCreateMode === "url" ? "border-cinnabar bg-cinnabar text-white" : "border-stone-300 text-stone-700"}`}
+                          variant={outlineMaterialCreateMode === "url" ? "primary" : "secondary"}
+                          size="sm"
+                          className="flex-1"
                         >
                           新建链接素材
-                        </button>
-                        <button
+                        </Button>
+                        <Button
                           type="button"
                           onClick={() => setOutlineMaterialCreateMode("screenshot")}
-                          className={`border px-3 py-2 text-sm ${outlineMaterialCreateMode === "screenshot" ? "border-cinnabar bg-cinnabar text-white" : "border-stone-300 text-stone-700"}`}
+                          variant={outlineMaterialCreateMode === "screenshot" ? "primary" : "secondary"}
+                          size="sm"
+                          className="flex-1"
                         >
                           新建截图素材
-                        </button>
+                        </Button>
                       </div>
-                      <input aria-label="素材标题，可选"
+                      <Input aria-label="素材标题，可选"
                         value={outlineMaterialTitle}
                         onChange={(event) => setOutlineMaterialTitle(event.target.value)}
                         placeholder="素材标题，可选"
-                        className="mt-3 w-full border border-stone-300 bg-[#faf7f0] px-3 py-2 text-sm"
+                        className="mt-3 bg-[#faf7f0] px-3 py-2"
                       />
                       {outlineMaterialCreateMode === "manual" ? (
-                        <textarea
+                        <Textarea aria-label="新建文字素材内容"
                           value={outlineMaterialContent}
                           onChange={(event) => setOutlineMaterialContent(event.target.value)}
                           placeholder="输入要补进大纲的文字片段，系统会提纯后挂到节点。"
-                          className="mt-3 min-h-[120px] w-full border border-stone-300 bg-[#faf7f0] px-3 py-2 text-sm leading-7"
+                          className="mt-3 min-h-[120px] bg-[#faf7f0] px-3 py-2"
                         />
                       ) : outlineMaterialCreateMode === "url" ? (
-                        <input aria-label="https://…"
+                        <Input aria-label="https://…"
                           value={outlineMaterialUrl}
                           onChange={(event) => setOutlineMaterialUrl(event.target.value)}
                           placeholder="https://…"
-                          className="mt-3 w-full border border-stone-300 bg-[#faf7f0] px-3 py-2 text-sm"
+                          className="mt-3 bg-[#faf7f0] px-3 py-2"
                         />
                       ) : (
                         <div className="mt-3 space-y-3">
@@ -7882,15 +8001,15 @@ export function ArticleEditorClient({
                               ? `已选择截图：${outlineMaterialScreenshotFileName}。创建后会自动以“原样截图插入”挂到当前节点。`
                               : "支持 png/jpg/webp，上传后会直接创建截图素材并挂到当前节点。"}
                           </div>
-                          <textarea aria-label="可选：补一句截图上下文，帮助后续视觉理解和节点归位。"
+                          <Textarea aria-label="可选：补一句截图上下文，帮助后续视觉理解和节点归位。"
                             value={outlineMaterialContent}
                             onChange={(event) => setOutlineMaterialContent(event.target.value)}
                             placeholder="可选：补一句截图上下文，帮助后续视觉理解和节点归位。"
-                            className="min-h-[96px] w-full border border-stone-300 bg-[#faf7f0] px-3 py-2 text-sm leading-7"
+                            className="min-h-[96px] bg-[#faf7f0] px-3 py-2"
                           />
                         </div>
                       )}
-                      <button
+                      <Button
                         type="button"
                         onClick={() =>
                           submitOutlineMaterial(
@@ -7902,10 +8021,11 @@ export function ArticleEditorClient({
                           )
                         }
                         disabled={savingOutlineMaterials}
-                        className="mt-3 border border-cinnabar px-4 py-2 text-sm text-cinnabar disabled:opacity-60"
+                        variant="primary"
+                        className="mt-3"
                       >
                         {savingOutlineMaterials ? "处理中…" : "创建并挂到节点"}
-                      </button>
+                      </Button>
                     </div>
                   </div>
                   <div className="space-y-3">
@@ -7942,7 +8062,7 @@ export function ArticleEditorClient({
                         const optionRiskHint = String(item.riskHint || "").trim();
                         const isSelected = outlineSelectionDraft.selectedTitle === optionTitle;
                         return (
-                          <button
+                          <Button
                             key={`${optionTitle || index}`}
                             type="button"
                             onClick={() =>
@@ -7952,24 +8072,28 @@ export function ArticleEditorClient({
                                 selectedTitleStyle: optionStyle,
                               }))
                             }
-                            className={`border px-4 py-4 text-left ${
-                              isSelected ? "border-cinnabar bg-[#fff7f2]" : "border-stone-300 bg-white"
+                            variant="secondary"
+                            fullWidth
+                            className={`h-auto whitespace-normal px-4 py-4 text-left [&>span]:flex [&>span]:w-full [&>span]:flex-col [&>span]:items-start ${
+                              isSelected
+                                ? "border-cinnabar bg-[#fff7f2] hover:border-cinnabar hover:bg-[#fff7f2]"
+                                : "border-stone-300 bg-white"
                             }`}
                           >
-                            <div className="flex flex-wrap items-center gap-2">
+                            <span className="flex flex-wrap items-center gap-2">
                               <span className={`px-2 py-1 text-xs ${isSelected ? "bg-cinnabar text-white" : "bg-[#faf7f0] text-stone-600"}`}>
                                 {optionStyle || `标题方案 ${index + 1}`}
                               </span>
                               {optionAngle ? <span className="text-xs text-stone-500">{optionAngle}</span> : null}
-                            </div>
-                            <div className="mt-3 text-base font-medium leading-7 text-ink">{optionTitle || `标题方案 ${index + 1}`}</div>
-                            {optionReason ? <div className="mt-2 text-sm leading-7 text-stone-700">{optionReason}</div> : null}
+                            </span>
+                            <span className="mt-3 text-base font-medium leading-7 text-ink">{optionTitle || `标题方案 ${index + 1}`}</span>
+                            {optionReason ? <span className="mt-2 text-sm leading-7 text-stone-700">{optionReason}</span> : null}
                             {optionRiskHint ? (
-                              <div className="mt-3 border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-6 text-amber-900">
+                              <span className="mt-3 block border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-6 text-amber-900">
                                 风险提示：{optionRiskHint}
-                              </div>
+                              </span>
                             ) : null}
-                          </button>
+                          </Button>
                         );
                       })}
                     </div>
@@ -8017,43 +8141,39 @@ export function ArticleEditorClient({
                   </div>
                 ) : null}
                 {outlineOpeningHookOptions.length > 0 ? (
-                  <div>
-                    <div className="text-xs uppercase tracking-[0.2em] text-stone-500">开头策略确认</div>
-                    <div className="mt-2 flex flex-wrap gap-2 text-sm">
-                      {outlineOpeningHookOptions.map((item) => (
-                        <button
+                    <div>
+                      <div className="text-xs uppercase tracking-[0.2em] text-stone-500">开头策略确认</div>
+                      <div className="mt-2 flex flex-wrap gap-2 text-sm">
+                        {outlineOpeningHookOptions.map((item) => (
+                        <Button
                           key={item}
                           type="button"
                           onClick={() => setOutlineSelectionDraft((current) => ({ ...current, selectedOpeningHook: item }))}
-                          className={`border px-3 py-2 text-left ${
-                            outlineSelectionDraft.selectedOpeningHook === item
-                              ? "border-cinnabar bg-cinnabar text-white"
-                              : "border-stone-300 bg-white text-stone-700"
-                          }`}
+                          variant={outlineSelectionDraft.selectedOpeningHook === item ? "primary" : "secondary"}
+                          size="sm"
+                          className="text-sm"
                         >
                           {item}
-                        </button>
+                        </Button>
                       ))}
                     </div>
                   </div>
                 ) : null}
                 {outlineTargetEmotionOptions.length > 0 ? (
-                  <div>
-                    <div className="text-xs uppercase tracking-[0.2em] text-stone-500">目标情绪确认</div>
-                    <div className="mt-2 flex flex-wrap gap-2 text-sm">
-                      {outlineTargetEmotionOptions.map((item) => (
-                        <button
+                    <div>
+                      <div className="text-xs uppercase tracking-[0.2em] text-stone-500">目标情绪确认</div>
+                      <div className="mt-2 flex flex-wrap gap-2 text-sm">
+                        {outlineTargetEmotionOptions.map((item) => (
+                        <Button
                           key={item}
                           type="button"
                           onClick={() => setOutlineSelectionDraft((current) => ({ ...current, selectedTargetEmotion: item }))}
-                          className={`border px-3 py-2 text-left ${
-                            outlineSelectionDraft.selectedTargetEmotion === item
-                              ? "border-cinnabar bg-cinnabar text-white"
-                              : "border-stone-300 bg-white text-stone-700"
-                          }`}
+                          variant={outlineSelectionDraft.selectedTargetEmotion === item ? "primary" : "secondary"}
+                          size="sm"
+                          className="text-sm"
                         >
                           {item}
-                        </button>
+                        </Button>
                       ))}
                     </div>
                   </div>
@@ -8142,22 +8262,20 @@ export function ArticleEditorClient({
                   </div>
                 ) : null}
                 {outlineEndingStrategyOptions.length > 0 ? (
-                  <div>
-                    <div className="text-xs uppercase tracking-[0.2em] text-stone-500">结尾策略确认</div>
-                    <div className="mt-2 flex flex-wrap gap-2 text-sm">
-                      {outlineEndingStrategyOptions.map((item) => (
-                        <button
+                    <div>
+                      <div className="text-xs uppercase tracking-[0.2em] text-stone-500">结尾策略确认</div>
+                      <div className="mt-2 flex flex-wrap gap-2 text-sm">
+                        {outlineEndingStrategyOptions.map((item) => (
+                        <Button
                           key={item}
                           type="button"
                           onClick={() => setOutlineSelectionDraft((current) => ({ ...current, selectedEndingStrategy: item }))}
-                          className={`border px-3 py-2 text-left ${
-                            outlineSelectionDraft.selectedEndingStrategy === item
-                              ? "border-cinnabar bg-cinnabar text-white"
-                              : "border-stone-300 bg-white text-stone-700"
-                          }`}
+                          variant={outlineSelectionDraft.selectedEndingStrategy === item ? "primary" : "secondary"}
+                          size="sm"
+                          className="text-sm"
                         >
                           {item}
-                        </button>
+                        </Button>
                       ))}
                     </div>
                   </div>
@@ -8169,14 +8287,14 @@ export function ArticleEditorClient({
                   <div className="mt-1">已确认目标情绪：{outlineSelectionDraft.selectedTargetEmotion || "未确认"}</div>
                   <div className="mt-1">已确认结尾策略：{outlineSelectionDraft.selectedEndingStrategy || "未确认"}</div>
                 </div>
-                <button
+                <Button
                   type="button"
                   onClick={saveOutlineSelection}
                   disabled={savingAudienceSelection || !outlineSelectionDraft.selectedTitle.trim()}
-                  className="border border-cinnabar px-4 py-2 text-sm text-cinnabar disabled:opacity-60"
+                  variant="primary"
                 >
                   {savingAudienceSelection ? "保存中…" : "确认这组大纲选择"}
-                </button>
+                </Button>
                 {String(currentStageArtifact.payload?.endingStrategy || "").trim() ? (
                   <div className="text-sm leading-7 text-stone-700">结尾策略：{String(currentStageArtifact.payload?.endingStrategy)}</div>
                 ) : null}
@@ -8246,20 +8364,22 @@ export function ArticleEditorClient({
                     输入一篇报道、公告或原始资料链接，系统会自动抓取、提纯并挂到当前稿件，再立即刷新事实核查结果。
                   </div>
                   <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-                    <input aria-label="https://…"
+                    <Input
+                      aria-label="https://…"
                       value={factCheckEvidenceUrl}
                       onChange={(event) => setFactCheckEvidenceUrl(event.target.value)}
                       placeholder="https://…"
-                      className="min-w-0 flex-1 border border-stone-300 bg-white px-3 py-2 text-sm"
+                      className="min-w-0 flex-1 min-h-10 px-3 py-2"
                     />
-                    <button
+                    <Button
                       type="button"
                       onClick={() => addFactCheckEvidenceSource()}
                       disabled={addingFactCheckEvidence}
-                      className="bg-cinnabar px-4 py-2 text-sm text-white disabled:opacity-60"
+                      variant="primary"
+                      size="sm"
                     >
                       {addingFactCheckEvidence ? "抓取中…" : "抓取补证并刷新核查"}
-                    </button>
+                    </Button>
                   </div>
                   {factCheckEvidenceIssue ? (
                     <div className="mt-3 space-y-3 border border-[#dfd2b0] bg-[#fff8e8] px-4 py-4 text-sm leading-7 text-[#7d6430]">
@@ -8268,29 +8388,33 @@ export function ArticleEditorClient({
                       <div className="break-all text-xs leading-6 text-stone-600">{factCheckEvidenceIssue.url}</div>
                       <div className="flex flex-wrap gap-2">
                         {factCheckEvidenceIssue.retryRecommended ? (
-                          <button
+                          <Button
                             type="button"
                             onClick={() => addFactCheckEvidenceSource(factCheckEvidenceIssue.url)}
                             disabled={addingFactCheckEvidence}
-                            className="border border-cinnabar bg-white px-4 py-2 text-sm text-cinnabar disabled:opacity-60"
+                            variant="secondary"
+                            size="sm"
+                            className="border-cinnabar text-cinnabar hover:border-cinnabar hover:bg-white hover:text-cinnabar"
                           >
                             {addingFactCheckEvidence ? "重试中…" : "重试补证抓取"}
-                          </button>
+                          </Button>
                         ) : null}
-                        <button
+                        <Button
                           type="button"
                           onClick={() => setFactCheckEvidenceUrl(factCheckEvidenceIssue.url)}
-                          className="border border-stone-300 bg-white px-4 py-2 text-sm text-stone-700"
+                          variant="secondary"
+                          size="sm"
                         >
                           回填链接
-                        </button>
-                        <button
+                        </Button>
+                        <Button
                           type="button"
                           onClick={() => setFactCheckEvidenceIssue(null)}
-                          className="border border-stone-300 bg-white px-4 py-2 text-sm text-stone-700"
+                          variant="secondary"
+                          size="sm"
                         >
                           清除提示
-                        </button>
+                        </Button>
                       </div>
                     </div>
                   ) : null}
@@ -8320,29 +8444,33 @@ export function ArticleEditorClient({
                           ) : null}
                           <div className="mt-3 flex flex-wrap gap-2">
                             {issue.retryRecommended ? (
-                              <button
+                              <Button
                                 type="button"
                                 onClick={() => addFactCheckEvidenceSource(issue.url)}
                                 disabled={addingFactCheckEvidence}
-                                className="border border-cinnabar bg-white px-3 py-2 text-sm text-cinnabar disabled:opacity-60"
+                                variant="secondary"
+                                size="sm"
+                                className="border-cinnabar text-cinnabar hover:border-cinnabar hover:bg-white hover:text-cinnabar"
                               >
                                 {addingFactCheckEvidence ? "重试中…" : "再次重试"}
-                              </button>
+                              </Button>
                             ) : null}
-                            <button
+                            <Button
                               type="button"
                               onClick={() => setFactCheckEvidenceUrl(issue.url)}
-                              className="border border-stone-300 bg-white px-3 py-2 text-sm text-stone-700"
+                              variant="secondary"
+                              size="sm"
                             >
                               回填链接
-                            </button>
-                            <button
+                            </Button>
+                            <Button
                               type="button"
                               onClick={() => dismissFactCheckEvidenceIssue(issue.id)}
-                              className="border border-stone-300 bg-white px-3 py-2 text-sm text-stone-700"
+                              variant="secondary"
+                              size="sm"
                             >
                               删除记录
-                            </button>
+                            </Button>
                           </div>
                         </div>
                       ))}
@@ -8370,25 +8498,23 @@ export function ArticleEditorClient({
                             <div className="text-xs uppercase tracking-[0.18em] text-stone-500">逐条处置策略</div>
                             <div className="mt-2 flex flex-wrap gap-2 text-sm">
                               {getFactCheckActionOptions(status).map((option) => (
-                                <button
+                                <Button
                                   key={`${claim}-${option.value}`}
                                   type="button"
                                   onClick={() => updateFactCheckDecision(claim, status, { action: option.value })}
-                                  className={`border px-3 py-2 ${
-                                    currentDecision.action === option.value
-                                      ? "border-cinnabar bg-cinnabar text-white"
-                                      : "border-stone-300 bg-white text-stone-700"
-                                  }`}
+                                  variant={currentDecision.action === option.value ? "primary" : "secondary"}
+                                  size="sm"
                                 >
                                   {option.label}
-                                </button>
+                                </Button>
                               ))}
                             </div>
-                            <textarea aria-label="可选：补充处理备注，例如“等官方公告出来再补数据”"
+                            <Textarea
+                              aria-label="可选：补充处理备注，例如“等官方公告出来再补数据”"
                               value={currentDecision.note}
                               onChange={(event) => updateFactCheckDecision(claim, status, { note: event.target.value })}
                               placeholder="可选：补充处理备注，例如“等官方公告出来再补数据”"
-                              className="mt-3 min-h-[80px] w-full border border-stone-300 px-3 py-2 text-sm leading-7"
+                              className="mt-3 min-h-[80px] px-3 py-2"
                             />
                           </div>
                           {(() => {
@@ -8447,7 +8573,7 @@ export function ArticleEditorClient({
                                                   </span>
                                                 ) : null}
                                                 {String(item.knowledgeTitle || "").trim() ? (
-                                                  <button
+                                                  <Button
                                                     type="button"
                                                     onClick={() => {
                                                       if (Number(item.knowledgeCardId || 0) > 0) {
@@ -8455,10 +8581,11 @@ export function ArticleEditorClient({
                                                         setHighlightedKnowledgeCardId(Number(item.knowledgeCardId));
                                                       }
                                                     }}
-                                                    className="border border-stone-300 bg-white px-3 py-2 text-stone-700"
+                                                    variant="secondary"
+                                                    size="sm"
                                                   >
                                                     背景卡回链 · {String(item.knowledgeTitle)}
-                                                  </button>
+                                                  </Button>
                                                 ) : null}
                                               </div>
                                               {String(item.sourceUrl || "").trim() ? (
@@ -8497,14 +8624,16 @@ export function ArticleEditorClient({
                     ))}
                   </div>
                 ) : null}
-                <button
+                <Button
                   type="button"
                   onClick={saveFactCheckSelection}
                   disabled={savingAudienceSelection}
-                  className="border border-cinnabar px-4 py-2 text-sm text-cinnabar disabled:opacity-60"
+                  variant="secondary"
+                  size="sm"
+                  className="border-cinnabar text-cinnabar hover:border-cinnabar hover:bg-white hover:text-cinnabar"
                 >
                   {savingAudienceSelection ? "保存中…" : "确认这组核查处置"}
-                </button>
+                </Button>
                 {String(currentStageArtifact.payload?.personaAlignment || "").trim() ? (
                   <div className="text-sm leading-7 text-stone-700">人设匹配：{String(currentStageArtifact.payload?.personaAlignment)}</div>
                 ) : null}
@@ -8678,24 +8807,24 @@ export function ArticleEditorClient({
             prompts={workspaceBlankSlate.prompts}
           >
             {currentStageAction ? (
-              <button
+              <Button
                 type="button"
                 onClick={() => {
                   void generateStageArtifact(currentStage.code);
                 }}
                 disabled={Boolean(generatingStageArtifactCode) || Boolean(updatingWorkflowCode) || Boolean(applyingStageArtifactCode)}
-                className="bg-cinnabar px-4 py-3 text-sm text-white disabled:opacity-60"
+                variant="primary"
               >
                 {generatingStageArtifactCode === currentStage.code ? `${currentStageAction.label}中…` : currentStageAction.label}
-              </button>
+              </Button>
             ) : null}
-            <button
+            <Button
               type="button"
               onClick={() => setView(currentAuthoringPhase.defaultView)}
-              className="border border-stone-300 bg-white px-4 py-3 text-sm text-stone-700"
+              variant="secondary"
             >
               先回到{formatWorkspaceViewLabel(currentAuthoringPhase.defaultView)}
-            </button>
+            </Button>
           </AuthoringBlankSlate>
         )}
       </div>
@@ -8725,15 +8854,15 @@ export function ArticleEditorClient({
           <div className="border-t border-stone-300/60 pt-4">
             <div className="text-xs uppercase tracking-[0.24em] text-stone-500">快照管理</div>
             <div className="mt-3 flex gap-2">
-              <input aria-label="快照备注"
+              <Input aria-label="快照备注"
                 value={snapshotNote}
                 onChange={(event) => setSnapshotNote(event.target.value)}
                 placeholder="快照备注"
-                className="min-w-0 flex-1 border border-stone-300 bg-white px-3 py-2 text-sm"
+                className="min-w-0 flex-1"
               />
-              <button onClick={createSnapshot} className="bg-cinnabar px-3 py-2 text-sm text-white">
+              <Button onClick={createSnapshot} variant="primary" size="sm">
                 存档
-              </button>
+              </Button>
             </div>
             <div className="mt-3 space-y-2">
               {snapshots.slice(0, 6).map((snapshot) => (
@@ -8741,12 +8870,12 @@ export function ArticleEditorClient({
                   <div className="text-sm text-ink">{snapshot.snapshotNote || "未命名快照"}</div>
                   <div className="mt-1 text-xs text-stone-500">{new Date(snapshot.createdAt).toLocaleString("zh-CN")}</div>
                   <div className="mt-3 flex gap-2 text-xs">
-                    <button onClick={() => loadDiff(snapshot.id)} className="border border-stone-300 px-2 py-1 text-stone-700">
+                    <Button onClick={() => loadDiff(snapshot.id)} variant="secondary" size="sm">
                       {loadingDiffId === snapshot.id ? "对比中…" : "差异"}
-                    </button>
-                    <button onClick={() => restoreSnapshot(snapshot.id)} className="border border-stone-300 px-2 py-1 text-stone-700">
+                    </Button>
+                    <Button onClick={() => restoreSnapshot(snapshot.id)} variant="secondary" size="sm">
                       回滚
-                    </button>
+                    </Button>
                   </div>
                 </div>
               ))}
@@ -8756,44 +8885,91 @@ export function ArticleEditorClient({
       ) : null}
 
       <section className="min-w-0 border border-stone-300/40 bg-white p-6 shadow-ink">
-        <div className={`border-b border-stone-200 pb-4 ${isFocusMode || isWritePhase || isPolishPhase ? "hidden" : ""}`}>
+        <div
+          data-command-chrome="true"
+          className="sticky top-0 z-10 mb-5 flex flex-wrap items-start justify-between gap-4 border-b border-stone-200 bg-white/95 pb-5 backdrop-blur-sm"
+        >
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.24em] text-stone-500">
+              <Link href="/articles" className="transition-colors hover:text-ink">
+                稿件
+              </Link>
+              <span>/</span>
+              <span className="max-w-[32rem] truncate normal-case tracking-normal text-stone-600">
+                《{currentArticleLabel}》
+              </span>
+              <span>/</span>
+              <span className="text-cinnabar">{currentArticleMainStep.title}</span>
+            </div>
+            <div className="mt-3 font-serifCn text-3xl text-ink text-balance">《{currentArticleLabel}》</div>
+            <div className="mt-2 max-w-3xl text-sm leading-7 text-stone-600">
+              {currentArticleMainStepDisplay?.detail || "当前步骤说明暂未生成。"}
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <span className="border border-stone-300/70 bg-[#faf7f0] px-3 py-2 text-stone-600">{saveState}</span>
+            <Button
+              type="button"
+              onClick={toggleTheme}
+              variant="secondary"
+              size="sm"
+              className="text-xs"
+            >
+              {theme === "night" ? "切回日间" : "切到夜读"}
+            </Button>
+            <Button
+              type="button"
+              onClick={toggleFocusMode}
+              variant={isFocusMode ? "primary" : "secondary"}
+              size="sm"
+              className="text-xs"
+            >
+              {isFocusMode ? "退出沉浸" : "沉浸模式"}
+            </Button>
+          </div>
+        </div>
+        <div data-command-chrome="true" className={`border-b border-stone-200 pb-4 ${isFocusMode || isWritePhase || isPolishPhase ? "hidden" : ""}`}>
           <div className="text-xs uppercase tracking-[0.24em] text-cinnabar">稿件六步链路</div>
           <div className="mt-3 grid gap-3 xl:grid-cols-6">
             {articleMainSteps.map((step, index) => (
-              <button
+              <Button
                 key={step.code}
                 type="button"
-                onClick={() => updateWorkflow(step.primaryStageCode as typeof workflow.currentStageCode, "set")}
-                disabled={updatingWorkflowCode !== null || step.code === "result"}
-                className={`border px-4 py-3 text-left transition-colors ${
+                onClick={() => handleArticleMainStepSelect(step)}
+                disabled={updatingWorkflowCode !== null || (step.code === "result" && status !== "published")}
+                variant="secondary"
+                fullWidth
+                className={`h-full whitespace-normal px-4 py-3 text-left [&>span]:flex [&>span]:w-full [&>span]:flex-col [&>span]:items-start ${
                   step.statusLabel === "current"
-                    ? "border-cinnabar bg-[#fff4f1]"
+                    ? "border-cinnabar bg-[#fff4f1] hover:border-cinnabar hover:bg-[#fff4f1]"
                     : step.statusLabel === "completed"
-                      ? "border-stone-300 bg-[#faf7f0]"
+                      ? "border-stone-300 bg-[#faf7f0] hover:border-stone-300 hover:bg-[#faf7f0]"
                       : step.statusLabel === "needs_attention"
-                        ? "border-[#dfd2b0] bg-[#fff8e8]"
+                        ? "border-[#dfd2b0] bg-[#fff8e8] hover:border-[#dfd2b0] hover:bg-[#fff8e8]"
                         : "border-stone-300/60 bg-white"
-                } ${step.code === "result" ? "cursor-default" : "disabled:opacity-60"}`}
+                } ${step.code === "result" && status !== "published" ? "cursor-default" : ""}`}
               >
-                <div className="flex items-center justify-between gap-3">
-                  <div className="text-xs uppercase tracking-[0.18em] text-stone-500">
+                <span className="flex w-full items-center justify-between gap-3">
+                  <span className="text-xs uppercase tracking-[0.18em] text-stone-500">
                     步骤 {String(index + 1).padStart(2, "0")}
-                  </div>
-                  <div className={`text-xs ${
-                    step.statusLabel === "current"
-                      ? "text-cinnabar"
-                      : step.statusLabel === "completed"
-                        ? "text-emerald-700"
-                        : step.statusLabel === "needs_attention"
-                          ? "text-[#7d6430]"
-                          : "text-stone-500"
-                  }`}>
+                  </span>
+                  <span
+                    className={`text-xs ${
+                      step.statusLabel === "current"
+                        ? "text-cinnabar"
+                        : step.statusLabel === "completed"
+                          ? "text-emerald-700"
+                          : step.statusLabel === "needs_attention"
+                            ? "text-[#7d6430]"
+                            : "text-stone-500"
+                    }`}
+                  >
                     {formatArticleMainStepStatus(step.statusLabel)}
-                  </div>
-                </div>
-                <div className="mt-2 font-serifCn text-xl text-ink">{step.title}</div>
-                <div className="mt-1 text-xs text-stone-500">{step.supportLabel}</div>
-              </button>
+                  </span>
+                </span>
+                <span className="mt-2 font-serifCn text-xl text-ink">{step.title}</span>
+                <span className="mt-1 text-xs text-stone-500">{step.supportLabel}</span>
+              </Button>
             ))}
           </div>
           <div className={`mt-3 text-sm leading-7 text-stone-600`}>
@@ -8823,13 +8999,14 @@ export function ArticleEditorClient({
                 <div className="mt-2 text-sm leading-7 text-stone-700">{researchStepSummary.detail}</div>
               </div>
               {currentArticleMainStep.code !== "strategy" && currentArticleMainStep.code !== "evidence" ? (
-                <button
+                <Button
                   type="button"
                   onClick={() => void updateWorkflow("researchBrief", "set")}
-                  className="border border-stone-300 bg-white px-3 py-2 text-xs text-stone-700"
+                  variant="secondary"
+                  size="sm"
                 >
                   去补研究层
-                </button>
+                </Button>
               ) : null}
             </div>
             {researchStepSummary.highlights.length > 0 ? (
@@ -8858,7 +9035,7 @@ export function ArticleEditorClient({
           </div>
           <div className="mt-4 grid gap-3 xl:grid-cols-4">
             {authoringPhases.map((phase) => (
-              <button
+              <Button
                 key={phase.code}
                 type="button"
                 onClick={() => {
@@ -8866,45 +9043,49 @@ export function ArticleEditorClient({
                   void updateWorkflow(phase.targetStageCode as typeof workflow.currentStageCode, "set");
                 }}
                 disabled={updatingWorkflowCode !== null}
-                className={`border px-4 py-4 text-left transition-colors disabled:opacity-60 ${
+                variant="secondary"
+                fullWidth
+                className={`h-full whitespace-normal px-4 py-4 text-left [&>span]:flex [&>span]:w-full [&>span]:flex-col [&>span]:items-start ${
                   phase.statusLabel === "current"
-                    ? "border-cinnabar bg-[#fff4f1]"
+                    ? "border-cinnabar bg-[#fff4f1] hover:border-cinnabar hover:bg-[#fff4f1]"
                     : phase.statusLabel === "completed"
                       ? "border-stone-300 bg-white"
                       : phase.statusLabel === "needs_attention"
-                        ? "border-[#dfd2b0] bg-[#fff8e8]"
+                        ? "border-[#dfd2b0] bg-[#fff8e8] hover:border-[#dfd2b0] hover:bg-[#fff8e8]"
                         : "border-stone-300/60 bg-white"
                 }`}
               >
-                <div className="flex items-center justify-between gap-3">
-                  <div className="font-serifCn text-2xl text-ink">{phase.title}</div>
-                  <div className={`text-xs ${
-                    phase.statusLabel === "current"
-                      ? "text-cinnabar"
-                      : phase.statusLabel === "completed"
-                        ? "text-emerald-700"
-                        : phase.statusLabel === "needs_attention"
-                          ? "text-[#7d6430]"
-                          : "text-stone-500"
-                  }`}>
+                <span className="flex w-full items-center justify-between gap-3">
+                  <span className="font-serifCn text-2xl text-ink">{phase.title}</span>
+                  <span
+                    className={`text-xs ${
+                      phase.statusLabel === "current"
+                        ? "text-cinnabar"
+                        : phase.statusLabel === "completed"
+                          ? "text-emerald-700"
+                          : phase.statusLabel === "needs_attention"
+                            ? "text-[#7d6430]"
+                            : "text-stone-500"
+                    }`}
+                  >
                     {formatArticleMainStepStatus(phase.statusLabel as ArticleMainStepStatus)}
-                  </div>
-                </div>
-                <div className="mt-2 text-sm leading-7 text-stone-700">{phase.summary}</div>
-                <div className="mt-3 text-xs text-stone-500">{phase.supportLabel}</div>
-              </button>
+                  </span>
+                </span>
+                <span className="mt-2 text-sm leading-7 text-stone-700">{phase.summary}</span>
+                <span className="mt-3 text-xs text-stone-500">{phase.supportLabel}</span>
+              </Button>
             ))}
           </div>
           <div className="mt-4 border border-stone-300/70 bg-white px-4 py-4 text-sm leading-7 text-stone-700">
             {currentAuthoringPhaseHint}
           </div>
         </div>
-        <div className="flex flex-wrap gap-3">
-          <input aria-label="input control" value={title} onChange={(event) => setTitle(event.target.value)} className="min-w-[240px] flex-1 border border-stone-300 px-4 py-3 text-sm" />
-          <select aria-label="select control"
+        <div data-command-chrome="true" className="flex flex-wrap gap-3">
+          <Input aria-label="稿件标题" value={title} onChange={(event) => setTitle(event.target.value)} className="min-w-[240px] flex-1" />
+          <Select aria-label="稿件系列"
             value={seriesId ?? ""}
             onChange={(event) => setSeriesId(event.target.value ? Number(event.target.value) : null)}
-            className="min-w-[220px] border border-stone-300 bg-white px-4 py-3 text-sm"
+            className="min-w-[220px]"
           >
             <option value="">{seriesOptions.length > 0 ? "选择稿件系列" : "请先创建系列"}</option>
             {seriesOptions.map((series) => (
@@ -8912,11 +9093,11 @@ export function ArticleEditorClient({
                 {series.name} · {series.personaName}{series.activeStatus !== "active" ? " · 非经营中" : ""}
               </option>
             ))}
-          </select>
-          <button onClick={() => void saveArticleDraft()} className="border border-stone-300 bg-white px-4 py-3 text-sm text-stone-700">
+          </Select>
+          <Button onClick={() => void saveArticleDraft()} variant="secondary">
             保存
-          </button>
-          <button onClick={generate} disabled={generating || generateBlockedByResearch} className="bg-cinnabar px-4 py-3 text-sm text-white disabled:opacity-60">
+          </Button>
+          <Button onClick={generate} disabled={generating || generateBlockedByResearch} variant="primary">
             {generating
               ? "生成中…"
               : generateBlockedByResearch
@@ -8924,56 +9105,35 @@ export function ArticleEditorClient({
                 : deepWritingPrototypeOverride || deepWritingStateVariantOverride
                   ? "应用当前写作切换后生成"
                   : "流式生成"}
-          </button>
+          </Button>
         </div>
-        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-b border-stone-200 pb-3">
+        <div data-command-chrome="true" className="mt-4 flex flex-wrap items-center justify-between gap-3 border-b border-stone-200 pb-3">
           <div className="flex flex-wrap gap-2">
-            <button
-              onClick={() => setView("workspace")}
-              className={`border px-3 py-2 text-sm ${view === "workspace" ? "border-cinnabar bg-cinnabar text-white" : "border-stone-300 bg-white text-stone-700"}`}
-            >
+            <Button onClick={() => setView("workspace")} variant={view === "workspace" ? "primary" : "secondary"} size="sm">
               阶段工作台
-            </button>
-            <button
-              onClick={() => setView("edit")}
-              className={`border px-3 py-2 text-sm ${view === "edit" ? "border-cinnabar bg-cinnabar text-white" : "border-stone-300 bg-white text-stone-700"}`}
-            >
+            </Button>
+            <Button onClick={() => setView("edit")} variant={view === "edit" ? "primary" : "secondary"} size="sm">
               稿纸
-            </button>
-            <button
-              onClick={() => setView("preview")}
-              className={`border px-3 py-2 text-sm ${view === "preview" ? "border-cinnabar bg-cinnabar text-white" : "border-stone-300 bg-white text-stone-700"}`}
-            >
+            </Button>
+            <Button onClick={() => setView("preview")} variant={view === "preview" ? "primary" : "secondary"} size="sm">
               微信预览
-            </button>
-            <button
-              onClick={() => setView("audit")}
-              className={`border px-3 py-2 text-sm ${view === "audit" ? "border-cinnabar bg-cinnabar text-white" : "border-stone-300 bg-white text-stone-700"}`}
-            >
+            </Button>
+            <Button onClick={() => setView("audit")} variant={view === "audit" ? "primary" : "secondary"} size="sm">
               红笔校阅
-            </button>
+            </Button>
           </div>
-          <div className="flex flex-wrap items-center gap-4">
-            <div className="text-sm text-stone-500">{saveState}</div>
-            <button
-              onClick={() => setIsFocusMode(!isFocusMode)}
-              className={`border px-3 py-2 text-sm transition-colors ${isFocusMode ? "border-stone-800 bg-stone-800 text-white" : "border-stone-300 bg-white text-stone-700"}`}
-            >
-              <span className="flex items-center gap-1">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
-                {isFocusMode ? "退出沉浸" : "沉浸模式"}
-              </span>
-            </button>
+          <div className="text-sm text-stone-500">
+            当前视图：{formatWorkspaceViewLabel(view)}
           </div>
         </div>
         {selectedSeries ? (
-          <div className="mt-4 border border-stone-300/40 bg-[#faf7f0] px-4 py-4 text-sm leading-7 text-stone-700">
+          <div data-command-chrome="true" className="mt-4 border border-stone-300/40 bg-[#faf7f0] px-4 py-4 text-sm leading-7 text-stone-700">
             当前稿件归属「{selectedSeries.name}」，绑定人设为 {selectedSeries.personaName}。
             {selectedSeries.thesis ? ` 核心判断：${selectedSeries.thesis}` : ""}
             {selectedSeries.targetAudience ? ` 目标读者：${selectedSeries.targetAudience}` : ""}
           </div>
         ) : (
-          <div className="mt-4 border border-[#dfd2b0] bg-[#fff8e8] px-4 py-4 text-sm leading-7 text-[#7d6430]">
+          <div data-command-chrome="true" className="mt-4 border border-[#dfd2b0] bg-[#fff8e8] px-4 py-4 text-sm leading-7 text-[#7d6430]">
             当前稿件还没有绑定系列。请先完成系列绑定，再继续推进策略、证据和发布步骤。
           </div>
         )}
@@ -8994,22 +9154,23 @@ export function ArticleEditorClient({
                     prompts={draftBlankSlate.prompts}
                   >
                     {draftStarterOptions.map((option) => (
-                      <button
+                      <Button
                         key={option.label}
                         type="button"
                         onClick={() => setMarkdown(option.text)}
-                        className="border border-stone-300 bg-white px-4 py-3 text-sm text-stone-700"
+                        variant="secondary"
                       >
                         {option.label}
-                      </button>
+                      </Button>
                     ))}
-                    <button
+                    <Button
                       type="button"
                       onClick={() => setView("workspace")}
-                      className="border border-cinnabar bg-white px-4 py-3 text-sm text-cinnabar"
+                      variant="secondary"
+                      className="border-cinnabar text-cinnabar hover:border-cinnabar hover:bg-white hover:text-cinnabar"
                     >
                       先看阶段工作台
-                    </button>
+                    </Button>
                   </AuthoringBlankSlate>
                   {draftBlankSlateInspirations.length > 0 ? (
                     <div className="border border-stone-300 bg-[radial-gradient(circle_at_top_left,rgba(196,138,58,0.10),transparent_32%),linear-gradient(180deg,#fffdfa_0%,#faf7f0_100%)] p-5">
@@ -9075,6 +9236,7 @@ export function ArticleEditorClient({
                 ) : null}
                 {hasDraftContent ? (
                   <div
+                    ref={editorialPreviewRef}
                     className="mt-4 whitespace-pre-wrap break-words bg-[linear-gradient(transparent_31px,rgba(167,48,50,0.05)_32px)] bg-[length:100%_32px] px-2 text-sm leading-8 text-ink"
                     dangerouslySetInnerHTML={{ __html: editorialReview.html }}
                   />
@@ -9086,20 +9248,21 @@ export function ArticleEditorClient({
                       detail={reviewBlankSlate.detail}
                       prompts={reviewBlankSlate.prompts}
                     >
-                      <button
+                      <Button
                         type="button"
                         onClick={() => setView("edit")}
-                        className="border border-cinnabar bg-white px-4 py-3 text-sm text-cinnabar"
+                        variant="secondary"
+                        className="border-cinnabar text-cinnabar hover:border-cinnabar hover:bg-white hover:text-cinnabar"
                       >
                         先回稿纸起笔
-                      </button>
-                      <button
+                      </Button>
+                      <Button
                         type="button"
                         onClick={() => setView("workspace")}
-                        className="border border-stone-300 bg-white px-4 py-3 text-sm text-stone-700"
+                        variant="secondary"
                       >
                         先看阶段工作台
-                      </button>
+                      </Button>
                     </AuthoringBlankSlate>
                   </div>
                 )}
@@ -9115,13 +9278,15 @@ export function ArticleEditorClient({
                   ) : (
                     <div className="mt-3 space-y-3">
                       {editorialReview.annotations.map((annotation) => (
-                        <div
+                        <button
                           key={annotation.id}
+                          type="button"
+                          onClick={() => jumpToEditorialAnnotation(annotation.anchorId)}
                           className={`border px-4 py-4 ${
                             annotation.severity === "high"
                               ? "border-[#d8b0b2] bg-[#fff7f7]"
                               : "border-[#dcc8a6] bg-[#fff8eb]"
-                          }`}
+                          } w-full text-left transition-colors hover:border-cinnabar/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cinnabar/40`}
                         >
                           <div className="flex flex-wrap items-center gap-2 text-xs">
                             <span className="border border-current/20 bg-white/80 px-2 py-1 text-cinnabar">#{annotation.order}</span>
@@ -9140,7 +9305,7 @@ export function ArticleEditorClient({
                           {annotation.rewriteHint ? (
                             <div className="mt-2 text-sm leading-7 text-stone-700">改写建议：{annotation.rewriteHint}</div>
                           ) : null}
-                        </div>
+                        </button>
                       ))}
                     </div>
                   )}
@@ -9152,7 +9317,7 @@ export function ArticleEditorClient({
         {message ? <div className="mt-4 text-sm text-cinnabar">{message}</div> : null}
       </section>
 
-      <aside className={`${isFocusMode ? "hidden" : "min-w-0 space-y-4"}`}>
+      <aside className={`${isFocusMode ? "hidden" : "min-w-0 space-y-4 xl:sticky xl:top-24 xl:self-start"}`}>
         {showCompactSixStepRail ? (
           <div className="border border-stone-300/40 bg-[#faf7f0] p-5">
             <div className="text-xs uppercase tracking-[0.24em] text-stone-500">当前链路</div>
@@ -9162,27 +9327,27 @@ export function ArticleEditorClient({
             </div>
             <div className="mt-3 grid gap-2">
               {articleMainSteps.map((step) => (
-                <button
+                <Button
                   key={step.code}
                   type="button"
-                  onClick={() => {
-                    if (step.code === "result") return;
-                    void updateWorkflow(step.primaryStageCode as typeof workflow.currentStageCode, "set");
-                  }}
-                  disabled={updatingWorkflowCode !== null || step.code === "result"}
-                  className={`flex items-center justify-between border px-3 py-3 text-left text-sm disabled:opacity-60 ${
+                  onClick={() => handleArticleMainStepSelect(step)}
+                  disabled={updatingWorkflowCode !== null || (step.code === "result" && status !== "published")}
+                  variant="secondary"
+                  size="sm"
+                  fullWidth
+                  iconRight={<span className="text-xs">{formatArticleMainStepStatus(step.statusLabel)}</span>}
+                  className={`justify-between px-3 py-3 text-left text-sm ${
                     step.statusLabel === "current"
-                      ? "border-cinnabar bg-white text-cinnabar"
+                      ? "border-cinnabar bg-white text-cinnabar hover:border-cinnabar hover:bg-white hover:text-cinnabar"
                       : step.statusLabel === "completed"
                         ? "border-stone-300 bg-white text-stone-700"
-                        : step.statusLabel === "needs_attention"
-                          ? "border-[#dfd2b0] bg-[#fff8e8] text-[#7d6430]"
-                          : "border-stone-300/50 bg-white/70 text-stone-500"
+                      : step.statusLabel === "needs_attention"
+                          ? "border-[#dfd2b0] bg-[#fff8e8] text-[#7d6430] hover:border-[#dfd2b0] hover:bg-[#fff8e8] hover:text-[#7d6430]"
+                          : "border-stone-300/50 bg-white/70 text-stone-500 hover:border-stone-300/50 hover:bg-white/70 hover:text-stone-500"
                   }`}
                 >
-                  <span>{step.title}</span>
-                  <span className="text-xs">{formatArticleMainStepStatus(step.statusLabel)}</span>
-                </button>
+                  {step.title}
+                </Button>
               ))}
             </div>
           </div>
@@ -9191,15 +9356,15 @@ export function ArticleEditorClient({
           <div className="border border-stone-300/40 bg-[#faf7f0] p-5">
             <div className="text-xs uppercase tracking-[0.24em] text-stone-500">快照管理</div>
             <div className="mt-3 flex gap-2">
-              <input aria-label="快照备注"
+              <Input aria-label="快照备注"
                 value={snapshotNote}
                 onChange={(event) => setSnapshotNote(event.target.value)}
                 placeholder="快照备注"
-                className="min-w-0 flex-1 border border-stone-300 bg-white px-3 py-2 text-sm"
+                className="min-w-0 flex-1"
               />
-              <button onClick={createSnapshot} className="bg-cinnabar px-3 py-2 text-sm text-white">
+              <Button onClick={createSnapshot} variant="primary" size="sm">
                 存档
-              </button>
+              </Button>
             </div>
             <div className="mt-3 space-y-2">
               {snapshots.slice(0, 4).map((snapshot) => (
@@ -9207,12 +9372,12 @@ export function ArticleEditorClient({
                   <div className="text-sm text-ink">{snapshot.snapshotNote || "未命名快照"}</div>
                   <div className="mt-1 text-xs text-stone-500">{new Date(snapshot.createdAt).toLocaleString("zh-CN")}</div>
                   <div className="mt-3 flex gap-2 text-xs">
-                    <button onClick={() => loadDiff(snapshot.id)} className="border border-stone-300 px-2 py-1 text-stone-700">
+                    <Button onClick={() => loadDiff(snapshot.id)} variant="secondary" size="sm">
                       {loadingDiffId === snapshot.id ? "对比中…" : "差异"}
-                    </button>
-                    <button onClick={() => restoreSnapshot(snapshot.id)} className="border border-stone-300 px-2 py-1 text-stone-700">
+                    </Button>
+                    <Button onClick={() => restoreSnapshot(snapshot.id)} variant="secondary" size="sm">
                       回滚
-                    </button>
+                    </Button>
                   </div>
                 </div>
               ))}
@@ -9332,25 +9497,28 @@ export function ArticleEditorClient({
                       </div>
                       <div className="flex gap-2">
                         {(card.status === "stale" || card.status === "conflicted") ? (
-                          <button
+                          <Button
                             onClick={() => refreshKnowledgeCard(card.id)}
                             disabled={refreshingKnowledgeId === card.id}
-                            className="border border-cinnabar px-3 py-2 text-xs text-cinnabar disabled:opacity-60"
+                            variant="secondary"
+                            size="sm"
+                            className="border-cinnabar text-cinnabar hover:border-cinnabar hover:bg-white hover:text-cinnabar"
                           >
                             {refreshingKnowledgeId === card.id ? "刷新中…" : "刷新背景卡"}
-                          </button>
+                          </Button>
                         ) : null}
-                        <button
+                        <Button
                           onClick={() => {
                             setExpandedKnowledgeCardId(expanded ? null : card.id);
                             if (highlighted) {
                               setHighlightedKnowledgeCardId(null);
                             }
                           }}
-                          className="border border-stone-300 px-3 py-2 text-xs text-stone-700"
+                          variant="secondary"
+                          size="sm"
                         >
                           {expanded ? "收起证据" : "查看证据"}
-                        </button>
+                        </Button>
                       </div>
                     </div>
                     <p className="mt-3 text-sm leading-7 text-stone-700">{card.summary || "暂无摘要"}</p>
@@ -9520,13 +9688,14 @@ export function ArticleEditorClient({
             <div className="mt-4 space-y-3 border-t border-stone-200 pt-4">
               <div className="flex items-center justify-between gap-3">
                 <div className="text-xs uppercase tracking-[0.2em] text-stone-500">段落配图建议</div>
-                <button
+                <Button
                   onClick={saveImagePromptAssets}
                   disabled={savingImagePrompts}
-                  className="border border-stone-300 bg-white px-3 py-2 text-xs text-stone-700 disabled:opacity-60"
+                  variant="secondary"
+                  size="sm"
                 >
                   {savingImagePrompts ? "保存中…" : "保存为资产"}
-                </button>
+                </Button>
               </div>
               {nodeVisualSuggestions.map((item) => (
                 <div key={item.id} className="border border-stone-300 bg-white px-4 py-3">
@@ -9537,13 +9706,16 @@ export function ArticleEditorClient({
             </div>
           ) : null}
           <div className="mt-4 flex gap-2">
-            <button
+            <Button
               onClick={generateCoverImage}
               disabled={coverImageButtonDisabled}
-              className={`px-4 py-3 text-sm ${canGenerateCoverImage && !coverImageLimitReached ? "bg-cinnabar text-white" : "border border-stone-300 bg-white text-stone-400"}`}
+              variant={canGenerateCoverImage && !coverImageLimitReached ? "primary" : "secondary"}
+              className={canGenerateCoverImage && !coverImageLimitReached
+                ? ""
+                : "text-stone-400 hover:border-stone-300 hover:bg-white hover:text-stone-400"}
             >
               {coverImageButtonLabel}
-            </button>
+            </Button>
           </div>
           {canUseCoverImageReference ? (
             <div className="mt-3 border border-dashed border-stone-300 bg-white px-4 py-4">
@@ -9595,15 +9767,17 @@ export function ArticleEditorClient({
                         <div className="text-sm font-medium text-ink">{candidate.variantLabel}</div>
                         <div className="mt-1 text-xs text-stone-500">{candidate.isSelected ? "已入库" : "候选图"}</div>
                       </div>
-                      <button
+                      <Button
                         onClick={() => selectCoverCandidate(candidate.id)}
                         disabled={candidate.isSelected || selectingCoverCandidateId !== null}
-                        className={`px-3 py-2 text-xs ${
-                          candidate.isSelected ? "border border-stone-300 bg-white text-stone-400" : "bg-cinnabar text-white"
-                        } disabled:opacity-60`}
+                        variant={candidate.isSelected ? "secondary" : "primary"}
+                        size="sm"
+                        className={candidate.isSelected
+                          ? "text-stone-400 hover:border-stone-300 hover:bg-white hover:text-stone-400"
+                          : ""}
                       >
                         {candidate.isSelected ? "已选择" : selectingCoverCandidateId === candidate.id ? "入库中…" : "选这张入库"}
-                      </button>
+                      </Button>
                     </div>
                     <div className="mt-3 border border-stone-300 bg-[#faf7f0] px-3 py-3 text-xs leading-6 text-stone-600">
                       {candidate.prompt}
@@ -9642,9 +9816,9 @@ export function ArticleEditorClient({
         <div className="border border-stone-300/40 bg-[#faf7f0] p-5">
           <div className="text-xs uppercase tracking-[0.24em] text-stone-500">导出</div>
           <div className="mt-3 grid gap-2">
-            <button onClick={copyMarkdown} className="border border-stone-300 bg-white px-4 py-3 text-left text-sm text-stone-700">
+            <Button onClick={copyMarkdown} variant="secondary" className="justify-start text-left">
               复制纯净 Markdown
-            </button>
+            </Button>
             <Link href={`/api/articles/${article.id}/export?format=markdown`} className="border border-stone-300 bg-white px-4 py-3 text-sm text-stone-700">
               导出 Markdown
             </Link>
@@ -9669,28 +9843,30 @@ export function ArticleEditorClient({
               <div className="mt-3 border border-stone-300 bg-white px-4 py-4 text-sm leading-7 text-stone-700">
                 当前发布动作会把 Markdown 先渲染为微信兼容 HTML，再按所选模板推入公众号草稿箱。
               </div>
-              <select aria-label="select control" value={wechatTemplateId ?? ""} onChange={(event) => setWechatTemplateId(event.target.value || null)} className="mt-3 w-full border border-stone-300 bg-white px-4 py-3 text-sm">
+              <Select aria-label="微信模板" value={wechatTemplateId ?? ""} onChange={(event) => setWechatTemplateId(event.target.value || null)} className="mt-3">
                 <option value="">选择微信模板（默认）</option>
                 {templates.map((template) => (
                   <option key={`${template.id}-${template.version}`} value={template.id}>
                     [{template.ownerUserId == null ? "官方" : "私有"}] {template.name} · {template.version}
                   </option>
                 ))}
-              </select>
-              <select aria-label="select control" value={selectedConnectionId} onChange={(event) => setSelectedConnectionId(event.target.value)} className="mt-3 w-full border border-stone-300 bg-white px-4 py-3 text-sm">
+              </Select>
+              <Select aria-label="公众号连接" value={selectedConnectionId} onChange={(event) => setSelectedConnectionId(event.target.value)} className="mt-3">
                 <option value="">选择公众号连接</option>
                 {wechatConnections.map((connection) => (
                   <option key={connection.id} value={connection.id}>{connection.accountName || `连接 ${connection.id}`}{connection.isDefault ? " · 默认" : ""}</option>
                 ))}
-              </select>
-              <button
+              </Select>
+              <Button
                 onClick={() => {
                   void openWechatConnectModal(false);
                 }}
-                className="mt-3 w-full border border-stone-300 bg-white px-4 py-3 text-sm text-stone-700"
+                variant="secondary"
+                fullWidth
+                className="mt-3"
               >
                 新增公众号连接
-              </button>
+              </Button>
               {selectedTemplate ? (
                 <div className="mt-3 border border-stone-300 bg-white px-4 py-4">
                   <div className="text-xs uppercase tracking-[0.18em] text-stone-500">
@@ -9740,21 +9916,24 @@ export function ArticleEditorClient({
                     {pendingPublishIntent.templateId ? " 这次恢复时会继续沿用当前编辑器里的模板和正文状态。" : " 恢复后会直接沿用当前编辑器里的正文状态继续发布。"}
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">
-                    <button
+                    <Button
                       onClick={resumePendingPublishIntent}
                       disabled={publishing}
-                      className="border border-cinnabar bg-white px-4 py-2 text-sm text-cinnabar disabled:opacity-60"
+                      variant="secondary"
+                      size="sm"
+                      className="border-cinnabar text-cinnabar hover:border-cinnabar hover:bg-white hover:text-cinnabar"
                     >
                       {publishing ? "恢复中…" : "恢复继续发布"}
-                    </button>
-                    <button
+                    </Button>
+                    <Button
                       onClick={() => {
                         void clearPendingPublishIntent();
                       }}
-                      className="border border-stone-300 bg-white px-4 py-2 text-sm text-stone-700"
+                      variant="secondary"
+                      size="sm"
                     >
                       清除待发布状态
-                    </button>
+                    </Button>
                   </div>
                 </div>
               ) : null}
@@ -9766,13 +9945,14 @@ export function ArticleEditorClient({
                       这里展示的是当前标题、正文和模板组合后，真正会提交给微信草稿箱的最终 HTML。
                     </div>
                   </div>
-                  <button
+                  <Button
                     onClick={loadPublishPreview}
                     disabled={loadingPublishPreview}
-                    className="border border-stone-300 bg-white px-4 py-2 text-sm text-stone-700 disabled:opacity-60"
+                    variant="secondary"
+                    size="sm"
                   >
                     {loadingPublishPreview ? "生成中…" : "生成最终预览"}
-                  </button>
+                  </Button>
                 </div>
                 {hasUnsavedWechatRenderInputs ? (
                   <div className="mt-3 border border-dashed border-[#d8b0b2] bg-[#fff7f7] px-3 py-3 text-xs leading-6 text-[#8f3136]">
@@ -9792,15 +9972,17 @@ export function ArticleEditorClient({
                         <div className="font-medium text-ink">{check.label}</div>
                         <div className="mt-1 leading-6 text-stone-700">{check.detail}</div>
                         {check.actionLabel && check.targetStageCode ? (
-                          <button
+                          <Button
                             type="button"
                             onClick={() => {
                               void updateWorkflow(check.targetStageCode as typeof workflow.currentStageCode, "set");
                             }}
-                            className="mt-3 border border-stone-300 bg-white px-3 py-2 text-xs text-stone-700"
+                            variant="secondary"
+                            size="sm"
+                            className="mt-3"
                           >
                             {check.actionLabel}
-                          </button>
+                          </Button>
                         ) : null}
                       </div>
                       <div className={`shrink-0 text-xs ${
@@ -10033,14 +10215,16 @@ export function ArticleEditorClient({
                           </div>
                         )}
                         {publishPreview.publishGuard.latestAttempt.status === "failed" ? (
-                          <button
+                          <Button
                             type="button"
                             onClick={retryLatestPublish}
                             disabled={retryingPublish || !selectedConnectionId}
-                            className="mt-3 border border-cinnabar bg-white px-4 py-2 text-sm text-cinnabar disabled:opacity-60"
+                            variant="secondary"
+                            size="sm"
+                            className="mt-3 border-cinnabar px-4 text-cinnabar hover:border-cinnabar hover:bg-white hover:text-cinnabar"
                           >
                             {retryingPublish ? "重试中…" : "按最近失败上下文重试"}
-                          </button>
+                          </Button>
                         ) : null}
                       </div>
                     ) : null}
@@ -10076,17 +10260,19 @@ export function ArticleEditorClient({
                       </div>
                     ) : null}
                     <div className="flex flex-wrap gap-2">
-                      <button onClick={() => setView("preview")} className="border border-stone-300 bg-white px-4 py-2 text-sm text-stone-700">
+                      <Button onClick={() => setView("preview")} variant="secondary" size="sm">
                         在中间栏查看
-                      </button>
+                      </Button>
                       {!publishPreview.isConsistentWithSavedHtml ? (
-                        <button
+                        <Button
                           onClick={refreshPublishPreviewRender}
                           disabled={refreshingPublishPreview}
-                          className="border border-cinnabar bg-white px-4 py-2 text-sm text-cinnabar disabled:opacity-60"
+                          variant="secondary"
+                          size="sm"
+                          className="border-cinnabar text-cinnabar hover:border-cinnabar hover:bg-white hover:text-cinnabar"
                         >
                           {refreshingPublishPreview ? "刷新中…" : "刷新为最终发布效果"}
-                        </button>
+                        </Button>
                       ) : null}
                     </div>
                     <div className="border border-stone-300 bg-[#fffdfa]">
@@ -10101,9 +10287,9 @@ export function ArticleEditorClient({
                   );
                 })() : null}
               </div>
-              <button onClick={publish} disabled={publishing} className="mt-4 w-full bg-cinnabar px-4 py-3 text-sm text-white disabled:opacity-60">
+              <Button onClick={publish} disabled={publishing} variant="primary" fullWidth className="mt-4">
                 {publishing ? "推送中…" : "推送到微信草稿箱"}
-              </button>
+              </Button>
               <Link href="/settings" className="mt-3 block border border-stone-300 bg-white px-4 py-3 text-center text-sm text-stone-700">
                 去设置页管理公众号连接
               </Link>
@@ -10146,14 +10332,16 @@ export function ArticleEditorClient({
                   {latestSyncLog.articleVersionHash ? <div className="mt-2 text-xs text-stone-500">版本哈希：{latestSyncLog.articleVersionHash.slice(0, 12)}</div> : null}
                   {latestSyncLog.templateId ? <div className="mt-1 text-xs text-stone-500">模板：{latestSyncLog.templateId}</div> : null}
                   {latestSyncLog.status === "failed" ? (
-                    <button
+                    <Button
                       type="button"
                       onClick={retryLatestPublish}
                       disabled={retryingPublish || !selectedConnectionId}
-                      className="mt-3 border border-cinnabar bg-white px-4 py-2 text-sm text-cinnabar disabled:opacity-60"
+                      variant="secondary"
+                      size="sm"
+                      className="mt-3 border-cinnabar text-cinnabar hover:border-cinnabar hover:bg-white hover:text-cinnabar"
                     >
                       {retryingPublish ? "重试中…" : "直接重试这次发布"}
-                    </button>
+                    </Button>
                   ) : null}
                 </div>
                 {(latestSyncLog.requestSummary || latestSyncLog.responseSummary) ? (
@@ -10172,7 +10360,7 @@ export function ArticleEditorClient({
                     ) : null}
                   </div>
                 ) : null}
-                <Link href="/settings#publishing-connections" className="block border border-stone-300 bg-white px-4 py-3 text-center text-sm text-stone-700">
+                <Link href="/settings/publish" className="block border border-stone-300 bg-white px-4 py-3 text-center text-sm text-stone-700">
                   去设置查看发布连接与同步记录
                 </Link>
               </div>
@@ -10239,43 +10427,35 @@ export function ArticleEditorClient({
                   这里直接录入公众号 `AppID / AppSecret`，系统会立即向微信校验并换取访问令牌。
                 </div>
               </div>
-              <button
-                onClick={() => {
-                  if (wechatConnectSubmitting) return;
-                  setShowWechatConnectModal(false);
-                  setContinuePublishAfterWechatConnect(false);
-                  resetWechatConnectDraft();
-                }}
-                className="border border-stone-300 px-3 py-2 text-sm text-stone-700"
+              <Button
+                onClick={closeWechatConnectModal}
+                variant="secondary"
+                size="sm"
               >
                 关闭
-              </button>
+              </Button>
             </div>
             <form onSubmit={submitWechatConnectionFromEditor} className="mt-5 space-y-3">
-              <input aria-label="公众号名称"
+              <Input aria-label="公众号名称"
                 value={wechatConnectAccountName}
                 onChange={(event) => setWechatConnectAccountName(event.target.value)}
                 placeholder="公众号名称"
-                className="w-full border border-stone-300 bg-white px-4 py-3 text-sm"
               />
-              <input aria-label="原始 ID"
+              <Input aria-label="原始 ID"
                 value={wechatConnectOriginalId}
                 onChange={(event) => setWechatConnectOriginalId(event.target.value)}
                 placeholder="原始 ID"
-                className="w-full border border-stone-300 bg-white px-4 py-3 text-sm"
               />
-              <input aria-label="公众号 AppID"
+              <Input aria-label="公众号 AppID"
                 value={wechatConnectAppId}
                 onChange={(event) => setWechatConnectAppId(event.target.value)}
-                  placeholder="公众号 AppID"
-                  className="w-full border border-stone-300 bg-white px-4 py-3 text-sm"
-                />
-              <input aria-label="公众号 AppSecret"
+                placeholder="公众号 AppID"
+              />
+              <Input aria-label="公众号 AppSecret"
                 value={wechatConnectAppSecret}
                 onChange={(event) => setWechatConnectAppSecret(event.target.value)}
                 placeholder="公众号 AppSecret"
                 type="password"
-                className="w-full border border-stone-300 bg-white px-4 py-3 text-sm"
               />
               <label className="flex items-center gap-3 border border-stone-300 bg-white px-4 py-3 text-sm text-stone-700">
                 <input aria-label="input control"
@@ -10291,22 +10471,18 @@ export function ArticleEditorClient({
                 </div>
               ) : null}
               <div className="grid gap-2 sm:grid-cols-2">
-                <button
+                <Button
                   type="button"
-                  onClick={() => {
-                    setShowWechatConnectModal(false);
-                    setContinuePublishAfterWechatConnect(false);
-                    resetWechatConnectDraft();
-                  }}
+                  onClick={closeWechatConnectModal}
                   disabled={wechatConnectSubmitting}
-                  className="border border-stone-300 bg-white px-4 py-3 text-sm text-stone-700 disabled:opacity-60"
+                  variant="secondary"
                 >
                   先不配置
-                </button>
-                <button
+                </Button>
+                <Button
                   type="submit"
                   disabled={wechatConnectSubmitting}
-                  className="bg-cinnabar px-4 py-3 text-sm text-white disabled:opacity-60"
+                  variant="primary"
                 >
                   {wechatConnectSubmitting
                     ? continuePublishAfterWechatConnect
@@ -10315,7 +10491,7 @@ export function ArticleEditorClient({
                     : continuePublishAfterWechatConnect
                       ? "保存并继续发布"
                       : "保存公众号连接"}
-                </button>
+                </Button>
               </div>
             </form>
           </div>

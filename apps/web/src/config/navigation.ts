@@ -6,9 +6,9 @@ export const marketingNav = [
 ];
 
 export const writerNav = [
-  { href: "/dashboard", label: "作战台" },
+  { href: "/warroom", label: "作战台" },
   { href: "/articles", label: "稿件" },
-  { href: "/review", label: "复盘" },
+  { href: "/reviews", label: "复盘" },
   { href: "/settings", label: "设置" },
 ];
 

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { startTransition, useEffect, useState, type FormEvent } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { uiPrimitives } from "@huoziwriter/ui";
+import { cn, surfaceCardStyles, uiPrimitives } from "@huoziwriter/ui";
 import { AdminWritingEvalNav } from "@/components/admin-writing-eval-nav";
 import { buildAdminWritingEvalRunsHref, getAdminWritingEvalHref } from "@/lib/admin-writing-eval-links";
 import { formatWritingEvalDateTime } from "@/lib/writing-eval-format";
@@ -165,6 +165,76 @@ type AutoFillAuditLogItem = {
   payload: Record<string, unknown> | null;
   createdAt: string;
 };
+
+const DATASET_STATUS_OPTIONS = ["draft", "active", "archived"] as const;
+const TASK_TYPE_OPTIONS = ["tech_commentary", "business_breakdown", "experience_recap", "series_observation"] as const;
+const DIFFICULTY_LEVEL_OPTIONS = ["light", "medium", "hard"] as const;
+
+const adminPanelBaseClassName = cn(
+  surfaceCardStyles(),
+  "border-stone-800 bg-[#171718] text-stone-100 shadow-none",
+);
+const adminHeroPanelClassName = cn(adminPanelBaseClassName, "p-6");
+const adminSectionPanelClassName = cn(adminPanelBaseClassName, "p-5");
+const adminFormPanelClassName = cn(adminPanelBaseClassName, "space-y-3 p-5");
+const adminStackPanelClassName = cn(adminPanelBaseClassName, "space-y-4 p-5");
+const adminInsetCardClassName = cn(
+  surfaceCardStyles(),
+  "border-stone-800 bg-stone-950 p-4 text-stone-100 shadow-none",
+);
+const adminListCardClassName = cn(
+  surfaceCardStyles(),
+  "border-stone-800 bg-[#141414] px-3 py-3 text-stone-100 shadow-none",
+);
+const adminMetricCardClassName = cn(adminInsetCardClassName, "px-4 py-4");
+const adminCoverageCardClassName = cn(
+  surfaceCardStyles(),
+  "border-stone-700 bg-[#141414] px-4 py-4 text-stone-100 shadow-none",
+);
+const adminTableDesktopShellClassName = "mt-5 hidden overflow-x-auto md:block";
+const adminTableMobileListClassName = "mt-5 grid gap-3 md:hidden";
+const adminEmptyStateClassName = cn(
+  surfaceCardStyles(),
+  "border-dashed border-stone-700 bg-stone-950 px-4 py-6 text-sm text-stone-500 shadow-none",
+);
+const adminChipClassName = cn(
+  surfaceCardStyles(),
+  "border-stone-700 px-2 py-1 text-xs text-stone-400 shadow-none",
+);
+const adminDarkChipClassName = cn(adminChipClassName, "bg-stone-950");
+const adminReasonChipClassName = cn(adminChipClassName, "border-cyan-900/60 bg-cyan-950/40 text-cyan-100");
+const adminEyebrowClassName = "text-xs uppercase tracking-[0.24em] text-stone-500";
+const adminAccentEyebrowClassName = "text-xs uppercase tracking-[0.28em] text-cinnabar";
+const adminSubEyebrowClassName = "text-xs uppercase tracking-[0.18em] text-stone-500";
+const adminSubAccentEyebrowClassName = "text-xs uppercase tracking-[0.18em] text-cinnabar";
+const adminSectionTitleClassName = "mt-3 font-serifCn text-2xl text-stone-100 text-balance";
+const adminHeroTitleClassName = "mt-4 font-serifCn text-4xl text-stone-100 text-balance";
+const adminDescriptionClassName = "mt-4 max-w-4xl text-sm leading-7 text-stone-400";
+const adminMutedCopyClassName = "text-sm leading-7 text-stone-400";
+const adminInputClassName = uiPrimitives.adminInput;
+const adminSelectClassName = uiPrimitives.adminSelect;
+const adminPrimaryButtonClassName = uiPrimitives.primaryButton;
+const adminSecondaryButtonClassName = uiPrimitives.adminSecondaryButton;
+
+function getAdminTextareaClassName(minHeightClassName: string) {
+  return cn(minHeightClassName, adminInputClassName);
+}
+
+function getDatasetCardClassName(selected: boolean) {
+  return cn(
+    surfaceCardStyles(),
+    "border-stone-800 px-4 py-4 text-left text-stone-100 shadow-none",
+    selected ? "border-cinnabar bg-[#1d1413]" : "bg-stone-950",
+  );
+}
+
+function getCaseMobileCardClassName(selected: boolean) {
+  return cn(
+    adminListCardClassName,
+    "w-full text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cinnabar/40 focus-visible:ring-offset-2 focus-visible:ring-offset-stone-950",
+    selected ? "border-cinnabar bg-[#1d1413]" : "hover:border-stone-700 hover:bg-stone-900/70",
+  );
+}
 
 function stringifyJson(value: unknown) {
   return JSON.stringify(value, null, 2);
@@ -1228,12 +1298,12 @@ export function AdminWritingEvalDatasetsClient({
 
   return (
     <div className="space-y-8">
-      <section className={uiPrimitives.adminPanel + " p-6"}>
+      <section className={adminHeroPanelClassName}>
         <div className="flex items-start justify-between gap-4">
           <div>
-            <div className="text-xs uppercase tracking-[0.28em] text-cinnabar">Writing Eval Datasets</div>
-            <h1 className="mt-4 font-serifCn text-4xl text-stone-100 text-balance">评测集与样本管理</h1>
-            <p className="mt-4 max-w-4xl text-sm leading-7 text-stone-400">
+            <div className={adminAccentEyebrowClassName}>Writing Eval Datasets</div>
+            <h1 className={adminHeroTitleClassName}>评测集与样本管理</h1>
+            <p className={adminDescriptionClassName}>
               这里单独管理固定评测集、样本难度分布和样本编辑器，避免运行页同时承担实验编排与样本维护两种职责。
             </p>
           </div>
@@ -1242,12 +1312,12 @@ export function AdminWritingEvalDatasetsClient({
       </section>
 
       {focusDataset || focusCase ? (
-        <section className={uiPrimitives.adminPanel + " p-5"}>
+        <section className={adminSectionPanelClassName}>
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="space-y-3">
               {focusDataset ? (
                 <div>
-                  <div className="text-xs uppercase tracking-[0.18em] text-cinnabar">数据集聚焦模式</div>
+                  <div className={adminSubAccentEyebrowClassName}>数据集聚焦模式</div>
                   <div className="mt-2 text-sm leading-7 text-stone-200">
                     当前通过深链聚焦 dataset #{focusDataset.datasetId}，匹配 {focusDataset.matchedCount} 条。
                   </div>
@@ -1255,7 +1325,7 @@ export function AdminWritingEvalDatasetsClient({
               ) : null}
               {focusCase ? (
                 <div>
-                  <div className="text-xs uppercase tracking-[0.18em] text-cinnabar">样本聚焦模式</div>
+                  <div className={adminSubAccentEyebrowClassName}>样本聚焦模式</div>
                   <div className="mt-2 text-sm leading-7 text-stone-200">
                     当前通过深链聚焦 case #{focusCase.caseId}，匹配 {focusCase.matchedCount} 条。
                   </div>
@@ -1264,11 +1334,11 @@ export function AdminWritingEvalDatasetsClient({
             </div>
             <div className="flex flex-wrap gap-3">
               {focusCase ? (
-                <Link href={focusCase.clearHref} className={uiPrimitives.adminSecondaryButton}>
+                <Link href={focusCase.clearHref} className={adminSecondaryButtonClassName}>
                   返回数据集视图
                 </Link>
               ) : null}
-              <Link href={getAdminWritingEvalHref("datasets")} className={uiPrimitives.adminSecondaryButton}>
+              <Link href={getAdminWritingEvalHref("datasets")} className={adminSecondaryButtonClassName}>
                 返回全量数据集
               </Link>
             </div>
@@ -1277,24 +1347,24 @@ export function AdminWritingEvalDatasetsClient({
       ) : null}
 
       <section className="grid gap-6 xl:grid-cols-[360px_minmax(0,1fr)]">
-        <form onSubmit={handleCreateDataset} className={uiPrimitives.adminPanel + " space-y-3 p-5"}>
-          <div className="text-xs uppercase tracking-[0.24em] text-stone-500">新建评测集</div>
-          <input aria-label="编码，例如 viral-mvp-v1" value={datasetForm.code} onChange={(event) => setDatasetForm((prev) => ({ ...prev, code: event.target.value }))} placeholder="编码，例如 viral-mvp-v1" className={uiPrimitives.adminInput} />
-          <input aria-label="名称" value={datasetForm.name} onChange={(event) => setDatasetForm((prev) => ({ ...prev, name: event.target.value }))} placeholder="名称" className={uiPrimitives.adminInput} />
-          <textarea aria-label="说明" value={datasetForm.description} onChange={(event) => setDatasetForm((prev) => ({ ...prev, description: event.target.value }))} placeholder="说明" className={`min-h-[120px] ${uiPrimitives.adminInput}`} />
-          <select aria-label="select control" value={datasetForm.status} onChange={(event) => setDatasetForm((prev) => ({ ...prev, status: event.target.value }))} className={uiPrimitives.adminSelect}>
-            <option value="draft">draft</option>
-            <option value="active">active</option>
-            <option value="archived">archived</option>
+        <form onSubmit={handleCreateDataset} className={adminFormPanelClassName}>
+          <div className={adminEyebrowClassName}>新建评测集</div>
+          <input aria-label="编码，例如 viral-mvp-v1" value={datasetForm.code} onChange={(event) => setDatasetForm((prev) => ({ ...prev, code: event.target.value }))} placeholder="编码，例如 viral-mvp-v1" className={adminInputClassName} />
+          <input aria-label="名称" value={datasetForm.name} onChange={(event) => setDatasetForm((prev) => ({ ...prev, name: event.target.value }))} placeholder="名称" className={adminInputClassName} />
+          <textarea aria-label="说明" value={datasetForm.description} onChange={(event) => setDatasetForm((prev) => ({ ...prev, description: event.target.value }))} placeholder="说明" className={getAdminTextareaClassName("min-h-[120px]")} />
+          <select aria-label="select control" value={datasetForm.status} onChange={(event) => setDatasetForm((prev) => ({ ...prev, status: event.target.value }))} className={adminSelectClassName}>
+            {DATASET_STATUS_OPTIONS.map((status) => (
+              <option key={status} value={status}>{status}</option>
+            ))}
           </select>
-          <button className={uiPrimitives.primaryButton}>创建评测集</button>
+          <button className={adminPrimaryButtonClassName}>创建评测集</button>
         </form>
 
-        <div className={uiPrimitives.adminPanel + " p-5"}>
+        <div className={adminSectionPanelClassName}>
           <div className="flex items-center justify-between gap-3">
             <div>
-              <div className="text-xs uppercase tracking-[0.24em] text-stone-500">数据集列表</div>
-              <h2 className="mt-3 font-serifCn text-2xl text-stone-100 text-balance">当前评测集</h2>
+              <div className={adminEyebrowClassName}>数据集列表</div>
+              <h2 className={adminSectionTitleClassName}>当前评测集</h2>
             </div>
             <div className="text-sm text-stone-500">{datasets.length} 个数据集</div>
           </div>
@@ -1309,11 +1379,11 @@ export function AdminWritingEvalDatasetsClient({
                     setSelectedDatasetId(dataset.id);
                     setSelectedCaseId(null);
                   }}
-                  className={`border px-4 py-4 text-left ${selectedDatasetId === dataset.id ? "border-cinnabar bg-[#1d1413]" : "border-stone-800 bg-stone-950"}`}
+                  className={getDatasetCardClassName(selectedDatasetId === dataset.id)}
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <div className="text-xs uppercase tracking-[0.18em] text-stone-500">{dataset.code}</div>
+                      <div className={adminSubEyebrowClassName}>{dataset.code}</div>
                       <div className="mt-2 text-lg text-stone-100">{dataset.name}</div>
                     </div>
                     <div className="flex flex-col items-end gap-2">
@@ -1329,18 +1399,18 @@ export function AdminWritingEvalDatasetsClient({
                 </button>
               );
             })}
-            {datasets.length === 0 ? <div className="border border-dashed border-stone-700 bg-stone-950 px-4 py-6 text-sm text-stone-500">还没有评测集。</div> : null}
+            {datasets.length === 0 ? <div className={adminEmptyStateClassName}>还没有评测集。</div> : null}
           </div>
         </div>
       </section>
 
       <section className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_420px]">
         <div className="space-y-6">
-          <div className={uiPrimitives.adminPanel + " p-5"}>
+          <div className={adminSectionPanelClassName}>
             <div className="flex items-start justify-between gap-4">
               <div>
-                <div className="text-xs uppercase tracking-[0.24em] text-stone-500">数据集详情</div>
-                <h2 className="mt-3 font-serifCn text-2xl text-stone-100 text-balance">{selectedDataset?.name || "选择一个评测集"}</h2>
+                <div className={adminEyebrowClassName}>数据集详情</div>
+                <h2 className={adminSectionTitleClassName}>{selectedDataset?.name || "选择一个评测集"}</h2>
               </div>
               <div className="text-sm text-stone-500">{loadingCases ? "加载样本中…" : `${cases.length} 条样本`}</div>
             </div>
@@ -1348,29 +1418,29 @@ export function AdminWritingEvalDatasetsClient({
             {selectedDataset ? (
               <>
                 <div className="mt-5 grid gap-3 md:grid-cols-4">
-                  <div className="border border-stone-800 bg-stone-950 px-4 py-4">
-                    <div className="text-xs uppercase tracking-[0.18em] text-stone-500">编码</div>
+                  <div className={adminMetricCardClassName}>
+                    <div className={adminSubEyebrowClassName}>编码</div>
                     <div className="mt-3 text-stone-100">{selectedDataset.code}</div>
                   </div>
-                  <div className="border border-stone-800 bg-stone-950 px-4 py-4">
-                    <div className="text-xs uppercase tracking-[0.18em] text-stone-500">状态</div>
+                  <div className={adminMetricCardClassName}>
+                    <div className={adminSubEyebrowClassName}>状态</div>
                     <div className="mt-3 text-stone-100">{selectedDataset.status}</div>
                   </div>
-                  <div className="border border-stone-800 bg-stone-950 px-4 py-4">
-                    <div className="text-xs uppercase tracking-[0.18em] text-stone-500">启用样本</div>
+                  <div className={adminMetricCardClassName}>
+                    <div className={adminSubEyebrowClassName}>启用样本</div>
                     <div className="mt-3 text-stone-100">{cases.filter((item) => item.isEnabled).length}</div>
                   </div>
-                  <div className="border border-stone-800 bg-stone-950 px-4 py-4">
-                    <div className="text-xs uppercase tracking-[0.18em] text-stone-500">最近更新</div>
+                  <div className={adminMetricCardClassName}>
+                    <div className={adminSubEyebrowClassName}>最近更新</div>
                     <div className="mt-3 text-sm text-stone-100">{formatWritingEvalDateTime(selectedDataset.updatedAt)}</div>
                   </div>
                 </div>
 
-                <div className="mt-5 border border-stone-800 bg-stone-950 px-4 py-4">
+                <div className={cn("mt-5", adminInsetCardClassName)}>
                   <div className="flex items-center justify-between gap-3">
                     <div>
-                      <div className="text-xs uppercase tracking-[0.18em] text-stone-500">执行就绪度</div>
-                      <div className="mt-2 text-sm text-stone-400">这里直接反映 Runs / Schedules 页的自动实验守卫结果。</div>
+                      <div className={adminSubEyebrowClassName}>执行就绪度</div>
+                      <div className={cn("mt-2", adminMutedCopyClassName)}>这里直接反映 Runs / Schedules 页的自动实验守卫结果。</div>
                     </div>
                     <span className={`border px-2 py-1 text-[11px] uppercase tracking-[0.16em] ${selectedDatasetReadinessMeta.tone}`}>
                       {selectedDatasetReadinessMeta.label}
@@ -1399,13 +1469,13 @@ export function AdminWritingEvalDatasetsClient({
                 </div>
 
                 <div className="mt-5">
-                  <Link href={buildAdminWritingEvalRunsHref({ datasetId: selectedDataset.id })} className={uiPrimitives.adminSecondaryButton}>
+                  <Link href={buildAdminWritingEvalRunsHref({ datasetId: selectedDataset.id })} className={adminSecondaryButtonClassName}>
                     用当前评测集发起实验
                   </Link>
                 </div>
 
-                <div className="mt-5 border border-stone-800 bg-stone-950 px-4 py-4">
-                  <div className="text-xs uppercase tracking-[0.18em] text-stone-500">难度分布</div>
+                <div className={cn("mt-5", adminInsetCardClassName)}>
+                  <div className={adminSubEyebrowClassName}>难度分布</div>
                   <div className="mt-4 flex flex-wrap gap-3 text-sm">
                     {Object.keys(difficultyCounts).length > 0 ? (
                       Object.entries(difficultyCounts).map(([level, count]) => (
@@ -1419,11 +1489,11 @@ export function AdminWritingEvalDatasetsClient({
                   </div>
                 </div>
 
-                <div className="mt-5 border border-stone-800 bg-stone-950 px-4 py-4">
+                <div className={cn("mt-5", adminInsetCardClassName)}>
                   <div className="flex items-center justify-between gap-3">
                     <div>
-                      <div className="text-xs uppercase tracking-[0.18em] text-stone-500">样本覆盖度</div>
-                      <div className="mt-2 text-sm text-stone-400">对齐方案要求，优先补齐标题目标、开头目标、传播目标和事实素材上下文。</div>
+                      <div className={adminSubEyebrowClassName}>样本覆盖度</div>
+                      <div className={cn("mt-2", adminMutedCopyClassName)}>对齐方案要求，优先补齐标题目标、开头目标、传播目标和事实素材上下文。</div>
                     </div>
                     <div className="text-xs text-stone-500">{cases.length} 条样本</div>
                   </div>
@@ -1438,7 +1508,7 @@ export function AdminWritingEvalDatasetsClient({
                       { label: "知识卡", value: coverageSummary.knowledgeCards },
                       { label: "历史参考", value: coverageSummary.historyReferences },
                     ].map((item) => (
-                      <div key={item.label} className="border border-stone-700 bg-[#141414] px-4 py-4">
+                      <div key={item.label} className={adminCoverageCardClassName}>
                         <div className="text-xs uppercase tracking-[0.16em] text-stone-500">{item.label}</div>
                         <div className="mt-3 text-lg text-stone-100">
                           {item.value}/{cases.length}
@@ -1452,38 +1522,98 @@ export function AdminWritingEvalDatasetsClient({
                 </div>
               </>
             ) : (
-              <div className="mt-5 border border-dashed border-stone-700 bg-stone-950 px-4 py-6 text-sm text-stone-500">先创建或选择一个评测集。</div>
+              <div className={cn("mt-5", adminEmptyStateClassName)}>先创建或选择一个评测集。</div>
             )}
           </div>
 
-          <form onSubmit={handleSaveDataset} className={uiPrimitives.adminPanel + " space-y-3 p-5"}>
-            <div className="text-xs uppercase tracking-[0.24em] text-stone-500">数据集编辑器</div>
+          <form onSubmit={handleSaveDataset} className={adminFormPanelClassName}>
+            <div className={adminEyebrowClassName}>数据集编辑器</div>
             {selectedDataset ? (
               <>
-                <input aria-label="input control" value={datasetEditorForm.code} onChange={(event) => setDatasetEditorForm((prev) => ({ ...prev, code: event.target.value }))} className={uiPrimitives.adminInput} />
-                <input aria-label="input control" value={datasetEditorForm.name} onChange={(event) => setDatasetEditorForm((prev) => ({ ...prev, name: event.target.value }))} className={uiPrimitives.adminInput} />
-                <textarea aria-label="textarea control" value={datasetEditorForm.description} onChange={(event) => setDatasetEditorForm((prev) => ({ ...prev, description: event.target.value }))} className={`min-h-[110px] ${uiPrimitives.adminInput}`} />
-                <select aria-label="select control" value={datasetEditorForm.status} onChange={(event) => setDatasetEditorForm((prev) => ({ ...prev, status: event.target.value }))} className={uiPrimitives.adminSelect}>
-                  <option value="draft">draft</option>
-                  <option value="active">active</option>
-                  <option value="archived">archived</option>
+                <input aria-label="input control" value={datasetEditorForm.code} onChange={(event) => setDatasetEditorForm((prev) => ({ ...prev, code: event.target.value }))} className={adminInputClassName} />
+                <input aria-label="input control" value={datasetEditorForm.name} onChange={(event) => setDatasetEditorForm((prev) => ({ ...prev, name: event.target.value }))} className={adminInputClassName} />
+                <textarea aria-label="textarea control" value={datasetEditorForm.description} onChange={(event) => setDatasetEditorForm((prev) => ({ ...prev, description: event.target.value }))} className={getAdminTextareaClassName("min-h-[110px]")} />
+                <select aria-label="select control" value={datasetEditorForm.status} onChange={(event) => setDatasetEditorForm((prev) => ({ ...prev, status: event.target.value }))} className={adminSelectClassName}>
+                  {DATASET_STATUS_OPTIONS.map((status) => (
+                    <option key={status} value={status}>{status}</option>
+                  ))}
                 </select>
-                <button className={uiPrimitives.primaryButton}>保存评测集</button>
+                <button className={adminPrimaryButtonClassName}>保存评测集</button>
               </>
             ) : (
-              <div className="border border-dashed border-stone-700 bg-stone-950 px-4 py-6 text-sm text-stone-500">先从上方列表选择一个评测集。</div>
+              <div className={adminEmptyStateClassName}>先从上方列表选择一个评测集。</div>
             )}
           </form>
 
-          <div className={uiPrimitives.adminPanel + " p-5"}>
+          <div className={adminSectionPanelClassName}>
             <div className="flex items-center justify-between gap-3">
               <div>
-                <div className="text-xs uppercase tracking-[0.24em] text-stone-500">评测样本</div>
-                <h2 className="mt-3 font-serifCn text-2xl text-stone-100 text-balance">样本表格</h2>
+                <div className={adminEyebrowClassName}>评测样本</div>
+                <h2 className={adminSectionTitleClassName}>样本表格</h2>
               </div>
               <div className="text-sm text-stone-500">{cases.length} 条记录</div>
             </div>
-            <div className="mt-5 overflow-x-auto">
+            <div className={adminTableMobileListClassName}>
+              {cases.map((item) => {
+                const selected = selectedCaseId === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    aria-pressed={selected}
+                    onClick={() => setSelectedCaseId(item.id)}
+                    className={getCaseMobileCardClassName(selected)}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="font-mono text-xs text-stone-300">{item.taskCode}</div>
+                        <div className="mt-2 text-base text-stone-100 text-balance">{item.topicTitle}</div>
+                      </div>
+                      <span
+                        className={`shrink-0 border px-2 py-1 text-[11px] uppercase tracking-[0.16em] ${
+                          selected ? "border-cinnabar/50 text-cinnabar" : "border-stone-700 text-stone-500"
+                        }`}
+                      >
+                        {selected ? "已选中" : "点击编辑"}
+                      </span>
+                    </div>
+                    <div className="mt-4 grid gap-3 text-sm text-stone-400 sm:grid-cols-2">
+                      <div>
+                        <div className="text-[11px] uppercase tracking-[0.18em] text-stone-500">类型</div>
+                        <div className="mt-1">{item.taskType}</div>
+                      </div>
+                      <div>
+                        <div className="text-[11px] uppercase tracking-[0.18em] text-stone-500">来源</div>
+                        <div className="mt-1 text-xs leading-6 text-stone-400">{getCaseSourceBadge(item)}</div>
+                      </div>
+                      <div>
+                        <div className="text-[11px] uppercase tracking-[0.18em] text-stone-500">难度</div>
+                        <div className="mt-1">{item.difficultyLevel}</div>
+                      </div>
+                      <div>
+                        <div className="text-[11px] uppercase tracking-[0.18em] text-stone-500">启用</div>
+                        <div className="mt-1">{item.isEnabled ? "enabled" : "disabled"}</div>
+                      </div>
+                      <div>
+                        <div className="text-[11px] uppercase tracking-[0.18em] text-stone-500">参考好稿</div>
+                        <div className="mt-1">{item.referenceGoodOutput ? "有" : "无"}</div>
+                      </div>
+                      <div>
+                        <div className="text-[11px] uppercase tracking-[0.18em] text-stone-500">更新时间</div>
+                        <div className="mt-1">{formatWritingEvalDateTime(item.updatedAt)}</div>
+                      </div>
+                    </div>
+                    {getCaseSourceDetail(item) ? (
+                      <div className="mt-4 border-t border-stone-800 pt-4 text-xs leading-6 text-stone-500">
+                        {getCaseSourceDetail(item)}
+                      </div>
+                    ) : null}
+                  </button>
+                );
+              })}
+              {cases.length === 0 ? <div className={adminEmptyStateClassName}>当前评测集还没有样本。</div> : null}
+            </div>
+            <div className={adminTableDesktopShellClassName}>
               <table className="w-full min-w-[880px] text-left text-sm">
                 <thead className="text-stone-500">
                   <tr>
@@ -1525,11 +1655,11 @@ export function AdminWritingEvalDatasetsClient({
         </div>
 
         <div className="space-y-6">
-          <div className={uiPrimitives.adminPanel + " space-y-4 p-5"}>
+          <div className={adminStackPanelClassName}>
             <div className="flex items-start justify-between gap-3">
               <div>
-                <div className="text-xs uppercase tracking-[0.24em] text-stone-500">自动补桶</div>
-                <h2 className="mt-3 font-serifCn text-2xl text-stone-100 text-balance">按 readiness 缺口推荐样本</h2>
+                <div className={adminEyebrowClassName}>自动补桶</div>
+                <h2 className={adminSectionTitleClassName}>按 readiness 缺口推荐样本</h2>
               </div>
               <div className="text-xs leading-6 text-stone-500">
                 先推荐，再支持一键自动补入 4 条
@@ -1537,7 +1667,7 @@ export function AdminWritingEvalDatasetsClient({
             </div>
             {selectedDataset ? (
               <>
-                <div className="border border-stone-800 bg-stone-950 px-4 py-4 text-sm leading-7 text-stone-400">
+                <div className={cn(adminInsetCardClassName, adminMutedCopyClassName)}>
                   当前围绕评测集 <span className="text-stone-100">{selectedDataset.code}</span> 的题型、难度和 coverage 缺口生成推荐。
                   会优先补样本总量、缺失题型、缺失难度，以及 `sourceFacts / knowledgeCards / historyReferences / referenceGoodOutput` 等薄弱项。
                 </div>
@@ -1545,7 +1675,7 @@ export function AdminWritingEvalDatasetsClient({
                   <button
                     type="button"
                     onClick={() => void loadImportRecommendations(selectedDataset.id)}
-                    className={uiPrimitives.adminSecondaryButton}
+                    className={adminSecondaryButtonClassName}
                     disabled={loadingImportRecommendations}
                   >
                     {loadingImportRecommendations ? "刷新推荐中…" : "刷新推荐"}
@@ -1553,7 +1683,7 @@ export function AdminWritingEvalDatasetsClient({
                   <button
                     type="button"
                     onClick={() => void handleAutoFillImports(4)}
-                    className={uiPrimitives.primaryButton}
+                    className={adminPrimaryButtonClassName}
                     disabled={autoFillingImports || loadingImportRecommendations || importRecommendations.length === 0}
                   >
                     {autoFillingImports ? "自动补桶中…" : "自动补入 4 条"}
@@ -1562,7 +1692,7 @@ export function AdminWritingEvalDatasetsClient({
                 {importRecommendationTargets.length > 0 ? (
                   <div className="flex flex-wrap gap-2 text-xs">
                     {importRecommendationTargets.map((item) => (
-                      <span key={`import-target-${item}`} className="border border-stone-700 bg-stone-950 px-2 py-1 text-stone-400">
+                      <span key={`import-target-${item}`} className={adminDarkChipClassName}>
                         {item}
                       </span>
                     ))}
@@ -1571,7 +1701,7 @@ export function AdminWritingEvalDatasetsClient({
                 <div className="space-y-3">
                   {importRecommendations.length > 0 ? (
                     importRecommendations.map((item) => (
-                      <div key={`${item.sourceType}-${item.sourceId}`} className="border border-stone-800 bg-[#141414] px-3 py-3">
+                      <div key={`${item.sourceType}-${item.sourceId}`} className={adminListCardClassName}>
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
                             <div className="text-sm text-stone-100">{item.title}</div>
@@ -1584,25 +1714,25 @@ export function AdminWritingEvalDatasetsClient({
                           <button
                             type="button"
                             onClick={() => void importRecommendedItem(item)}
-                            className={uiPrimitives.adminSecondaryButton}
+                            className={adminSecondaryButtonClassName}
                           >
                             一键导入
                           </button>
                         </div>
                         <div className="mt-3 flex flex-wrap gap-2 text-xs">
-                          <span className="border border-stone-700 px-2 py-1 text-stone-400">{item.suggestedTaskType}</span>
-                          <span className="border border-stone-700 px-2 py-1 text-stone-400">{item.suggestedDifficultyLevel}</span>
-                          <span className="border border-stone-700 px-2 py-1 text-stone-400">facts {item.sourceFactCount}</span>
-                          <span className="border border-stone-700 px-2 py-1 text-stone-400">knowledge {item.knowledgeCardCount}</span>
-                          <span className="border border-stone-700 px-2 py-1 text-stone-400">history {item.historyReferenceCount}</span>
-                          <span className="border border-stone-700 px-2 py-1 text-stone-400">
+                          <span className={adminChipClassName}>{item.suggestedTaskType}</span>
+                          <span className={adminChipClassName}>{item.suggestedDifficultyLevel}</span>
+                          <span className={adminChipClassName}>facts {item.sourceFactCount}</span>
+                          <span className={adminChipClassName}>knowledge {item.knowledgeCardCount}</span>
+                          <span className={adminChipClassName}>history {item.historyReferenceCount}</span>
+                          <span className={adminChipClassName}>
                             {item.referenceGoodOutput ? "with good output" : "no good output"}
                           </span>
                         </div>
                         {item.reasonTags.length > 0 ? (
                           <div className="mt-3 flex flex-wrap gap-2 text-xs">
                             {item.reasonTags.map((reason) => (
-                              <span key={`${item.sourceType}-${item.sourceId}-${reason}`} className="border border-cyan-900/60 bg-cyan-950/40 px-2 py-1 text-cyan-100">
+                              <span key={`${item.sourceType}-${item.sourceId}-${reason}`} className={adminReasonChipClassName}>
                                 {reason}
                               </span>
                             ))}
@@ -1611,22 +1741,22 @@ export function AdminWritingEvalDatasetsClient({
                       </div>
                     ))
                   ) : (
-                    <div className="border border-dashed border-stone-700 bg-stone-950 px-4 py-6 text-sm text-stone-500">
+                    <div className={adminEmptyStateClassName}>
                       {loadingImportRecommendations ? "正在分析当前数据集缺口…" : "当前没有额外推荐样本，可能该数据集已经比较完整，或候选池里没有更合适的条目。"}
                     </div>
                   )}
                 </div>
               </>
             ) : (
-              <div className="border border-dashed border-stone-700 bg-stone-950 px-4 py-6 text-sm text-stone-500">先从左侧选择一个评测集，再生成补桶推荐。</div>
+              <div className={adminEmptyStateClassName}>先从左侧选择一个评测集，再生成补桶推荐。</div>
             )}
           </div>
 
-          <div className={uiPrimitives.adminPanel + " space-y-4 p-5"}>
+          <div className={adminStackPanelClassName}>
             <div className="flex items-start justify-between gap-3">
               <div>
-                <div className="text-xs uppercase tracking-[0.24em] text-stone-500">补桶台账</div>
-                <h2 className="mt-3 font-serifCn text-2xl text-stone-100 text-balance">最近自动补桶记录</h2>
+                <div className={adminEyebrowClassName}>补桶台账</div>
+                <h2 className={adminSectionTitleClassName}>最近自动补桶记录</h2>
               </div>
               <div className="text-xs leading-6 text-stone-500">
                 展示最近写入 audit 的自动补桶结果
@@ -1643,7 +1773,7 @@ export function AdminWritingEvalDatasetsClient({
                     const importedItems = Array.isArray(payload.importedItems) ? payload.importedItems.length : 0;
                     const skippedCount = Array.isArray(payload.skipped) ? payload.skipped.length : 0;
                     return (
-                      <div key={log.id} className="border border-stone-800 bg-[#141414] px-4 py-4">
+                      <div key={log.id} className={cn(adminListCardClassName, "px-4 py-4")}>
                         <div className="flex items-start justify-between gap-3">
                           <div>
                             <div className="text-sm text-stone-100">
@@ -1656,7 +1786,7 @@ export function AdminWritingEvalDatasetsClient({
                           </div>
                           <Link
                             href={buildAdminWritingEvalRunsHref({ datasetId: selectedDataset.id })}
-                            className={uiPrimitives.adminSecondaryButton}
+                            className={adminSecondaryButtonClassName}
                           >
                             去 Runs
                           </Link>
@@ -1664,7 +1794,7 @@ export function AdminWritingEvalDatasetsClient({
                         {targetSummary.length > 0 ? (
                           <div className="mt-3 flex flex-wrap gap-2 text-xs">
                             {targetSummary.map((item) => (
-                              <span key={`${log.id}-${item}`} className="border border-stone-700 bg-stone-950 px-2 py-1 text-stone-400">
+                              <span key={`${log.id}-${item}`} className={adminDarkChipClassName}>
                                 {item}
                               </span>
                             ))}
@@ -1675,20 +1805,20 @@ export function AdminWritingEvalDatasetsClient({
                   })}
                 </div>
               ) : (
-                <div className="border border-dashed border-stone-700 bg-stone-950 px-4 py-6 text-sm text-stone-500">
+                <div className={adminEmptyStateClassName}>
                   当前评测集还没有自动补桶记录。后续由 scheduler/service 或管理员触发自动补桶后，会在这里沉淀最近台账。
                 </div>
               )
             ) : (
-              <div className="border border-dashed border-stone-700 bg-stone-950 px-4 py-6 text-sm text-stone-500">先从左侧选择一个评测集，再查看补桶台账。</div>
+              <div className={adminEmptyStateClassName}>先从左侧选择一个评测集，再查看补桶台账。</div>
             )}
           </div>
 
-          <form onSubmit={handleImportArticle} className={uiPrimitives.adminPanel + " space-y-3 p-5"}>
+          <form onSubmit={handleImportArticle} className={adminFormPanelClassName}>
             <div className="flex items-start justify-between gap-3">
               <div>
-                <div className="text-xs uppercase tracking-[0.24em] text-stone-500">历史文章导入</div>
-                <h2 className="mt-3 font-serifCn text-2xl text-stone-100 text-balance">从已发布稿件沉淀样本</h2>
+                <div className={adminEyebrowClassName}>历史文章导入</div>
+                <h2 className={adminSectionTitleClassName}>从已发布稿件沉淀样本</h2>
               </div>
               <div className="text-xs leading-6 text-stone-500">
                 自动带入 stage artifacts、历史参考和好稿正文
@@ -1696,7 +1826,7 @@ export function AdminWritingEvalDatasetsClient({
             </div>
             {selectedDataset ? (
               <>
-                <div className="border border-stone-800 bg-stone-950 px-4 py-4 text-sm leading-7 text-stone-400">
+                <div className={cn(adminInsetCardClassName, adminMutedCopyClassName)}>
                   向当前评测集 <span className="text-stone-100">{selectedDataset.code}</span> 导入历史稿件后，会自动生成
                   <span className="mx-1 font-mono text-stone-200">taskCode=article-&lt;id&gt;</span>
                   的 case 草稿，并预填 reference good output、阶段产物与 history references。
@@ -1706,21 +1836,21 @@ export function AdminWritingEvalDatasetsClient({
                   value={articleImportForm.articleId}
                   onChange={(event) => setArticleImportForm({ articleId: event.target.value })}
                   placeholder="历史稿件 ID，例如 123"
-                  className={uiPrimitives.adminInput}
+                  className={adminInputClassName}
                 />
-                <button className={uiPrimitives.primaryButton}>导入历史稿件</button>
-                <div className="border border-stone-800 bg-stone-950 px-4 py-4">
+                <button className={adminPrimaryButtonClassName}>导入历史稿件</button>
+                <div className={adminInsetCardClassName}>
                   <div className="flex items-center justify-between gap-3">
                     <div>
-                      <div className="text-xs uppercase tracking-[0.18em] text-stone-500">最近可导入文章</div>
-                      <div className="mt-2 text-sm text-stone-400">优先挑带阶段产物、事实素材、历史参考的稿件，减少手工补样本。</div>
+                      <div className={adminSubEyebrowClassName}>最近可导入文章</div>
+                      <div className={cn("mt-2", adminMutedCopyClassName)}>优先挑带阶段产物、事实素材、历史参考的稿件，减少手工补样本。</div>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
                       <div className="text-xs text-stone-500">{recentArticleOptions.length} 条</div>
                       <button
                         type="button"
                         onClick={() => void handleImportRecentArticles(5)}
-                        className={uiPrimitives.adminSecondaryButton}
+                        className={adminSecondaryButtonClassName}
                         disabled={importingBatchArticles || importableRecentArticleIds.length === 0}
                       >
                         {importingBatchArticles ? "批量导入中…" : `导入最近 5 篇未导入文章${importableRecentArticleIds.length > 0 ? `（${Math.min(importableRecentArticleIds.length, 5)} 篇）` : ""}`}
@@ -1732,7 +1862,7 @@ export function AdminWritingEvalDatasetsClient({
                       recentArticleOptions.map((article) => {
                         const alreadyImported = selectedDataset ? article.alreadyImportedDatasetIds.includes(selectedDataset.id) : false;
                         return (
-                          <div key={`article-import-option-${article.id}`} className="border border-stone-800 bg-[#141414] px-3 py-3">
+                          <div key={`article-import-option-${article.id}`} className={adminListCardClassName}>
                             <div className="flex items-start justify-between gap-3">
                               <div className="min-w-0">
                                 <div className="text-sm text-stone-100">{article.title || `article-${article.id}`}</div>
@@ -1748,19 +1878,19 @@ export function AdminWritingEvalDatasetsClient({
                                   setArticleImportForm({ articleId: String(article.id) });
                                   void importArticleById(article.id);
                                 }}
-                                className={uiPrimitives.adminSecondaryButton}
+                                className={adminSecondaryButtonClassName}
                                 disabled={alreadyImported}
                               >
                                 {alreadyImported ? "当前数据集已导入" : "一键导入"}
                               </button>
                             </div>
                             <div className="mt-3 flex flex-wrap gap-2 text-xs">
-                              <span className="border border-stone-700 px-2 py-1 text-stone-400">{article.suggestedTaskType}</span>
-                              <span className="border border-stone-700 px-2 py-1 text-stone-400">{article.suggestedDifficultyLevel}</span>
-                              <span className="border border-stone-700 px-2 py-1 text-stone-400">facts {article.sourceFactCount}</span>
-                              <span className="border border-stone-700 px-2 py-1 text-stone-400">knowledge {article.knowledgeCardCount}</span>
-                              <span className="border border-stone-700 px-2 py-1 text-stone-400">history {article.historyReferenceCount}</span>
-                              <span className="border border-stone-700 px-2 py-1 text-stone-400">
+                              <span className={adminChipClassName}>{article.suggestedTaskType}</span>
+                              <span className={adminChipClassName}>{article.suggestedDifficultyLevel}</span>
+                              <span className={adminChipClassName}>facts {article.sourceFactCount}</span>
+                              <span className={adminChipClassName}>knowledge {article.knowledgeCardCount}</span>
+                              <span className={adminChipClassName}>history {article.historyReferenceCount}</span>
+                              <span className={adminChipClassName}>
                                 stages {article.stageCodes.length > 0 ? article.stageCodes.join(", ") : "none"}
                               </span>
                             </div>
@@ -1774,15 +1904,15 @@ export function AdminWritingEvalDatasetsClient({
                 </div>
               </>
             ) : (
-              <div className="border border-dashed border-stone-700 bg-stone-950 px-4 py-6 text-sm text-stone-500">先从左侧选择一个评测集，再导入历史稿件。</div>
+              <div className={adminEmptyStateClassName}>先从左侧选择一个评测集，再导入历史稿件。</div>
             )}
           </form>
 
-          <form onSubmit={handleImportKnowledgeCard} className={uiPrimitives.adminPanel + " space-y-3 p-5"}>
+          <form onSubmit={handleImportKnowledgeCard} className={adminFormPanelClassName}>
             <div className="flex items-start justify-between gap-3">
               <div>
-                <div className="text-xs uppercase tracking-[0.24em] text-stone-500">知识卡导入</div>
-                <h2 className="mt-3 font-serifCn text-2xl text-stone-100 text-balance">从背景卡沉淀 case 草稿</h2>
+                <div className={adminEyebrowClassName}>知识卡导入</div>
+                <h2 className={adminSectionTitleClassName}>从背景卡沉淀 case 草稿</h2>
               </div>
               <div className="text-xs leading-6 text-stone-500">
                 自动带入 key facts、open questions、related cards
@@ -1790,7 +1920,7 @@ export function AdminWritingEvalDatasetsClient({
             </div>
             {selectedDataset ? (
               <>
-                <div className="border border-stone-800 bg-stone-950 px-4 py-4 text-sm leading-7 text-stone-400">
+                <div className={cn(adminInsetCardClassName, adminMutedCopyClassName)}>
                   向当前评测集 <span className="text-stone-100">{selectedDataset.code}</span> 导入知识卡后，会自动生成
                   <span className="mx-1 font-mono text-stone-200">taskCode=knowledge-card-&lt;id&gt;</span>
                   的 case 草稿，并预填 source facts、开放问题、冲突信号和关联背景卡。
@@ -1800,21 +1930,21 @@ export function AdminWritingEvalDatasetsClient({
                   value={knowledgeCardImportForm.knowledgeCardId}
                   onChange={(event) => setKnowledgeCardImportForm({ knowledgeCardId: event.target.value })}
                   placeholder="知识卡 ID，例如 42"
-                  className={uiPrimitives.adminInput}
+                  className={adminInputClassName}
                 />
-                <button className={uiPrimitives.primaryButton}>导入知识卡</button>
-                <div className="border border-stone-800 bg-stone-950 px-4 py-4">
+                <button className={adminPrimaryButtonClassName}>导入知识卡</button>
+                <div className={adminInsetCardClassName}>
                   <div className="flex items-center justify-between gap-3">
                     <div>
-                      <div className="text-xs uppercase tracking-[0.18em] text-stone-500">最近可导入知识卡</div>
-                      <div className="mt-2 text-sm text-stone-400">优先挑事实密度高、带开放问题和关联卡的背景卡，能更快补齐中高难样本。</div>
+                      <div className={adminSubEyebrowClassName}>最近可导入知识卡</div>
+                      <div className={cn("mt-2", adminMutedCopyClassName)}>优先挑事实密度高、带开放问题和关联卡的背景卡，能更快补齐中高难样本。</div>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
                       <div className="text-xs text-stone-500">{recentKnowledgeCardOptions.length} 条</div>
                       <button
                         type="button"
                         onClick={() => void handleImportRecentKnowledgeCards(5)}
-                        className={uiPrimitives.adminSecondaryButton}
+                        className={adminSecondaryButtonClassName}
                         disabled={importingBatchKnowledgeCards || importableRecentKnowledgeCardIds.length === 0}
                       >
                         {importingBatchKnowledgeCards ? "批量导入中…" : `导入最近 5 张未导入知识卡${importableRecentKnowledgeCardIds.length > 0 ? `（${Math.min(importableRecentKnowledgeCardIds.length, 5)} 张）` : ""}`}
@@ -1826,7 +1956,7 @@ export function AdminWritingEvalDatasetsClient({
                       recentKnowledgeCardOptions.map((card) => {
                         const alreadyImported = selectedDataset ? card.alreadyImportedDatasetIds.includes(selectedDataset.id) : false;
                         return (
-                          <div key={`knowledge-card-import-option-${card.id}`} className="border border-stone-800 bg-[#141414] px-3 py-3">
+                          <div key={`knowledge-card-import-option-${card.id}`} className={adminListCardClassName}>
                             <div className="flex items-start justify-between gap-3">
                               <div className="min-w-0">
                                 <div className="text-sm text-stone-100">{card.title || `knowledge-card-${card.id}`}</div>
@@ -1842,21 +1972,21 @@ export function AdminWritingEvalDatasetsClient({
                                   setKnowledgeCardImportForm({ knowledgeCardId: String(card.id) });
                                   void importKnowledgeCardById(card.id);
                                 }}
-                                className={uiPrimitives.adminSecondaryButton}
+                                className={adminSecondaryButtonClassName}
                                 disabled={alreadyImported}
                               >
                                 {alreadyImported ? "当前数据集已导入" : "一键导入"}
                               </button>
                             </div>
                             <div className="mt-3 flex flex-wrap gap-2 text-xs">
-                              <span className="border border-stone-700 px-2 py-1 text-stone-400">{card.suggestedTaskType}</span>
-                              <span className="border border-stone-700 px-2 py-1 text-stone-400">{card.suggestedDifficultyLevel}</span>
-                              <span className="border border-stone-700 px-2 py-1 text-stone-400">confidence {Math.round(card.confidenceScore * 100)}%</span>
-                              <span className="border border-stone-700 px-2 py-1 text-stone-400">facts {card.sourceFactCount}</span>
-                              <span className="border border-stone-700 px-2 py-1 text-stone-400">related {card.knowledgeCardCount}</span>
-                              <span className="border border-stone-700 px-2 py-1 text-stone-400">history {card.historyReferenceCount}</span>
-                              <span className="border border-stone-700 px-2 py-1 text-stone-400">questions {card.openQuestionCount}</span>
-                              <span className="border border-stone-700 px-2 py-1 text-stone-400">conflicts {card.conflictFlagCount}</span>
+                              <span className={adminChipClassName}>{card.suggestedTaskType}</span>
+                              <span className={adminChipClassName}>{card.suggestedDifficultyLevel}</span>
+                              <span className={adminChipClassName}>confidence {Math.round(card.confidenceScore * 100)}%</span>
+                              <span className={adminChipClassName}>facts {card.sourceFactCount}</span>
+                              <span className={adminChipClassName}>related {card.knowledgeCardCount}</span>
+                              <span className={adminChipClassName}>history {card.historyReferenceCount}</span>
+                              <span className={adminChipClassName}>questions {card.openQuestionCount}</span>
+                              <span className={adminChipClassName}>conflicts {card.conflictFlagCount}</span>
                             </div>
                           </div>
                         );
@@ -1868,15 +1998,15 @@ export function AdminWritingEvalDatasetsClient({
                 </div>
               </>
             ) : (
-              <div className="border border-dashed border-stone-700 bg-stone-950 px-4 py-6 text-sm text-stone-500">先从左侧选择一个评测集，再导入知识卡。</div>
+              <div className={adminEmptyStateClassName}>先从左侧选择一个评测集，再导入知识卡。</div>
             )}
           </form>
 
-          <form onSubmit={handleImportTopic} className={uiPrimitives.adminPanel + " space-y-3 p-5"}>
+          <form onSubmit={handleImportTopic} className={adminFormPanelClassName}>
             <div className="flex items-start justify-between gap-3">
               <div>
-                <div className="text-xs uppercase tracking-[0.24em] text-stone-500">主题档案导入</div>
-                <h2 className="mt-3 font-serifCn text-2xl text-stone-100 text-balance">从热点/选题池沉淀 case 草稿</h2>
+                <div className={adminEyebrowClassName}>主题档案导入</div>
+                <h2 className={adminSectionTitleClassName}>从热点/选题池沉淀 case 草稿</h2>
               </div>
               <div className="text-xs leading-6 text-stone-500">
                 自动带入 topic summary、angle options、匹配背景卡
@@ -1884,7 +2014,7 @@ export function AdminWritingEvalDatasetsClient({
             </div>
             {selectedDataset ? (
               <>
-                <div className="border border-stone-800 bg-stone-950 px-4 py-4 text-sm leading-7 text-stone-400">
+                <div className={cn(adminInsetCardClassName, adminMutedCopyClassName)}>
                   向当前评测集 <span className="text-stone-100">{selectedDataset.code}</span> 导入主题档案后，会自动生成
                   <span className="mx-1 font-mono text-stone-200">taskCode=topic-item-&lt;id&gt;</span>
                   的 case 草稿，并预填热点摘要、切角建议与可复用背景卡。
@@ -1894,21 +2024,21 @@ export function AdminWritingEvalDatasetsClient({
                   value={topicImportForm.topicItemId}
                   onChange={(event) => setTopicImportForm({ topicItemId: event.target.value })}
                   placeholder="主题档案 ID，例如 88"
-                  className={uiPrimitives.adminInput}
+                  className={adminInputClassName}
                 />
-                <button className={uiPrimitives.primaryButton}>导入主题档案</button>
-                <div className="border border-stone-800 bg-stone-950 px-4 py-4">
+                <button className={adminPrimaryButtonClassName}>导入主题档案</button>
+                <div className={adminInsetCardClassName}>
                   <div className="flex items-center justify-between gap-3">
                     <div>
-                      <div className="text-xs uppercase tracking-[0.18em] text-stone-500">最近可导入主题档案</div>
-                      <div className="mt-2 text-sm text-stone-400">优先挑摘要完整、切角充足、能匹配到背景卡的热点条目，适合快速补足观察类样本。</div>
+                      <div className={adminSubEyebrowClassName}>最近可导入主题档案</div>
+                      <div className={cn("mt-2", adminMutedCopyClassName)}>优先挑摘要完整、切角充足、能匹配到背景卡的热点条目，适合快速补足观察类样本。</div>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
                       <div className="text-xs text-stone-500">{recentTopicOptions.length} 条</div>
                       <button
                         type="button"
                         onClick={() => void handleImportRecentTopics(5)}
-                        className={uiPrimitives.adminSecondaryButton}
+                        className={adminSecondaryButtonClassName}
                         disabled={importingBatchTopics || importableRecentTopicIds.length === 0}
                       >
                         {importingBatchTopics ? "批量导入中…" : `导入最近 5 条未导入主题${importableRecentTopicIds.length > 0 ? `（${Math.min(importableRecentTopicIds.length, 5)} 条）` : ""}`}
@@ -1920,7 +2050,7 @@ export function AdminWritingEvalDatasetsClient({
                       recentTopicOptions.map((topic) => {
                         const alreadyImported = selectedDataset ? topic.alreadyImportedDatasetIds.includes(selectedDataset.id) : false;
                         return (
-                          <div key={`topic-import-option-${topic.id}`} className="border border-stone-800 bg-[#141414] px-3 py-3">
+                          <div key={`topic-import-option-${topic.id}`} className={adminListCardClassName}>
                             <div className="flex items-start justify-between gap-3">
                               <div className="min-w-0">
                                 <div className="text-sm text-stone-100">{topic.title || `topic-item-${topic.id}`}</div>
@@ -1935,20 +2065,20 @@ export function AdminWritingEvalDatasetsClient({
                                   setTopicImportForm({ topicItemId: String(topic.id) });
                                   void importTopicById(topic.id);
                                 }}
-                                className={uiPrimitives.adminSecondaryButton}
+                                className={adminSecondaryButtonClassName}
                                 disabled={alreadyImported}
                               >
                                 {alreadyImported ? "当前数据集已导入" : "一键导入"}
                               </button>
                             </div>
                             <div className="mt-3 flex flex-wrap gap-2 text-xs">
-                              <span className="border border-stone-700 px-2 py-1 text-stone-400">{topic.suggestedTaskType}</span>
-                              <span className="border border-stone-700 px-2 py-1 text-stone-400">{topic.suggestedDifficultyLevel}</span>
-                              <span className="border border-stone-700 px-2 py-1 text-stone-400">facts {topic.sourceFactCount}</span>
-                              <span className="border border-stone-700 px-2 py-1 text-stone-400">knowledge {topic.knowledgeCardCount}</span>
-                              <span className="border border-stone-700 px-2 py-1 text-stone-400">history {topic.historyReferenceCount}</span>
-                              <span className="border border-stone-700 px-2 py-1 text-stone-400">emotions {topic.emotionLabelCount}</span>
-                              <span className="border border-stone-700 px-2 py-1 text-stone-400">angles {topic.angleOptionCount}</span>
+                              <span className={adminChipClassName}>{topic.suggestedTaskType}</span>
+                              <span className={adminChipClassName}>{topic.suggestedDifficultyLevel}</span>
+                              <span className={adminChipClassName}>facts {topic.sourceFactCount}</span>
+                              <span className={adminChipClassName}>knowledge {topic.knowledgeCardCount}</span>
+                              <span className={adminChipClassName}>history {topic.historyReferenceCount}</span>
+                              <span className={adminChipClassName}>emotions {topic.emotionLabelCount}</span>
+                              <span className={adminChipClassName}>angles {topic.angleOptionCount}</span>
                             </div>
                           </div>
                         );
@@ -1960,15 +2090,15 @@ export function AdminWritingEvalDatasetsClient({
                 </div>
               </>
             ) : (
-              <div className="border border-dashed border-stone-700 bg-stone-950 px-4 py-6 text-sm text-stone-500">先从左侧选择一个评测集，再导入主题档案。</div>
+              <div className={adminEmptyStateClassName}>先从左侧选择一个评测集，再导入主题档案。</div>
             )}
           </form>
 
-          <form onSubmit={handleImportFragment} className={uiPrimitives.adminPanel + " space-y-3 p-5"}>
+          <form onSubmit={handleImportFragment} className={adminFormPanelClassName}>
             <div className="flex items-start justify-between gap-3">
               <div>
-                <div className="text-xs uppercase tracking-[0.24em] text-stone-500">素材包导入</div>
-                <h2 className="mt-3 font-serifCn text-2xl text-stone-100 text-balance">从素材碎片沉淀 case 草稿</h2>
+                <div className={adminEyebrowClassName}>素材包导入</div>
+                <h2 className={adminSectionTitleClassName}>从素材碎片沉淀 case 草稿</h2>
               </div>
               <div className="text-xs leading-6 text-stone-500">
                 自动带入 material bundle、来源边界、关联背景卡
@@ -1976,7 +2106,7 @@ export function AdminWritingEvalDatasetsClient({
             </div>
             {selectedDataset ? (
               <>
-                <div className="border border-stone-800 bg-stone-950 px-4 py-4 text-sm leading-7 text-stone-400">
+                <div className={cn(adminInsetCardClassName, adminMutedCopyClassName)}>
                   向当前评测集 <span className="text-stone-100">{selectedDataset.code}</span> 导入素材后，会自动生成
                   <span className="mx-1 font-mono text-stone-200">taskCode=fragment-&lt;id&gt;</span>
                   的 case 草稿，并预填素材包、来源边界和关联背景卡。
@@ -1986,21 +2116,21 @@ export function AdminWritingEvalDatasetsClient({
                   value={fragmentImportForm.fragmentId}
                   onChange={(event) => setFragmentImportForm({ fragmentId: event.target.value })}
                   placeholder="素材 ID，例如 315"
-                  className={uiPrimitives.adminInput}
+                  className={adminInputClassName}
                 />
-                <button className={uiPrimitives.primaryButton}>导入素材</button>
-                <div className="border border-stone-800 bg-stone-950 px-4 py-4">
+                <button className={adminPrimaryButtonClassName}>导入素材</button>
+                <div className={adminInsetCardClassName}>
                   <div className="flex items-center justify-between gap-3">
                     <div>
-                      <div className="text-xs uppercase tracking-[0.18em] text-stone-500">最近可导入素材</div>
-                      <div className="mt-2 text-sm text-stone-400">优先挑带外链、截图或已沉淀背景卡的素材，能更快补足 fact/density 维度。</div>
+                      <div className={adminSubEyebrowClassName}>最近可导入素材</div>
+                      <div className={cn("mt-2", adminMutedCopyClassName)}>优先挑带外链、截图或已沉淀背景卡的素材，能更快补足 fact/density 维度。</div>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
                       <div className="text-xs text-stone-500">{recentFragmentOptions.length} 条</div>
                       <button
                         type="button"
                         onClick={() => void handleImportRecentFragments(5)}
-                        className={uiPrimitives.adminSecondaryButton}
+                        className={adminSecondaryButtonClassName}
                         disabled={importingBatchFragments || importableRecentFragmentIds.length === 0}
                       >
                         {importingBatchFragments ? "批量导入中…" : `导入最近 5 条未导入素材${importableRecentFragmentIds.length > 0 ? `（${Math.min(importableRecentFragmentIds.length, 5)} 条）` : ""}`}
@@ -2012,7 +2142,7 @@ export function AdminWritingEvalDatasetsClient({
                       recentFragmentOptions.map((fragment) => {
                         const alreadyImported = selectedDataset ? fragment.alreadyImportedDatasetIds.includes(selectedDataset.id) : false;
                         return (
-                          <div key={`fragment-import-option-${fragment.id}`} className="border border-stone-800 bg-[#141414] px-3 py-3">
+                          <div key={`fragment-import-option-${fragment.id}`} className={adminListCardClassName}>
                             <div className="flex items-start justify-between gap-3">
                               <div className="min-w-0">
                                 <div className="text-sm text-stone-100">{fragment.title || `fragment-${fragment.id}`}</div>
@@ -2028,19 +2158,19 @@ export function AdminWritingEvalDatasetsClient({
                                   setFragmentImportForm({ fragmentId: String(fragment.id) });
                                   void importFragmentById(fragment.id);
                                 }}
-                                className={uiPrimitives.adminSecondaryButton}
+                                className={adminSecondaryButtonClassName}
                                 disabled={alreadyImported}
                               >
                                 {alreadyImported ? "当前数据集已导入" : "一键导入"}
                               </button>
                             </div>
                             <div className="mt-3 flex flex-wrap gap-2 text-xs">
-                              <span className="border border-stone-700 px-2 py-1 text-stone-400">{fragment.suggestedTaskType}</span>
-                              <span className="border border-stone-700 px-2 py-1 text-stone-400">{fragment.suggestedDifficultyLevel}</span>
-                              <span className="border border-stone-700 px-2 py-1 text-stone-400">facts {fragment.sourceFactCount}</span>
-                              <span className="border border-stone-700 px-2 py-1 text-stone-400">knowledge {fragment.knowledgeCardCount}</span>
-                              <span className="border border-stone-700 px-2 py-1 text-stone-400">history {fragment.historyReferenceCount}</span>
-                              <span className="border border-stone-700 px-2 py-1 text-stone-400">
+                              <span className={adminChipClassName}>{fragment.suggestedTaskType}</span>
+                              <span className={adminChipClassName}>{fragment.suggestedDifficultyLevel}</span>
+                              <span className={adminChipClassName}>facts {fragment.sourceFactCount}</span>
+                              <span className={adminChipClassName}>knowledge {fragment.knowledgeCardCount}</span>
+                              <span className={adminChipClassName}>history {fragment.historyReferenceCount}</span>
+                              <span className={adminChipClassName}>
                                 {fragment.sourceUrl ? "with url" : "no url"}
                               </span>
                             </div>
@@ -2054,43 +2184,42 @@ export function AdminWritingEvalDatasetsClient({
                 </div>
               </>
             ) : (
-              <div className="border border-dashed border-stone-700 bg-stone-950 px-4 py-6 text-sm text-stone-500">先从左侧选择一个评测集，再导入素材。</div>
+              <div className={adminEmptyStateClassName}>先从左侧选择一个评测集，再导入素材。</div>
             )}
           </form>
 
-          <form onSubmit={handleCreateCase} className={uiPrimitives.adminPanel + " space-y-3 p-5"}>
-            <div className="text-xs uppercase tracking-[0.24em] text-stone-500">新建样本</div>
-            <input aria-label="taskCode" value={caseForm.taskCode} onChange={(event) => setCaseForm((prev) => ({ ...prev, taskCode: event.target.value }))} placeholder="taskCode" className={uiPrimitives.adminInput} />
-            <input aria-label="topicTitle" value={caseForm.topicTitle} onChange={(event) => setCaseForm((prev) => ({ ...prev, topicTitle: event.target.value }))} placeholder="topicTitle" className={uiPrimitives.adminInput} />
-            <select aria-label="select control" value={caseForm.taskType} onChange={(event) => setCaseForm((prev) => ({ ...prev, taskType: event.target.value }))} className={uiPrimitives.adminSelect}>
-              <option value="tech_commentary">tech_commentary</option>
-              <option value="business_breakdown">business_breakdown</option>
-              <option value="experience_recap">experience_recap</option>
-              <option value="series_observation">series_observation</option>
+          <form onSubmit={handleCreateCase} className={adminFormPanelClassName}>
+            <div className={adminEyebrowClassName}>新建样本</div>
+            <input aria-label="taskCode" value={caseForm.taskCode} onChange={(event) => setCaseForm((prev) => ({ ...prev, taskCode: event.target.value }))} placeholder="taskCode" className={adminInputClassName} />
+            <input aria-label="topicTitle" value={caseForm.topicTitle} onChange={(event) => setCaseForm((prev) => ({ ...prev, topicTitle: event.target.value }))} placeholder="topicTitle" className={adminInputClassName} />
+            <select aria-label="select control" value={caseForm.taskType} onChange={(event) => setCaseForm((prev) => ({ ...prev, taskType: event.target.value }))} className={adminSelectClassName}>
+              {TASK_TYPE_OPTIONS.map((taskType) => (
+                <option key={taskType} value={taskType}>{taskType}</option>
+              ))}
             </select>
-            <select value={caseForm.difficultyLevel} onChange={(event) => setCaseForm((prev) => ({ ...prev, difficultyLevel: event.target.value }))} className={uiPrimitives.adminSelect}>
-              <option value="light">light</option>
-              <option value="medium">medium</option>
-              <option value="hard">hard</option>
+            <select value={caseForm.difficultyLevel} onChange={(event) => setCaseForm((prev) => ({ ...prev, difficultyLevel: event.target.value }))} className={adminSelectClassName}>
+              {DIFFICULTY_LEVEL_OPTIONS.map((difficultyLevel) => (
+                <option key={difficultyLevel} value={difficultyLevel}>{difficultyLevel}</option>
+              ))}
             </select>
-            <textarea aria-label="输入上下文 JSON" value={caseForm.inputPayload} onChange={(event) => setCaseForm((prev) => ({ ...prev, inputPayload: event.target.value }))} className={`min-h-[110px] ${uiPrimitives.adminInput}`} placeholder="输入上下文 JSON" />
-            <textarea aria-label="固定约束 JSON" value={caseForm.expectedConstraints} onChange={(event) => setCaseForm((prev) => ({ ...prev, expectedConstraints: event.target.value }))} className={`min-h-[110px] ${uiPrimitives.adminInput}`} placeholder="固定约束 JSON" />
-            <textarea aria-label="爆款目标 JSON" value={caseForm.viralTargets} onChange={(event) => setCaseForm((prev) => ({ ...prev, viralTargets: event.target.value }))} className={`min-h-[110px] ${uiPrimitives.adminInput}`} placeholder="爆款目标 JSON" />
-            <textarea aria-label="阶段产物 payloads JSON，可选。例：{&quot;deepWriting&quot;:{...}}" value={caseForm.stageArtifactPayloads} onChange={(event) => setCaseForm((prev) => ({ ...prev, stageArtifactPayloads: event.target.value }))} className={`min-h-[150px] ${uiPrimitives.adminInput}`} placeholder="阶段产物 payloads JSON，可选。例：{&quot;deepWriting&quot;:{...}}" />
-            <textarea aria-label="反例模式 JSON 数组" value={caseForm.referenceBadPatterns} onChange={(event) => setCaseForm((prev) => ({ ...prev, referenceBadPatterns: event.target.value }))} className={`min-h-[90px] ${uiPrimitives.adminInput}`} placeholder="反例模式 JSON 数组" />
-            <textarea aria-label="参考好稿，可选" value={caseForm.referenceGoodOutput} onChange={(event) => setCaseForm((prev) => ({ ...prev, referenceGoodOutput: event.target.value }))} className={`min-h-[90px] ${uiPrimitives.adminInput}`} placeholder="参考好稿，可选" />
-            <button className={uiPrimitives.primaryButton}>创建样本</button>
+            <textarea aria-label="输入上下文 JSON" value={caseForm.inputPayload} onChange={(event) => setCaseForm((prev) => ({ ...prev, inputPayload: event.target.value }))} className={getAdminTextareaClassName("min-h-[110px]")} placeholder="输入上下文 JSON" />
+            <textarea aria-label="固定约束 JSON" value={caseForm.expectedConstraints} onChange={(event) => setCaseForm((prev) => ({ ...prev, expectedConstraints: event.target.value }))} className={getAdminTextareaClassName("min-h-[110px]")} placeholder="固定约束 JSON" />
+            <textarea aria-label="爆款目标 JSON" value={caseForm.viralTargets} onChange={(event) => setCaseForm((prev) => ({ ...prev, viralTargets: event.target.value }))} className={getAdminTextareaClassName("min-h-[110px]")} placeholder="爆款目标 JSON" />
+            <textarea aria-label="阶段产物 payloads JSON，可选。例：{&quot;deepWriting&quot;:{...}}" value={caseForm.stageArtifactPayloads} onChange={(event) => setCaseForm((prev) => ({ ...prev, stageArtifactPayloads: event.target.value }))} className={getAdminTextareaClassName("min-h-[150px]")} placeholder="阶段产物 payloads JSON，可选。例：{&quot;deepWriting&quot;:{...}}" />
+            <textarea aria-label="反例模式 JSON 数组" value={caseForm.referenceBadPatterns} onChange={(event) => setCaseForm((prev) => ({ ...prev, referenceBadPatterns: event.target.value }))} className={getAdminTextareaClassName("min-h-[90px]")} placeholder="反例模式 JSON 数组" />
+            <textarea aria-label="参考好稿，可选" value={caseForm.referenceGoodOutput} onChange={(event) => setCaseForm((prev) => ({ ...prev, referenceGoodOutput: event.target.value }))} className={getAdminTextareaClassName("min-h-[90px]")} placeholder="参考好稿，可选" />
+            <button className={adminPrimaryButtonClassName}>创建样本</button>
           </form>
 
-          <form onSubmit={handleSaveCase} className={uiPrimitives.adminPanel + " space-y-3 p-5"}>
+          <form onSubmit={handleSaveCase} className={adminFormPanelClassName}>
             <div className="flex items-start justify-between gap-3">
               <div>
-                <div className="text-xs uppercase tracking-[0.24em] text-stone-500">样本编辑器</div>
-                <h2 className="mt-3 font-serifCn text-2xl text-stone-100 text-balance">{selectedCase ? selectedCase.taskCode : "选择样本后编辑"}</h2>
+                <div className={adminEyebrowClassName}>样本编辑器</div>
+                <h2 className={adminSectionTitleClassName}>{selectedCase ? selectedCase.taskCode : "选择样本后编辑"}</h2>
               </div>
               <div className="flex items-center gap-3">
                 {selectedDataset ? (
-                  <Link href={buildAdminWritingEvalRunsHref({ datasetId: selectedDataset.id })} className={uiPrimitives.adminSecondaryButton}>
+                  <Link href={buildAdminWritingEvalRunsHref({ datasetId: selectedDataset.id })} className={adminSecondaryButtonClassName}>
                     去 Runs 发起实验
                   </Link>
                 ) : null}
@@ -2102,22 +2231,22 @@ export function AdminWritingEvalDatasetsClient({
             </div>
             {selectedCase ? (
               <>
-                <div className="border border-stone-800 bg-stone-950 px-4 py-4 text-sm text-stone-400">
-                  <div className="text-xs uppercase tracking-[0.18em] text-stone-500">样本来源</div>
+                <div className={cn(adminInsetCardClassName, "text-sm text-stone-400")}>
+                  <div className={adminSubEyebrowClassName}>样本来源</div>
                   <div className="mt-3 text-stone-100">{getCaseSourceBadge(selectedCase)}</div>
                   {getCaseSourceDetail(selectedCase) ? (
                     <div className="mt-2 text-xs leading-6 text-stone-500">{getCaseSourceDetail(selectedCase)}</div>
                   ) : null}
                   {selectedCase.sourceUrl ? (
                     <div className="mt-3">
-                      <Link href={selectedCase.sourceUrl} target="_blank" rel="noreferrer" className={uiPrimitives.adminSecondaryButton}>
+                      <Link href={selectedCase.sourceUrl} target="_blank" rel="noreferrer" className={adminSecondaryButtonClassName}>
                         打开原始来源
                       </Link>
                     </div>
                   ) : null}
                 </div>
-                <div className="border border-stone-800 bg-stone-950 px-4 py-4 text-sm text-stone-400">
-                  <div className="text-xs uppercase tracking-[0.18em] text-stone-500">样本完备度</div>
+                <div className={cn(adminInsetCardClassName, "text-sm text-stone-400")}>
+                  <div className={adminSubEyebrowClassName}>样本完备度</div>
                   <div className="mt-3 flex flex-wrap gap-2">
                     {[
                       { label: "readerProfile", passed: selectedCaseCoverage?.readerProfile },
@@ -2143,29 +2272,28 @@ export function AdminWritingEvalDatasetsClient({
                       : "当前样本已补齐基础输入、爆款目标和事实上下文字段，可以直接参与离线实验。"}
                   </div>
                 </div>
-                <input aria-label="input control" value={editorForm.taskCode} onChange={(event) => setEditorForm((prev) => ({ ...prev, taskCode: event.target.value }))} className={uiPrimitives.adminInput} />
-                <input aria-label="input control" value={editorForm.topicTitle} onChange={(event) => setEditorForm((prev) => ({ ...prev, topicTitle: event.target.value }))} className={uiPrimitives.adminInput} />
-                <select aria-label="select control" value={editorForm.taskType} onChange={(event) => setEditorForm((prev) => ({ ...prev, taskType: event.target.value }))} className={uiPrimitives.adminSelect}>
-                  <option value="tech_commentary">tech_commentary</option>
-                  <option value="business_breakdown">business_breakdown</option>
-                  <option value="experience_recap">experience_recap</option>
-                  <option value="series_observation">series_observation</option>
+                <input aria-label="input control" value={editorForm.taskCode} onChange={(event) => setEditorForm((prev) => ({ ...prev, taskCode: event.target.value }))} className={adminInputClassName} />
+                <input aria-label="input control" value={editorForm.topicTitle} onChange={(event) => setEditorForm((prev) => ({ ...prev, topicTitle: event.target.value }))} className={adminInputClassName} />
+                <select aria-label="select control" value={editorForm.taskType} onChange={(event) => setEditorForm((prev) => ({ ...prev, taskType: event.target.value }))} className={adminSelectClassName}>
+                  {TASK_TYPE_OPTIONS.map((taskType) => (
+                    <option key={taskType} value={taskType}>{taskType}</option>
+                  ))}
                 </select>
-                <select value={editorForm.difficultyLevel} onChange={(event) => setEditorForm((prev) => ({ ...prev, difficultyLevel: event.target.value }))} className={uiPrimitives.adminSelect}>
-                  <option value="light">light</option>
-                  <option value="medium">medium</option>
-                  <option value="hard">hard</option>
+                <select value={editorForm.difficultyLevel} onChange={(event) => setEditorForm((prev) => ({ ...prev, difficultyLevel: event.target.value }))} className={adminSelectClassName}>
+                  {DIFFICULTY_LEVEL_OPTIONS.map((difficultyLevel) => (
+                    <option key={difficultyLevel} value={difficultyLevel}>{difficultyLevel}</option>
+                  ))}
                 </select>
-                <textarea aria-label="textarea control" value={editorForm.inputPayload} onChange={(event) => setEditorForm((prev) => ({ ...prev, inputPayload: event.target.value }))} className={`min-h-[110px] ${uiPrimitives.adminInput}`} />
-                <textarea aria-label="textarea control" value={editorForm.expectedConstraints} onChange={(event) => setEditorForm((prev) => ({ ...prev, expectedConstraints: event.target.value }))} className={`min-h-[110px] ${uiPrimitives.adminInput}`} />
-                <textarea aria-label="textarea control" value={editorForm.viralTargets} onChange={(event) => setEditorForm((prev) => ({ ...prev, viralTargets: event.target.value }))} className={`min-h-[110px] ${uiPrimitives.adminInput}`} />
-                <textarea aria-label="textarea control" value={editorForm.stageArtifactPayloads} onChange={(event) => setEditorForm((prev) => ({ ...prev, stageArtifactPayloads: event.target.value }))} className={`min-h-[150px] ${uiPrimitives.adminInput}`} />
-                <textarea aria-label="textarea control" value={editorForm.referenceBadPatterns} onChange={(event) => setEditorForm((prev) => ({ ...prev, referenceBadPatterns: event.target.value }))} className={`min-h-[90px] ${uiPrimitives.adminInput}`} />
-                <textarea aria-label="textarea control" value={editorForm.referenceGoodOutput} onChange={(event) => setEditorForm((prev) => ({ ...prev, referenceGoodOutput: event.target.value }))} className={`min-h-[90px] ${uiPrimitives.adminInput}`} />
-                <button className={uiPrimitives.primaryButton}>保存样本</button>
+                <textarea aria-label="textarea control" value={editorForm.inputPayload} onChange={(event) => setEditorForm((prev) => ({ ...prev, inputPayload: event.target.value }))} className={getAdminTextareaClassName("min-h-[110px]")} />
+                <textarea aria-label="textarea control" value={editorForm.expectedConstraints} onChange={(event) => setEditorForm((prev) => ({ ...prev, expectedConstraints: event.target.value }))} className={getAdminTextareaClassName("min-h-[110px]")} />
+                <textarea aria-label="textarea control" value={editorForm.viralTargets} onChange={(event) => setEditorForm((prev) => ({ ...prev, viralTargets: event.target.value }))} className={getAdminTextareaClassName("min-h-[110px]")} />
+                <textarea aria-label="textarea control" value={editorForm.stageArtifactPayloads} onChange={(event) => setEditorForm((prev) => ({ ...prev, stageArtifactPayloads: event.target.value }))} className={getAdminTextareaClassName("min-h-[150px]")} />
+                <textarea aria-label="textarea control" value={editorForm.referenceBadPatterns} onChange={(event) => setEditorForm((prev) => ({ ...prev, referenceBadPatterns: event.target.value }))} className={getAdminTextareaClassName("min-h-[90px]")} />
+                <textarea aria-label="textarea control" value={editorForm.referenceGoodOutput} onChange={(event) => setEditorForm((prev) => ({ ...prev, referenceGoodOutput: event.target.value }))} className={getAdminTextareaClassName("min-h-[90px]")} />
+                <button className={adminPrimaryButtonClassName}>保存样本</button>
               </>
             ) : (
-              <div className="border border-dashed border-stone-700 bg-stone-950 px-4 py-6 text-sm text-stone-500">先从左侧表格选择一个样本。</div>
+              <div className={adminEmptyStateClassName}>先从左侧表格选择一个样本。</div>
             )}
           </form>
         </div>
