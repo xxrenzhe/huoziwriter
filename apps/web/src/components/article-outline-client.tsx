@@ -722,21 +722,6 @@ export function ArticleOutlineClient({
     playBoardPlacementTone(Math.max(1, snapped.guides.length));
   }
 
-  function nudgeBoardNode(nodeId: number, deltaX: number, deltaY: number, fallbackLabel: string) {
-    const currentPosition = boardPositionsRef.current[nodeId] ?? buildDefaultBoardPositions(nodes)[nodeId] ?? {
-      x: BOARD_CANVAS_PADDING,
-      y: BOARD_CANVAS_PADDING,
-    };
-    applyBoardPlacement(
-      nodeId,
-      {
-        x: currentPosition.x + deltaX,
-        y: currentPosition.y + deltaY,
-      },
-      fallbackLabel,
-    );
-  }
-
   function applyBoardLayoutPreset(preset: BoardLayoutPreset) {
     const nextPositions = buildPresetBoardPositions(nodes, preset, boardCanvasRef.current?.clientWidth);
     setBoardPositions(nextPositions);
@@ -1170,7 +1155,7 @@ export function ArticleOutlineClient({
                 {draggedFragmentId
                   ? "拖一条素材到这张卡上，直接完成挂载。"
                   : boardPositionLabel
-                    ? `当前卡位落在${boardPositionLabel}，可继续拖动或用方向键细调。`
+                    ? `当前卡位落在${boardPositionLabel}，可继续拖动调整位置。`
                     : "这张节点卡代表一段判断或一个章节推进位。"}
               </div>
             </div>
@@ -1180,23 +1165,7 @@ export function ArticleOutlineClient({
                   type="button"
                   aria-label={`拖动节点 ${node.title}`}
                   onPointerDown={(event) => beginBoardDrag(event, node.id)}
-                  onKeyDown={(event) => {
-                    const step = event.shiftKey ? BOARD_GRID_STEP * 2 : BOARD_GRID_STEP;
-                    if (event.key === "ArrowLeft") {
-                      event.preventDefault();
-                      nudgeBoardNode(node.id, -step, 0, "键盘左移");
-                    } else if (event.key === "ArrowRight") {
-                      event.preventDefault();
-                      nudgeBoardNode(node.id, step, 0, "键盘右移");
-                    } else if (event.key === "ArrowUp") {
-                      event.preventDefault();
-                      nudgeBoardNode(node.id, 0, -step, "键盘上移");
-                    } else if (event.key === "ArrowDown") {
-                      event.preventDefault();
-                      nudgeBoardNode(node.id, 0, step, "键盘下移");
-                    }
-                  }}
-                  title="拖动排布，或聚焦后用方向键微调；按住 Shift 可加大步长"
+                  title="拖动排布"
                   className={`cursor-grab border border-lineStrong bg-surfaceWarm px-2 py-1 text-[11px] uppercase tracking-[0.16em] text-inkMuted active:cursor-grabbing ${
                     activeBoardDrag?.nodeId === node.id ? "border-cinnabar text-cinnabar" : ""
                   }`}
@@ -1304,7 +1273,7 @@ export function ArticleOutlineClient({
       <div className="sr-only" aria-live="polite" aria-atomic="true">
         {boardAnnouncement}
       </div>
-      <div className="border border-lineStrong bg-[radial-gradient(circle_at_top_left,rgba(196,138,58,0.12),transparent_30%),linear-gradient(180deg,#fffdfa_0%,#f7f1e6_100%)] p-4">
+      <div className="border border-lineStrong bg-[radial-gradient(circle_at_top_left,rgba(196,138,58,0.12),transparent_30%),linear-gradient(180deg,rgba(255,255,255,0.88)_0%,var(--paper-strong)_100%)] p-4">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <div className="text-xs uppercase tracking-[0.22em] text-cinnabar">检字白板</div>
@@ -1495,14 +1464,14 @@ export function ArticleOutlineClient({
                   : draggedId
                     ? "正在拖动节点，松手即可重排顺序。"
                     : canvasView === "board"
-                      ? "按住每张卡右上角“排布”即可自由挪动；聚焦后也可用方向键微调。"
+                      ? "按住每张卡右上角“排布”即可自由挪动。"
                       : "提示：拖得越少，结构越清楚。"}
               </div>
             </div>
           </div>
           {canvasView === "board" ? (
             <div className="mt-3 border border-lineStrong bg-surfaceHighlight px-3 py-3 text-xs leading-6 text-inkMuted">
-              键盘提示：聚焦节点右上角“排布”按钮后，用方向键微调位置；按住 Shift 可加大步长。白板动作会同步播报落位结果。
+              白板提示：拖动节点右上角“排布”手柄即可自由挪动位置，落位后会同步播报方位结果。
             </div>
           ) : null}
           {canvasView === "board" ? (
@@ -1682,7 +1651,7 @@ export function ArticleOutlineClient({
           {canvasView === "board" ? (
             <div className="mt-3 flex flex-wrap gap-2 text-[11px] uppercase tracking-[0.16em] text-inkMuted">
               <span className="border border-lineStrong bg-surfaceWarm px-3 py-2">拖拽排布</span>
-              <span className="border border-lineStrong bg-surfaceWarm px-3 py-2">方向键微调</span>
+              <span className="border border-lineStrong bg-surfaceWarm px-3 py-2">节点导航</span>
               <span className="border border-lineStrong bg-surfaceWarm px-3 py-2">布局预设</span>
               <span className="border border-lineStrong bg-surfaceWarm px-3 py-2">缩略总览定位</span>
               <span className="border border-lineStrong bg-surfaceWarm px-3 py-2">吸附后会显示位置语义</span>

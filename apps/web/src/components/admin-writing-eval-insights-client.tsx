@@ -110,24 +110,24 @@ function getStrategyActionLabel(item: Pick<StrategyRecommendation, "executionSta
 
 const adminInsightsSectionClassName = cn(
   surfaceCardStyles(),
-  "border-stone-800 bg-[#171718] p-5 shadow-none",
+  "border-line bg-paperStrong p-5 shadow-none",
 );
 const adminInsightsInsetCardClassName = cn(
   surfaceCardStyles(),
-  "border-stone-800 bg-stone-950 px-4 py-4 shadow-none",
+  "border-lineStrong bg-surface px-4 py-4 shadow-none",
 );
 const adminInsightsSubcardClassName = cn(
   surfaceCardStyles(),
-  "rounded border-stone-800 bg-[#141414] px-3 py-3 shadow-none",
+  "rounded border-lineStrong bg-surfaceWarm px-3 py-3 shadow-none",
 );
-const adminInsightsTriggerBadgeClassName = "border border-stone-700 px-2 py-1 text-xs text-stone-400";
+const adminInsightsTriggerBadgeClassName = "border border-lineStrong bg-surface px-2 py-1 text-xs text-inkSoft";
 const adminInsightsFeedbackBaseClassName = cn(
   surfaceCardStyles(),
   "mt-3 px-3 py-3 text-sm leading-6 shadow-none",
 );
 const adminInsightsFeedbackDangerClassName = cn(
   adminInsightsFeedbackBaseClassName,
-  "border-[#8f3136] bg-[#2a1718] text-[#efb5b9]",
+  "border-cinnabar/40 bg-surfaceWarning text-cinnabar",
 );
 const adminInsightsFeedbackSuccessClassName = cn(
   adminInsightsFeedbackBaseClassName,
@@ -193,9 +193,9 @@ export function AdminWritingEvalInsightsClient({
       <div className="flex items-start justify-between gap-4">
         <div>
           <div className="text-xs uppercase tracking-[0.24em] text-cinnabar">Online Calibration</div>
-          <h2 className="mt-3 font-serifCn text-2xl text-stone-100 text-balance">线上回流校准面板</h2>
+          <h2 className="mt-3 font-serifCn text-2xl text-ink text-balance">线上回流校准面板</h2>
         </div>
-        <div className="text-sm text-stone-500">
+        <div className="text-sm text-inkMuted">
           {onlineCalibration.feedbackCount} 条反馈 · {onlineCalibration.linkedResultCount} 条已绑定样本
         </div>
       </div>
@@ -205,12 +205,12 @@ export function AdminWritingEvalInsightsClient({
           {
             label: "观察爆款分",
             value: onlineCalibration.averageObservedViralScore,
-            tone: "text-stone-100",
+            tone: "text-ink",
           },
           {
             label: "离线预测爆款分",
             value: onlineCalibration.averagePredictedViralScore,
-            tone: "text-stone-300",
+            tone: "text-inkSoft",
           },
           {
             label: "平均校准偏差",
@@ -220,11 +220,11 @@ export function AdminWritingEvalInsightsClient({
           {
             label: "可用绑定样本",
             value: onlineCalibration.linkedResultCount,
-            tone: "text-stone-100",
+            tone: "text-ink",
           },
         ].map((item) => (
           <div key={item.label} className={adminInsightsInsetCardClassName}>
-            <div className="text-xs uppercase tracking-[0.18em] text-stone-500">{item.label}</div>
+            <div className="text-xs uppercase tracking-[0.18em] text-inkMuted">{item.label}</div>
             <div className={`mt-3 text-2xl ${item.tone}`}>
               {typeof item.value === "number" ? item.value.toFixed(2) : "--"}
             </div>
@@ -234,27 +234,27 @@ export function AdminWritingEvalInsightsClient({
 
       <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
         <section>
-          <div className="text-xs uppercase tracking-[0.24em] text-stone-500">agentStrategy 动态建议</div>
+          <div className="text-xs uppercase tracking-[0.24em] text-inkMuted">agentStrategy 动态建议</div>
           <div className="mt-4 grid gap-3 xl:grid-cols-2">
             {strategyRecommendations.map((item) => (
               <div key={item.code} className={adminInsightsInsetCardClassName}>
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <div className="text-xs uppercase tracking-[0.18em] text-stone-500">{item.code}</div>
-                    <div className="mt-2 text-lg text-stone-100">{item.label}</div>
+                    <div className="text-xs uppercase tracking-[0.18em] text-inkMuted">{item.code}</div>
+                    <div className="mt-2 text-lg text-ink">{item.label}</div>
                   </div>
-                  <div className="text-right text-xs text-stone-500">
+                  <div className="text-right text-xs text-inkMuted">
                     紧急度 {(item.urgencyScore * 100).toFixed(0)}%
                     <br />
                     置信度 {(item.confidence * 100).toFixed(0)}%
                   </div>
                 </div>
-                <div className="mt-3 text-sm leading-6 text-stone-400">{item.description}</div>
-                <div className={cn("mt-4 text-sm leading-6 text-stone-300", adminInsightsSubcardClassName)}>
+                <div className="mt-3 text-sm leading-6 text-inkSoft">{item.description}</div>
+                <div className={cn("mt-4 text-sm leading-6 text-inkSoft", adminInsightsSubcardClassName)}>
                   <div>{item.recommendation}</div>
-                  <div className="mt-1 text-stone-500">{item.reason}</div>
+                  <div className="mt-1 text-inkMuted">{item.reason}</div>
                 </div>
-                <div className="mt-4 grid gap-3 md:grid-cols-2 text-sm text-stone-400">
+                <div className="mt-4 grid gap-3 text-sm text-inkSoft md:grid-cols-2">
                   <div>
                     当前：P{item.currentPriority ?? "--"} · {item.currentCadenceHours ?? "--"}h · {getDecisionModeLabel(item.currentDecisionMode)}
                   </div>
@@ -262,14 +262,14 @@ export function AdminWritingEvalInsightsClient({
                     建议：P{item.recommendedPriority} · {item.recommendedCadenceHours}h · {getDecisionModeLabel(item.recommendedDecisionMode)}
                   </div>
                 </div>
-                <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-stone-500">
+                <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-inkMuted">
                   <span>已启用规则 {item.enabledScheduleCount} 条</span>
                   <span>可执行 {item.executableScheduleCount} 条</span>
                   {item.blockedScheduleCount > 0 ? <span>阻断 {item.blockedScheduleCount} 条</span> : null}
                   <span className={`border px-2 py-1 uppercase tracking-[0.16em] ${getWritingEvalExecutionTone(item.executionState)}`}>{item.executionState}</span>
                 </div>
                 {item.executionBlocker ? (
-                  <div className={`mt-2 text-xs leading-6 ${item.executionState === "blocked" ? "text-cinnabar" : "text-stone-500"}`}>
+                  <div className={`mt-2 text-xs leading-6 ${item.executionState === "blocked" ? "text-cinnabar" : "text-inkMuted"}`}>
                     执行提示：{item.executionBlocker}
                   </div>
                 ) : null}
@@ -296,7 +296,7 @@ export function AdminWritingEvalInsightsClient({
         </section>
 
         <form onSubmit={handleCreateCalibratedProfile} className={adminInsightsInsetCardClassName}>
-          <div className="text-xs uppercase tracking-[0.2em] text-stone-500">生成校准版画像</div>
+          <div className="text-xs uppercase tracking-[0.2em] text-inkMuted">生成校准版画像</div>
           <div className="mt-4 space-y-3">
             <select aria-label="select control" value={form.baseProfileId} onChange={(event) => setForm((prev) => ({ ...prev, baseProfileId: event.target.value }))} className={uiPrimitives.adminSelect}>
               <option value="">选择基线评分画像</option>
@@ -309,11 +309,11 @@ export function AdminWritingEvalInsightsClient({
             </select>
             <input aria-label="新画像编码，可留空自动生成" value={form.code} onChange={(event) => setForm((prev) => ({ ...prev, code: event.target.value }))} placeholder="新画像编码，可留空自动生成" className={uiPrimitives.adminInput} />
             <input aria-label="新画像名称，可留空自动生成" value={form.name} onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))} placeholder="新画像名称，可留空自动生成" className={uiPrimitives.adminInput} />
-            <label className="flex items-center gap-2 text-sm text-stone-400">
+            <label className="flex items-center gap-2 text-sm text-inkSoft">
               <input aria-label="input control" type="checkbox" checked={form.isActive} onChange={(event) => setForm((prev) => ({ ...prev, isActive: event.target.checked }))} />
               创建后立即设为 active
             </label>
-            <div className={cn("text-sm leading-6 text-stone-400", adminInsightsSubcardClassName)}>
+            <div className={cn("text-sm leading-6 text-inkSoft", adminInsightsSubcardClassName)}>
               当前会基于线上回流建议与原画像权重做 50% / 50% 混合，优先降低误判风险，再生成一个可回滚的新画像版本。
             </div>
             <button disabled={submitting || !form.baseProfileId} className={uiPrimitives.primaryButton}>
@@ -330,10 +330,10 @@ export function AdminWritingEvalInsightsClient({
 
       <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
         <section className="xl:col-span-2">
-          <div className="text-xs uppercase tracking-[0.24em] text-stone-500">爆款分项权重建议</div>
+          <div className="text-xs uppercase tracking-[0.24em] text-inkMuted">爆款分项权重建议</div>
           <div className="mt-4 overflow-x-auto">
             <table className="w-full min-w-[820px] text-left text-sm">
-              <thead className="text-stone-500">
+              <thead className="text-inkMuted">
                 <tr>
                   {["分项", "当前权重", "建议权重", "Delta", "相关性", "Lift", "置信度", "建议"].map((head) => (
                     <th key={head} className="pb-4 font-medium">
@@ -344,20 +344,20 @@ export function AdminWritingEvalInsightsClient({
               </thead>
               <tbody>
                 {onlineCalibration.weightRecommendations.map((item) => (
-                  <tr key={item.key} className="border-t border-stone-800">
-                    <td className="py-4 text-stone-100">{item.label}</td>
-                    <td className="py-4 text-stone-400">{(item.currentWeight * 100).toFixed(1)}%</td>
-                    <td className="py-4 text-stone-100">{(item.recommendedWeight * 100).toFixed(1)}%</td>
+                  <tr key={item.key} className="border-t border-line">
+                    <td className="py-4 text-ink">{item.label}</td>
+                    <td className="py-4 text-inkSoft">{(item.currentWeight * 100).toFixed(1)}%</td>
+                    <td className="py-4 text-ink">{(item.recommendedWeight * 100).toFixed(1)}%</td>
                     <td className={`py-4 ${item.deltaWeight >= 0 ? "text-emerald-400" : "text-cinnabar"}`}>
                       {item.deltaWeight >= 0 ? "+" : ""}
                       {(item.deltaWeight * 100).toFixed(1)}%
                     </td>
-                    <td className="py-4 text-stone-400">{typeof item.correlation === "number" ? item.correlation.toFixed(2) : "--"}</td>
-                    <td className="py-4 text-stone-400">{typeof item.lift === "number" ? item.lift.toFixed(2) : "--"}</td>
-                    <td className="py-4 text-stone-400">{(item.confidence * 100).toFixed(0)}%</td>
-                    <td className="py-4 text-stone-300">
+                    <td className="py-4 text-inkSoft">{typeof item.correlation === "number" ? item.correlation.toFixed(2) : "--"}</td>
+                    <td className="py-4 text-inkSoft">{typeof item.lift === "number" ? item.lift.toFixed(2) : "--"}</td>
+                    <td className="py-4 text-inkSoft">{(item.confidence * 100).toFixed(0)}%</td>
+                    <td className="py-4 text-inkSoft">
                       <div>{item.recommendation}</div>
-                      <div className="mt-1 text-xs text-stone-500">{item.reason}</div>
+                      <div className="mt-1 text-xs text-inkMuted">{item.reason}</div>
                     </td>
                   </tr>
                 ))}
@@ -370,16 +370,16 @@ export function AdminWritingEvalInsightsClient({
 
       <div className="mt-6 grid gap-6 xl:grid-cols-2">
         <section className="space-y-4">
-          <div className="text-xs uppercase tracking-[0.24em] text-stone-500">离线高分但线上不爆</div>
+          <div className="text-xs uppercase tracking-[0.24em] text-inkMuted">离线高分但线上不爆</div>
           <div className="space-y-3">
             {onlineCalibration.falsePositiveCases.map((item) => (
               <div key={`fp-${item.feedbackId}`} className={adminInsightsInsetCardClassName}>
-                <div className="font-mono text-xs text-stone-300">{formatCaseSource(item)}</div>
-                <div className="mt-2 text-stone-100">{item.topicTitle || item.articleTitle || "未命名样本"}</div>
+                <div className="font-mono text-xs text-inkSoft">{formatCaseSource(item)}</div>
+                <div className="mt-2 text-ink">{item.topicTitle || item.articleTitle || "未命名样本"}</div>
                 <div className="mt-2 text-sm text-cinnabar">
                   离线 {formatWritingEvalMetric(item.predictedViralScore)} → 线上 {formatWritingEvalMetric(item.observedViralScore)} · 偏差 {formatWritingEvalMetric(item.calibrationGap)}
                 </div>
-                <div className="mt-2 text-xs text-stone-500">
+                <div className="mt-2 text-xs text-inkMuted">
                   打开率 {typeof item.openRate === "number" ? `${item.openRate.toFixed(1)}%` : "--"} · 读完率{" "}
                   {typeof item.readCompletionRate === "number" ? `${item.readCompletionRate.toFixed(1)}%` : "--"} · 分享率{" "}
                   {typeof item.shareRate === "number" ? `${item.shareRate.toFixed(1)}%` : "--"}
@@ -400,21 +400,21 @@ export function AdminWritingEvalInsightsClient({
                 ) : null}
               </div>
             ))}
-            {onlineCalibration.falsePositiveCases.length === 0 ? <div className="text-sm text-stone-500">暂无明显误判样本。</div> : null}
+            {onlineCalibration.falsePositiveCases.length === 0 ? <div className="text-sm text-inkMuted">暂无明显误判样本。</div> : null}
           </div>
         </section>
 
         <section className="space-y-4">
-          <div className="text-xs uppercase tracking-[0.24em] text-stone-500">离线低估但线上表现更强</div>
+          <div className="text-xs uppercase tracking-[0.24em] text-inkMuted">离线低估但线上表现更强</div>
           <div className="space-y-3">
             {onlineCalibration.falseNegativeCases.map((item) => (
               <div key={`fn-${item.feedbackId}`} className={adminInsightsInsetCardClassName}>
-                <div className="font-mono text-xs text-stone-300">{formatCaseSource(item)}</div>
-                <div className="mt-2 text-stone-100">{item.topicTitle || item.articleTitle || "未命名样本"}</div>
+                <div className="font-mono text-xs text-inkSoft">{formatCaseSource(item)}</div>
+                <div className="mt-2 text-ink">{item.topicTitle || item.articleTitle || "未命名样本"}</div>
                 <div className="mt-2 text-sm text-emerald-400">
                   离线 {formatWritingEvalMetric(item.predictedViralScore)} → 线上 {formatWritingEvalMetric(item.observedViralScore)} · 偏差 +{formatWritingEvalMetric(item.calibrationGap)}
                 </div>
-                <div className="mt-2 text-xs text-stone-500">
+                <div className="mt-2 text-xs text-inkMuted">
                   打开率 {typeof item.openRate === "number" ? `${item.openRate.toFixed(1)}%` : "--"} · 读完率{" "}
                   {typeof item.readCompletionRate === "number" ? `${item.readCompletionRate.toFixed(1)}%` : "--"} · 分享率{" "}
                   {typeof item.shareRate === "number" ? `${item.shareRate.toFixed(1)}%` : "--"}
@@ -435,7 +435,7 @@ export function AdminWritingEvalInsightsClient({
                 ) : null}
               </div>
             ))}
-            {onlineCalibration.falseNegativeCases.length === 0 ? <div className="text-sm text-stone-500">暂无明显低估样本。</div> : null}
+            {onlineCalibration.falseNegativeCases.length === 0 ? <div className="text-sm text-inkMuted">暂无明显低估样本。</div> : null}
           </div>
         </section>
       </div>

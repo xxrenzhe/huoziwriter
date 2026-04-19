@@ -2998,7 +2998,7 @@ export function AdminWritingEvalClient({
               Runs 页现在专注实验编排、结果对比和线上回流；评测集与样本维护已经迁到独立的 Datasets 页，避免一个页面承担两类职责。
             </p>
           </div>
-          <AdminWritingEvalNav sections={["overview", "datasets", "versions", "insights"]} className="flex gap-3" />
+          <AdminWritingEvalNav sections={["overview", "datasets", "versions", "insights", "scoring", "schedules", "governance"]} className="flex flex-wrap gap-3" />
         </div>
       </section>
 

@@ -140,7 +140,7 @@ export default async function AdminWritingEvalPage() {
               这里作为写作版 autoresearch 的总入口，统一查看评测集、实验运行、版本账本和长期校准状态，再决定该去哪个子页继续操作。
             </p>
           </div>
-          <AdminWritingEvalNav sections={["datasets", "runs", "versions", "insights"]} className="flex flex-wrap gap-3" />
+          <AdminWritingEvalNav sections={["datasets", "runs", "versions", "insights", "scoring", "schedules", "governance"]} className="flex flex-wrap gap-3" />
         </div>
       </section>
 

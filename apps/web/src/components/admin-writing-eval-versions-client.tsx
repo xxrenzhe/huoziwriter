@@ -197,57 +197,57 @@ type ForkPromptCandidateResponse = {
 
 const adminVersionsPanelBaseClassName = cn(
   surfaceCardStyles(),
-  "border-stone-800 bg-[#171718] shadow-none",
+  "border-line bg-paperStrong shadow-none",
 );
 const adminVersionsSectionClassName = cn(adminVersionsPanelBaseClassName, "p-5");
 const adminVersionsWideSectionClassName = cn(
   surfaceCardStyles(),
-  "border-stone-800 bg-stone-950 px-4 py-4 shadow-none xl:col-span-2",
+  "border-lineStrong bg-surface px-4 py-4 shadow-none xl:col-span-2",
 );
 const adminVersionsInsetCardClassName = cn(
   surfaceCardStyles(),
-  "border-stone-800 bg-[#141414] px-4 py-4 shadow-none",
+  "border-lineStrong bg-surface px-4 py-4 shadow-none",
 );
 const adminVersionsInsetCardCompactClassName = cn(
   surfaceCardStyles(),
-  "border-stone-800 bg-[#141414] px-4 py-3 shadow-none",
+  "border-lineStrong bg-surface px-4 py-3 shadow-none",
 );
 const adminVersionsRaisedCardClassName = cn(
   surfaceCardStyles(),
-  "border-stone-800 bg-stone-950 px-4 py-4 shadow-none",
+  "border-lineStrong bg-surfaceWarm px-4 py-4 shadow-none",
 );
 const adminVersionsRaisedCardCompactClassName = cn(
   surfaceCardStyles(),
-  "border-stone-800 bg-stone-950 px-4 py-3 shadow-none",
+  "border-lineStrong bg-surfaceWarm px-4 py-3 shadow-none",
 );
 const adminVersionsFocusCardClassName = cn(
   surfaceCardStyles(),
-  "border-cinnabar bg-[#1d1413] px-4 py-4 shadow-none",
+  "border-cinnabar/40 bg-surfaceWarning px-4 py-4 shadow-none",
 );
 const adminVersionsMutedNoticeClassName = cn(
   adminVersionsInsetCardClassName,
-  "text-sm text-stone-500",
+  "text-sm text-inkMuted",
 );
 const adminVersionsDashedNoticeClassName = cn(
   surfaceCardStyles(),
-  "border-dashed border-stone-700 bg-stone-950 px-4 py-6 text-sm text-stone-500 shadow-none",
+  "border-dashed border-lineStrong bg-surface px-4 py-6 text-sm text-inkMuted shadow-none",
 );
 const adminVersionsTableDesktopShellClassName = "hidden overflow-x-auto md:block";
 const adminVersionsTableMobileListClassName = "grid gap-3 p-4 md:hidden";
 const adminVersionsMobileCardClassName = cn(
   surfaceCardStyles({ padding: "md" }),
-  "border-stone-800 bg-stone-950 text-stone-100 shadow-none transition-colors",
+  "border-lineStrong bg-surface text-ink shadow-none transition-colors",
 );
 const adminVersionsAuditChangeCardClassName = cn(
   surfaceCardStyles(),
-  "border-stone-800 bg-[#141414] px-3 py-3 text-sm text-stone-300 shadow-none",
+  "border-lineStrong bg-surface px-3 py-3 text-sm text-inkSoft shadow-none",
 );
 const adminVersionsPreviewClassName = cn(
   adminVersionsInsetCardClassName,
-  "mt-4 max-h-[420px] overflow-auto whitespace-pre-wrap break-words text-xs leading-6 text-stone-300",
+  "mt-4 max-h-[420px] overflow-auto whitespace-pre-wrap break-words text-xs leading-6 text-inkSoft",
 );
-const adminVersionsInfoChipClassName = "border border-stone-700 px-3 py-1 text-stone-400";
-const adminVersionsMutedChipClassName = "border border-stone-700 px-3 py-1 text-stone-500";
+const adminVersionsInfoChipClassName = "border border-lineStrong bg-surface px-3 py-1 text-inkSoft";
+const adminVersionsMutedChipClassName = "border border-line bg-surface px-3 py-1 text-inkMuted";
 const adminVersionsInputClassName = cn("mt-3", uiPrimitives.adminInput);
 const adminVersionsSelectClassName = cn("mt-3", uiPrimitives.adminSelect);
 const adminVersionsTextareaClassName = cn("mt-3 min-h-[110px]", uiPrimitives.adminInput);
@@ -262,13 +262,13 @@ function getRolloutRiskTextTone(value: string) {
   if (value === "cinnabar") return "text-cinnabar";
   if (value === "emerald") return "text-emerald-400";
   if (value === "amber") return "text-amber-300";
-  return "text-stone-300";
+  return "text-inkSoft";
 }
 
 function getVersionsMobileCardClassName(selected: boolean) {
   return cn(
     adminVersionsMobileCardClassName,
-    selected ? "border-cinnabar bg-[#1d1413]" : "hover:border-stone-700 hover:bg-stone-900/70",
+    selected ? "border-cinnabar/40 bg-surfaceWarning" : "hover:border-lineStrong hover:bg-surfaceWarm",
   );
 }
 
@@ -293,28 +293,28 @@ function getAdvisoryTextTone(tone: RolloutAdvisory["tone"]) {
   if (tone === "emerald") return "text-emerald-400";
   if (tone === "cinnabar") return "text-cinnabar";
   if (tone === "amber") return "text-amber-300";
-  return "text-stone-400";
+  return "text-inkMuted";
 }
 
 function getAdvisoryInlineTone(tone: RolloutAdvisory["tone"]) {
   if (tone === "emerald") return "text-emerald-400";
   if (tone === "cinnabar") return "text-cinnabar";
   if (tone === "amber") return "text-amber-300";
-  return "text-stone-500";
+  return "text-inkMuted";
 }
 
 function getAdvisoryPanelTone(tone: RolloutAdvisory["tone"]) {
-  if (tone === "emerald") return "border-emerald-800 bg-[#102017]";
-  if (tone === "cinnabar") return "border-cinnabar bg-[#231514]";
-  if (tone === "amber") return "border-amber-800 bg-[#221b10]";
-  return "border-stone-800 bg-[#141414]";
+  if (tone === "emerald") return "border-emerald-500/30 bg-emerald-500/10";
+  if (tone === "cinnabar") return "border-cinnabar/40 bg-surfaceWarning";
+  if (tone === "amber") return "border-warning/40 bg-surfaceWarning";
+  return "border-lineStrong bg-surface";
 }
 
 function getRolloutRiskTone(value: string) {
-  if (value === "emerald") return "border-emerald-800 bg-[#102017] text-emerald-400";
-  if (value === "cinnabar") return "border-cinnabar bg-[#231514] text-cinnabar";
-  if (value === "amber") return "border-amber-800 bg-[#221b10] text-amber-300";
-  return "border-stone-800 bg-[#141414] text-stone-400";
+  if (value === "emerald") return "border-emerald-500/30 bg-emerald-500/10 text-emerald-400";
+  if (value === "cinnabar") return "border-cinnabar/40 bg-surfaceWarning text-cinnabar";
+  if (value === "amber") return "border-warning/40 bg-surfaceWarning text-warning";
+  return "border-lineStrong bg-surface text-inkMuted";
 }
 
 function getRolloutManageActionLabel(value: string, cooldownSkipped = false) {
@@ -325,10 +325,10 @@ function getRolloutManageActionLabel(value: string, cooldownSkipped = false) {
 }
 
 function getRolloutManageActionTone(value: string, cooldownSkipped = false) {
-  if (cooldownSkipped || value === "cooldown_skip") return "border-stone-700 text-stone-400";
+  if (cooldownSkipped || value === "cooldown_skip") return "border-lineStrong text-inkMuted";
   if (value === "apply") return "border-emerald-800 text-emerald-400";
   if (value === "noop") return "border-amber-800 text-amber-300";
-  return "border-stone-700 text-stone-400";
+  return "border-lineStrong text-inkMuted";
 }
 
 function formatRolloutConfigSummary(value: Record<string, unknown>) {
@@ -341,7 +341,7 @@ function formatRolloutConfigSummary(value: Record<string, unknown>) {
 function getRolloutAuditTimelineTone(item: RolloutAuditLog) {
   if (item.managementAction === "apply" && !item.cooldownSkipped) return "bg-emerald-500/70";
   if (item.managementAction === "noop") return "bg-amber-500/70";
-  return "bg-stone-600";
+  return "bg-surfaceMuted";
 }
 
 function buildRolloutAuditSummary(logs: RolloutAuditLog[]): RolloutAuditSummary {
@@ -354,7 +354,7 @@ function buildRolloutAuditSummary(logs: RolloutAuditLog[]): RolloutAuditSummary 
 }
 
 function getAdmissionPanelTone(canEnable: boolean) {
-  return canEnable ? "border-emerald-900 bg-[#102017]" : "border-cinnabar bg-[#231514]";
+  return canEnable ? "border-emerald-500/30 bg-emerald-500/10" : "border-cinnabar/40 bg-surfaceWarning";
 }
 
 function getAdmissionTextTone(canEnable: boolean) {
@@ -369,7 +369,7 @@ function SectionEyebrow({
   children: ReactNode;
 }) {
   return (
-    <div className={cn("text-xs uppercase tracking-[0.18em]", tone === "cinnabar" ? "text-cinnabar" : "text-stone-500")}>
+    <div className={cn("text-xs uppercase tracking-[0.18em]", tone === "cinnabar" ? "text-cinnabar" : "text-inkMuted")}>
       {children}
     </div>
   );
@@ -400,16 +400,16 @@ function SummaryStatGrid({
     <div className={className}>
       {items.map((item) => (
         <div key={item.label} className={adminVersionsInsetCardClassName}>
-          <div className="text-xs uppercase tracking-[0.16em] text-stone-500">{item.label}</div>
+          <div className="text-xs uppercase tracking-[0.16em] text-inkMuted">{item.label}</div>
           {item.href ? (
             <Link
               href={item.href}
-              className={cn("mt-3 block transition hover:text-cinnabar", item.valueClassName || "text-2xl", item.tone || "text-stone-100")}
+              className={cn("mt-3 block transition hover:text-cinnabar", item.valueClassName || "text-2xl", item.tone || "text-ink")}
             >
               {item.value}
             </Link>
           ) : (
-            <div className={cn("mt-3", item.valueClassName || "text-2xl", item.tone || "text-stone-100")}>{item.value}</div>
+            <div className={cn("mt-3", item.valueClassName || "text-2xl", item.tone || "text-ink")}>{item.value}</div>
           )}
         </div>
       ))}
@@ -428,7 +428,7 @@ function AdvisoryPanel({
 }) {
   return (
     <div className={adminVersionsInsetCardClassName}>
-      <div className="text-xs uppercase tracking-[0.16em] text-stone-500">{title}</div>
+      <div className="text-xs uppercase tracking-[0.16em] text-inkMuted">{title}</div>
       <div className={contentClassName}>{children}</div>
     </div>
   );
@@ -452,7 +452,7 @@ function VersionPreviewPanel({
   return (
     <div className={adminVersionsRaisedCardClassName}>
       <SectionEyebrow tone={tone}>{title}</SectionEyebrow>
-      <div className="mt-3 text-sm text-stone-400">{label}</div>
+      <div className="mt-3 text-sm text-inkSoft">{label}</div>
       {actionLinks.length ? (
         <div className="mt-3">
           <SecondaryActionLinks items={actionLinks} />
@@ -476,7 +476,7 @@ function ConfigCard({
 }) {
   return (
     <div className={compact ? adminVersionsInsetCardCompactClassName : adminVersionsInsetCardClassName}>
-      {title ? <div className="text-xs uppercase tracking-[0.16em] text-stone-500">{title}</div> : null}
+      {title ? <div className="text-xs uppercase tracking-[0.16em] text-inkMuted">{title}</div> : null}
       <div className={title ? "mt-3" : ""}>{children}</div>
     </div>
   );
@@ -492,7 +492,7 @@ function ToggleConfigCard({
   onChange: (checked: boolean) => void;
 }) {
   return (
-    <label className={cn(adminVersionsInsetCardCompactClassName, "flex items-center gap-3 text-sm text-stone-300")}>
+    <label className={cn(adminVersionsInsetCardCompactClassName, "flex items-center gap-3 text-sm text-inkSoft")}>
       <input aria-label="input control" type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} />
       {label}
     </label>
@@ -522,28 +522,28 @@ function RolloutAuditSection({
     <div className={cn(adminVersionsInsetCardClassName, "mt-3")}>
       <div className="flex items-start justify-between gap-3">
         <div>
-          <div className="text-xs uppercase tracking-[0.16em] text-stone-500">{title}</div>
-          <div className="mt-2 text-sm leading-7 text-stone-500">{description}</div>
+          <div className="text-xs uppercase tracking-[0.16em] text-inkMuted">{title}</div>
+          <div className="mt-2 text-sm leading-7 text-inkMuted">{description}</div>
         </div>
-        <div className="text-xs text-stone-500">{logs.length} 条</div>
+        <div className="text-xs text-inkMuted">{logs.length} 条</div>
       </div>
       {actionLinks.length ? <div className="mt-4"><SecondaryActionLinks items={actionLinks} /></div> : null}
       <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         {[
           { label: "自动调整", value: summary.applyCount, tone: "text-emerald-400" },
           { label: "维持不变", value: summary.noopCount, tone: "text-amber-300" },
-          { label: "冷却跳过", value: summary.cooldownSkipCount, tone: "text-stone-300" },
+          { label: "冷却跳过", value: summary.cooldownSkipCount, tone: "text-inkSoft" },
           { label: "最近风险", value: summary.latestRiskLevel, tone: getRolloutRiskTextTone(summary.latestRiskLevel) },
         ].map((item) => (
           <div key={item.label} className={adminVersionsRaisedCardClassName}>
-            <div className="text-xs uppercase tracking-[0.16em] text-stone-500">{item.label}</div>
+            <div className="text-xs uppercase tracking-[0.16em] text-inkMuted">{item.label}</div>
             <div className={`mt-3 text-2xl ${item.tone}`}>{item.value}</div>
           </div>
         ))}
       </div>
       {showTimeline && logs.length ? (
         <div className={cn(adminVersionsRaisedCardClassName, "mt-4 overflow-hidden")}>
-          <div className="text-xs uppercase tracking-[0.16em] text-stone-500">审计时间线</div>
+          <div className="text-xs uppercase tracking-[0.16em] text-inkMuted">审计时间线</div>
           <div className="mt-3 flex items-end gap-2">
             {logs.slice(0, 12).reverse().map((item) => (
               <div key={`audit-timeline-${item.id}`} className="flex min-w-0 flex-1 flex-col items-center gap-2">
@@ -552,7 +552,7 @@ function RolloutAuditSection({
                   style={{ height: `${Math.max(12, item.changes.length > 0 ? 18 + item.changes.length * 8 : 12)}px` }}
                   title={`${getRolloutManageActionLabel(item.managementAction, item.cooldownSkipped)} · ${formatWritingEvalDateTime(item.createdAt)}`}
                 />
-                <div className="text-[10px] text-stone-600">
+                <div className="text-[10px] text-inkMuted">
                               {formatWritingEvalMonthDay(item.createdAt)}
                 </div>
               </div>
@@ -566,10 +566,10 @@ function RolloutAuditSection({
             <article key={item.id} className={adminVersionsRaisedCardClassName}>
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <div className="text-xs uppercase tracking-[0.16em] text-stone-500">
+                  <div className="text-xs uppercase tracking-[0.16em] text-inkMuted">
                     {item.username || "system"} · {formatWritingEvalDateTime(item.createdAt)}
                   </div>
-                  <div className="mt-2 text-sm leading-7 text-stone-200">{item.reason || emptyReasonFallback}</div>
+                  <div className="mt-2 text-sm leading-7 text-ink">{item.reason || emptyReasonFallback}</div>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <div className={`border px-3 py-1 text-xs uppercase tracking-[0.12em] ${getRolloutManageActionTone(item.managementAction, item.cooldownSkipped)}`}>
@@ -1294,18 +1294,18 @@ export function AdminWritingEvalVersionsClient({
     <section className={adminVersionsSectionClassName}>
       <div className="flex items-center justify-between gap-4">
         <div>
-          <div className="text-xs uppercase tracking-[0.24em] text-stone-500">Version Ledger</div>
-          <h2 className="mt-3 font-serifCn text-2xl text-stone-100 text-balance">保留、丢弃与回滚记录</h2>
+          <div className="text-xs uppercase tracking-[0.24em] text-inkMuted">Version Ledger</div>
+          <h2 className="mt-3 font-serifCn text-2xl text-ink text-balance">保留、丢弃与回滚记录</h2>
         </div>
-        <div className="text-sm text-stone-500">{displayedVersions.length} 条记录</div>
+        <div className="text-sm text-inkMuted">{displayedVersions.length} 条记录</div>
       </div>
 
-      {message ? <div className={cn(adminVersionsRaisedCardCompactClassName, "mt-4 text-sm text-stone-300")}>{message}</div> : null}
+      {message ? <div className={cn(adminVersionsRaisedCardCompactClassName, "mt-4 text-sm text-inkSoft")}>{message}</div> : null}
       {focusAsset ? (
         <div className={cn(adminVersionsFocusCardClassName, "mt-4 flex flex-wrap items-start justify-between gap-3")}>
           <div>
             <SectionEyebrow tone="cinnabar">资产聚焦模式</SectionEyebrow>
-            <div className="mt-2 text-sm leading-7 text-stone-200">
+            <div className="mt-2 text-sm leading-7 text-ink">
               当前只展示 <span className="font-mono">{focusAsset.assetType}</span> · <span className="font-mono">{focusAsset.assetRef}</span> 的版本账本，共 {focusAsset.matchedCount} 条。
             </div>
           </div>
@@ -1334,25 +1334,25 @@ export function AdminWritingEvalVersionsClient({
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <div className="text-xs uppercase tracking-[0.18em] text-stone-500">
+                      <div className="text-xs uppercase tracking-[0.18em] text-inkMuted">
                         {formatWritingEvalDateTime(item.createdAt)}
                       </div>
-                      <div className="mt-3 font-serifCn text-2xl text-stone-100 text-balance">
+                      <div className="mt-3 font-serifCn text-2xl text-ink text-balance">
                         {getVersionTypeLabel(item.versionType)}
                       </div>
-                      <div className="mt-2 text-sm text-stone-400">{item.targetKey}</div>
+                      <div className="mt-2 text-sm text-inkSoft">{item.targetKey}</div>
                     </div>
                     <div className="shrink-0 text-right">
                       <div className={cn("text-xs uppercase tracking-[0.18em]", getDecisionTextTone(item.decision))}>
                         {item.decision}
                       </div>
-                      <div className="mt-2 text-xs text-stone-500">{toStatusLabel(item)}</div>
+                      <div className="mt-2 text-xs text-inkMuted">{toStatusLabel(item)}</div>
                     </div>
                   </div>
-                  <div className="mt-4 grid gap-3 text-sm text-stone-400 sm:grid-cols-2">
+                  <div className="mt-4 grid gap-3 text-sm text-inkSoft sm:grid-cols-2">
                     <div>
-                      <div className="text-[11px] uppercase tracking-[0.18em] text-stone-500">来源版本</div>
-                      <div className="mt-1 break-all font-mono text-xs text-stone-300">
+                      <div className="text-[11px] uppercase tracking-[0.18em] text-inkMuted">来源版本</div>
+                      <div className="mt-1 break-all font-mono text-xs text-inkSoft">
                         {sourcePromptPageHref ? (
                           <Link
                             href={sourcePromptPageHref}
@@ -1367,8 +1367,8 @@ export function AdminWritingEvalVersionsClient({
                       </div>
                     </div>
                     <div>
-                      <div className="text-[11px] uppercase tracking-[0.18em] text-stone-500">目标版本</div>
-                      <div className="mt-1 break-all font-mono text-xs text-stone-200">
+                      <div className="text-[11px] uppercase tracking-[0.18em] text-inkMuted">目标版本</div>
+                      <div className="mt-1 break-all font-mono text-xs text-ink">
                         {promptPageHref ? (
                           <Link
                             href={promptPageHref}
@@ -1383,17 +1383,17 @@ export function AdminWritingEvalVersionsClient({
                       </div>
                     </div>
                     <div>
-                      <div className="text-[11px] uppercase tracking-[0.18em] text-stone-500">总分</div>
-                      <div className="mt-1 text-stone-300">
+                      <div className="text-[11px] uppercase tracking-[0.18em] text-inkMuted">总分</div>
+                      <div className="mt-1 text-inkSoft">
                         {typeof getNumber(item.scoreSummary.totalScore) === "number" ? getNumber(item.scoreSummary.totalScore)?.toFixed(2) : "--"}
                       </div>
                     </div>
                     <div>
-                      <div className="text-[11px] uppercase tracking-[0.18em] text-stone-500">操作人</div>
-                      <div className="mt-1 text-stone-300">{item.approvedBy ?? "--"}</div>
+                      <div className="text-[11px] uppercase tracking-[0.18em] text-inkMuted">操作人</div>
+                      <div className="mt-1 text-inkSoft">{item.approvedBy ?? "--"}</div>
                     </div>
                   </div>
-                  <div className="mt-4 text-sm leading-7 text-stone-400">
+                  <div className="mt-4 text-sm leading-7 text-inkSoft">
                     {item.rolloutStats ? (
                       <div>
                         命中 {item.rolloutStats.totalHitCount} 次 / {item.rolloutStats.uniqueUserCount} 人
@@ -1403,15 +1403,15 @@ export function AdminWritingEvalVersionsClient({
                     ) : (
                       <div>暂无灰度统计</div>
                     )}
-                    {item.rolloutConfig ? <div className="mt-2 text-stone-500">自动模式：{item.rolloutConfig.autoMode}</div> : null}
+                    {item.rolloutConfig ? <div className="mt-2 text-inkMuted">自动模式：{item.rolloutConfig.autoMode}</div> : null}
                     {primaryFeedbackSummary ? (
-                      <div className="mt-2 text-stone-500">
+                      <div className="mt-2 text-inkMuted">
                         {getFeedbackSummaryLabel(item)} {primaryFeedbackSummary.feedbackCount} 条
                         <br />
                         爆款 {formatWritingEvalMetric(primaryFeedbackSummary.averageObservedViralScore, "", 2)} · 打开 {formatWritingEvalMetric(primaryFeedbackSummary.averageOpenRate, "%", 1)}
                       </div>
                     ) : (
-                      <div className="mt-2 text-stone-600">暂无回流反馈</div>
+                      <div className="mt-2 text-inkMuted">暂无回流反馈</div>
                     )}
                     {advisory ? (
                       <div className={cn("mt-2", getAdvisoryInlineTone(advisory.tone))}>
@@ -1420,8 +1420,8 @@ export function AdminWritingEvalVersionsClient({
                     ) : null}
                   </div>
                   <div className="mt-4">
-                    <div className="text-[11px] uppercase tracking-[0.18em] text-stone-500">原因</div>
-                    <div className="mt-2 text-sm leading-7 text-stone-400">{item.decisionReason || "暂无"}</div>
+                    <div className="text-[11px] uppercase tracking-[0.18em] text-inkMuted">原因</div>
+                    <div className="mt-2 text-sm leading-7 text-inkSoft">{item.decisionReason || "暂无"}</div>
                   </div>
                   <div className="mt-4 flex flex-wrap gap-2">
                     {promptPageHref ? (
@@ -1446,7 +1446,7 @@ export function AdminWritingEvalVersionsClient({
                         {rollingBackId === item.id ? "回滚中…" : "回滚到来源版本"}
                       </button>
                     ) : (
-                      <span className="text-xs text-stone-600">不可回滚</span>
+                      <span className="text-xs text-inkMuted">不可回滚</span>
                     )}
                     {isPromptBackedVersionType(item.versionType) && item.experimentSource?.datasetId ? (
                       <button
@@ -1473,7 +1473,7 @@ export function AdminWritingEvalVersionsClient({
         </div>
         <div className={adminVersionsTableDesktopShellClassName}>
           <table className="w-full min-w-[1200px] text-left text-sm">
-            <thead className="text-stone-500">
+            <thead className="text-inkMuted">
               <tr>
                 {["时间", "对象", "来源版本", "目标版本", "决策", "当前状态", "效果信号", "原因", "总分", "操作人", "操作"].map((head) => (
                   <th key={head} className="pb-4 font-medium">
@@ -1492,14 +1492,14 @@ export function AdminWritingEvalVersionsClient({
                   return (
                     <tr
                       key={item.id}
-                      className={`cursor-pointer border-t border-stone-800 align-top ${selectedVersionId === item.id ? "bg-[#1d1413]" : ""}`}
+                      className={`cursor-pointer border-t border-line align-top ${selectedVersionId === item.id ? "bg-surfaceWarning" : ""}`}
                       onClick={() => setSelectedVersionId(item.id)}
                     >
-                      <td className="py-4 text-stone-400">{formatWritingEvalDateTime(item.createdAt)}</td>
-                      <td className="py-4 text-stone-100">
+                      <td className="py-4 text-inkSoft">{formatWritingEvalDateTime(item.createdAt)}</td>
+                      <td className="py-4 text-ink">
                         {getVersionTypeLabel(item.versionType)} · {item.targetKey}
                       </td>
-                      <td className="py-4 font-mono text-xs text-stone-400">
+                      <td className="py-4 font-mono text-xs text-inkSoft">
                         {sourcePromptPageHref ? (
                           <Link href={sourcePromptPageHref} onClick={(event) => event.stopPropagation()} className="transition hover:text-cinnabar">
                             {item.sourceVersion}
@@ -1508,7 +1508,7 @@ export function AdminWritingEvalVersionsClient({
                           item.sourceVersion
                         )}
                       </td>
-                      <td className="py-4 font-mono text-xs text-stone-300">
+                      <td className="py-4 font-mono text-xs text-ink">
                         {promptPageHref ? (
                           <Link href={promptPageHref} onClick={(event) => event.stopPropagation()} className="transition hover:text-cinnabar">
                             {item.candidateContent}
@@ -1520,8 +1520,8 @@ export function AdminWritingEvalVersionsClient({
                       <td className={`py-4 ${getDecisionTextTone(item.decision)}`}>
                         {item.decision}
                       </td>
-                      <td className="py-4 text-stone-400">{toStatusLabel(item)}</td>
-                      <td className="py-4 text-xs leading-6 text-stone-400">
+                      <td className="py-4 text-inkSoft">{toStatusLabel(item)}</td>
+                      <td className="py-4 text-xs leading-6 text-inkSoft">
                         {item.rolloutStats ? (
                           <div>
                             命中 {item.rolloutStats.totalHitCount} 次 / {item.rolloutStats.uniqueUserCount} 人
@@ -1531,15 +1531,15 @@ export function AdminWritingEvalVersionsClient({
                         ) : (
                           <div>暂无灰度统计</div>
                         )}
-                        {item.rolloutConfig ? <div className="mt-2 text-stone-600">自动模式：{item.rolloutConfig.autoMode}</div> : null}
+                        {item.rolloutConfig ? <div className="mt-2 text-inkMuted">自动模式：{item.rolloutConfig.autoMode}</div> : null}
                         {primaryFeedbackSummary ? (
-                          <div className="mt-2 text-stone-500">
+                          <div className="mt-2 text-inkMuted">
                             {getFeedbackSummaryLabel(item)} {primaryFeedbackSummary.feedbackCount} 条
                             <br />
                             爆款 {formatWritingEvalMetric(primaryFeedbackSummary.averageObservedViralScore, "", 2)} · 打开 {formatWritingEvalMetric(primaryFeedbackSummary.averageOpenRate, "%", 1)}
                           </div>
                         ) : (
-                          <div className="mt-2 text-stone-600">暂无回流反馈</div>
+                          <div className="mt-2 text-inkMuted">暂无回流反馈</div>
                         )}
                         {advisory ? (
                           <div className={`mt-2 ${getAdvisoryInlineTone(advisory.tone)}`}>
@@ -1547,11 +1547,11 @@ export function AdminWritingEvalVersionsClient({
                           </div>
                         ) : null}
                       </td>
-                      <td className="py-4 text-stone-400">{item.decisionReason || "暂无"}</td>
-                      <td className="py-4 text-stone-400">
+                      <td className="py-4 text-inkSoft">{item.decisionReason || "暂无"}</td>
+                      <td className="py-4 text-inkSoft">
                         {typeof getNumber(item.scoreSummary.totalScore) === "number" ? getNumber(item.scoreSummary.totalScore)?.toFixed(2) : "--"}
                       </td>
-                      <td className="py-4 text-stone-400">{item.approvedBy ?? "--"}</td>
+                      <td className="py-4 text-inkSoft">{item.approvedBy ?? "--"}</td>
                       <td className="py-4">
                         <div className="flex flex-wrap gap-2">
                           {promptPageHref ? (
@@ -1569,7 +1569,7 @@ export function AdminWritingEvalVersionsClient({
                               {rollingBackId === item.id ? "回滚中…" : "回滚到来源版本"}
                             </button>
                           ) : (
-                            <span className="text-xs text-stone-600">不可回滚</span>
+                            <span className="text-xs text-inkMuted">不可回滚</span>
                           )}
                           {isPromptBackedVersionType(item.versionType) && item.experimentSource?.datasetId ? (
                             <button
@@ -1589,7 +1589,7 @@ export function AdminWritingEvalVersionsClient({
               ))}
               {displayedVersions.length === 0 ? (
                 <tr>
-                  <td colSpan={11} className="py-6 text-stone-500">
+                  <td colSpan={11} className="py-6 text-inkMuted">
                     {focusAsset ? "当前聚焦资产还没有匹配的版本账本记录。" : "当前还没有版本账本记录。"}
                   </td>
                 </tr>
@@ -1604,17 +1604,17 @@ export function AdminWritingEvalVersionsClient({
           <div className="flex items-start justify-between gap-4">
             <div>
               <SectionEyebrow>实验来源</SectionEyebrow>
-              <div className="mt-3 text-sm leading-7 text-stone-400">
+              <div className="mt-3 text-sm leading-7 text-inkSoft">
                 {selectedVersion?.experimentSource ? (
                   <>
                     <div>
                       Run：
                       {selectedExperimentRunHref ? (
-                        <Link href={selectedExperimentRunHref} className="ml-1 font-mono text-stone-200 transition hover:text-cinnabar">
+                        <Link href={selectedExperimentRunHref} className="ml-1 font-mono text-ink transition hover:text-cinnabar">
                           {selectedVersion.experimentSource.runCode || "--"}
                         </Link>
                       ) : (
-                        <span className="ml-1 font-mono text-stone-200">{selectedVersion.experimentSource.runCode || "--"}</span>
+                        <span className="ml-1 font-mono text-ink">{selectedVersion.experimentSource.runCode || "--"}</span>
                       )}
                       {" · "}
                       数据集：
@@ -1706,17 +1706,17 @@ export function AdminWritingEvalVersionsClient({
                 <div className={`text-xs uppercase tracking-[0.18em] ${getAdvisoryTextTone(selectedRolloutAdvisory.tone)}`}>
                   {selectedRolloutAdvisory.headline}
                 </div>
-                <div className="mt-3 text-sm leading-7 text-stone-200">{selectedRolloutAdvisory.summary}</div>
+                <div className="mt-3 text-sm leading-7 text-ink">{selectedRolloutAdvisory.summary}</div>
               </div>
               <div className="grid gap-3 xl:grid-cols-2">
-                <AdvisoryPanel title="告警依据" contentClassName="mt-3 space-y-2 text-sm leading-7 text-stone-300">
+                <AdvisoryPanel title="告警依据" contentClassName="mt-3 space-y-2 text-sm leading-7 text-inkSoft">
                   <>
                     {selectedRolloutAdvisory.reasons.map((reason) => (
                       <div key={reason}>{reason}</div>
                     ))}
                   </>
                 </AdvisoryPanel>
-                <AdvisoryPanel title="下一步建议" contentClassName="mt-3 space-y-2 text-sm leading-7 text-stone-300">
+                <AdvisoryPanel title="下一步建议" contentClassName="mt-3 space-y-2 text-sm leading-7 text-inkSoft">
                   <>
                     {selectedRolloutAdvisory.nextSteps.map((step) => (
                       <div key={step}>{step}</div>
@@ -1746,7 +1746,7 @@ export function AdminWritingEvalVersionsClient({
                         </button>
                       ))}
                     </div>
-                    <div className="space-y-2 text-sm text-stone-400">
+                    <div className="space-y-2 text-sm text-inkSoft">
                       {selectedRolloutPresets.map((preset) => (
                         <div key={`${preset.label}-desc`}>
                           {preset.label}：{preset.description}
@@ -1793,7 +1793,7 @@ export function AdminWritingEvalVersionsClient({
           <div className="flex items-start justify-between gap-4">
             <div>
               <SectionEyebrow tone="cinnabar">线上灰度</SectionEyebrow>
-              <div className="mt-3 text-sm leading-7 text-stone-400">
+              <div className="mt-3 text-sm leading-7 text-inkSoft">
                 {selectedVersion && isRolloutVersionType(selectedVersion.versionType)
                   ? `${getVersionTypeLabel(selectedVersion.versionType)} · ${selectedVersion.candidateContent}`
                   : "仅 prompt_version、layout_strategy（写作风格资产）、apply_command_template、scoring_profile 支持这里的灰度配置。"}
@@ -1851,7 +1851,7 @@ export function AdminWritingEvalVersionsClient({
                     />
                   </ConfigCard>
                   <ConfigCard title="当前观测" compact>
-                    <div className="mt-3 text-sm leading-7 text-stone-300">
+                    <div className="mt-3 text-sm leading-7 text-inkSoft">
                       {selectedVersion.rolloutStats ? `${selectedVersion.rolloutStats.totalHitCount} 次 / ${selectedVersion.rolloutStats.uniqueUserCount} 人` : "暂无"}
                     </div>
                   </ConfigCard>
@@ -1864,7 +1864,7 @@ export function AdminWritingEvalVersionsClient({
                       placeholder="pro, ultra"
                       className={adminVersionsInputClassName}
                     />
-                    <div className="mt-2 text-xs leading-6 text-stone-600">多个套餐用逗号分隔；为空时仅看观察优先开关和比例。</div>
+                    <div className="mt-2 text-xs leading-6 text-inkMuted">多个套餐用逗号分隔；为空时仅看观察优先开关和比例。</div>
                   </ConfigCard>
                   <ConfigCard title={supportsRolloutNotes ? "备注" : "治理说明"}>
                     {supportsRolloutNotes ? (
@@ -1875,12 +1875,12 @@ export function AdminWritingEvalVersionsClient({
                           placeholder="记录灰度目标、风险点或预计观察窗口"
                           className={adminVersionsTextareaClassName}
                         />
-                        <div className="mt-2 text-xs leading-6 text-stone-600">
+                        <div className="mt-2 text-xs leading-6 text-inkMuted">
                           `recommendation` 会允许 scheduler 按线上回流自动收缩、限流或谨慎扩量；`manual` 只保留提示，不自动改配置。
                         </div>
                       </>
                     ) : (
-                      <div className="mt-3 text-sm leading-7 text-stone-400">
+                      <div className="mt-3 text-sm leading-7 text-inkSoft">
                         Prompt 版本只保存自动模式、观察优先、百分比和套餐白名单；具体变更原因以审计日志为主，不单独维护 rollout notes。
                       </div>
                     )}
@@ -1890,7 +1890,7 @@ export function AdminWritingEvalVersionsClient({
                   <div className={`text-xs uppercase tracking-[0.16em] ${getAdmissionTextTone(selectedRolloutAdmission.canEnable)}`}>
                     {selectedRolloutAdmission.canEnable ? "已通过灰度准入校验" : "未通过灰度准入校验"}
                   </div>
-                  <div className="mt-3 space-y-2 text-sm leading-7 text-stone-200">
+                  <div className="mt-3 space-y-2 text-sm leading-7 text-ink">
                     {selectedRolloutAdmission.canEnable ? (
                       <div>当前配置满足准入门槛，可以保存灰度配置。</div>
                     ) : (
@@ -1926,12 +1926,12 @@ export function AdminWritingEvalVersionsClient({
                 />
               </>
             ) : (
-              <div className={cn(adminVersionsInsetCardClassName, "mt-4 text-sm text-stone-400")}>
+              <div className={cn(adminVersionsInsetCardClassName, "mt-4 text-sm text-inkSoft")}>
                 {selectedVersion?.versionType === "prompt_version" && selectedVersion.isCurrentActive ? (
                   "当前 Prompt 版本已经全量生效，无需再配置灰度窗口。"
                 ) : (
                   <>
-                    当前版本决策为 <span className="text-stone-200">{selectedVersion?.decision}</span>，仅保留版本允许配置线上灰度。
+                    当前版本决策为 <span className="text-ink">{selectedVersion?.decision}</span>，仅保留版本允许配置线上灰度。
                   </>
                 )}
               </div>
@@ -1944,7 +1944,7 @@ export function AdminWritingEvalVersionsClient({
             <div className="flex items-start justify-between gap-4">
               <div>
                 <SectionEyebrow tone="cinnabar">Prompt 灰度治理</SectionEyebrow>
-                <div className="mt-3 text-sm leading-7 text-stone-400">
+                <div className="mt-3 text-sm leading-7 text-inkSoft">
                   聚焦当前 prompt 版本的自动灰度配置、账本判断和 scheduler 审计，不和通用写作资产治理混在一起看。
                 </div>
               </div>
@@ -1955,7 +1955,7 @@ export function AdminWritingEvalVersionsClient({
               className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4"
               items={[
                 { label: "自动模式", value: selectedPromptRolloutConfig?.autoMode || "manual" },
-                { label: "观察优先", value: selectedPromptRolloutConfig?.rolloutObserveOnly ? "仅观察流量" : "公开灰度", tone: selectedPromptRolloutConfig?.rolloutObserveOnly ? "text-amber-300" : "text-stone-100" },
+                { label: "观察优先", value: selectedPromptRolloutConfig?.rolloutObserveOnly ? "仅观察流量" : "公开灰度", tone: selectedPromptRolloutConfig?.rolloutObserveOnly ? "text-amber-300" : "text-ink" },
                 { label: "灰度比例", value: `${Math.round(Number(selectedPromptRolloutConfig?.rolloutPercentage ?? 0))}%` },
                 { label: "套餐白名单", value: selectedPromptRolloutConfig?.rolloutPlanCodes.length ? selectedPromptRolloutConfig.rolloutPlanCodes.join(", ") : "--" },
               ]}
@@ -1970,7 +1970,7 @@ export function AdminWritingEvalVersionsClient({
                   tone:
                     selectedPromptRolloutAssessment?.ledgerDecision
                       ? getDecisionTextTone(selectedPromptRolloutAssessment.ledgerDecision)
-                      : "text-stone-100",
+                      : "text-ink",
                 },
                 {
                   label: "来源版本",
@@ -2004,7 +2004,7 @@ export function AdminWritingEvalVersionsClient({
                   label: "Prompt Ref",
                   value: selectedPromptRolloutAssessment?.ref || selectedVersion.candidateContent,
                   href: selectedPromptPageHref || undefined,
-                  valueClassName: "text-sm leading-7 text-stone-200",
+                  valueClassName: "text-sm leading-7 text-ink",
                 },
               ]}
             />

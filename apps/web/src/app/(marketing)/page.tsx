@@ -1,4 +1,6 @@
+import { redirect } from "next/navigation";
 import { EditorialFeatureGrid, MarketingHero } from "@/components/marketing-views";
+import { ensureUserSession, findUserById } from "@/lib/auth";
 
 const landingFeatureItems = [
   { title: "全域采集", description: "v1 支持手输素材、URL 穿透解析和截图上传，所有内容统一进入素材库。", meta: "Capture" },
@@ -8,6 +10,15 @@ const landingFeatureItems = [
 ];
 
 export default async function LandingPage() {
+  const session = await ensureUserSession();
+  if (session) {
+    const user = await findUserById(session.userId);
+    if (user?.must_change_password) {
+      redirect("/change-password");
+    }
+    redirect(session.role === "admin" ? "/admin" : "/warroom");
+  }
+
   return (
     <div>
       <MarketingHero />

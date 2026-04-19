@@ -53,11 +53,11 @@ const adminNeutralNoticeClassName = cn(
 );
 const adminWarningNoticeClassName = cn(
   adminNoticeBaseClassName,
-  "border-[#7d6430] bg-[#2b2518] text-[#e0c37a]",
+  "border-warning/40 bg-surfaceWarm text-warning",
 );
 const adminDangerNoticeClassName = cn(
   adminNoticeBaseClassName,
-  "border-[#8f3136] bg-[#2a1718] text-[#efb5b9]",
+  "border-danger/30 bg-surface text-danger",
 );
 const adminSuccessNoticeClassName = cn(
   adminNoticeBaseClassName,

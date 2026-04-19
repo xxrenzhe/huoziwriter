@@ -10,6 +10,7 @@ import {
 import { getPersonaCatalog, getPersonas } from "@/lib/personas";
 import {
   getAssetFilesByUser,
+  getArticlesByUser,
   getCurrentSubscriptionForUser,
   getFragmentsByUser,
   getUserWorkspaceAssetSummary,
@@ -156,7 +157,19 @@ export async function getSettingsHubData() {
   const auth = await requireSettingsAccess();
   if (!auth) return null;
   const { session, user } = auth;
-  const [planContext, dailyGenerationUsage, workspaceAssets, connections, topicSources, languageGuardRules] =
+  const [
+    planContext,
+    dailyGenerationUsage,
+    workspaceAssets,
+    connections,
+    topicSources,
+    languageGuardRules,
+    fragments,
+    knowledgeCards,
+    assetFiles,
+    articles,
+    imageAssetQuota,
+  ] =
     await Promise.all([
       getUserPlanContext(session.userId),
       getDailyGenerationUsage(session.userId),
@@ -164,6 +177,11 @@ export async function getSettingsHubData() {
       getWechatConnections(session.userId),
       getVisibleTopicSources(session.userId),
       getLanguageGuardRules(session.userId),
+      getFragmentsByUser(session.userId),
+      getKnowledgeCards(session.userId),
+      getAssetFilesByUser(session.userId),
+      getArticlesByUser(session.userId),
+      getImageAssetStorageQuotaStatus(session.userId),
     ]);
 
   return {
@@ -175,6 +193,11 @@ export async function getSettingsHubData() {
     connections,
     topicSources,
     languageGuardRules,
+    fragments,
+    knowledgeCards,
+    assetFiles,
+    articles,
+    imageAssetQuota,
   };
 }
 
@@ -229,14 +252,16 @@ export async function getSourcesSettingsData() {
   const auth = await requireSettingsAccess();
   if (!auth) return null;
   const { session } = auth;
-  const [planContext, topicSources] = await Promise.all([
+  const [planContext, topicSources, languageGuardRules] = await Promise.all([
     getUserPlanContext(session.userId),
     getVisibleTopicSources(session.userId),
+    getLanguageGuardRules(session.userId),
   ]);
 
   return {
     planContext,
     topicSources,
+    languageGuardRules,
   };
 }
 
@@ -244,16 +269,18 @@ export async function getPublishSettingsData() {
   const auth = await requireSettingsAccess();
   if (!auth) return null;
   const { session } = auth;
-  const [planContext, connections, syncLogs] = await Promise.all([
+  const [planContext, connections, syncLogs, articles] = await Promise.all([
     getUserPlanContext(session.userId),
     getWechatConnections(session.userId),
     getWechatSyncLogs(session.userId),
+    getArticlesByUser(session.userId),
   ]);
 
   return {
     planContext,
     connections,
     syncLogs,
+    articles,
   };
 }
 

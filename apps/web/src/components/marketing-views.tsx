@@ -30,7 +30,7 @@ const heroPrimaryActionClassName = buttonStyles({ variant: "primary", size: "lg"
 const heroSecondaryActionClassName = buttonStyles({ variant: "secondary", size: "lg" });
 const heroPanelClassName = cn(surfaceCardStyles({ tone: "warm" }), "grid gap-4 p-6 shadow-none");
 const heroExampleCardClassName = cn(surfaceCardStyles({ padding: "md" }), "border-l-4 shadow-none");
-const heroMutedExampleCardClassName = cn(heroExampleCardClassName, "border-l-stone-300");
+const heroMutedExampleCardClassName = cn(heroExampleCardClassName, "border-l-lineStrong");
 const heroActiveExampleCardClassName = cn(
   surfaceCardStyles({ tone: "highlight", padding: "md" }),
   "border-l-4 border-l-cinnabar",

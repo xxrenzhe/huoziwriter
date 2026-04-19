@@ -7,7 +7,7 @@ import { FormEvent, useState } from "react";
 import { formatArticleStatusLabel } from "@/lib/article-status-label";
 
 const writerPaperEmptyStateSurfaceClassName =
-  "relative overflow-hidden bg-[radial-gradient(circle_at_top_left,rgba(196,138,58,0.14),transparent_28%),linear-gradient(180deg,#fffdfa_0%,#faf7f0_100%)]";
+  "relative overflow-hidden bg-[radial-gradient(circle_at_top_left,rgba(196,138,58,0.14),transparent_28%),linear-gradient(180deg,rgba(255,255,255,0.86)_0%,var(--paper)_100%)]";
 const writerPaperPromptCardClassName = cn(surfaceCardStyles({ padding: "sm" }), "bg-surface/80 text-xs leading-6 text-inkSoft");
 const writerPaperPrimaryActionClassName = buttonStyles({ variant: "primary" });
 const writerPaperSecondaryActionClassName = buttonStyles({ variant: "secondary" });

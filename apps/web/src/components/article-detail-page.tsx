@@ -30,7 +30,7 @@ import { getSeries } from "@/lib/series";
 
 const missingArticleStateClassName = cn(
   surfaceCardStyles({ tone: "highlight", padding: "md" }),
-  "text-sm leading-7 text-stone-700",
+  "text-sm leading-7 text-inkSoft",
 );
 
 export async function ArticleDetailPage({

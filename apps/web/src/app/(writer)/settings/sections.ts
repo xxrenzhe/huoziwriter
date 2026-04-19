@@ -53,7 +53,7 @@ export const settingsSections: Array<{
   },
   {
     key: "account",
-    title: "账号与套餐",
+    title: "账号安全与套餐",
     shortTitle: "账号",
     eyebrow: "Account",
     description: "身份信息、安全与配额边界",

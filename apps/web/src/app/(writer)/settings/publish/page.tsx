@@ -66,10 +66,13 @@ export default async function SettingsPublishPage() {
     return null;
   }
 
-  const { planContext, connections, syncLogs } = data;
+  const { planContext, connections, syncLogs, articles } = data;
   const { plan, planSnapshot, effectivePlanCode } = planContext;
   const defaultConnection = connections.find((item) => item.is_default) ?? connections[0] ?? null;
   const recentSyncLogs = syncLogs.slice(0, 6);
+  const recentPublishedArticles = articles.filter((article) => article.status === "published").slice(0, 3);
+  const recentWorkingArticles = articles.filter((article) => article.status !== "published").slice(0, 3);
+  const exportReadyArticle = articles.find((article) => String(article.markdown_content || article.html_content || "").trim().length > 0) ?? null;
   const defaultConnectionName =
     defaultConnection?.account_name || defaultConnection?.original_id || "未命名公众号";
 
@@ -100,6 +103,13 @@ export default async function SettingsPublishPage() {
           note: recentSyncLogs[0]
             ? `最近一次：${formatWechatSyncStatus(recentSyncLogs[0].status)}`
             : "还没有同步记录",
+        },
+        {
+          label: "PDF 导出",
+          value: planSnapshot.canExportPdf ? "已开放" : "未开放",
+          note: planSnapshot.canExportPdf
+            ? "到任意稿件详情的发布阶段即可导出 PDF。"
+            : `当前套餐 ${formatPlanDisplayName(plan?.name || effectivePlanCode)} 暂未开放`,
         },
       ]}
       actions={
@@ -163,6 +173,134 @@ export default async function SettingsPublishPage() {
             }))}
             planName={plan?.name || effectivePlanCode}
           />
+        </div>
+      </section>
+
+      <section className={sectionCardClassName}>
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <div className="text-xs uppercase tracking-[0.24em] text-cinnabar">导出通道</div>
+            <div className="mt-3 font-serifCn text-3xl text-ink text-balance">
+              PDF 导出仍走稿件发布阶段，但配置状态在这里统一确认。
+            </div>
+            <div className="mt-3 text-sm leading-7 text-inkSoft">
+              导出动作不会单独生成一套设置页工作流。这里负责确认套餐是否开放、给出替代路径，并把你带回实际执行导出的稿件页面。
+            </div>
+          </div>
+          <div className={summaryCardClassName}>
+            <div className="text-xs uppercase tracking-[0.18em] text-inkMuted">当前状态</div>
+            <div className="mt-2 font-serifCn text-3xl text-ink text-balance">
+              {planSnapshot.canExportPdf ? "可导出" : "需升级"}
+            </div>
+            <div className="mt-2 text-sm leading-6 text-inkSoft">
+              {planSnapshot.canExportPdf
+                ? "发布阶段会直接出现 PDF 导出按钮。"
+                : "未开放时仍可先导出 HTML 或 Markdown。"}
+            </div>
+          </div>
+        </div>
+        <div className="mt-6 grid gap-4 lg:grid-cols-2">
+          <article className={logCardClassName}>
+            <div className="text-xs uppercase tracking-[0.18em] text-inkMuted">可用路径</div>
+            <div className="mt-3 text-sm leading-7 text-inkSoft">
+              从稿件详情进入发布阶段后，系统会按当前套餐判断是否开放 PDF；已开放时可直接导出，未开放时会给出升级与替代导出提示。
+            </div>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <span className={metaChipClassName}>稿件详情</span>
+              <span className={metaChipClassName}>发布阶段</span>
+              <span className={mutedChipClassName}>权限随套餐读取</span>
+            </div>
+          </article>
+          <article className={logCardClassName}>
+            <div className="text-xs uppercase tracking-[0.18em] text-inkMuted">执行入口</div>
+            <div className="mt-3 text-sm leading-7 text-inkSoft">
+              这里不直接执行导出；它只负责把发布连接、同步诊断与导出权限放在同一处确认，避免你在真正导出前才发现权限或连接问题。
+            </div>
+            <div className="mt-4 flex flex-wrap gap-3">
+              <Link href="/articles" className={articleLinkClassName}>
+                打开稿件列表
+              </Link>
+              <Link href="/settings/account" className={articleLinkClassName}>
+                查看套餐能力
+              </Link>
+            </div>
+          </article>
+        </div>
+        <div className="mt-6 grid gap-4 xl:grid-cols-2">
+          <article className={logCardClassName}>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-xs uppercase tracking-[0.18em] text-inkMuted">最近可导出稿件</div>
+                <div className="mt-2 font-serifCn text-2xl text-ink text-balance">
+                  {exportReadyArticle?.title || "暂时还没有可导出正文"}
+                </div>
+              </div>
+              <div className={summaryCardClassName}>
+                <div className="text-xs uppercase tracking-[0.18em] text-inkMuted">当前推荐</div>
+                <div className="mt-2 text-sm text-inkSoft">{exportReadyArticle ? "直接执行" : "先去写稿"}</div>
+              </div>
+            </div>
+            <div className="mt-3 text-sm leading-7 text-inkSoft">
+              {exportReadyArticle
+                ? "这篇稿件已经有正文，可直接回到稿件详情的发布阶段，或从这里走 Markdown / HTML / PDF 导出。"
+                : "当前还没有带正文的稿件。先去稿纸写出一段内容，导出通道才会真正变得可用。"}
+            </div>
+            {exportReadyArticle ? (
+              <div className="mt-4 flex flex-wrap gap-3">
+                <Link href={`/articles/${exportReadyArticle.id}?step=publish`} className={articleLinkClassName}>
+                  进入发布阶段
+                </Link>
+                <Link href={`/api/articles/${exportReadyArticle.id}/export?format=markdown`} className={articleLinkClassName}>
+                  导出 Markdown
+                </Link>
+                <Link href={`/api/articles/${exportReadyArticle.id}/export?format=html`} className={articleLinkClassName}>
+                  导出 HTML
+                </Link>
+                <Link
+                  href={`/api/articles/${exportReadyArticle.id}/export?format=pdf`}
+                  className={articleLinkClassName}
+                >
+                  {planSnapshot.canExportPdf ? "导出 PDF" : "PDF 需升级套餐"}
+                </Link>
+              </div>
+            ) : (
+              <div className="mt-4">
+                <Link href="/articles" className={articleLinkClassName}>
+                  去稿件区
+                </Link>
+              </div>
+            )}
+          </article>
+          <article className={logCardClassName}>
+            <div className="text-xs uppercase tracking-[0.18em] text-inkMuted">最近稿件入口</div>
+            <div className="mt-3 space-y-3">
+              {[...recentWorkingArticles, ...recentPublishedArticles].slice(0, 4).map((article) => (
+                <div key={article.id} className={payloadPanelClassName}>
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <div className="text-sm text-ink">{article.title || `未命名稿件 #${article.id}`}</div>
+                      <div className="mt-1 text-xs text-inkMuted">
+                        {article.status === "published" ? "已发布" : "未发布"} · {new Date(article.updated_at).toLocaleString("zh-CN")}
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <Link href={`/articles/${article.id}`} className={articleLinkClassName}>
+                        打开稿件
+                      </Link>
+                      <Link href={`/articles/${article.id}?step=publish`} className={articleLinkClassName}>
+                        去发布
+                      </Link>
+                    </div>
+                  </div>
+                </div>
+              ))}
+              {recentWorkingArticles.length === 0 && recentPublishedArticles.length === 0 ? (
+                <div className={emptyStateClassName}>
+                  还没有最近稿件。先创建 1 篇稿件，发布和导出面板才会出现真正的直达入口。
+                </div>
+              ) : null}
+            </div>
+          </article>
         </div>
       </section>
 

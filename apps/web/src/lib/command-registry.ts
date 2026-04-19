@@ -172,6 +172,46 @@ function buildActionCommands(pathname: string): CommandItem[] {
         keywords: ["素材", "fragment", "asset", "知识卡"],
         action: { type: "navigate", href: "/settings/assets" },
       },
+      {
+        id: "action:author-settings",
+        group: "动作",
+        title: "打开作者设定",
+        subtitle: "维护人设、文风与长期经营系列",
+        keywords: ["作者", "人设", "系列", "风格", "persona", "series"],
+        action: { type: "navigate", href: "/settings/author" },
+      },
+      {
+        id: "action:sources-settings",
+        group: "动作",
+        title: "打开信源设置",
+        subtitle: "维护系统源、自定义来源池与热点偏好入口",
+        keywords: ["信源", "sources", "热点", "source", "topic"],
+        action: { type: "navigate", href: "/settings/sources" },
+      },
+      {
+        id: "action:publish-settings",
+        group: "动作",
+        title: "打开发布设置",
+        subtitle: "管理公众号连接、同步诊断与 PDF 导出通道",
+        keywords: ["发布", "publish", "微信", "pdf", "导出"],
+        action: { type: "navigate", href: "/settings/publish" },
+      },
+      {
+        id: "action:account-settings",
+        group: "动作",
+        title: "打开账号设置",
+        subtitle: "查看套餐、用量、安全与账号状态",
+        keywords: ["账号", "account", "套餐", "plan", "安全"],
+        action: { type: "navigate", href: "/settings/account" },
+      },
+      {
+        id: "action:language-guard",
+        group: "动作",
+        title: "打开语言守卫",
+        subtitle: "维护死刑词库与写作硬规则",
+        keywords: ["语言守卫", "language guard", "死刑词", "规则"],
+        action: { type: "navigate", href: "/settings/language-guard" },
+      },
     );
   } else {
     actions.push({
@@ -185,14 +225,40 @@ function buildActionCommands(pathname: string): CommandItem[] {
   }
 
   if (area === "admin") {
-    actions.push({
-      id: "action:writer-workspace",
-      group: "动作",
-      title: "打开写作工作区",
-      subtitle: "从管理后台快速跳回作战台",
-      keywords: ["作战台", "writer", "dashboard"],
-      action: { type: "navigate", href: "/warroom" },
-    });
+    actions.push(
+      {
+        id: "action:writer-workspace",
+        group: "动作",
+        title: "打开写作工作区",
+        subtitle: "从管理后台快速跳回作战台",
+        keywords: ["作战台", "writer", "dashboard"],
+        action: { type: "navigate", href: "/warroom" },
+      },
+      {
+        id: "action:eval-scoring",
+        group: "动作",
+        title: "打开评分校准",
+        subtitle: "查看 scoring profile 与线上校准入口",
+        keywords: ["scoring", "评分", "校准", "profile"],
+        action: { type: "navigate", href: "/admin/writing-eval/scoring" },
+      },
+      {
+        id: "action:eval-schedules",
+        group: "动作",
+        title: "打开自动调度",
+        subtitle: "查看可执行调度、阻断规则与最近派发",
+        keywords: ["schedule", "调度", "自动", "dispatch"],
+        action: { type: "navigate", href: "/admin/writing-eval/schedules" },
+      },
+      {
+        id: "action:eval-governance",
+        group: "动作",
+        title: "打开治理决策",
+        subtitle: "查看灰度、收缩与治理动作入口",
+        keywords: ["governance", "治理", "放量", "收缩", "rollout"],
+        action: { type: "navigate", href: "/admin/writing-eval/governance" },
+      },
+    );
   }
 
   return actions;

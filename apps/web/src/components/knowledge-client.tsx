@@ -46,7 +46,7 @@ const mobileCardClassName = cn(
 );
 const tableHeadCellClassName = "px-6 py-4 font-medium";
 const tableBodyCellClassName = "px-6 py-4";
-const conflictFlagClassName = "border border-[#744244] bg-[#2a1718] px-2 py-1 text-[11px] text-[#f0b7ba]";
+const conflictFlagClassName = "border border-danger/30 bg-surface px-2 py-1 text-[11px] text-danger";
 const statusSelectClassName = cn(
   "min-h-10 w-full min-w-[132px] px-3 py-2",
   "border-adminLineStrong bg-adminBg text-adminInk",

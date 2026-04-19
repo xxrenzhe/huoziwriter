@@ -97,28 +97,28 @@ type ExecutionRecentRetry = {
 
 const adminInsightsPanelBaseClassName = cn(
   surfaceCardStyles(),
-  "border-stone-800 bg-[#171718] shadow-none",
+  "border-line bg-paperStrong shadow-none",
 );
 const adminInsightsHeroClassName = cn(adminInsightsPanelBaseClassName, "p-6");
 const adminInsightsSectionClassName = cn(adminInsightsPanelBaseClassName, "p-5");
 const adminInsightsInsetCardClassName = cn(
   surfaceCardStyles(),
-  "border-stone-800 bg-stone-950 px-4 py-4 shadow-none",
+  "border-lineStrong bg-surface px-4 py-4 shadow-none",
 );
 const adminInsightsSubcardClassName = cn(
   surfaceCardStyles(),
-  "border-stone-800 bg-[#141414] px-4 py-4 shadow-none",
+  "border-lineStrong bg-surfaceWarm px-4 py-4 shadow-none",
 );
 const adminInsightsSubcardCompactClassName = cn(
   surfaceCardStyles(),
-  "border-stone-800 bg-[#141414] px-4 py-3 shadow-none",
+  "border-lineStrong bg-surfaceWarm px-4 py-3 shadow-none",
 );
 const adminInsightsMutedNoticeClassName = cn(
   surfaceCardStyles(),
-  "rounded border-stone-800 bg-[#141414] px-4 py-3 text-xs leading-6 text-stone-500 shadow-none",
+  "rounded border-lineStrong bg-surfaceWarm px-4 py-3 text-xs leading-6 text-inkMuted shadow-none",
 );
-const adminInsightsBadgeClassName = "border border-stone-700 px-2 py-1 text-xs";
-const adminInsightsWideBadgeClassName = "border border-stone-700 px-3 py-1 text-xs";
+const adminInsightsBadgeClassName = "border border-lineStrong bg-surface px-2 py-1 text-xs";
+const adminInsightsWideBadgeClassName = "border border-lineStrong bg-surface px-3 py-1 text-xs";
 const adminInsightsDesktopTableShellClassName = "mt-4 hidden overflow-x-auto md:block";
 const adminInsightsMobileListClassName = "mt-4 grid gap-3 md:hidden";
 const adminInsightsMobileTableCardClassName = cn(adminInsightsSubcardCompactClassName, "space-y-3");
@@ -130,7 +130,7 @@ function getRiskTone(value: string) {
   if (value === "emerald") return "text-emerald-400";
   if (value === "cinnabar") return "text-cinnabar";
   if (value === "amber") return "text-amber-300";
-  return "text-stone-400";
+  return "text-inkSoft";
 }
 
 function averageValue(points: TrendPoint[], key: "qualityScore" | "viralScore" | "totalScore") {
@@ -245,9 +245,9 @@ function AdminInsightsMobileMetricGrid({
   return (
     <div className={adminInsightsMobileMetricGridClassName}>
       {items.map((item) => (
-        <div key={item.label} className="rounded border border-stone-800 bg-[#101012] px-3 py-3">
-          <div className="text-[11px] uppercase tracking-[0.18em] text-stone-500">{item.label}</div>
-          <div className={cn("mt-2 text-sm", item.tone || "text-stone-200")}>{item.value}</div>
+        <div key={item.label} className="rounded border border-lineStrong bg-surface px-3 py-3">
+          <div className="text-[11px] uppercase tracking-[0.18em] text-inkMuted">{item.label}</div>
+          <div className={cn("mt-2 text-sm", item.tone || "text-ink")}>{item.value}</div>
         </div>
       ))}
     </div>
@@ -336,7 +336,7 @@ export default async function AdminWritingEvalInsightsPage() {
     {
       label: "当前风险事项",
       value: riskLedger.totalCount,
-      tone: "text-stone-100",
+      tone: "text-ink",
       note: `${riskLedger.highPriorityCount} 个高优先级`,
     },
     {
@@ -569,9 +569,9 @@ export default async function AdminWritingEvalInsightsPage() {
         <div className="flex items-center justify-between gap-4">
           <div>
             <div className="text-xs uppercase tracking-[0.28em] text-cinnabar">Writing Eval Insights</div>
-            <h1 className="mt-4 font-serifCn text-4xl text-stone-100 text-balance">长期趋势与退化原因</h1>
+            <h1 className="mt-4 font-serifCn text-4xl text-ink text-balance">长期趋势与退化原因</h1>
           </div>
-          <AdminWritingEvalNav sections={["overview", "datasets", "runs"]} className="flex gap-3" />
+          <AdminWritingEvalNav sections={["overview", "datasets", "runs", "versions", "scoring", "schedules", "governance"]} className="flex flex-wrap gap-3" />
         </div>
       </section>
 
@@ -579,13 +579,13 @@ export default async function AdminWritingEvalInsightsPage() {
         <div className={cn(adminInsightsSectionClassName, "xl:col-span-3")}>
           <div className="flex items-start justify-between gap-4">
             <div>
-              <div className="text-xs uppercase tracking-[0.24em] text-stone-500">风险台账</div>
-              <div className="mt-2 text-sm leading-7 text-stone-500">
+              <div className="text-xs uppercase tracking-[0.24em] text-inkMuted">风险台账</div>
+              <div className="mt-2 text-sm leading-7 text-inkMuted">
                 把执行失败、高风险 rollout、线上误判和失败样本拉成统一风险视图，减少运营在 Runs / Versions / Insights 多处来回跳转排查。
               </div>
             </div>
             <div className="flex flex-col items-end gap-2">
-              <div className="text-sm text-stone-500">risk ledger</div>
+              <div className="text-sm text-inkMuted">risk ledger</div>
               {recommendedBatchActions.length > 0 ? <AdminWritingEvalRiskBatchActions actions={recommendedBatchActions} /> : null}
             </div>
           </div>
@@ -593,21 +593,21 @@ export default async function AdminWritingEvalInsightsPage() {
           <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             {riskSummaryCards.map((item) => (
               <div key={item.label} className={adminInsightsInsetCardClassName}>
-                <div className="text-xs uppercase tracking-[0.18em] text-stone-500">{item.label}</div>
+                <div className="text-xs uppercase tracking-[0.18em] text-inkMuted">{item.label}</div>
                 <div className={`mt-3 text-2xl ${item.tone}`}>{item.value}</div>
-                <div className="mt-2 text-xs text-stone-500">{item.note}</div>
+                <div className="mt-2 text-xs text-inkMuted">{item.note}</div>
               </div>
             ))}
           </div>
 
           <div className="mt-5 grid gap-6 xl:grid-cols-[320px_minmax(0,1fr)]">
             <section className={adminInsightsInsetCardClassName}>
-              <div className="text-xs uppercase tracking-[0.18em] text-stone-500">风险来源分布</div>
+              <div className="text-xs uppercase tracking-[0.18em] text-inkMuted">风险来源分布</div>
               <div className="mt-4 space-y-3">
                 {riskSourceBreakdown.map((item) => (
                   <div key={item.label} className={adminInsightsSubcardCompactClassName}>
                     <div className="flex items-center justify-between gap-3">
-                      <div className="text-sm text-stone-300">{item.label}</div>
+                      <div className="text-sm text-inkSoft">{item.label}</div>
                       <div className={`text-lg ${item.tone}`}>{item.value}</div>
                     </div>
                   </div>
@@ -621,12 +621,12 @@ export default async function AdminWritingEvalInsightsPage() {
             <section className={adminInsightsInsetCardClassName}>
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <div className="text-xs uppercase tracking-[0.18em] text-stone-500">统一风险列表</div>
-                  <div className="mt-2 text-sm leading-7 text-stone-500">
+                  <div className="text-xs uppercase tracking-[0.18em] text-inkMuted">统一风险列表</div>
+                  <div className="mt-2 text-sm leading-7 text-inkMuted">
                     按优先级和最近发生时间拉平，先处理 `cinnabar`，再处理校准与失败样本类风险。
                   </div>
                 </div>
-                <div className="text-xs text-stone-500">Top {riskLedgerItems.length}</div>
+                <div className="text-xs text-inkMuted">Top {riskLedgerItems.length}</div>
               </div>
               <div className="mt-4 space-y-3">
                 {riskLedgerItems.map((item) => (
@@ -634,12 +634,12 @@ export default async function AdminWritingEvalInsightsPage() {
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div>
                         <div className={`text-xs uppercase tracking-[0.16em] ${getRiskPanelTone(item.tone)}`}>{item.source}</div>
-                        <div className="mt-2 text-sm text-stone-100">{item.title}</div>
+                        <div className="mt-2 text-sm text-ink">{item.title}</div>
                       </div>
                       <div className={`text-xs uppercase tracking-[0.16em] ${getRiskPanelTone(item.tone)}`}>{item.tone}</div>
                     </div>
                     <div className={`mt-3 text-sm leading-7 ${getRiskPanelTone(item.tone)}`}>{item.detail}</div>
-                    <div className="mt-2 text-xs leading-6 text-stone-500">{item.meta}</div>
+                    <div className="mt-2 text-xs leading-6 text-inkMuted">{item.meta}</div>
                     {item.href || item.secondaryHref || item.recommendedAction ? (
                       <div className="mt-3 flex flex-wrap items-start gap-3">
                         {item.href ? (
@@ -657,7 +657,7 @@ export default async function AdminWritingEvalInsightsPage() {
                     ) : null}
                   </article>
                 ))}
-                {riskLedgerItems.length === 0 ? <div className="text-sm text-stone-500">当前没有需要重点关注的风险事项。</div> : null}
+                {riskLedgerItems.length === 0 ? <div className="text-sm text-inkMuted">当前没有需要重点关注的风险事项。</div> : null}
               </div>
             </section>
           </div>
@@ -666,24 +666,24 @@ export default async function AdminWritingEvalInsightsPage() {
         <div className={cn(adminInsightsSectionClassName, "xl:col-span-3")}>
           <div className="flex items-start justify-between gap-4">
             <div>
-              <div className="text-xs uppercase tracking-[0.24em] text-stone-500">执行监控</div>
-              <div className="mt-2 text-sm leading-7 text-stone-500">
+              <div className="text-xs uppercase tracking-[0.24em] text-inkMuted">执行监控</div>
+              <div className="mt-2 text-sm leading-7 text-inkMuted">
                 这里聚合所有 `writingEvalRun / writingEvalScore / writingEvalPromote` stage job，直接看跨 run 的失败趋势、重试压力和阶段耗时，不再只靠单条 run 详情排查。
               </div>
             </div>
-            <div className="text-sm text-stone-500">cross-run stage jobs</div>
+            <div className="text-sm text-inkMuted">cross-run stage jobs</div>
           </div>
 
           <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             {executionKpis.map((item) => (
               <div key={item.label} className={adminInsightsInsetCardClassName}>
-                <div className="text-xs uppercase tracking-[0.18em] text-stone-500">{item.label}</div>
-                <div className="mt-3 text-2xl text-stone-100">
+                <div className="text-xs uppercase tracking-[0.18em] text-inkMuted">{item.label}</div>
+                <div className="mt-3 text-2xl text-ink">
                   {item.format === "duration"
                     ? formatDurationHours(typeof item.current === "number" ? item.current : null)
                     : item.current}
                 </div>
-                <div className="mt-2 text-xs text-stone-500">
+                <div className="mt-2 text-xs text-inkMuted">
                   前 7 天{" "}
                   {item.format === "duration"
                     ? formatDurationHours(typeof item.previous === "number" ? item.previous : null)
@@ -692,20 +692,20 @@ export default async function AdminWritingEvalInsightsPage() {
                 <div className={`mt-3 text-sm ${getDeltaTone(item.delta, item.smallerIsBetter)}`}>
                   Delta {item.format === "duration" ? formatDurationHours(item.delta) : formatSignedMetric(item.delta, 0)}
                 </div>
-                <div className="mt-2 text-xs text-stone-500">{item.note}</div>
+                <div className="mt-2 text-xs text-inkMuted">{item.note}</div>
               </div>
             ))}
           </div>
 
           <div className="mt-5 grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
             <section className={adminInsightsInsetCardClassName}>
-              <div className="text-xs uppercase tracking-[0.18em] text-stone-500">6 周 stage job 趋势</div>
-              <div className="mt-2 text-sm leading-7 text-stone-500">
+              <div className="text-xs uppercase tracking-[0.18em] text-inkMuted">6 周 stage job 趋势</div>
+              <div className="mt-2 text-sm leading-7 text-inkMuted">
                 看 job 总量、失败数、retry 和三段阶段的失败分布，判断问题主要卡在生成、评分还是决议。
               </div>
               <div className={adminInsightsDesktopTableShellClassName}>
                 <table className="w-full min-w-[820px] text-left text-sm">
-                  <thead className="text-stone-500">
+                  <thead className="text-inkMuted">
                     <tr>
                       {["窗口", "Job 数", "失败", "Retry", "均耗时", "生成失败", "评分失败", "决议失败"].map((head) => (
                         <th key={head} className="pb-4 font-medium">
@@ -716,15 +716,15 @@ export default async function AdminWritingEvalInsightsPage() {
                   </thead>
                   <tbody>
                     {executionInsights.weeklyBuckets.map((item) => (
-                      <tr key={item.label} className="border-t border-stone-800">
-                        <td className="py-4 text-stone-300">{item.label}</td>
-                        <td className="py-4 text-stone-100">{item.jobCount}</td>
+                      <tr key={item.label} className="border-t border-line">
+                        <td className="py-4 text-inkSoft">{item.label}</td>
+                        <td className="py-4 text-ink">{item.jobCount}</td>
                         <td className="py-4 text-cinnabar">{item.failedJobCount}</td>
                         <td className="py-4 text-amber-300">{item.retryCount}</td>
-                        <td className="py-4 text-stone-400">{formatDurationHours(item.averageDurationSeconds)}</td>
-                        <td className="py-4 text-stone-400">{item.generationFailedCount}</td>
-                        <td className="py-4 text-stone-400">{item.scoringFailedCount}</td>
-                        <td className="py-4 text-stone-400">{item.promotionFailedCount}</td>
+                        <td className="py-4 text-inkSoft">{formatDurationHours(item.averageDurationSeconds)}</td>
+                        <td className="py-4 text-inkSoft">{item.generationFailedCount}</td>
+                        <td className="py-4 text-inkSoft">{item.scoringFailedCount}</td>
+                        <td className="py-4 text-inkSoft">{item.promotionFailedCount}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -734,7 +734,7 @@ export default async function AdminWritingEvalInsightsPage() {
                 {executionInsights.weeklyBuckets.map((item) => (
                   <article key={`mobile-${item.label}`} className={adminInsightsMobileTableCardClassName}>
                     <div className="flex items-start justify-between gap-3">
-                      <div className="font-mono text-xs text-stone-300">{item.label}</div>
+                      <div className="font-mono text-xs text-inkSoft">{item.label}</div>
                       <div className="flex flex-wrap gap-2 text-xs">
                         <span className={cn(adminInsightsBadgeClassName, "text-cinnabar")}>失败 {item.failedJobCount}</span>
                         <span className={cn(adminInsightsBadgeClassName, "text-amber-300")}>Retry {item.retryCount}</span>
@@ -743,10 +743,10 @@ export default async function AdminWritingEvalInsightsPage() {
                     <AdminInsightsMobileMetricGrid
                       items={[
                         { label: "Job 数", value: item.jobCount },
-                        { label: "均耗时", value: formatDurationHours(item.averageDurationSeconds), tone: "text-stone-400" },
-                        { label: "生成失败", value: item.generationFailedCount, tone: "text-stone-400" },
-                        { label: "评分失败", value: item.scoringFailedCount, tone: "text-stone-400" },
-                        { label: "决议失败", value: item.promotionFailedCount, tone: "text-stone-400" },
+                        { label: "均耗时", value: formatDurationHours(item.averageDurationSeconds), tone: "text-inkSoft" },
+                        { label: "生成失败", value: item.generationFailedCount, tone: "text-inkSoft" },
+                        { label: "评分失败", value: item.scoringFailedCount, tone: "text-inkSoft" },
+                        { label: "决议失败", value: item.promotionFailedCount, tone: "text-inkSoft" },
                       ]}
                     />
                   </article>
@@ -759,18 +759,18 @@ export default async function AdminWritingEvalInsightsPage() {
                 <article key={item.stageKey} className={adminInsightsInsetCardClassName}>
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <div className="text-sm uppercase tracking-[0.18em] text-stone-500">{item.stageLabel}</div>
-                      <div className="mt-2 text-xl text-stone-100">{item.jobCount} 个 job</div>
+                      <div className="text-sm uppercase tracking-[0.18em] text-inkMuted">{item.stageLabel}</div>
+                      <div className="mt-2 text-xl text-ink">{item.jobCount} 个 job</div>
                     </div>
                     <div className={`text-sm ${getDeltaTone(item.failedDelta, true)}`}>
                       失败 {item.failedJobCount}
-                      <div className="mt-1 text-xs text-stone-500">前 7 天 {item.previousFailedJobCount}</div>
+                      <div className="mt-1 text-xs text-inkMuted">前 7 天 {item.previousFailedJobCount}</div>
                     </div>
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2 text-xs">
                     <span className={cn(adminInsightsBadgeClassName, "text-cinnabar")}>失败 {item.failedJobCount}</span>
                     <span className={cn(adminInsightsBadgeClassName, "text-amber-300")}>内部重试 {item.retryCount}</span>
-                    <span className={cn(adminInsightsBadgeClassName, "text-stone-400")}>
+                    <span className={cn(adminInsightsBadgeClassName, "text-inkSoft")}>
                       均耗时 {formatDurationHours(item.averageDurationSeconds)}
                     </span>
                   </div>
@@ -783,23 +783,23 @@ export default async function AdminWritingEvalInsightsPage() {
             <section className={adminInsightsInsetCardClassName}>
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <div className="text-xs uppercase tracking-[0.18em] text-stone-500">最近失败 stage job</div>
-                  <div className="mt-2 text-sm leading-7 text-stone-500">
+                  <div className="text-xs uppercase tracking-[0.18em] text-inkMuted">最近失败 stage job</div>
+                  <div className="mt-2 text-sm leading-7 text-inkMuted">
                     优先拉出最近失败的生成 / 评分 / 决议任务，快速定位当前最值得排查的 run。
                   </div>
                 </div>
-                <div className="text-xs text-stone-500">Top {executionInsights.recentFailures.length}</div>
+                <div className="text-xs text-inkMuted">Top {executionInsights.recentFailures.length}</div>
               </div>
               <div className="mt-4 space-y-3">
                 {executionInsights.recentFailures.map((item) => (
                   <article key={`failed-job-${item.jobId}`} className={adminInsightsSubcardCompactClassName}>
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div>
-                        <div className="font-mono text-xs text-stone-300">
+                        <div className="font-mono text-xs text-inkSoft">
                           {item.stageLabel} · job #{item.jobId}
                           {item.runCode ? ` · ${item.runCode}` : ""}
                         </div>
-                        <div className="mt-2 text-xs text-stone-500">
+                        <div className="mt-2 text-xs text-inkMuted">
                           失败于 {formatWritingEvalDateTime(item.failedAt)} · 入队 {formatWritingEvalDateTime(item.queuedAt)}
                           {item.durationSeconds !== null ? ` · 耗时 ${formatDurationHours(item.durationSeconds)}` : ""}
                         </div>
@@ -813,29 +813,29 @@ export default async function AdminWritingEvalInsightsPage() {
                     {item.lastError ? <div className="mt-2 text-sm leading-7 text-cinnabar">{item.lastError}</div> : null}
                   </article>
                 ))}
-                {executionInsights.recentFailures.length === 0 ? <div className="text-sm text-stone-500">最近没有失败 stage job。</div> : null}
+                {executionInsights.recentFailures.length === 0 ? <div className="text-sm text-inkMuted">最近没有失败 stage job。</div> : null}
               </div>
             </section>
 
             <section className={adminInsightsInsetCardClassName}>
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <div className="text-xs uppercase tracking-[0.18em] text-stone-500">最近人工重试</div>
-                  <div className="mt-2 text-sm leading-7 text-stone-500">
+                  <div className="text-xs uppercase tracking-[0.18em] text-inkMuted">最近人工重试</div>
+                  <div className="mt-2 text-sm leading-7 text-inkMuted">
                     看哪些 run 在被重复人工拉起，避免问题长期靠 retry 掩盖，而没有进入真正修复。
                   </div>
                 </div>
-                <div className="text-xs text-stone-500">Top {executionInsights.recentRetries.length}</div>
+                <div className="text-xs text-inkMuted">Top {executionInsights.recentRetries.length}</div>
               </div>
               <div className="mt-4 space-y-3">
                 {executionInsights.recentRetries.map((item) => (
                   <article key={`retry-${item.id}`} className={adminInsightsSubcardCompactClassName}>
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div>
-                        <div className="font-mono text-xs text-stone-300">
+                        <div className="font-mono text-xs text-inkSoft">
                           {item.runCode || `run#${item.runId ?? "--"}`}
                         </div>
-                        <div className="mt-2 text-xs text-stone-500">
+                        <div className="mt-2 text-xs text-inkMuted">
                           {item.username || "system"} · {formatWritingEvalDateTime(item.retriedAt)}
                         </div>
                       </div>
@@ -847,7 +847,7 @@ export default async function AdminWritingEvalInsightsPage() {
                     </div>
                   </article>
                 ))}
-                {executionInsights.recentRetries.length === 0 ? <div className="text-sm text-stone-500">最近没有人工 retry。</div> : null}
+                {executionInsights.recentRetries.length === 0 ? <div className="text-sm text-inkMuted">最近没有人工 retry。</div> : null}
               </div>
             </section>
           </div>
@@ -856,26 +856,26 @@ export default async function AdminWritingEvalInsightsPage() {
         <div className={cn(adminInsightsSectionClassName, "xl:col-span-3")}>
           <div className="flex items-start justify-between gap-4">
             <div>
-              <div className="text-xs uppercase tracking-[0.24em] text-stone-500">运营总览</div>
-              <div className="mt-2 text-sm leading-7 text-stone-500">
+              <div className="text-xs uppercase tracking-[0.24em] text-inkMuted">运营总览</div>
+              <div className="mt-2 text-sm leading-7 text-inkMuted">
                 把近 7 天与前 7 天拉平对比，再叠加 6 周滚动视角，快速判断当前是在持续提分、局部回归，还是自动放量风险在升高。
               </div>
             </div>
-            <div className="text-sm text-stone-500">7d vs previous 7d</div>
+            <div className="text-sm text-inkMuted">7d vs previous 7d</div>
           </div>
 
           <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             {operationsKpis.map((item) => (
               <div key={item.label} className={adminInsightsInsetCardClassName}>
-                <div className="text-xs uppercase tracking-[0.18em] text-stone-500">{item.label}</div>
-                <div className="mt-3 text-2xl text-stone-100">{formatWritingEvalMetric(item.current, item.digits)}</div>
-                <div className="mt-2 text-xs text-stone-500">
+                <div className="text-xs uppercase tracking-[0.18em] text-inkMuted">{item.label}</div>
+                <div className="mt-3 text-2xl text-ink">{formatWritingEvalMetric(item.current, item.digits)}</div>
+                <div className="mt-2 text-xs text-inkMuted">
                   前 7 天 {formatWritingEvalMetric(item.previous, item.digits)}
                 </div>
                 <div className={`mt-3 text-sm ${getDeltaTone(item.delta, item.smallerIsBetter)}`}>
                   Delta {formatSignedMetric(item.delta, item.digits)}
                 </div>
-                <div className="mt-2 text-xs text-stone-500">{item.note}</div>
+                <div className="mt-2 text-xs text-inkMuted">{item.note}</div>
               </div>
             ))}
           </div>
@@ -884,16 +884,16 @@ export default async function AdminWritingEvalInsightsPage() {
             <section className={adminInsightsInsetCardClassName}>
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <div className="text-xs uppercase tracking-[0.18em] text-stone-500">6 周运营趋势</div>
-                  <div className="mt-2 text-sm leading-7 text-stone-500">
+                  <div className="text-xs uppercase tracking-[0.18em] text-inkMuted">6 周运营趋势</div>
+                  <div className="mt-2 text-sm leading-7 text-inkMuted">
                     用周桶观察 run 均分、失败样本和自动收缩/高风险动作，避免只看最近一两次 run 的短噪声。
                   </div>
                 </div>
-                <div className="text-xs text-stone-500">Weekly buckets</div>
+                <div className="text-xs text-inkMuted">Weekly buckets</div>
               </div>
               <div className={adminInsightsDesktopTableShellClassName}>
                 <table className="w-full min-w-[760px] text-left text-sm">
-                  <thead className="text-stone-500">
+                  <thead className="text-inkMuted">
                     <tr>
                       {["窗口", "Run 数", "均分", "失败样本", "提分占比", "收缩", "高风险"].map((head) => (
                         <th key={head} className="pb-4 font-medium">
@@ -904,11 +904,11 @@ export default async function AdminWritingEvalInsightsPage() {
                   </thead>
                   <tbody>
                     {weeklyOpsBuckets.map((bucket) => (
-                      <tr key={bucket.label} className="border-t border-stone-800">
-                        <td className="py-4 text-stone-300">{bucket.label}</td>
-                        <td className="py-4 text-stone-400">{bucket.runCount}</td>
-                        <td className="py-4 text-stone-100">{formatWritingEvalMetric(bucket.averageTotalScore)}</td>
-                        <td className="py-4 text-stone-400">{formatWritingEvalMetric(bucket.averageFailedCaseCount, 1)}</td>
+                      <tr key={bucket.label} className="border-t border-line">
+                        <td className="py-4 text-inkSoft">{bucket.label}</td>
+                        <td className="py-4 text-inkSoft">{bucket.runCount}</td>
+                        <td className="py-4 text-ink">{formatWritingEvalMetric(bucket.averageTotalScore)}</td>
+                        <td className="py-4 text-inkSoft">{formatWritingEvalMetric(bucket.averageFailedCaseCount, 1)}</td>
                         <td className="py-4 text-emerald-400">
                           {typeof bucket.improvementRate === "number" ? `${(bucket.improvementRate * 100).toFixed(0)}%` : "--"}
                         </td>
@@ -923,7 +923,7 @@ export default async function AdminWritingEvalInsightsPage() {
                 {weeklyOpsBuckets.map((bucket) => (
                   <article key={`mobile-${bucket.label}`} className={adminInsightsMobileTableCardClassName}>
                     <div className="flex items-start justify-between gap-3">
-                      <div className="font-mono text-xs text-stone-300">{bucket.label}</div>
+                      <div className="font-mono text-xs text-inkSoft">{bucket.label}</div>
                       <div className="flex flex-wrap gap-2 text-xs">
                         <span className={cn(adminInsightsBadgeClassName, "text-cinnabar")}>收缩 {bucket.shrinkCount}</span>
                         <span className={cn(adminInsightsBadgeClassName, "text-amber-300")}>高风险 {bucket.highRiskCount}</span>
@@ -931,9 +931,9 @@ export default async function AdminWritingEvalInsightsPage() {
                     </div>
                     <AdminInsightsMobileMetricGrid
                       items={[
-                        { label: "Run 数", value: bucket.runCount, tone: "text-stone-400" },
+                        { label: "Run 数", value: bucket.runCount, tone: "text-inkSoft" },
                         { label: "均分", value: formatWritingEvalMetric(bucket.averageTotalScore) },
-                        { label: "失败样本", value: formatWritingEvalMetric(bucket.averageFailedCaseCount, 1), tone: "text-stone-400" },
+                        { label: "失败样本", value: formatWritingEvalMetric(bucket.averageFailedCaseCount, 1), tone: "text-inkSoft" },
                         {
                           label: "提分占比",
                           value: typeof bucket.improvementRate === "number" ? `${(bucket.improvementRate * 100).toFixed(0)}%` : "--",
@@ -950,11 +950,11 @@ export default async function AdminWritingEvalInsightsPage() {
               {operationsHighlights.map((item) => (
                 <article key={item.title} className={adminInsightsInsetCardClassName}>
                   <div className="flex items-start justify-between gap-3">
-                    <div className="text-sm uppercase tracking-[0.18em] text-stone-500">{item.title}</div>
+                    <div className="text-sm uppercase tracking-[0.18em] text-inkMuted">{item.title}</div>
                     <div className={`text-xs uppercase tracking-[0.18em] ${item.tone}`}>ops</div>
                   </div>
                   <div className={`mt-3 text-sm leading-7 ${item.tone}`}>{item.summary}</div>
-                  <div className="mt-2 text-sm leading-7 text-stone-400">{item.detail}</div>
+                  <div className="mt-2 text-sm leading-7 text-inkSoft">{item.detail}</div>
                 </article>
               ))}
             </section>
@@ -962,7 +962,7 @@ export default async function AdminWritingEvalInsightsPage() {
         </div>
 
         <div className={cn(adminInsightsSectionClassName, "xl:col-span-2")}>
-          <div className="text-xs uppercase tracking-[0.24em] text-stone-500">趋势</div>
+          <div className="text-xs uppercase tracking-[0.24em] text-inkMuted">趋势</div>
           {displayTrend.length > 0 ? (
             <div className="mt-4 grid gap-4 md:grid-cols-3">
               {[
@@ -981,7 +981,7 @@ export default async function AdminWritingEvalInsightsPage() {
                 {
                   label: "总分",
                   key: "totalScore" as const,
-                  tone: "bg-stone-200/80",
+                  tone: "bg-surfaceMuted",
                   value: latestTrend?.totalScore ?? null,
                 },
               ].map((metric) => {
@@ -991,10 +991,10 @@ export default async function AdminWritingEvalInsightsPage() {
                   <div key={metric.label} className={adminInsightsInsetCardClassName}>
                     <div className="flex items-start justify-between gap-3">
                       <div>
-                        <div className="text-xs uppercase tracking-[0.18em] text-stone-500">{metric.label}</div>
-                        <div className="mt-3 text-2xl text-stone-100 text-balance">{formatWritingEvalMetric(metric.value)}</div>
+                        <div className="text-xs uppercase tracking-[0.18em] text-inkMuted">{metric.label}</div>
+                        <div className="mt-3 text-2xl text-ink text-balance">{formatWritingEvalMetric(metric.value)}</div>
                       </div>
-                      <div className="text-right text-xs text-stone-500">
+                      <div className="text-right text-xs text-inkMuted">
                         均值 {formatWritingEvalMetric(average)}
                         <br />
                         最新 Delta {formatWritingEvalMetric(latestTrend?.deltaTotalScore ?? null)}
@@ -1016,7 +1016,7 @@ export default async function AdminWritingEvalInsightsPage() {
                               height: `${Math.max(10, Math.round((item[metric.key] / maxValue) * 100))}%`,
                             }}
                           />
-                          <div className="line-clamp-1 text-[10px] text-stone-600">{item.runCode}</div>
+                          <div className="line-clamp-1 text-[10px] text-inkMuted">{item.runCode}</div>
                         </div>
                       ))}
                     </div>
@@ -1027,7 +1027,7 @@ export default async function AdminWritingEvalInsightsPage() {
           ) : null}
           <div className={adminInsightsDesktopTableShellClassName}>
             <table className="w-full min-w-[760px] text-left text-sm">
-              <thead className="text-stone-500">
+              <thead className="text-inkMuted">
                 <tr>
                   {["Run", "时间", "质量", "爆款", "总分", "Delta", "失败样本"].map((head) => (
                     <th key={head} className="pb-4 font-medium">
@@ -1038,26 +1038,26 @@ export default async function AdminWritingEvalInsightsPage() {
               </thead>
               <tbody>
                 {displayTrend.map((item) => (
-                  <tr key={item.runId} className="border-t border-stone-800">
-                    <td className="py-4 font-mono text-xs text-stone-300">
+                  <tr key={item.runId} className="border-t border-line">
+                    <td className="py-4 font-mono text-xs text-inkSoft">
                       <Link href={buildAdminWritingEvalRunsHref({ runId: item.runId })} className="transition hover:text-cinnabar">
                         {item.runCode}
                       </Link>
                     </td>
-                    <td className="py-4 text-stone-400">{formatWritingEvalDateTime(item.createdAt)}</td>
-                    <td className="py-4 text-stone-400">{item.qualityScore.toFixed(2)}</td>
-                    <td className="py-4 text-stone-400">{item.viralScore.toFixed(2)}</td>
-                    <td className="py-4 text-stone-100">{item.totalScore.toFixed(2)}</td>
+                    <td className="py-4 text-inkSoft">{formatWritingEvalDateTime(item.createdAt)}</td>
+                    <td className="py-4 text-inkSoft">{item.qualityScore.toFixed(2)}</td>
+                    <td className="py-4 text-inkSoft">{item.viralScore.toFixed(2)}</td>
+                    <td className="py-4 text-ink">{item.totalScore.toFixed(2)}</td>
                     <td className={`py-4 ${item.deltaTotalScore >= 0 ? "text-emerald-400" : "text-cinnabar"}`}>
                       {item.deltaTotalScore >= 0 ? "+" : ""}
                       {item.deltaTotalScore.toFixed(2)}
                     </td>
-                    <td className="py-4 text-stone-400">{item.failedCaseCount}</td>
+                    <td className="py-4 text-inkSoft">{item.failedCaseCount}</td>
                   </tr>
                 ))}
                 {displayTrend.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="py-6 text-stone-500">
+                    <td colSpan={7} className="py-6 text-inkMuted">
                       还没有可展示的趋势记录。
                     </td>
                   </tr>
@@ -1072,11 +1072,11 @@ export default async function AdminWritingEvalInsightsPage() {
                   <div>
                     <Link
                       href={buildAdminWritingEvalRunsHref({ runId: item.runId })}
-                      className="font-mono text-xs text-stone-300 transition hover:text-cinnabar"
+                      className="font-mono text-xs text-inkSoft transition hover:text-cinnabar"
                     >
                       {item.runCode}
                     </Link>
-                    <div className="mt-2 text-xs text-stone-500">{formatWritingEvalDateTime(item.createdAt)}</div>
+                    <div className="mt-2 text-xs text-inkMuted">{formatWritingEvalDateTime(item.createdAt)}</div>
                   </div>
                   <div className={cn("text-sm", item.deltaTotalScore >= 0 ? "text-emerald-400" : "text-cinnabar")}>
                     {item.deltaTotalScore >= 0 ? "+" : ""}
@@ -1085,10 +1085,10 @@ export default async function AdminWritingEvalInsightsPage() {
                 </div>
                 <AdminInsightsMobileMetricGrid
                   items={[
-                    { label: "质量", value: item.qualityScore.toFixed(2), tone: "text-stone-400" },
-                    { label: "爆款", value: item.viralScore.toFixed(2), tone: "text-stone-400" },
+                    { label: "质量", value: item.qualityScore.toFixed(2), tone: "text-inkSoft" },
+                    { label: "爆款", value: item.viralScore.toFixed(2), tone: "text-inkSoft" },
                     { label: "总分", value: item.totalScore.toFixed(2) },
-                    { label: "失败样本", value: item.failedCaseCount, tone: "text-stone-400" },
+                    { label: "失败样本", value: item.failedCaseCount, tone: "text-inkSoft" },
                   ]}
                 />
               </article>
@@ -1101,16 +1101,16 @@ export default async function AdminWritingEvalInsightsPage() {
 
         <div className="space-y-6">
           <section className={adminInsightsSectionClassName}>
-            <div className="text-xs uppercase tracking-[0.24em] text-stone-500">自动放量趋势</div>
+            <div className="text-xs uppercase tracking-[0.24em] text-inkMuted">自动放量趋势</div>
             <div className="mt-4 grid gap-3">
               {[
-                { label: "7 天自动动作", value: recentAutoRolloutTrend.length, tone: "text-stone-100" },
+                { label: "7 天自动动作", value: recentAutoRolloutTrend.length, tone: "text-ink" },
                 { label: "扩量动作", value: autoExpandCount, tone: "text-emerald-400" },
                 { label: "收缩动作", value: autoShrinkCount, tone: "text-cinnabar" },
                 { label: "高风险动作", value: autoHighRiskCount, tone: "text-amber-300" },
               ].map((item) => (
                 <div key={item.label} className={cn(adminInsightsInsetCardClassName, "px-4 py-3")}>
-                  <div className="text-xs uppercase tracking-[0.18em] text-stone-500">{item.label}</div>
+                  <div className="text-xs uppercase tracking-[0.18em] text-inkMuted">{item.label}</div>
                   <div className={`mt-2 text-2xl ${item.tone}`}>{item.value}</div>
                 </div>
               ))}
@@ -1118,12 +1118,12 @@ export default async function AdminWritingEvalInsightsPage() {
           </section>
 
           <section className={adminInsightsSectionClassName}>
-            <div className="text-xs uppercase tracking-[0.24em] text-stone-500">高频提分原因</div>
+            <div className="text-xs uppercase tracking-[0.24em] text-inkMuted">高频提分原因</div>
             <div className="mt-4 space-y-3 text-sm">
               {insights.topImprovementReasons.map((item: ReasonInsightItem) => (
-                <div key={item.label} className={cn(adminInsightsInsetCardClassName, "px-4 py-3 text-stone-300")}>
+                <div key={item.label} className={cn(adminInsightsInsetCardClassName, "px-4 py-3 text-inkSoft")}>
                   <div>{item.label} · {item.count}</div>
-                  <div className="mt-2 text-xs text-stone-500">
+                  <div className="mt-2 text-xs text-inkMuted">
                     代表样本：{item.taskCode}
                   </div>
                   <div className="mt-3 flex flex-wrap gap-3">
@@ -1136,17 +1136,17 @@ export default async function AdminWritingEvalInsightsPage() {
                   </div>
                 </div>
               ))}
-              {insights.topImprovementReasons.length === 0 ? <div className="text-stone-500">暂无数据</div> : null}
+              {insights.topImprovementReasons.length === 0 ? <div className="text-inkMuted">暂无数据</div> : null}
             </div>
           </section>
 
           <section className={adminInsightsSectionClassName}>
-            <div className="text-xs uppercase tracking-[0.24em] text-stone-500">高频退化原因</div>
+            <div className="text-xs uppercase tracking-[0.24em] text-inkMuted">高频退化原因</div>
             <div className="mt-4 space-y-3 text-sm">
               {insights.topRegressionReasons.map((item: ReasonInsightItem) => (
-                <div key={item.label} className={cn(adminInsightsInsetCardClassName, "px-4 py-3 text-stone-300")}>
+                <div key={item.label} className={cn(adminInsightsInsetCardClassName, "px-4 py-3 text-inkSoft")}>
                   <div>{item.label} · {item.count}</div>
-                  <div className="mt-2 text-xs text-stone-500">
+                  <div className="mt-2 text-xs text-inkMuted">
                     代表样本：{item.taskCode}
                   </div>
                   <div className="mt-3 flex flex-wrap gap-3">
@@ -1159,7 +1159,7 @@ export default async function AdminWritingEvalInsightsPage() {
                   </div>
                 </div>
               ))}
-              {insights.topRegressionReasons.length === 0 ? <div className="text-stone-500">暂无数据</div> : null}
+              {insights.topRegressionReasons.length === 0 ? <div className="text-inkMuted">暂无数据</div> : null}
             </div>
           </section>
         </div>
@@ -1168,12 +1168,12 @@ export default async function AdminWritingEvalInsightsPage() {
       <section className={adminInsightsSectionClassName}>
         <div className="flex items-start justify-between gap-4">
           <div>
-            <div className="text-xs uppercase tracking-[0.24em] text-stone-500">自动放量按天趋势</div>
-            <div className="mt-2 text-sm leading-7 text-stone-500">
+            <div className="text-xs uppercase tracking-[0.24em] text-inkMuted">自动放量按天趋势</div>
+            <div className="mt-2 text-sm leading-7 text-inkMuted">
               观察近 7 天自动放量的日节奏，判断 scheduler 是否连续收缩、是否出现扩量停滞，或是否在短时间内集中触发高风险动作。
             </div>
           </div>
-          <div className="text-sm text-stone-500">最近 7 天</div>
+          <div className="text-sm text-inkMuted">最近 7 天</div>
         </div>
         <div className="mt-5 grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
           <div className={adminInsightsInsetCardClassName}>
@@ -1194,26 +1194,26 @@ export default async function AdminWritingEvalInsightsPage() {
                       style={{ height: `${Math.max(item.highRiskCount > 0 ? 16 : 6, Math.round((item.highRiskCount / maxDailyAutoRolloutCount) * 100))}%` }}
                     />
                   </div>
-                  <div className="text-[10px] text-stone-600">{item.dateKey.slice(5)}</div>
+                  <div className="text-[10px] text-inkMuted">{item.dateKey.slice(5)}</div>
                 </div>
               ))}
             </div>
-            <div className="mt-4 flex flex-wrap gap-3 text-xs text-stone-500">
+            <div className="mt-4 flex flex-wrap gap-3 text-xs text-inkMuted">
               <span className={adminInsightsBadgeClassName}>绿色：扩量</span>
               <span className={adminInsightsBadgeClassName}>红色：收缩</span>
               <span className={adminInsightsBadgeClassName}>黄色：高风险</span>
             </div>
           </div>
           <div className={adminInsightsInsetCardClassName}>
-            <div className="text-xs uppercase tracking-[0.18em] text-stone-500">日汇总表</div>
+            <div className="text-xs uppercase tracking-[0.18em] text-inkMuted">日汇总表</div>
             <div className="mt-4 space-y-3">
               {autoRolloutDailyBuckets.map((item) => (
                 <div key={`daily-${item.dateKey}`} className={adminInsightsSubcardCompactClassName}>
                   <div className="flex items-center justify-between gap-3">
-                    <div className="text-sm text-stone-200">{item.dateKey}</div>
-                    <div className="text-xs text-stone-500">总动作 {item.total}</div>
+                    <div className="text-sm text-ink">{item.dateKey}</div>
+                    <div className="text-xs text-inkMuted">总动作 {item.total}</div>
                   </div>
-                  <div className="mt-2 text-xs text-stone-500">
+                  <div className="mt-2 text-xs text-inkMuted">
                     扩量 {item.expandCount} · 收缩 {item.shrinkCount} · 高风险 {item.highRiskCount}
                   </div>
                 </div>
@@ -1226,12 +1226,12 @@ export default async function AdminWritingEvalInsightsPage() {
       <section className={adminInsightsSectionClassName}>
         <div className="flex items-start justify-between gap-4">
           <div>
-            <div className="text-xs uppercase tracking-[0.24em] text-stone-500">自动放量资产榜</div>
-            <div className="mt-2 text-sm leading-7 text-stone-500">
+            <div className="text-xs uppercase tracking-[0.24em] text-inkMuted">自动放量资产榜</div>
+            <div className="mt-2 text-sm leading-7 text-inkMuted">
               近 7 天按对象聚合自动放量动作，优先把“反复收缩”或“动作过密”的对象拉出来，便于运营优先复盘。
             </div>
           </div>
-          <div className="text-sm text-stone-500">Top {Math.min(8, autoRolloutAssetLeaders.length)}</div>
+          <div className="text-sm text-inkMuted">Top {Math.min(8, autoRolloutAssetLeaders.length)}</div>
         </div>
         <div className="mt-4 grid gap-3 xl:grid-cols-2">
           {autoRolloutAssetLeaders.slice(0, 8).map((item) => (
@@ -1241,18 +1241,18 @@ export default async function AdminWritingEvalInsightsPage() {
                 <article key={`${item.assetType}-${item.assetRef}`} className={adminInsightsInsetCardClassName}>
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
-                      <div className="font-mono text-xs text-stone-300">
+                      <div className="font-mono text-xs text-inkSoft">
                         {item.assetType} · {item.assetRef}
                       </div>
-                      <div className="mt-2 text-sm leading-7 text-stone-200">{item.latestReason}</div>
+                      <div className="mt-2 text-sm leading-7 text-ink">{item.latestReason}</div>
                     </div>
                     <div className={`text-sm ${getRiskTone(item.latestRiskLevel)}`}>
                       {item.latestRiskLevel}
-                      <div className="mt-1 text-xs text-stone-500">{formatWritingEvalDateTime(item.latestAt)}</div>
+                      <div className="mt-1 text-xs text-inkMuted">{formatWritingEvalDateTime(item.latestAt)}</div>
                     </div>
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2 text-xs">
-                    <span className={cn(adminInsightsWideBadgeClassName, "text-stone-400")}>总动作 {item.totalActions}</span>
+                    <span className={cn(adminInsightsWideBadgeClassName, "text-inkSoft")}>总动作 {item.totalActions}</span>
                     <span className={cn(adminInsightsWideBadgeClassName, "text-emerald-400")}>扩量 {item.expandCount}</span>
                     <span className={cn(adminInsightsWideBadgeClassName, "text-cinnabar")}>收缩 {item.shrinkCount}</span>
                     <span className={cn(adminInsightsWideBadgeClassName, "text-amber-300")}>高风险 {item.highRiskCount}</span>
@@ -1274,19 +1274,19 @@ export default async function AdminWritingEvalInsightsPage() {
               );
             })()
           ))}
-          {autoRolloutAssetLeaders.length === 0 ? <div className="text-sm text-stone-500">近 7 天没有可展示的自动放量资产波动。</div> : null}
+          {autoRolloutAssetLeaders.length === 0 ? <div className="text-sm text-inkMuted">近 7 天没有可展示的自动放量资产波动。</div> : null}
         </div>
       </section>
 
       <section className={adminInsightsSectionClassName}>
         <div className="flex items-start justify-between gap-4">
           <div>
-            <div className="text-xs uppercase tracking-[0.24em] text-stone-500">自动放量动作明细</div>
-            <div className="mt-2 text-sm leading-7 text-stone-500">
+            <div className="text-xs uppercase tracking-[0.24em] text-inkMuted">自动放量动作明细</div>
+            <div className="mt-2 text-sm leading-7 text-inkMuted">
               这里聚合 scheduler 产生的 `writing_asset_rollout_auto_manage` 与 `prompt_rollout_auto_manage` 审计，帮助运营从长期视角判断自动扩量是否过快、自动收缩是否过于频繁。
             </div>
           </div>
-          <div className="text-sm text-stone-500">最近 7 天 {recentAutoRolloutTrend.length} 条</div>
+          <div className="text-sm text-inkMuted">最近 7 天 {recentAutoRolloutTrend.length} 条</div>
         </div>
         <div className="mt-4 space-y-3">
           {recentAutoRolloutTrend.length ? (
@@ -1296,25 +1296,25 @@ export default async function AdminWritingEvalInsightsPage() {
                 <article key={`auto-rollout-${item.id}`} className={adminInsightsInsetCardClassName}>
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
-                      <div className="font-mono text-xs text-stone-300">
+                      <div className="font-mono text-xs text-inkSoft">
                         {item.assetType} · {item.assetRef}
                       </div>
-                      <div className="mt-2 text-sm leading-7 text-stone-200">{item.reason}</div>
+                      <div className="mt-2 text-sm leading-7 text-ink">{item.reason}</div>
                     </div>
                     <div className="text-right">
                       <div className={`text-sm ${getRiskTone(item.riskLevel)}`}>
                         {item.directionLabel} · {item.riskLevel}
                       </div>
-                      <div className="mt-1 text-xs text-stone-500">{formatWritingEvalDateTime(item.createdAt)}</div>
+                      <div className="mt-1 text-xs text-inkMuted">{formatWritingEvalDateTime(item.createdAt)}</div>
                     </div>
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2 text-xs">
-                    <span className={cn(adminInsightsWideBadgeClassName, "text-stone-400")}>回流 {formatWritingEvalMetric(item.feedbackCount, 0)} 条</span>
-                    <span className={cn(adminInsightsWideBadgeClassName, "text-stone-400")}>用户 {formatWritingEvalMetric(item.uniqueUsers, 0)}</span>
-                    <span className={cn(adminInsightsWideBadgeClassName, "text-stone-400")}>命中 {formatWritingEvalMetric(item.totalHitCount, 0)}</span>
-                    <span className={cn(adminInsightsWideBadgeClassName, "text-stone-400")}>爆款 {formatWritingEvalMetric(item.observedViralScore)}</span>
-                    <span className={cn(adminInsightsWideBadgeClassName, "text-stone-400")}>打开 {formatWritingEvalMetric(item.openRate, 1)}%</span>
-                    <span className={cn(adminInsightsWideBadgeClassName, "text-stone-400")}>读完 {formatWritingEvalMetric(item.readCompletionRate, 1)}%</span>
+                    <span className={cn(adminInsightsWideBadgeClassName, "text-inkSoft")}>回流 {formatWritingEvalMetric(item.feedbackCount, 0)} 条</span>
+                    <span className={cn(adminInsightsWideBadgeClassName, "text-inkSoft")}>用户 {formatWritingEvalMetric(item.uniqueUsers, 0)}</span>
+                    <span className={cn(adminInsightsWideBadgeClassName, "text-inkSoft")}>命中 {formatWritingEvalMetric(item.totalHitCount, 0)}</span>
+                    <span className={cn(adminInsightsWideBadgeClassName, "text-inkSoft")}>爆款 {formatWritingEvalMetric(item.observedViralScore)}</span>
+                    <span className={cn(adminInsightsWideBadgeClassName, "text-inkSoft")}>打开 {formatWritingEvalMetric(item.openRate, 1)}%</span>
+                    <span className={cn(adminInsightsWideBadgeClassName, "text-inkSoft")}>读完 {formatWritingEvalMetric(item.readCompletionRate, 1)}%</span>
                   </div>
                   <div className="mt-3 flex flex-wrap gap-3">
                     <Link
@@ -1333,17 +1333,17 @@ export default async function AdminWritingEvalInsightsPage() {
               );
             })
           ) : (
-            <div className="text-sm text-stone-500">最近 7 天还没有自动放量动作。</div>
+            <div className="text-sm text-inkMuted">最近 7 天还没有自动放量动作。</div>
           )}
         </div>
       </section>
 
       <section className={adminInsightsSectionClassName}>
-        <div className="text-xs uppercase tracking-[0.24em] text-stone-500">失败样本</div>
+        <div className="text-xs uppercase tracking-[0.24em] text-inkMuted">失败样本</div>
         <div className="mt-4 space-y-3">
           {insights.failingCases.map((item: any) => (
             <div key={`${item.runCode}-${item.taskCode}`} className={adminInsightsInsetCardClassName}>
-                <div className="font-mono text-xs text-stone-300">
+                <div className="font-mono text-xs text-inkSoft">
                 {item.runId ? (
                   <Link href={buildAdminWritingEvalRunsHref({ runId: item.runId, resultId: item.resultId })} className="transition hover:text-cinnabar">
                     {item.runCode}
@@ -1362,7 +1362,7 @@ export default async function AdminWritingEvalInsightsPage() {
               </div>
             </div>
           ))}
-          {insights.failingCases.length === 0 ? <div className="text-sm text-stone-500">近期没有失败样本。</div> : null}
+          {insights.failingCases.length === 0 ? <div className="text-sm text-inkMuted">近期没有失败样本。</div> : null}
         </div>
       </section>
 

@@ -41,7 +41,7 @@ export function AdminWritingEvalRiskActionButton({ action }: { action: Governanc
       <button type="button" className={uiPrimitives.adminSecondaryButton} onClick={() => void handleClick()} disabled={submitting}>
         {submitting ? "执行中…" : action.label}
       </button>
-      {message ? <div className="text-xs leading-6 text-stone-500">{message}</div> : null}
+      {message ? <div className="text-xs leading-6 text-inkMuted">{message}</div> : null}
     </div>
   );
 }

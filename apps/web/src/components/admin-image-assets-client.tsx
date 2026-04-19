@@ -23,7 +23,7 @@ const adminMaintenanceMessageSuccessClassName = cn(
 );
 const adminMaintenanceMessageErrorClassName = cn(
   adminMaintenanceMessageBaseClassName,
-  "border-[#8f3136] bg-[#2a1718] text-[#efb5b9]",
+  "border-danger/30 bg-surface text-danger",
 );
 
 function getMaintenanceMessageClassName(message: string) {

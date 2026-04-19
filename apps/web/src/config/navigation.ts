@@ -20,6 +20,8 @@ export const adminNav = [
   { href: "/admin/prompts", label: "Prompt 管理" },
   { href: "/admin/writing-eval", label: "写作评测" },
   { href: "/admin/ai-routing", label: "模型路由" },
+  { href: "/admin/image-engine", label: "图像引擎" },
+  { href: "/admin/topic-sources", label: "系统信源" },
   { href: "/admin/finance", label: "套餐财务" },
   { href: "/admin/business", label: "业务总览" },
 ];

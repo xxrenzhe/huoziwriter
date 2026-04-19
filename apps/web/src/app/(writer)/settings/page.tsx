@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import { SettingsOverviewCards } from "@/components/settings-overview-cards";
 import { formatPlanDisplayName } from "@/lib/plan-labels";
-import { getSettingsHubData } from "./data";
+import { formatBytes, formatConnectionStatus, getSettingsHubData } from "./data";
 import { settingsSections, type SettingsSectionKey } from "./sections";
 
 const sectionIcons: Record<SettingsSectionKey, JSX.Element> = {
@@ -33,6 +33,9 @@ const settingsReadyBannerClassName = cn(
   surfaceCardStyles({ tone: "success", padding: "sm" }),
   "text-sm leading-7 text-emerald-700",
 );
+const detailPanelClassName = surfaceCardStyles({ padding: "md" });
+const detailCardClassName = cn(surfaceCardStyles({ tone: "highlight", padding: "sm" }), "shadow-none");
+const recentItemClassName = cn(surfaceCardStyles({ tone: "warm", padding: "sm" }), "shadow-none");
 
 export default async function SettingsPage() {
   const data = await getSettingsHubData();
@@ -40,11 +43,31 @@ export default async function SettingsPage() {
     return null;
   }
 
-  const { user, planContext, dailyGenerationUsage, workspaceAssets, connections, topicSources, languageGuardRules } = data;
+  const {
+    user,
+    planContext,
+    dailyGenerationUsage,
+    workspaceAssets,
+    connections,
+    topicSources,
+    languageGuardRules,
+    fragments,
+    knowledgeCards,
+    assetFiles,
+    articles,
+    imageAssetQuota,
+  } = data;
   const { plan, planSnapshot, effectivePlanCode } = planContext;
   const displayPlanName = formatPlanDisplayName(plan?.name || effectivePlanCode);
   const customTopicSources = topicSources.filter((source) => source.owner_user_id != null);
   const userLanguageRules = languageGuardRules.filter((rule) => rule.scope === "user");
+  const recentFragments = fragments.slice(0, 2);
+  const recentKnowledgeCards = knowledgeCards.slice(0, 2);
+  const recentArticles = articles.slice(0, 2);
+  const recentImageAssets = assetFiles
+    .filter((item) => item.assetType === "cover_image" || String(item.mimeType || "").startsWith("image/"))
+    .slice(0, 2);
+  const recentConnections = connections.slice(0, 2);
   const reusableAssetCount =
     workspaceAssets.personasCount +
     workspaceAssets.seriesCount +
@@ -147,6 +170,33 @@ export default async function SettingsPage() {
       description: "把最常见的机器腔词和句式模板收进规则库，在生成、审校和编辑阶段统一拦截。",
     },
   } satisfies Record<SettingsSectionKey, { metric: string; note: string; description: string }>;
+  const recentSettlements = [
+    ...recentKnowledgeCards.map((card) => ({
+      label: "背景卡",
+      title: card.title,
+      note: card.summary || card.latest_change_summary || "已进入资产中心",
+    })),
+    ...recentImageAssets.map((asset) => ({
+      label: "图片资产",
+      title: asset.articleTitle || `图片资产 #${asset.id}`,
+      note: `${asset.variantLabel || "封面候选"} · ${formatBytes(asset.byteLength)}`,
+    })),
+    ...recentArticles.map((article) => ({
+      label: "稿件",
+      title: article.title,
+      note: `最近状态：${article.status}`,
+    })),
+    ...recentFragments.map((fragment) => ({
+      label: "碎片资产",
+      title: fragment.title || `素材 #${fragment.id}`,
+      note: fragment.distilled_content,
+    })),
+    ...recentConnections.map((connection) => ({
+      label: "发布连接",
+      title: connection.account_name || "未命名公众号",
+      note: formatConnectionStatus(connection.status),
+    })),
+  ].slice(0, 8);
 
   return (
     <div className="space-y-8">
@@ -197,24 +247,86 @@ export default async function SettingsPage() {
         </div>
       </section>
 
-      {setupQueue.length > 0 ? (
-        <section className="grid gap-3 lg:grid-cols-2">
-          {setupQueue.slice(0, 4).map((item) => (
-            <Link
-              key={item.label}
-              href={item.href}
-              className={setupQueueCardClassName}
-            >
-              <div className="text-sm font-medium">{item.label}</div>
-              <div className="mt-2 text-sm leading-7">{item.detail}</div>
-            </Link>
-          ))}
-        </section>
-      ) : (
-        <section className={settingsReadyBannerClassName}>
-          当前个人空间资产已经形成基本闭环，可以直接进入高频写作和发布阶段。
-        </section>
-      )}
+      <section className="space-y-3">
+        <div className="text-xs uppercase tracking-[0.24em] text-cinnabar">待处理事项</div>
+        {setupQueue.length > 0 ? (
+          <div className="grid gap-3 lg:grid-cols-2">
+            {setupQueue.slice(0, 4).map((item) => (
+              <Link
+                key={item.label}
+                href={item.href}
+                className={setupQueueCardClassName}
+              >
+                <div className="text-sm font-medium">{item.label}</div>
+                <div className="mt-2 text-sm leading-7">{item.detail}</div>
+              </Link>
+            ))}
+          </div>
+        ) : (
+          <div className={settingsReadyBannerClassName}>
+            当前个人空间资产已经形成基本闭环，可以直接进入高频写作和发布阶段。
+          </div>
+        )}
+      </section>
+
+      <section className="grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
+        <article className={detailPanelClassName}>
+          <div className="text-xs uppercase tracking-[0.24em] text-cinnabar">资产状态</div>
+          <div className="mt-3 font-serifCn text-3xl text-ink text-balance">把主流程会复用的库存直接暴露在设置首页。</div>
+          <div className="mt-6 grid gap-3 md:grid-cols-2">
+            {[
+              {
+                label: "背景卡",
+                value: String(workspaceAssets.knowledgeCardsCount),
+                note: `已激活 ${workspaceAssets.activeKnowledgeCardsCount} 张，待处理 ${workspaceAssets.conflictedKnowledgeCardsCount} 张`,
+              },
+              {
+                label: "图片资产",
+                value: String(workspaceAssets.coverImagesCount + workspaceAssets.imagePromptsCount),
+                note: `封面 ${workspaceAssets.coverImagesCount} 张，提示词 ${workspaceAssets.imagePromptsCount} 条`,
+              },
+              {
+                label: "图片资产空间",
+                value: `${formatBytes(imageAssetQuota.usedBytes)} / ${formatBytes(imageAssetQuota.limitBytes)}`,
+                note: `唯一对象 ${imageAssetQuota.uniqueObjectCount} 个`,
+              },
+              {
+                label: "发布连接",
+                value: String(connections.length),
+                note: connections.length > 0 ? (connections[0].account_name || "已配置公众号") : "当前还没有公众号连接",
+              },
+            ].map((item) => (
+              <div key={item.label} className={detailCardClassName}>
+                <div className="text-xs uppercase tracking-[0.18em] text-inkMuted">{item.label}</div>
+                <div className="mt-2 font-serifCn text-3xl text-ink text-balance">{item.value}</div>
+                <div className="mt-2 text-sm leading-6 text-inkSoft">{item.note}</div>
+              </div>
+            ))}
+          </div>
+        </article>
+
+        <article className={detailPanelClassName}>
+          <div className="text-xs uppercase tracking-[0.24em] text-cinnabar">最近沉淀</div>
+          <div className="mt-3 font-serifCn text-3xl text-ink text-balance">最近形成的作者资产、稿件与发布连接。</div>
+          <div className="mt-4 space-y-3">
+            {recentSettlements.length > 0 ? (
+              recentSettlements.map((item) => (
+                <div key={`${item.label}-${item.title}`} className={recentItemClassName}>
+                  <div className="text-xs uppercase tracking-[0.18em] text-inkMuted">{item.label}</div>
+                  <div className="mt-2 text-base font-medium text-ink">{item.title}</div>
+                  <div className="mt-2 text-sm leading-6 text-inkSoft">{item.note}</div>
+                </div>
+              ))
+            ) : (
+              <div className={recentItemClassName}>
+                <div className="text-sm leading-7 text-inkSoft">
+                  当前还没有新的沉淀项。先去稿件区补素材、背景卡或封面图，这里会自动回流。
+                </div>
+              </div>
+            )}
+          </div>
+        </article>
+      </section>
 
       <SettingsOverviewCards
         items={settingsSections.map((section) => ({

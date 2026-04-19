@@ -428,7 +428,7 @@ export function NotificationCenter({
 
             {items.length === 0 ? (
               <div className={emptyCardClassName}>
-                <div className="flex h-12 w-12 items-center justify-center border border-[#dfd2b0] bg-[#fff4e0] text-cinnabar">
+                <div className="flex h-12 w-12 items-center justify-center border border-warning/40 bg-surfaceWarm text-cinnabar">
                   <Sparkles size={22} />
                 </div>
                 <div className="space-y-2">

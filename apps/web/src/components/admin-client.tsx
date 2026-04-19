@@ -9,10 +9,10 @@ import { MANAGED_PLAN_OPTIONS } from "@/lib/plan-labels";
 
 const adminMobileListClassName = "grid gap-3 md:hidden";
 const adminMobileCardClassName = `${uiPrimitives.adminPanel} p-4`;
-const adminMobileMetaLabelClassName = "text-xs uppercase tracking-[0.16em] text-stone-500";
-const adminMobileMetaValueClassName = "mt-1 text-sm text-stone-100";
-const adminDarkSecondaryButtonClassName = "border-stone-800 bg-stone-950 text-stone-100 hover:border-stone-800 hover:bg-stone-900 hover:text-stone-100 focus-visible:ring-stone-600 focus-visible:ring-offset-stone-950";
-const adminDarkPrimaryButtonClassName = "focus-visible:ring-offset-stone-950";
+const adminMobileMetaLabelClassName = "text-xs uppercase tracking-[0.16em] text-adminInkSoft";
+const adminMobileMetaValueClassName = "mt-1 text-sm text-adminInk";
+const adminDarkSecondaryButtonClassName = "border-adminLineStrong bg-adminBg text-adminInk hover:border-adminLineStrong hover:bg-adminSurfaceAlt hover:text-adminInk focus-visible:ring-adminAccent focus-visible:ring-offset-adminBg";
+const adminDarkPrimaryButtonClassName = "focus-visible:ring-offset-adminBg";
 
 function formatPromptRolloutWindowLabel(observeOnly: boolean) {
   return observeOnly ? "观察优先" : "公开灰度";
@@ -69,7 +69,7 @@ export function AdminUsersClient({
             <option key={option.code} value={option.code}>{option.label}</option>
           ))}
         </select>
-        <div className="md:col-span-5 text-xs leading-6 text-stone-500">
+        <div className="md:col-span-5 text-xs leading-6 text-adminInkSoft">
           {initialPasswordHint}
         </div>
         <Button type="submit" variant="primary" className={`md:col-span-5 ${adminDarkPrimaryButtonClassName}`}>
@@ -83,7 +83,7 @@ export function AdminUsersClient({
       </div>
       <div className={`hidden overflow-x-auto md:block ${uiPrimitives.adminPanel}`}>
         <table className="w-full min-w-[860px] text-left text-sm">
-          <thead className="bg-stone-950 text-stone-500">
+          <thead className="bg-adminBg text-adminInkSoft">
             <tr>
               {["用户名", "角色", "套餐", "状态", "最近登录", "操作"].map((head) => (
                 <th key={head} className="px-6 py-4 font-medium">{head}</th>
@@ -129,15 +129,15 @@ function AdminUserRow({
   }
 
   return (
-    <tr className="border-t border-stone-800">
-      <td className="px-6 py-4 text-stone-100">{user.username}</td>
-      <td className="px-6 py-4 text-stone-400">
+    <tr className="border-t border-adminLineStrong">
+      <td className="px-6 py-4 text-adminInk">{user.username}</td>
+      <td className="px-6 py-4 text-adminInkSoft">
         <select aria-label="select control" value={role} onChange={(event) => setRole(event.target.value)} className={uiPrimitives.adminCompactSelect}>
           <option value="user">user</option>
           <option value="admin">admin</option>
         </select>
       </td>
-      <td className="px-6 py-4 text-stone-400">
+      <td className="px-6 py-4 text-adminInkSoft">
         <select aria-label="select control" value={planCode} onChange={(event) => setPlanCode(event.target.value)} className={uiPrimitives.adminCompactSelect}>
           {MANAGED_PLAN_OPTIONS.map((option) => (
             <option key={option.code} value={option.code}>{option.label}</option>
@@ -155,7 +155,7 @@ function AdminUserRow({
           {isActive ? "启用" : "停用"}
         </Button>
       </td>
-      <td className="px-6 py-4 text-stone-400">{user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleString("zh-CN") : "未登录"}</td>
+      <td className="px-6 py-4 text-adminInkSoft">{user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleString("zh-CN") : "未登录"}</td>
       <td className="px-6 py-4">
         <Button
           type="button"
@@ -201,8 +201,8 @@ function AdminUserMobileCard({
   return (
     <article className={adminMobileCardClassName}>
       <div>
-        <div className="text-base text-stone-100">{user.username}</div>
-        <div className="mt-1 text-xs text-stone-500">
+        <div className="text-base text-adminInk">{user.username}</div>
+        <div className="mt-1 text-xs text-adminInkSoft">
           最近登录：{user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleString("zh-CN") : "未登录"}
         </div>
       </div>
@@ -415,7 +415,7 @@ export function PromptManagerClient({
             placeholder="灰度计划，用逗号分隔，如 pro,ultra"
             className={uiPrimitives.adminInput}
           />
-          <label className="flex items-center gap-2 text-sm text-stone-400">
+          <label className="flex items-center gap-2 text-sm text-adminInkSoft">
             <input aria-label="Prompt 内容"
               type="checkbox"
               checked={form.rolloutObserveOnly}
@@ -432,7 +432,7 @@ export function PromptManagerClient({
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <div className="text-xs uppercase tracking-[0.18em] text-cinnabar">Prompt 聚焦模式</div>
-              <div className="mt-2 text-sm leading-7 text-stone-200">
+              <div className="mt-2 text-sm leading-7 text-adminInkSoft">
                 当前只展示 <span className="font-mono">{focusPrompt.promptId}</span>
                 {focusPrompt.version ? <> · <span className="font-mono">{focusPrompt.version}</span></> : null}
                 {" "}对应的 Prompt 版本，共 {focusPrompt.matchedCount} 条。
@@ -454,16 +454,16 @@ export function PromptManagerClient({
                 <>
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <div className="font-serifCn text-2xl text-stone-100 text-balance">{prompt.name}</div>
-                <div className="mt-2 text-sm text-stone-400">{prompt.promptId} · {prompt.version} · {prompt.category}</div>
-                <div className="mt-2 flex flex-wrap gap-2 text-[11px] uppercase tracking-[0.12em] text-stone-500">
-                  <span className="rounded-full border border-stone-700 px-2 py-1">
+                <div className="font-serifCn text-2xl text-adminInk text-balance">{prompt.name}</div>
+                <div className="mt-2 text-sm text-adminInkSoft">{prompt.promptId} · {prompt.version} · {prompt.category}</div>
+                <div className="mt-2 flex flex-wrap gap-2 text-[11px] uppercase tracking-[0.12em] text-adminInkSoft">
+                  <span className="rounded-full border border-adminLineStrong px-2 py-1">
                     自动治理 {prompt.autoMode === "recommendation" ? "recommendation" : "manual"}
                   </span>
-                  <span className="rounded-full border border-stone-700 px-2 py-1">
+                  <span className="rounded-full border border-adminLineStrong px-2 py-1">
                     {prompt.rolloutAssessment.hasLedger ? `账本 ${prompt.rolloutAssessment.ledgerDecision || "pending"}` : "无实验账本"}
                   </span>
-                  <span className="rounded-full border border-stone-700 px-2 py-1">
+                  <span className="rounded-full border border-adminLineStrong px-2 py-1">
                     最近配置 {new Date(prompt.updatedAt).toLocaleString("zh-CN")}
                   </span>
                 </div>
@@ -475,11 +475,11 @@ export function PromptManagerClient({
                     {prompt.rolloutPlanCodes.length ? ` plan=${prompt.rolloutPlanCodes.join("/")}` : ""}
                   </div>
                 ) : null}
-                <div className="mt-2 text-xs text-stone-500">
+                <div className="mt-2 text-xs text-adminInkSoft">
                   命中用户 {prompt.rolloutStats.uniqueUserCount} · 命中次数 {prompt.rolloutStats.totalHitCount}
                   {prompt.rolloutStats.lastHitAt ? ` · 最近命中 ${new Date(prompt.rolloutStats.lastHitAt).toLocaleString("zh-CN")}` : ""}
                 </div>
-                <div className="mt-1 text-xs text-stone-600">
+                <div className="mt-1 text-xs text-adminInkSoft">
                   观察流量 {prompt.rolloutStats.observeUserCount} · 套餐白名单 {prompt.rolloutStats.planUserCount} · 比例流量 {prompt.rolloutStats.percentageUserCount} · 稳定流量 {prompt.rolloutStats.stableUserCount}
                 </div>
               </div>
@@ -492,25 +492,25 @@ export function PromptManagerClient({
                 </button>
               </div>
             </div>
-            <pre className="mt-4 overflow-x-auto whitespace-pre-wrap border border-stone-800 bg-stone-950 p-4 text-xs leading-6 text-stone-300">{prompt.promptContent}</pre>
+            <pre className="mt-4 overflow-x-auto whitespace-pre-wrap border border-adminLineStrong bg-adminBg p-4 text-xs leading-6 text-adminInkSoft">{prompt.promptContent}</pre>
             <div className="mt-4 grid gap-3 md:grid-cols-3">
-              <div className="border border-stone-800 bg-stone-950 p-4">
-                <div className="text-xs uppercase tracking-[0.18em] text-stone-500">自动治理</div>
-                <div className="mt-3 text-lg text-stone-100">{prompt.autoMode === "recommendation" ? "自动观察中" : "手动维护"}</div>
-                <div className="mt-2 text-xs leading-6 text-stone-500">
+              <div className="border border-adminLineStrong bg-adminBg p-4">
+                <div className="text-xs uppercase tracking-[0.18em] text-adminInkSoft">自动治理</div>
+                <div className="mt-3 text-lg text-adminInk">{prompt.autoMode === "recommendation" ? "自动观察中" : "手动维护"}</div>
+                <div className="mt-2 text-xs leading-6 text-adminInkSoft">
                   当前窗口 {formatPromptRolloutWindowLabel(prompt.rolloutObserveOnly)} · {prompt.rolloutPercentage}%
                   {prompt.rolloutPlanCodes.length ? ` · plan=${prompt.rolloutPlanCodes.join("/")}` : ""}
                 </div>
               </div>
-              <div className="border border-stone-800 bg-stone-950 p-4">
-                <div className="text-xs uppercase tracking-[0.18em] text-stone-500">实验账本</div>
-                <div className="mt-3 text-lg text-stone-100">
+              <div className="border border-adminLineStrong bg-adminBg p-4">
+                <div className="text-xs uppercase tracking-[0.18em] text-adminInkSoft">实验账本</div>
+                <div className="mt-3 text-lg text-adminInk">
                   {prompt.rolloutAssessment.hasLedger ? prompt.rolloutAssessment.ledgerDecision || "pending" : "未接入"}
                 </div>
-                <div className="mt-2 text-xs leading-6 text-stone-500">
+                <div className="mt-2 text-xs leading-6 text-adminInkSoft">
                   Delta {prompt.rolloutAssessment.deltaTotalScore !== null ? prompt.rolloutAssessment.deltaTotalScore.toFixed(2) : "--"} · 失败样本 {prompt.rolloutAssessment.failedCaseCount}
                 </div>
-                <div className="mt-1 text-xs text-stone-600">
+                <div className="mt-1 text-xs text-adminInkSoft">
                   来源 {prompt.rolloutAssessment.sourceVersion || "--"}
                 </div>
                 <div className="mt-3 flex flex-wrap gap-3">
@@ -524,13 +524,13 @@ export function PromptManagerClient({
                   ) : null}
                 </div>
               </div>
-              <div className="border border-stone-800 bg-stone-950 p-4">
-                <div className="text-xs uppercase tracking-[0.18em] text-stone-500">真实结果</div>
-                <div className="mt-3 text-lg text-stone-100">{prompt.rolloutAssessment.feedbackCount} 条回流</div>
-                <div className="mt-2 text-xs leading-6 text-stone-500">
+              <div className="border border-adminLineStrong bg-adminBg p-4">
+                <div className="text-xs uppercase tracking-[0.18em] text-adminInkSoft">真实结果</div>
+                <div className="mt-3 text-lg text-adminInk">{prompt.rolloutAssessment.feedbackCount} 条回流</div>
+                <div className="mt-2 text-xs leading-6 text-adminInkSoft">
                   爆款潜力 {prompt.rolloutAssessment.observedViralScore !== null ? prompt.rolloutAssessment.observedViralScore.toFixed(1) : "--"} · 打开率 {prompt.rolloutAssessment.openRate !== null ? `${prompt.rolloutAssessment.openRate.toFixed(1)}%` : "--"}
                 </div>
-                <div className="mt-1 text-xs text-stone-600">
+                <div className="mt-1 text-xs text-adminInkSoft">
                   读完率 {prompt.rolloutAssessment.readCompletionRate !== null ? `${prompt.rolloutAssessment.readCompletionRate.toFixed(1)}%` : "--"} · 覆盖 {prompt.rolloutAssessment.uniqueUsers}/{prompt.rolloutAssessment.totalHitCount}
                 </div>
               </div>
@@ -543,8 +543,8 @@ export function PromptManagerClient({
             />
             <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
               <div className="space-y-4">
-                <div className="border border-stone-800 bg-stone-950 p-4">
-                  <div className="text-xs uppercase tracking-[0.18em] text-stone-500">最近 14 天趋势</div>
+                <div className="border border-adminLineStrong bg-adminBg p-4">
+                  <div className="text-xs uppercase tracking-[0.18em] text-adminInkSoft">最近 14 天趋势</div>
                   {prompt.rolloutTrend.length > 0 ? (
                     <div className="mt-4 flex items-end gap-2">
                       {prompt.rolloutTrend.map((item) => {
@@ -552,7 +552,7 @@ export function PromptManagerClient({
                         const barHeight = Math.max(10, Math.round((item.totalHitCount / maxCount) * 96));
                         return (
                           <div key={item.date} className="flex min-w-0 flex-1 flex-col items-center gap-2">
-                            <div className="text-[10px] text-stone-500">{item.totalHitCount}</div>
+                            <div className="text-[10px] text-adminInkSoft">{item.totalHitCount}</div>
                             <div className="flex w-full items-end justify-center">
                               <div
                                 className="w-full rounded-t bg-cinnabar/80"
@@ -560,66 +560,66 @@ export function PromptManagerClient({
                                 title={`${item.date} · total ${item.totalHitCount} · observe ${item.observeHitCount} · plan ${item.planHitCount} · percentage ${item.percentageHitCount} · stable ${item.stableHitCount}`}
                               />
                             </div>
-                            <div className="text-[10px] text-stone-600">{item.date.slice(5)}</div>
+                            <div className="text-[10px] text-adminInkSoft">{item.date.slice(5)}</div>
                           </div>
                         );
                       })}
                     </div>
                   ) : (
-                    <div className="mt-3 text-sm text-stone-500">还没有趋势数据。</div>
+                    <div className="mt-3 text-sm text-adminInkSoft">还没有趋势数据。</div>
                   )}
                 </div>
-                <div className="border border-stone-800 bg-stone-950 p-4">
+                <div className="border border-adminLineStrong bg-adminBg p-4">
                   <div className="flex items-center justify-between gap-3">
-                    <div className="text-xs uppercase tracking-[0.18em] text-stone-500">自动治理时间线</div>
-                    <div className="text-[11px] text-stone-600">只展示 scheduler 写入的 prompt_rollout_auto_manage 审计</div>
+                    <div className="text-xs uppercase tracking-[0.18em] text-adminInkSoft">自动治理时间线</div>
+                    <div className="text-[11px] text-adminInkSoft">只展示 scheduler 写入的 prompt_rollout_auto_manage 审计</div>
                   </div>
                   <div className="mt-4 space-y-3">
                     {prompt.rolloutAuditTrail.length > 0 ? (
                       prompt.rolloutAuditTrail.slice(0, 6).map((item) => (
-                        <div key={item.id} className="border border-stone-800 bg-[#141414] px-3 py-3 text-xs text-stone-300">
+                        <div key={item.id} className="border border-adminLineStrong bg-adminSurfaceAlt px-3 py-3 text-xs text-adminInkSoft">
                           <div className="flex flex-wrap items-center gap-2">
-                            <span className="rounded-full border border-stone-700 px-2 py-1 text-[10px] uppercase tracking-[0.12em] text-stone-400">
+                            <span className="rounded-full border border-adminLineStrong px-2 py-1 text-[10px] uppercase tracking-[0.12em] text-adminInkSoft">
                               {item.managementAction}
                             </span>
-                            <span className="text-stone-500">{new Date(item.createdAt).toLocaleString("zh-CN")}</span>
+                            <span className="text-adminInkSoft">{new Date(item.createdAt).toLocaleString("zh-CN")}</span>
                           </div>
-                          {item.reason ? <div className="mt-2 leading-6 text-stone-400">{item.reason}</div> : null}
-                          {item.changes.length > 0 ? <div className="mt-2 text-stone-500">变更：{item.changes.join("；")}</div> : null}
-                          <div className="mt-2 text-stone-600">
+                          {item.reason ? <div className="mt-2 leading-6 text-adminInkSoft">{item.reason}</div> : null}
+                          {item.changes.length > 0 ? <div className="mt-2 text-adminInkSoft">变更：{item.changes.join("；")}</div> : null}
+                          <div className="mt-2 text-adminInkSoft">
                             {`${formatPromptRolloutWindowLabel(isStaffOnly(item.previousConfig))} ${Number(item.previousConfig.rolloutPercentage || 0)}%`}
                             {" -> "}
                             {`${formatPromptRolloutWindowLabel(isStaffOnly(item.nextConfig))} ${Number(item.nextConfig.rolloutPercentage || 0)}%`}
                           </div>
-                          <div className="mt-1 text-stone-600">
+                          <div className="mt-1 text-adminInkSoft">
                             信号：回流 {item.signals.feedbackCount ?? "--"} · 用户 {item.signals.uniqueUsers ?? "--"} · 命中 {item.signals.totalHitCount ?? "--"} · Delta {item.signals.deltaTotalScore !== null ? item.signals.deltaTotalScore.toFixed(2) : "--"}
                           </div>
                         </div>
                       ))
                     ) : (
-                      <div className="text-sm text-stone-500">还没有自动治理审计。</div>
+                      <div className="text-sm text-adminInkSoft">还没有自动治理审计。</div>
                     )}
                   </div>
                 </div>
               </div>
 
-              <div className="border border-stone-800 bg-stone-950 p-4">
-                <div className="text-xs uppercase tracking-[0.18em] text-stone-500">最近命中用户</div>
+              <div className="border border-adminLineStrong bg-adminBg p-4">
+                <div className="text-xs uppercase tracking-[0.18em] text-adminInkSoft">最近命中用户</div>
                 <div className="mt-4 space-y-3">
                   {prompt.rolloutSamples.length > 0 ? (
                     prompt.rolloutSamples.map((sample) => (
-                      <div key={`${sample.userId}-${sample.lastHitAt}`} className="border border-stone-800 bg-[#141414] px-3 py-3 text-xs text-stone-300">
-                        <div className="font-mono text-stone-100">
+                      <div key={`${sample.userId}-${sample.lastHitAt}`} className="border border-adminLineStrong bg-adminSurfaceAlt px-3 py-3 text-xs text-adminInkSoft">
+                        <div className="font-mono text-adminInk">
                           {sample.username || `user-${sample.userId}`} · {sample.planCode || "free"} · {sample.role || "user"}
                         </div>
-                        <div className="mt-2 text-stone-500">
+                        <div className="mt-2 text-adminInkSoft">
                           命中原因 {formatPromptResolutionReasonLabel(sample.resolutionReason)} · 次数 {sample.hitCount} · bucket {sample.userBucket ?? "--"}
                         </div>
-                        <div className="mt-1 text-stone-600">最近命中 {new Date(sample.lastHitAt).toLocaleString("zh-CN")}</div>
+                        <div className="mt-1 text-adminInkSoft">最近命中 {new Date(sample.lastHitAt).toLocaleString("zh-CN")}</div>
                       </div>
                     ))
                   ) : (
-                    <div className="text-sm text-stone-500">还没有命中样本。</div>
+                    <div className="text-sm text-adminInkSoft">还没有命中样本。</div>
                   )}
                 </div>
               </div>
@@ -682,11 +682,11 @@ function PromptCandidateGenerator({
   }
 
   return (
-    <form onSubmit={handleGenerate} className="mt-4 border border-stone-800 bg-stone-950 p-4">
+    <form onSubmit={handleGenerate} className="mt-4 border border-adminLineStrong bg-adminBg p-4">
       <div className="flex items-center justify-between gap-3">
         <div>
           <div className="text-xs uppercase tracking-[0.18em] text-cinnabar">AI Candidate</div>
-          <div className="mt-2 text-sm text-stone-400">
+          <div className="mt-2 text-sm text-adminInkSoft">
             基于 {name} · {promptId}@{version} 自动生成未激活候选版本。
           </div>
         </div>
@@ -708,7 +708,7 @@ function PromptCandidateGenerator({
           placeholder="这次候选版想优化什么"
         />
       </div>
-      {message ? <div className="mt-3 text-sm text-stone-400">{message}</div> : null}
+      {message ? <div className="mt-3 text-sm text-adminInkSoft">{message}</div> : null}
     </form>
   );
 }
@@ -909,7 +909,7 @@ export function AdminTopicSourcesClient({
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="text-sm leading-7 text-stone-400">
+        <div className="text-sm leading-7 text-adminInkSoft">
           需要临时补抓一轮时，可直接手动触发全局同步，不必等待 06:00 / 18:00 主窗口或 06:15 / 06:45 / 18:15 / 18:45 补偿窗口。
         </div>
         <button onClick={runTopicSync} disabled={syncing} className={uiPrimitives.primaryButton}>
@@ -938,32 +938,32 @@ export function AdminTopicSourcesClient({
           <div key={source.id} className={`${uiPrimitives.adminPanel} p-5`}>
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
-                <div className="text-xs uppercase tracking-[0.24em] text-stone-500">System Source</div>
-                <div className="mt-2 font-serifCn text-2xl text-stone-100 text-balance">{source.name}</div>
-                <div className="mt-2 text-sm text-stone-400">{source.homepageUrl || "未配置主页地址"}</div>
-                <div className="mt-3 text-xs text-stone-500">
+                <div className="text-xs uppercase tracking-[0.24em] text-adminInkSoft">System Source</div>
+                <div className="mt-2 font-serifCn text-2xl text-adminInk text-balance">{source.name}</div>
+                <div className="mt-2 text-sm text-adminInkSoft">{source.homepageUrl || "未配置主页地址"}</div>
+                <div className="mt-3 text-xs text-adminInkSoft">
                   创建于 {new Date(source.createdAt).toLocaleString("zh-CN")} · 最近更新 {new Date(source.updatedAt).toLocaleString("zh-CN")}
                 </div>
                 <div className="mt-3 flex flex-wrap gap-2 text-xs">
-                  <span className="border border-stone-700 bg-stone-950 px-2 py-1 text-stone-300">
+                  <span className="border border-adminLineStrong bg-adminBg px-2 py-1 text-adminInkSoft">
                     类型 {source.sourceType}
                   </span>
-                  <span className="border border-stone-700 bg-stone-950 px-2 py-1 text-stone-300">
+                  <span className="border border-adminLineStrong bg-adminBg px-2 py-1 text-adminInkSoft">
                     优先级 {source.priority}
                   </span>
-                  <span className="border border-stone-700 bg-stone-950 px-2 py-1 text-stone-300">
+                  <span className="border border-adminLineStrong bg-adminBg px-2 py-1 text-adminInkSoft">
                     {source.lastFetchedAt ? `最近采集 ${new Date(source.lastFetchedAt).toLocaleString("zh-CN")}` : "尚未采集"}
                   </span>
-                  <span className={`border px-2 py-1 ${source.recentFailureCount > 0 ? "border-[#8f3136] bg-[#2a1718] text-[#efb5b9]" : "border-stone-700 bg-stone-950 text-stone-300"}`}>
+                  <span className={`border px-2 py-1 ${source.recentFailureCount > 0 ? "border-danger/30 bg-surface text-danger" : "border-adminLineStrong bg-adminBg text-adminInkSoft"}`}>
                     最近失败 {source.recentFailureCount} 次
                   </span>
                 </div>
                 {source.latestFailure ? (
-                  <div className="mt-3 border border-[#8f3136] bg-[#2a1718] px-3 py-3 text-xs leading-6 text-[#efb5b9]">
+                  <div className="mt-3 border border-danger/30 bg-surface px-3 py-3 text-xs leading-6 text-danger">
                     最近错误：{source.latestFailure}
                   </div>
                 ) : null}
-                <div className="mt-3 text-xs text-stone-500">
+                <div className="mt-3 text-xs text-adminInkSoft">
                   {source.isActive ? "当前已启用，会参与下一轮热点采集。" : "当前已停用，不再参与后续热点采集。"}
                 </div>
               </div>
@@ -1012,14 +1012,14 @@ export function AdminTopicSourcesClient({
           </div>
         ))}
       </div>
-      <div className="border-t border-stone-800 pt-6">
+      <div className="border-t border-adminLineStrong pt-6">
         <div className="text-xs uppercase tracking-[0.24em] text-cinnabar">Topic Sync Runs</div>
-        <div className="mt-3 text-sm leading-7 text-stone-400">
+        <div className="mt-3 text-sm leading-7 text-adminInkSoft">
           这里记录北京时间 06:00 / 18:00 主窗口，以及 06:15 / 06:45 / 18:15 / 18:45 补偿窗口内的热点抓取执行结果；若窗口内存在失败源，可直接发起补偿重试。
         </div>
         <div className="mt-4 grid gap-3">
           {recentRuns.length === 0 ? (
-            <div className="border border-stone-800 bg-stone-950 px-4 py-4 text-sm text-stone-400">当前还没有热点调度窗口执行记录。</div>
+            <div className="border border-adminLineStrong bg-adminBg px-4 py-4 text-sm text-adminInkSoft">当前还没有热点调度窗口执行记录。</div>
           ) : (
             recentRuns.map((run) => {
               const canRetry = ["failed", "partial_failed"].includes(run.status) && run.failedSourceCount > 0;
@@ -1027,8 +1027,8 @@ export function AdminTopicSourcesClient({
                 <div key={run.id} className={`${uiPrimitives.adminPanel} p-5`}>
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
-                      <div className="font-medium text-stone-100">{run.syncWindowLabel}</div>
-                      <div className="mt-1 text-xs text-stone-500">
+                      <div className="font-medium text-adminInk">{run.syncWindowLabel}</div>
+                      <div className="mt-1 text-xs text-adminInkSoft">
                         窗口开始：{new Date(run.syncWindowStart).toLocaleString("zh-CN")}
                       </div>
                     </div>
@@ -1047,19 +1047,19 @@ export function AdminTopicSourcesClient({
                       ) : null}
                     </div>
                   </div>
-                  <div className="mt-3 flex flex-wrap gap-2 text-xs text-stone-400">
-                    <span className="border border-stone-800 bg-[#171718] px-3 py-1">应抓取 {run.scheduledSourceCount}</span>
-                    <span className="border border-stone-800 bg-[#171718] px-3 py-1">已入队 {run.enqueuedJobCount}</span>
-                    <span className="border border-stone-800 bg-[#171718] px-3 py-1">成功 {run.completedSourceCount}</span>
-                    <span className="border border-stone-800 bg-[#171718] px-3 py-1">失败 {run.failedSourceCount}</span>
-                    <span className="border border-stone-800 bg-[#171718] px-3 py-1">新增热点 {run.insertedItemCount}</span>
+                  <div className="mt-3 flex flex-wrap gap-2 text-xs text-adminInkSoft">
+                    <span className="border border-adminLineStrong bg-adminSurfaceAlt px-3 py-1">应抓取 {run.scheduledSourceCount}</span>
+                    <span className="border border-adminLineStrong bg-adminSurfaceAlt px-3 py-1">已入队 {run.enqueuedJobCount}</span>
+                    <span className="border border-adminLineStrong bg-adminSurfaceAlt px-3 py-1">成功 {run.completedSourceCount}</span>
+                    <span className="border border-adminLineStrong bg-adminSurfaceAlt px-3 py-1">失败 {run.failedSourceCount}</span>
+                    <span className="border border-adminLineStrong bg-adminSurfaceAlt px-3 py-1">新增热点 {run.insertedItemCount}</span>
                   </div>
-                  <div className="mt-3 text-xs leading-6 text-stone-500">
+                  <div className="mt-3 text-xs leading-6 text-adminInkSoft">
                     触发：{new Date(run.triggeredAt).toLocaleString("zh-CN")}
                     {run.finishedAt ? ` · 完成：${new Date(run.finishedAt).toLocaleString("zh-CN")}` : " · 尚未完成"}
                   </div>
                   {run.lastError ? (
-                    <div className="mt-3 border border-[#5c2b2f] bg-[#2b1618] px-3 py-3 text-xs leading-6 text-[#f3b5bc]">
+                    <div className="mt-3 border border-danger/30 bg-surface px-3 py-3 text-xs leading-6 text-danger">
                       最近错误：{run.lastError}
                     </div>
                   ) : null}
@@ -1135,11 +1135,11 @@ export function AdminFinanceClient({
         <input aria-label="碎片上限" value={planForm.fragmentLimit} onChange={(event) => setPlanForm((prev) => ({ ...prev, fragmentLimit: event.target.value }))} placeholder="碎片上限" className={uiPrimitives.adminInput} />
         <input aria-label="语言守卫规则上限" value={planForm.languageGuardRuleLimit} onChange={(event) => setPlanForm((prev) => ({ ...prev, languageGuardRuleLimit: event.target.value }))} placeholder="语言守卫规则上限" className={uiPrimitives.adminInput} />
         <input aria-label="公众号连接上限" value={planForm.maxWechatConnections} onChange={(event) => setPlanForm((prev) => ({ ...prev, maxWechatConnections: event.target.value }))} placeholder="公众号连接上限" className={uiPrimitives.adminInput} />
-        <label className="flex items-center gap-3 border border-stone-800 bg-stone-950 px-4 py-3 text-sm text-stone-300">
+        <label className="flex items-center gap-3 border border-adminLineStrong bg-adminBg px-4 py-3 text-sm text-adminInkSoft">
           <input aria-label="input control" type="checkbox" checked={planForm.canGenerateCoverImage} onChange={(event) => setPlanForm((prev) => ({ ...prev, canGenerateCoverImage: event.target.checked }))} />
           允许封面图生成
         </label>
-        <label className="flex items-center gap-3 border border-stone-800 bg-stone-950 px-4 py-3 text-sm text-stone-300">
+        <label className="flex items-center gap-3 border border-adminLineStrong bg-adminBg px-4 py-3 text-sm text-adminInkSoft">
           <input aria-label="input control" type="checkbox" checked={planForm.canExportPdf} onChange={(event) => setPlanForm((prev) => ({ ...prev, canExportPdf: event.target.checked }))} />
           允许 PDF 导出
         </label>
@@ -1151,7 +1151,7 @@ export function AdminFinanceClient({
         {plans.map((plan) => (
           <article
             key={plan.code}
-            className={`border p-6 ${plan.code === "pro" ? "border-cinnabar bg-cinnabar text-white" : "border-stone-800 bg-[#171718] text-stone-100"}`}
+            className={`border p-6 ${plan.code === "pro" ? "border-cinnabar bg-cinnabar text-white" : "border-adminLineStrong bg-adminBg text-adminInk"}`}
           >
             <div className="text-xs uppercase tracking-[0.24em] opacity-70">Plan</div>
             <h1 className="mt-4 font-serifCn text-3xl text-balance">{plan.name}</h1>
@@ -1182,7 +1182,7 @@ export function AdminFinanceClient({
       </div>
       <div className={`hidden overflow-x-auto md:block ${uiPrimitives.adminPanel}`}>
         <table className="w-full min-w-[960px] text-left text-sm">
-          <thead className="bg-stone-950 text-stone-500">
+          <thead className="bg-adminBg text-adminInkSoft">
             <tr>
               {["用户", "当前套餐", "订阅状态", "开始时间", "结束时间", "操作"].map((head) => (
                 <th key={head} className="px-6 py-4 font-medium">{head}</th>
@@ -1243,27 +1243,27 @@ function SubscriptionRow({
   }
 
   return (
-    <tr className="border-t border-stone-800">
-      <td className="px-6 py-4 text-stone-100">
+    <tr className="border-t border-adminLineStrong">
+      <td className="px-6 py-4 text-adminInk">
         <div>{subscription.displayName || subscription.username}</div>
-        <div className="mt-1 text-xs text-stone-500">{subscription.username}</div>
+        <div className="mt-1 text-xs text-adminInkSoft">{subscription.username}</div>
       </td>
-      <td className="px-6 py-4 text-stone-400">
+      <td className="px-6 py-4 text-adminInkSoft">
         <select aria-label="select control" value={planCode} onChange={(event) => setPlanCode(event.target.value)} className={uiPrimitives.adminCompactSelect}>
           {plans.map((plan) => (
             <option key={plan.code} value={plan.code}>{plan.name}</option>
           ))}
         </select>
       </td>
-      <td className="px-6 py-4 text-stone-400">
+      <td className="px-6 py-4 text-adminInkSoft">
         <select aria-label="select control" value={status} onChange={(event) => setStatus(event.target.value)} className={uiPrimitives.adminCompactSelect}>
           <option value="active">active</option>
           <option value="inactive">inactive</option>
           <option value="ended">ended</option>
         </select>
       </td>
-      <td className="px-6 py-4 text-stone-400">{subscription.startAt ? new Date(subscription.startAt).toLocaleDateString("zh-CN") : "未记录"}</td>
-      <td className="px-6 py-4 text-stone-400">
+      <td className="px-6 py-4 text-adminInkSoft">{subscription.startAt ? new Date(subscription.startAt).toLocaleDateString("zh-CN") : "未记录"}</td>
+      <td className="px-6 py-4 text-adminInkSoft">
         <input aria-label="input control" type="date" value={endAt} onChange={(event) => setEndAt(event.target.value)} className={uiPrimitives.adminCompactSelect} />
       </td>
       <td className="px-6 py-4">
@@ -1320,8 +1320,8 @@ function SubscriptionMobileCard({
   return (
     <article className={adminMobileCardClassName}>
       <div>
-        <div className="text-base text-stone-100">{subscription.displayName || subscription.username}</div>
-        <div className="mt-1 text-xs text-stone-500">{subscription.username}</div>
+        <div className="text-base text-adminInk">{subscription.displayName || subscription.username}</div>
+        <div className="mt-1 text-xs text-adminInkSoft">{subscription.username}</div>
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="block">
@@ -1371,7 +1371,7 @@ function RouteRow({
 
   return (
     <div className={`grid gap-3 p-5 md:grid-cols-[180px_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_120px] ${uiPrimitives.adminPanel}`}>
-      <div className="flex items-center text-sm text-stone-100">{route.sceneCode}</div>
+      <div className="flex items-center text-sm text-adminInk">{route.sceneCode}</div>
       <input aria-label="input control" value={primaryModel} onChange={(event) => setPrimaryModel(event.target.value)} className={uiPrimitives.adminInput} />
       <input aria-label="input control" value={fallbackModel} onChange={(event) => setFallbackModel(event.target.value)} className={uiPrimitives.adminInput} />
       <input aria-label="input control" value={description} onChange={(event) => setDescription(event.target.value)} className={uiPrimitives.adminInput} />

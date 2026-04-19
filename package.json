@@ -17,8 +17,8 @@
     "verify": "pnpm type-check && NEXT_OUTPUT_MODE=standalone pnpm build && python3 -m py_compile apps/worker-py/main.py apps/worker-py/scheduler.py apps/worker-py/queue_runtime.py && node scripts/check-standalone-runtime-init.mjs && pnpm --filter @huoziwriter/web exec node ../../scripts/check-postgres-runtime-init.mjs",
     "verify:ui": "pnpm test-storybook && pnpm build-storybook && pnpm test:ui:a11y",
     "lighthouse:ci": "lhci autorun --config=./lighthouserc.json",
-    "test:e2e": "rm -rf apps/web/.next && pnpm build && playwright test",
-    "test:e2e:smoke": "rm -rf apps/web/.next && pnpm build && playwright test tests/e2e/smoke.spec.ts"
+    "test:e2e": "rm -rf apps/web/.next apps/web/.next-e2e && pnpm build && playwright test",
+    "test:e2e:smoke": "rm -rf apps/web/.next apps/web/.next-e2e && pnpm build && playwright test tests/e2e/smoke.spec.ts"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

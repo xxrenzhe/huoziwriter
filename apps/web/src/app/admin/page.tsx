@@ -126,9 +126,9 @@ const adminSectionTitleClassName = "mt-4 font-serifCn text-3xl text-adminInk tex
 const adminSectionDescriptionClassName = "mt-3 text-sm leading-7 text-adminInkSoft";
 const adminStatusBadgeClassName = cn(surfaceCardStyles(), "border border-adminLineStrong bg-adminSurfaceMuted px-2 py-1 text-adminInk shadow-none");
 const adminSuccessBadgeClassName = cn(adminStatusBadgeClassName, "border-emerald-900 bg-emerald-950/30 text-emerald-300");
-const adminWarningBadgeClassName = cn(adminStatusBadgeClassName, "border-[#7d6430] bg-[#2b2518] text-[#e0c37a]");
-const adminDangerBadgeClassName = cn(adminStatusBadgeClassName, "border-[#8f3136] bg-[#2a1718] text-[#efb5b9]");
-const adminWarningNoticeClassName = cn(surfaceCardStyles(), "border-[#7d6430] bg-[#2b2518] px-3 py-3 text-xs leading-6 text-[#e0c37a] shadow-none");
+const adminWarningBadgeClassName = cn(adminStatusBadgeClassName, "border-warning/40 bg-surfaceWarm text-warning");
+const adminDangerBadgeClassName = cn(adminStatusBadgeClassName, "border-danger/30 bg-surface text-danger");
+const adminWarningNoticeClassName = cn(surfaceCardStyles(), "border-warning/40 bg-surfaceWarm px-3 py-3 text-xs leading-6 text-warning shadow-none");
 
 function getImageAssetHealthBadgeClassName(health: "ready" | "remote" | "missing" | "missing-meta") {
   if (health === "ready") {
@@ -377,7 +377,7 @@ export default async function AdminOverviewPage() {
         <article className={adminSectionCardClassName}>
           <div className={adminSectionEyebrowClassName}>Celery 任务队列</div>
           <h2 className={adminSectionTitleClassName}>后台任务运行态</h2>
-          <div className="mt-6 grid gap-3 text-sm text-stone-300">
+          <div className="mt-6 grid gap-3 text-sm text-adminInkSoft">
             <div className={cn(adminInsetCardBodyClassName, "flex items-center justify-between")}>
               <span>Queued</span>
               <span>{queueSummary.get("queued") ?? 0}</span>
@@ -399,7 +399,7 @@ export default async function AdminOverviewPage() {
         <article className={adminSectionCardClassName}>
           <div className={adminSectionEyebrowClassName}>Token 刷新引擎状态</div>
           <h2 className={adminSectionTitleClassName}>公众号连接健康度</h2>
-          <div className="mt-6 space-y-3 text-sm text-stone-300">
+          <div className="mt-6 space-y-3 text-sm text-adminInkSoft">
             <div className={adminInsetCardBodyClassName}>即将过期（24h 内）：{expiringTokens?.count ?? 0}</div>
             <div className={adminInsetCardBodyClassName}>已过期：{expiredTokens?.count ?? 0}</div>
             <div className={adminInsetCardBodyClassName}>凭证失效：{invalidTokens?.count ?? 0}</div>
@@ -411,7 +411,7 @@ export default async function AdminOverviewPage() {
         <article className={adminSectionCardClassName}>
           <div className={adminSectionEyebrowClassName}>System Pulse</div>
           <h2 className={adminSectionTitleClassName}>运行提醒</h2>
-          <ul className="mt-6 space-y-3 text-sm leading-7 text-stone-300">
+          <ul className="mt-6 space-y-3 text-sm leading-7 text-adminInkSoft">
             <li>失败任务 {failedJobs.length} 条，优先检查知识刷新与热点抓取。</li>
             <li>微信失败推送 {failedSyncs.length} 条，建议先排查 token 与草稿内容。</li>
             <li>最近审计动作 {recentAuditLogs.length} 条，可回看后台治理操作。</li>
@@ -422,7 +422,7 @@ export default async function AdminOverviewPage() {
         <article className={adminSectionCardClassName}>
           <div className={adminSectionEyebrowClassName}>External Fetch</div>
           <h2 className={adminSectionTitleClassName}>外采稳定性</h2>
-          <div className="mt-6 space-y-3 text-sm text-stone-300">
+          <div className="mt-6 space-y-3 text-sm text-adminInkSoft">
             <div className={adminInsetCardBodyClassName}>抓取降级：{degradedCaptureJobs.length}</div>
             <div className={adminInsetCardBodyClassName}>待重试 URL 采集：{pendingRetryCaptureJobs.length}</div>
             <div className={adminInsetCardBodyClassName}>热点抓取失败：{failedTopicFetchJobs.length}</div>
@@ -457,10 +457,10 @@ export default async function AdminOverviewPage() {
                 return (
                   <div key={job.id} className={adminDetailCardClassName}>
                     <div className="flex flex-wrap items-center justify-between gap-3">
-                      <div className="font-medium text-stone-100">{title}</div>
-                      <div className="text-xs text-stone-500">{new Date(job.updated_at).toLocaleString("zh-CN")}</div>
+                      <div className="font-medium text-adminInk">{title}</div>
+                      <div className="text-xs text-adminInkSoft">{new Date(job.updated_at).toLocaleString("zh-CN")}</div>
                     </div>
-                    <div className="mt-2 flex flex-wrap gap-2 text-[11px] uppercase tracking-[0.18em] text-stone-500">
+                    <div className="mt-2 flex flex-wrap gap-2 text-[11px] uppercase tracking-[0.18em] text-adminInkSoft">
                       <span>{label}</span>
                       <span>{job.status}</span>
                       <span>attempts {job.attempts}</span>
@@ -473,7 +473,7 @@ export default async function AdminOverviewPage() {
                         <span className={adminDangerBadgeClassName}>degraded</span>
                       ) : null}
                     </div>
-                    <div className="mt-3 text-xs leading-6 text-stone-400">
+                    <div className="mt-3 text-xs leading-6 text-adminInkSoft">
                       {job.last_error || degradedReason || "等待重试，无明确错误文案。"}
                     </div>
                   </div>
@@ -494,10 +494,10 @@ export default async function AdminOverviewPage() {
               failedJobs.map((job) => (
                 <div key={job.id} className={adminDetailCardClassName}>
                   <div className="flex items-center justify-between gap-4">
-                    <div className="font-medium text-stone-100">{job.job_type}</div>
-                    <div className="text-xs text-stone-500">{new Date(job.updated_at).toLocaleString("zh-CN")}</div>
+                    <div className="font-medium text-adminInk">{job.job_type}</div>
+                    <div className="text-xs text-adminInkSoft">{new Date(job.updated_at).toLocaleString("zh-CN")}</div>
                   </div>
-                  <div className="mt-2 text-xs text-stone-500">Job #{job.id} · attempts {job.attempts}</div>
+                  <div className="mt-2 text-xs text-adminInkSoft">Job #{job.id} · attempts {job.attempts}</div>
                   <div className="mt-3 font-mono text-xs leading-6 text-cinnabar">{job.last_error || "未记录错误详情"}</div>
                 </div>
               ))
@@ -531,7 +531,7 @@ export default async function AdminOverviewPage() {
         <article className={adminSectionCardClassName}>
           <div className={adminSectionEyebrowClassName}>Image Assets</div>
           <h2 className={adminSectionTitleClassName}>图片资产与存储健康</h2>
-          <div className="mt-6 space-y-3 text-sm text-stone-300">
+          <div className="mt-6 space-y-3 text-sm text-adminInkSoft">
             <div className={adminInsetCardBodyClassName}>固化封面：{coverImages?.count ?? 0}</div>
             <div className={adminInsetCardBodyClassName}>候选图片：{coverImageCandidates?.count ?? 0}</div>
             <div className={adminInsetCardBodyClassName}>提供方分布：{imageProviderSummary}</div>
@@ -571,12 +571,12 @@ export default async function AdminOverviewPage() {
                 return (
                   <div key={`${asset.asset_scope}-${asset.id}`} className={adminDetailCardClassName}>
                     <div className="flex flex-wrap items-center justify-between gap-3">
-                      <div className="font-medium text-stone-100">
+                      <div className="font-medium text-adminInk">
                         {asset.asset_scope === "cover" ? "已选封面" : `候选图 · ${asset.variant_label || "未命名"}`}
                       </div>
-                      <div className="text-xs text-stone-500">{new Date(asset.created_at).toLocaleString("zh-CN")}</div>
+                      <div className="text-xs text-adminInkSoft">{new Date(asset.created_at).toLocaleString("zh-CN")}</div>
                     </div>
-                    <div className="mt-2 flex flex-wrap gap-2 text-[11px] uppercase tracking-[0.18em] text-stone-500">
+                    <div className="mt-2 flex flex-wrap gap-2 text-[11px] uppercase tracking-[0.18em] text-adminInkSoft">
                       <span>doc #{asset.article_id ?? "draft"}</span>
                       <span>{asset.storage_provider || "unknown"}</span>
                       <span>{derivativeMode}</span>
@@ -585,32 +585,32 @@ export default async function AdminOverviewPage() {
                     </div>
                     <div className="mt-3 grid gap-2 md:grid-cols-3">
                       <div className={adminAssetMetaCardClassName}>
-                        <div className="uppercase tracking-[0.18em] text-stone-500">Original</div>
-                        <div className="mt-2 text-stone-300">{formatDimensions(asset.manifest?.original?.width, asset.manifest?.original?.height)}</div>
+                        <div className="uppercase tracking-[0.18em] text-adminInkSoft">Original</div>
+                        <div className="mt-2 text-adminInkSoft">{formatDimensions(asset.manifest?.original?.width, asset.manifest?.original?.height)}</div>
                         <div>{formatBytes(originalBytes)}</div>
                         <div>{asset.manifest?.original?.contentType || asset.manifest?.contentType || "未记录格式"}</div>
                       </div>
                       <div className={adminAssetMetaCardClassName}>
-                        <div className="uppercase tracking-[0.18em] text-stone-500">Compressed</div>
-                        <div className="mt-2 text-stone-300">{formatDimensions(asset.manifest?.compressed?.width, asset.manifest?.compressed?.height)}</div>
+                        <div className="uppercase tracking-[0.18em] text-adminInkSoft">Compressed</div>
+                        <div className="mt-2 text-adminInkSoft">{formatDimensions(asset.manifest?.compressed?.width, asset.manifest?.compressed?.height)}</div>
                         <div>{formatBytes(compressedBytes)}</div>
                         <div>{asset.manifest?.compressed?.contentType || "未记录格式"}</div>
                       </div>
                       <div className={adminAssetMetaCardClassName}>
-                        <div className="uppercase tracking-[0.18em] text-stone-500">Thumbnail</div>
-                        <div className="mt-2 text-stone-300">{formatDimensions(asset.manifest?.thumbnail?.width, asset.manifest?.thumbnail?.height)}</div>
+                        <div className="uppercase tracking-[0.18em] text-adminInkSoft">Thumbnail</div>
+                        <div className="mt-2 text-adminInkSoft">{formatDimensions(asset.manifest?.thumbnail?.width, asset.manifest?.thumbnail?.height)}</div>
                         <div>{formatBytes(thumbnailBytes)}</div>
                         <div>{asset.manifest?.thumbnail?.contentType || "未记录格式"}</div>
                       </div>
                     </div>
-                    <div className="mt-3 flex flex-wrap gap-2 text-[11px] uppercase tracking-[0.18em] text-stone-500">
+                    <div className="mt-3 flex flex-wrap gap-2 text-[11px] uppercase tracking-[0.18em] text-adminInkSoft">
                       <span>压缩收益 {formatCompressionDelta(originalBytes, compressedBytes)}</span>
                       <span>source {asset.manifest?.sourceKind || "unknown"}</span>
                     </div>
-                    <div className="mt-3 text-xs leading-6 text-stone-400">
+                    <div className="mt-3 text-xs leading-6 text-adminInkSoft">
                       {asset.compressed_object_key || asset.manifest?.compressed?.objectKey || "未记录 compressed object key"}
                     </div>
-                    <div className="mt-2 text-xs leading-6 text-stone-500">
+                    <div className="mt-2 text-xs leading-6 text-adminInkSoft">
                       {asset.image_url}
                     </div>
                     {derivativeWarning ? (
@@ -673,11 +673,11 @@ export default async function AdminOverviewPage() {
             supportMessages.map((message) => (
               <div key={message.id} className={adminDetailCardClassName}>
                 <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div className="font-medium text-stone-100">{message.name} · {message.email}</div>
-                  <div className="text-xs text-stone-500">{new Date(message.created_at).toLocaleString("zh-CN")}</div>
+                  <div className="font-medium text-adminInk">{message.name} · {message.email}</div>
+                  <div className="text-xs text-adminInkSoft">{new Date(message.created_at).toLocaleString("zh-CN")}</div>
                 </div>
                 <div className="mt-2 text-xs uppercase tracking-[0.18em] text-cinnabar">{message.issue_type}</div>
-                <div className="mt-3 text-sm leading-7 text-stone-300">{message.description}</div>
+                <div className="mt-3 text-sm leading-7 text-adminInkSoft">{message.description}</div>
               </div>
             ))
           )}

@@ -172,7 +172,7 @@ const DIFFICULTY_LEVEL_OPTIONS = ["light", "medium", "hard"] as const;
 
 const adminPanelBaseClassName = cn(
   surfaceCardStyles(),
-  "border-stone-800 bg-[#171718] text-stone-100 shadow-none",
+  "border-lineStrong bg-paperStrong text-ink shadow-none",
 );
 const adminHeroPanelClassName = cn(adminPanelBaseClassName, "p-6");
 const adminSectionPanelClassName = cn(adminPanelBaseClassName, "p-5");
@@ -180,37 +180,37 @@ const adminFormPanelClassName = cn(adminPanelBaseClassName, "space-y-3 p-5");
 const adminStackPanelClassName = cn(adminPanelBaseClassName, "space-y-4 p-5");
 const adminInsetCardClassName = cn(
   surfaceCardStyles(),
-  "border-stone-800 bg-stone-950 p-4 text-stone-100 shadow-none",
+  "border-lineStrong bg-surface p-4 text-ink shadow-none",
 );
 const adminListCardClassName = cn(
   surfaceCardStyles(),
-  "border-stone-800 bg-[#141414] px-3 py-3 text-stone-100 shadow-none",
+  "border-lineStrong bg-surface px-3 py-3 text-ink shadow-none",
 );
 const adminMetricCardClassName = cn(adminInsetCardClassName, "px-4 py-4");
 const adminCoverageCardClassName = cn(
   surfaceCardStyles(),
-  "border-stone-700 bg-[#141414] px-4 py-4 text-stone-100 shadow-none",
+  "border-lineStrong bg-surfaceWarm px-4 py-4 text-ink shadow-none",
 );
 const adminTableDesktopShellClassName = "mt-5 hidden overflow-x-auto md:block";
 const adminTableMobileListClassName = "mt-5 grid gap-3 md:hidden";
 const adminEmptyStateClassName = cn(
   surfaceCardStyles(),
-  "border-dashed border-stone-700 bg-stone-950 px-4 py-6 text-sm text-stone-500 shadow-none",
+  "border-dashed border-lineStrong bg-surface px-4 py-6 text-sm text-inkMuted shadow-none",
 );
 const adminChipClassName = cn(
   surfaceCardStyles(),
-  "border-stone-700 px-2 py-1 text-xs text-stone-400 shadow-none",
+  "border-lineStrong bg-surface px-2 py-1 text-xs text-inkSoft shadow-none",
 );
-const adminDarkChipClassName = cn(adminChipClassName, "bg-stone-950");
-const adminReasonChipClassName = cn(adminChipClassName, "border-cyan-900/60 bg-cyan-950/40 text-cyan-100");
-const adminEyebrowClassName = "text-xs uppercase tracking-[0.24em] text-stone-500";
+const adminDarkChipClassName = cn(adminChipClassName, "bg-surfaceWarm");
+const adminReasonChipClassName = cn(adminChipClassName, "border-lineStrong bg-surfaceWarm text-inkSoft");
+const adminEyebrowClassName = "text-xs uppercase tracking-[0.24em] text-inkMuted";
 const adminAccentEyebrowClassName = "text-xs uppercase tracking-[0.28em] text-cinnabar";
-const adminSubEyebrowClassName = "text-xs uppercase tracking-[0.18em] text-stone-500";
+const adminSubEyebrowClassName = "text-xs uppercase tracking-[0.18em] text-inkMuted";
 const adminSubAccentEyebrowClassName = "text-xs uppercase tracking-[0.18em] text-cinnabar";
-const adminSectionTitleClassName = "mt-3 font-serifCn text-2xl text-stone-100 text-balance";
-const adminHeroTitleClassName = "mt-4 font-serifCn text-4xl text-stone-100 text-balance";
-const adminDescriptionClassName = "mt-4 max-w-4xl text-sm leading-7 text-stone-400";
-const adminMutedCopyClassName = "text-sm leading-7 text-stone-400";
+const adminSectionTitleClassName = "mt-3 font-serifCn text-2xl text-ink text-balance";
+const adminHeroTitleClassName = "mt-4 font-serifCn text-4xl text-ink text-balance";
+const adminDescriptionClassName = "mt-4 max-w-4xl text-sm leading-7 text-inkSoft";
+const adminMutedCopyClassName = "text-sm leading-7 text-inkSoft";
 const adminInputClassName = uiPrimitives.adminInput;
 const adminSelectClassName = uiPrimitives.adminSelect;
 const adminPrimaryButtonClassName = uiPrimitives.primaryButton;
@@ -223,16 +223,16 @@ function getAdminTextareaClassName(minHeightClassName: string) {
 function getDatasetCardClassName(selected: boolean) {
   return cn(
     surfaceCardStyles(),
-    "border-stone-800 px-4 py-4 text-left text-stone-100 shadow-none",
-    selected ? "border-cinnabar bg-[#1d1413]" : "bg-stone-950",
+    "border-lineStrong px-4 py-4 text-left text-ink shadow-none",
+    selected ? "border-cinnabar bg-surfaceWarm" : "bg-surface",
   );
 }
 
 function getCaseMobileCardClassName(selected: boolean) {
   return cn(
     adminListCardClassName,
-    "w-full text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cinnabar/40 focus-visible:ring-offset-2 focus-visible:ring-offset-stone-950",
-    selected ? "border-cinnabar bg-[#1d1413]" : "hover:border-stone-700 hover:bg-stone-900/70",
+    "w-full text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cinnabar/40 focus-visible:ring-offset-2 focus-visible:ring-offset-surfaceWarm",
+    selected ? "border-cinnabar bg-surfaceWarm" : "hover:border-lineStrong hover:bg-surfaceHighlight",
   );
 }
 
@@ -1307,7 +1307,7 @@ export function AdminWritingEvalDatasetsClient({
               这里单独管理固定评测集、样本难度分布和样本编辑器，避免运行页同时承担实验编排与样本维护两种职责。
             </p>
           </div>
-          <AdminWritingEvalNav sections={["overview", "runs", "versions", "insights"]} className="flex gap-3" />
+          <AdminWritingEvalNav sections={["overview", "runs", "versions", "insights", "scoring", "schedules", "governance"]} className="flex flex-wrap gap-3" />
         </div>
       </section>
 
@@ -1318,7 +1318,7 @@ export function AdminWritingEvalDatasetsClient({
               {focusDataset ? (
                 <div>
                   <div className={adminSubAccentEyebrowClassName}>数据集聚焦模式</div>
-                  <div className="mt-2 text-sm leading-7 text-stone-200">
+                  <div className="mt-2 text-sm leading-7 text-inkSoft">
                     当前通过深链聚焦 dataset #{focusDataset.datasetId}，匹配 {focusDataset.matchedCount} 条。
                   </div>
                 </div>
@@ -1326,7 +1326,7 @@ export function AdminWritingEvalDatasetsClient({
               {focusCase ? (
                 <div>
                   <div className={adminSubAccentEyebrowClassName}>样本聚焦模式</div>
-                  <div className="mt-2 text-sm leading-7 text-stone-200">
+                  <div className="mt-2 text-sm leading-7 text-inkSoft">
                     当前通过深链聚焦 case #{focusCase.caseId}，匹配 {focusCase.matchedCount} 条。
                   </div>
                 </div>
@@ -1366,7 +1366,7 @@ export function AdminWritingEvalDatasetsClient({
               <div className={adminEyebrowClassName}>数据集列表</div>
               <h2 className={adminSectionTitleClassName}>当前评测集</h2>
             </div>
-            <div className="text-sm text-stone-500">{datasets.length} 个数据集</div>
+            <div className="text-sm text-inkMuted">{datasets.length} 个数据集</div>
           </div>
           <div className="mt-5 grid gap-3 md:grid-cols-2">
             {datasets.map((dataset) => {
@@ -1384,18 +1384,18 @@ export function AdminWritingEvalDatasetsClient({
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <div className={adminSubEyebrowClassName}>{dataset.code}</div>
-                      <div className="mt-2 text-lg text-stone-100">{dataset.name}</div>
+                      <div className="mt-2 text-lg text-ink">{dataset.name}</div>
                     </div>
                     <div className="flex flex-col items-end gap-2">
-                      <div className="text-xs text-stone-500">{dataset.status}</div>
+                      <div className="text-xs text-inkMuted">{dataset.status}</div>
                       <span className={`border px-2 py-1 text-[11px] uppercase tracking-[0.16em] ${readinessMeta.tone}`}>{readinessMeta.label}</span>
                     </div>
                   </div>
-                  <div className="mt-3 text-sm leading-7 text-stone-400">{dataset.description || "暂无说明"}</div>
-                  <div className="mt-4 text-xs text-stone-500">
+                  <div className="mt-3 text-sm leading-7 text-inkSoft">{dataset.description || "暂无说明"}</div>
+                  <div className="mt-4 text-xs text-inkMuted">
                     样本数 {dataset.sampleCount} · 更新于 {formatWritingEvalDateTime(dataset.updatedAt)}
                   </div>
-                  <div className="mt-2 text-xs leading-6 text-stone-500">{readinessMeta.summary}</div>
+                  <div className="mt-2 text-xs leading-6 text-inkMuted">{readinessMeta.summary}</div>
                 </button>
               );
             })}
@@ -1412,7 +1412,7 @@ export function AdminWritingEvalDatasetsClient({
                 <div className={adminEyebrowClassName}>数据集详情</div>
                 <h2 className={adminSectionTitleClassName}>{selectedDataset?.name || "选择一个评测集"}</h2>
               </div>
-              <div className="text-sm text-stone-500">{loadingCases ? "加载样本中…" : `${cases.length} 条样本`}</div>
+              <div className="text-sm text-inkMuted">{loadingCases ? "加载样本中…" : `${cases.length} 条样本`}</div>
             </div>
 
             {selectedDataset ? (
@@ -1420,19 +1420,19 @@ export function AdminWritingEvalDatasetsClient({
                 <div className="mt-5 grid gap-3 md:grid-cols-4">
                   <div className={adminMetricCardClassName}>
                     <div className={adminSubEyebrowClassName}>编码</div>
-                    <div className="mt-3 text-stone-100">{selectedDataset.code}</div>
+                    <div className="mt-3 text-ink">{selectedDataset.code}</div>
                   </div>
                   <div className={adminMetricCardClassName}>
                     <div className={adminSubEyebrowClassName}>状态</div>
-                    <div className="mt-3 text-stone-100">{selectedDataset.status}</div>
+                    <div className="mt-3 text-ink">{selectedDataset.status}</div>
                   </div>
                   <div className={adminMetricCardClassName}>
                     <div className={adminSubEyebrowClassName}>启用样本</div>
-                    <div className="mt-3 text-stone-100">{cases.filter((item) => item.isEnabled).length}</div>
+                    <div className="mt-3 text-ink">{cases.filter((item) => item.isEnabled).length}</div>
                   </div>
                   <div className={adminMetricCardClassName}>
                     <div className={adminSubEyebrowClassName}>最近更新</div>
-                    <div className="mt-3 text-sm text-stone-100">{formatWritingEvalDateTime(selectedDataset.updatedAt)}</div>
+                    <div className="mt-3 text-sm text-ink">{formatWritingEvalDateTime(selectedDataset.updatedAt)}</div>
                   </div>
                 </div>
 
@@ -1446,12 +1446,12 @@ export function AdminWritingEvalDatasetsClient({
                       {selectedDatasetReadinessMeta.label}
                     </span>
                   </div>
-                  <div className="mt-3 text-sm leading-7 text-stone-400">
+                  <div className="mt-3 text-sm leading-7 text-inkSoft">
                     启用样本 {selectedDataset.readiness.enabledCaseCount}/{selectedDataset.readiness.totalCaseCount} ·
                     标题目标 {selectedDataset.readiness.coverage.titleGoal} · 开头目标 {selectedDataset.readiness.coverage.hookGoal} ·
                     传播目标 {selectedDataset.readiness.coverage.shareTriggerGoal} · 事实素材 {selectedDataset.readiness.coverage.sourceFacts}
                   </div>
-                  <div className="mt-2 text-xs leading-6 text-stone-500">
+                  <div className="mt-2 text-xs leading-6 text-inkMuted">
                     题型 {selectedDataset.readiness.qualityTargets.distinctTaskTypeCount}/4 ·
                     light {selectedDataset.readiness.qualityTargets.lightCount} ·
                     medium {selectedDataset.readiness.qualityTargets.mediumCount} ·
@@ -1479,12 +1479,12 @@ export function AdminWritingEvalDatasetsClient({
                   <div className="mt-4 flex flex-wrap gap-3 text-sm">
                     {Object.keys(difficultyCounts).length > 0 ? (
                       Object.entries(difficultyCounts).map(([level, count]) => (
-                        <div key={level} className="border border-stone-700 px-3 py-2 text-stone-300">
+                        <div key={level} className="border border-lineStrong px-3 py-2 text-inkSoft">
                           {level} · {count}
                         </div>
                       ))
                     ) : (
-                      <div className="text-stone-500">当前还没有样本。</div>
+                      <div className="text-inkMuted">当前还没有样本。</div>
                     )}
                   </div>
                 </div>
@@ -1495,7 +1495,7 @@ export function AdminWritingEvalDatasetsClient({
                       <div className={adminSubEyebrowClassName}>样本覆盖度</div>
                       <div className={cn("mt-2", adminMutedCopyClassName)}>对齐方案要求，优先补齐标题目标、开头目标、传播目标和事实素材上下文。</div>
                     </div>
-                    <div className="text-xs text-stone-500">{cases.length} 条样本</div>
+                    <div className="text-xs text-inkMuted">{cases.length} 条样本</div>
                   </div>
                   <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                     {[
@@ -1509,11 +1509,11 @@ export function AdminWritingEvalDatasetsClient({
                       { label: "历史参考", value: coverageSummary.historyReferences },
                     ].map((item) => (
                       <div key={item.label} className={adminCoverageCardClassName}>
-                        <div className="text-xs uppercase tracking-[0.16em] text-stone-500">{item.label}</div>
-                        <div className="mt-3 text-lg text-stone-100">
+                        <div className="text-xs uppercase tracking-[0.16em] text-inkMuted">{item.label}</div>
+                        <div className="mt-3 text-lg text-ink">
                           {item.value}/{cases.length}
                         </div>
-                        <div className="mt-2 text-xs text-stone-500">
+                        <div className="mt-2 text-xs text-inkMuted">
                           {cases.length === 0 ? "暂无样本" : `${Math.round((item.value / cases.length) * 100)}% 覆盖`}
                         </div>
                       </div>
@@ -1551,7 +1551,7 @@ export function AdminWritingEvalDatasetsClient({
                 <div className={adminEyebrowClassName}>评测样本</div>
                 <h2 className={adminSectionTitleClassName}>样本表格</h2>
               </div>
-              <div className="text-sm text-stone-500">{cases.length} 条记录</div>
+              <div className="text-sm text-inkMuted">{cases.length} 条记录</div>
             </div>
             <div className={adminTableMobileListClassName}>
               {cases.map((item) => {
@@ -1566,45 +1566,45 @@ export function AdminWritingEvalDatasetsClient({
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
-                        <div className="font-mono text-xs text-stone-300">{item.taskCode}</div>
-                        <div className="mt-2 text-base text-stone-100 text-balance">{item.topicTitle}</div>
+                        <div className="font-mono text-xs text-inkSoft">{item.taskCode}</div>
+                        <div className="mt-2 text-base text-ink text-balance">{item.topicTitle}</div>
                       </div>
                       <span
                         className={`shrink-0 border px-2 py-1 text-[11px] uppercase tracking-[0.16em] ${
-                          selected ? "border-cinnabar/50 text-cinnabar" : "border-stone-700 text-stone-500"
+                          selected ? "border-cinnabar/50 text-cinnabar" : "border-lineStrong text-inkMuted"
                         }`}
                       >
                         {selected ? "已选中" : "点击编辑"}
                       </span>
                     </div>
-                    <div className="mt-4 grid gap-3 text-sm text-stone-400 sm:grid-cols-2">
+                    <div className="mt-4 grid gap-3 text-sm text-inkSoft sm:grid-cols-2">
                       <div>
-                        <div className="text-[11px] uppercase tracking-[0.18em] text-stone-500">类型</div>
+                        <div className="text-[11px] uppercase tracking-[0.18em] text-inkMuted">类型</div>
                         <div className="mt-1">{item.taskType}</div>
                       </div>
                       <div>
-                        <div className="text-[11px] uppercase tracking-[0.18em] text-stone-500">来源</div>
-                        <div className="mt-1 text-xs leading-6 text-stone-400">{getCaseSourceBadge(item)}</div>
+                        <div className="text-[11px] uppercase tracking-[0.18em] text-inkMuted">来源</div>
+                        <div className="mt-1 text-xs leading-6 text-inkSoft">{getCaseSourceBadge(item)}</div>
                       </div>
                       <div>
-                        <div className="text-[11px] uppercase tracking-[0.18em] text-stone-500">难度</div>
+                        <div className="text-[11px] uppercase tracking-[0.18em] text-inkMuted">难度</div>
                         <div className="mt-1">{item.difficultyLevel}</div>
                       </div>
                       <div>
-                        <div className="text-[11px] uppercase tracking-[0.18em] text-stone-500">启用</div>
+                        <div className="text-[11px] uppercase tracking-[0.18em] text-inkMuted">启用</div>
                         <div className="mt-1">{item.isEnabled ? "enabled" : "disabled"}</div>
                       </div>
                       <div>
-                        <div className="text-[11px] uppercase tracking-[0.18em] text-stone-500">参考好稿</div>
+                        <div className="text-[11px] uppercase tracking-[0.18em] text-inkMuted">参考好稿</div>
                         <div className="mt-1">{item.referenceGoodOutput ? "有" : "无"}</div>
                       </div>
                       <div>
-                        <div className="text-[11px] uppercase tracking-[0.18em] text-stone-500">更新时间</div>
+                        <div className="text-[11px] uppercase tracking-[0.18em] text-inkMuted">更新时间</div>
                         <div className="mt-1">{formatWritingEvalDateTime(item.updatedAt)}</div>
                       </div>
                     </div>
                     {getCaseSourceDetail(item) ? (
-                      <div className="mt-4 border-t border-stone-800 pt-4 text-xs leading-6 text-stone-500">
+                      <div className="mt-4 border-t border-lineStrong pt-4 text-xs leading-6 text-inkMuted">
                         {getCaseSourceDetail(item)}
                       </div>
                     ) : null}
@@ -1615,7 +1615,7 @@ export function AdminWritingEvalDatasetsClient({
             </div>
             <div className={adminTableDesktopShellClassName}>
               <table className="w-full min-w-[880px] text-left text-sm">
-                <thead className="text-stone-500">
+                <thead className="text-inkMuted">
                   <tr>
                     {["样本", "类型", "来源", "标题", "难度", "启用", "参考好稿", "更新时间"].map((head) => (
                       <th key={head} className="pb-4 font-medium">
@@ -1628,22 +1628,22 @@ export function AdminWritingEvalDatasetsClient({
                   {cases.map((item) => (
                     <tr
                       key={item.id}
-                      className={`cursor-pointer border-t border-stone-800 ${selectedCaseId === item.id ? "bg-[#1d1413]" : ""}`}
+                      className={`cursor-pointer border-t border-lineStrong ${selectedCaseId === item.id ? "bg-surfaceWarm" : ""}`}
                       onClick={() => setSelectedCaseId(item.id)}
                     >
-                      <td className="py-4 font-mono text-xs text-stone-300">{item.taskCode}</td>
-                      <td className="py-4 text-stone-400">{item.taskType}</td>
-                      <td className="py-4 text-xs text-stone-500">{getCaseSourceBadge(item)}</td>
-                      <td className="py-4 text-stone-100">{item.topicTitle}</td>
-                      <td className="py-4 text-stone-400">{item.difficultyLevel}</td>
-                      <td className="py-4 text-stone-400">{item.isEnabled ? "enabled" : "disabled"}</td>
-                      <td className="py-4 text-stone-400">{item.referenceGoodOutput ? "有" : "无"}</td>
-                      <td className="py-4 text-stone-400">{formatWritingEvalDateTime(item.updatedAt)}</td>
+                      <td className="py-4 font-mono text-xs text-inkSoft">{item.taskCode}</td>
+                      <td className="py-4 text-inkSoft">{item.taskType}</td>
+                      <td className="py-4 text-xs text-inkMuted">{getCaseSourceBadge(item)}</td>
+                      <td className="py-4 text-ink">{item.topicTitle}</td>
+                      <td className="py-4 text-inkSoft">{item.difficultyLevel}</td>
+                      <td className="py-4 text-inkSoft">{item.isEnabled ? "enabled" : "disabled"}</td>
+                      <td className="py-4 text-inkSoft">{item.referenceGoodOutput ? "有" : "无"}</td>
+                      <td className="py-4 text-inkSoft">{formatWritingEvalDateTime(item.updatedAt)}</td>
                     </tr>
                   ))}
                   {cases.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="py-6 text-stone-500">
+                      <td colSpan={8} className="py-6 text-inkMuted">
                         当前评测集还没有样本。
                       </td>
                     </tr>
@@ -1661,14 +1661,14 @@ export function AdminWritingEvalDatasetsClient({
                 <div className={adminEyebrowClassName}>自动补桶</div>
                 <h2 className={adminSectionTitleClassName}>按 readiness 缺口推荐样本</h2>
               </div>
-              <div className="text-xs leading-6 text-stone-500">
+              <div className="text-xs leading-6 text-inkMuted">
                 先推荐，再支持一键自动补入 4 条
               </div>
             </div>
             {selectedDataset ? (
               <>
                 <div className={cn(adminInsetCardClassName, adminMutedCopyClassName)}>
-                  当前围绕评测集 <span className="text-stone-100">{selectedDataset.code}</span> 的题型、难度和 coverage 缺口生成推荐。
+                  当前围绕评测集 <span className="text-ink">{selectedDataset.code}</span> 的题型、难度和 coverage 缺口生成推荐。
                   会优先补样本总量、缺失题型、缺失难度，以及 `sourceFacts / knowledgeCards / historyReferences / referenceGoodOutput` 等薄弱项。
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
@@ -1704,8 +1704,8 @@ export function AdminWritingEvalDatasetsClient({
                       <div key={`${item.sourceType}-${item.sourceId}`} className={adminListCardClassName}>
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
-                            <div className="text-sm text-stone-100">{item.title}</div>
-                            <div className="mt-1 text-xs text-stone-500">
+                            <div className="text-sm text-ink">{item.title}</div>
+                            <div className="mt-1 text-xs text-inkMuted">
                               {item.sourceType} · #{item.sourceId}
                               {item.subtitle ? ` · ${item.subtitle}` : ""}
                               {` · score ${item.score}`}
@@ -1758,7 +1758,7 @@ export function AdminWritingEvalDatasetsClient({
                 <div className={adminEyebrowClassName}>补桶台账</div>
                 <h2 className={adminSectionTitleClassName}>最近自动补桶记录</h2>
               </div>
-              <div className="text-xs leading-6 text-stone-500">
+              <div className="text-xs leading-6 text-inkMuted">
                 展示最近写入 audit 的自动补桶结果
               </div>
             </div>
@@ -1776,10 +1776,10 @@ export function AdminWritingEvalDatasetsClient({
                       <div key={log.id} className={cn(adminListCardClassName, "px-4 py-4")}>
                         <div className="flex items-start justify-between gap-3">
                           <div>
-                            <div className="text-sm text-stone-100">
+                            <div className="text-sm text-ink">
                               {formatWritingEvalDateTime(log.createdAt)} · 导入 {importedCount} 条样本
                             </div>
-                            <div className="mt-1 text-xs text-stone-500">
+                            <div className="mt-1 text-xs text-inkMuted">
                               readiness {readinessStatus} · importedItems {importedItems} · skipped {skippedCount}
                               {log.username ? ` · by ${log.username}` : " · by scheduler/service"}
                             </div>
@@ -1820,15 +1820,15 @@ export function AdminWritingEvalDatasetsClient({
                 <div className={adminEyebrowClassName}>历史文章导入</div>
                 <h2 className={adminSectionTitleClassName}>从已发布稿件沉淀样本</h2>
               </div>
-              <div className="text-xs leading-6 text-stone-500">
+              <div className="text-xs leading-6 text-inkMuted">
                 自动带入 stage artifacts、历史参考和好稿正文
               </div>
             </div>
             {selectedDataset ? (
               <>
                 <div className={cn(adminInsetCardClassName, adminMutedCopyClassName)}>
-                  向当前评测集 <span className="text-stone-100">{selectedDataset.code}</span> 导入历史稿件后，会自动生成
-                  <span className="mx-1 font-mono text-stone-200">taskCode=article-&lt;id&gt;</span>
+                  向当前评测集 <span className="text-ink">{selectedDataset.code}</span> 导入历史稿件后，会自动生成
+                  <span className="mx-1 font-mono text-inkSoft">taskCode=article-&lt;id&gt;</span>
                   的 case 草稿，并预填 reference good output、阶段产物与 history references。
                 </div>
                 <input
@@ -1846,7 +1846,7 @@ export function AdminWritingEvalDatasetsClient({
                       <div className={cn("mt-2", adminMutedCopyClassName)}>优先挑带阶段产物、事实素材、历史参考的稿件，减少手工补样本。</div>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
-                      <div className="text-xs text-stone-500">{recentArticleOptions.length} 条</div>
+                      <div className="text-xs text-inkMuted">{recentArticleOptions.length} 条</div>
                       <button
                         type="button"
                         onClick={() => void handleImportRecentArticles(5)}
@@ -1865,8 +1865,8 @@ export function AdminWritingEvalDatasetsClient({
                           <div key={`article-import-option-${article.id}`} className={adminListCardClassName}>
                             <div className="flex items-start justify-between gap-3">
                               <div className="min-w-0">
-                                <div className="text-sm text-stone-100">{article.title || `article-${article.id}`}</div>
-                                <div className="mt-1 text-xs text-stone-500">
+                                <div className="text-sm text-ink">{article.title || `article-${article.id}`}</div>
+                                <div className="mt-1 text-xs text-inkMuted">
                                   #{article.id} · {article.status}
                                   {article.seriesName ? ` · ${article.seriesName}` : ""}
                                   {` · ${formatWritingEvalDateTime(article.updatedAt)}`}
@@ -1898,7 +1898,7 @@ export function AdminWritingEvalDatasetsClient({
                         );
                       })
                     ) : (
-                      <div className="text-sm text-stone-500">当前没有可用于导入的历史稿件。</div>
+                      <div className="text-sm text-inkMuted">当前没有可用于导入的历史稿件。</div>
                     )}
                   </div>
                 </div>
@@ -1914,15 +1914,15 @@ export function AdminWritingEvalDatasetsClient({
                 <div className={adminEyebrowClassName}>知识卡导入</div>
                 <h2 className={adminSectionTitleClassName}>从背景卡沉淀 case 草稿</h2>
               </div>
-              <div className="text-xs leading-6 text-stone-500">
+              <div className="text-xs leading-6 text-inkMuted">
                 自动带入 key facts、open questions、related cards
               </div>
             </div>
             {selectedDataset ? (
               <>
                 <div className={cn(adminInsetCardClassName, adminMutedCopyClassName)}>
-                  向当前评测集 <span className="text-stone-100">{selectedDataset.code}</span> 导入知识卡后，会自动生成
-                  <span className="mx-1 font-mono text-stone-200">taskCode=knowledge-card-&lt;id&gt;</span>
+                  向当前评测集 <span className="text-ink">{selectedDataset.code}</span> 导入知识卡后，会自动生成
+                  <span className="mx-1 font-mono text-inkSoft">taskCode=knowledge-card-&lt;id&gt;</span>
                   的 case 草稿，并预填 source facts、开放问题、冲突信号和关联背景卡。
                 </div>
                 <input
@@ -1940,7 +1940,7 @@ export function AdminWritingEvalDatasetsClient({
                       <div className={cn("mt-2", adminMutedCopyClassName)}>优先挑事实密度高、带开放问题和关联卡的背景卡，能更快补齐中高难样本。</div>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
-                      <div className="text-xs text-stone-500">{recentKnowledgeCardOptions.length} 条</div>
+                      <div className="text-xs text-inkMuted">{recentKnowledgeCardOptions.length} 条</div>
                       <button
                         type="button"
                         onClick={() => void handleImportRecentKnowledgeCards(5)}
@@ -1959,8 +1959,8 @@ export function AdminWritingEvalDatasetsClient({
                           <div key={`knowledge-card-import-option-${card.id}`} className={adminListCardClassName}>
                             <div className="flex items-start justify-between gap-3">
                               <div className="min-w-0">
-                                <div className="text-sm text-stone-100">{card.title || `knowledge-card-${card.id}`}</div>
-                                <div className="mt-1 text-xs text-stone-500">
+                                <div className="text-sm text-ink">{card.title || `knowledge-card-${card.id}`}</div>
+                                <div className="mt-1 text-xs text-inkMuted">
                                   #{card.id} · {card.cardType} · {card.status}
                                   {card.ownerUsername ? ` · ${card.ownerUsername}` : ""}
                                   {` · ${formatWritingEvalDateTime(card.updatedAt)}`}
@@ -1992,7 +1992,7 @@ export function AdminWritingEvalDatasetsClient({
                         );
                       })
                     ) : (
-                      <div className="text-sm text-stone-500">当前没有可用于导入的知识卡。</div>
+                      <div className="text-sm text-inkMuted">当前没有可用于导入的知识卡。</div>
                     )}
                   </div>
                 </div>
@@ -2008,15 +2008,15 @@ export function AdminWritingEvalDatasetsClient({
                 <div className={adminEyebrowClassName}>主题档案导入</div>
                 <h2 className={adminSectionTitleClassName}>从热点/选题池沉淀 case 草稿</h2>
               </div>
-              <div className="text-xs leading-6 text-stone-500">
+              <div className="text-xs leading-6 text-inkMuted">
                 自动带入 topic summary、angle options、匹配背景卡
               </div>
             </div>
             {selectedDataset ? (
               <>
                 <div className={cn(adminInsetCardClassName, adminMutedCopyClassName)}>
-                  向当前评测集 <span className="text-stone-100">{selectedDataset.code}</span> 导入主题档案后，会自动生成
-                  <span className="mx-1 font-mono text-stone-200">taskCode=topic-item-&lt;id&gt;</span>
+                  向当前评测集 <span className="text-ink">{selectedDataset.code}</span> 导入主题档案后，会自动生成
+                  <span className="mx-1 font-mono text-inkSoft">taskCode=topic-item-&lt;id&gt;</span>
                   的 case 草稿，并预填热点摘要、切角建议与可复用背景卡。
                 </div>
                 <input
@@ -2034,7 +2034,7 @@ export function AdminWritingEvalDatasetsClient({
                       <div className={cn("mt-2", adminMutedCopyClassName)}>优先挑摘要完整、切角充足、能匹配到背景卡的热点条目，适合快速补足观察类样本。</div>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
-                      <div className="text-xs text-stone-500">{recentTopicOptions.length} 条</div>
+                      <div className="text-xs text-inkMuted">{recentTopicOptions.length} 条</div>
                       <button
                         type="button"
                         onClick={() => void handleImportRecentTopics(5)}
@@ -2053,8 +2053,8 @@ export function AdminWritingEvalDatasetsClient({
                           <div key={`topic-import-option-${topic.id}`} className={adminListCardClassName}>
                             <div className="flex items-start justify-between gap-3">
                               <div className="min-w-0">
-                                <div className="text-sm text-stone-100">{topic.title || `topic-item-${topic.id}`}</div>
-                                <div className="mt-1 text-xs text-stone-500">
+                                <div className="text-sm text-ink">{topic.title || `topic-item-${topic.id}`}</div>
+                                <div className="mt-1 text-xs text-inkMuted">
                                   #{topic.id} · {topic.sourceName} · {topic.sourceType}
                                   {topic.publishedAt ? ` · ${formatWritingEvalDateTime(topic.publishedAt)}` : ""}
                                 </div>
@@ -2084,7 +2084,7 @@ export function AdminWritingEvalDatasetsClient({
                         );
                       })
                     ) : (
-                      <div className="text-sm text-stone-500">当前没有可用于导入的主题档案。</div>
+                      <div className="text-sm text-inkMuted">当前没有可用于导入的主题档案。</div>
                     )}
                   </div>
                 </div>
@@ -2100,15 +2100,15 @@ export function AdminWritingEvalDatasetsClient({
                 <div className={adminEyebrowClassName}>素材包导入</div>
                 <h2 className={adminSectionTitleClassName}>从素材碎片沉淀 case 草稿</h2>
               </div>
-              <div className="text-xs leading-6 text-stone-500">
+              <div className="text-xs leading-6 text-inkMuted">
                 自动带入 material bundle、来源边界、关联背景卡
               </div>
             </div>
             {selectedDataset ? (
               <>
                 <div className={cn(adminInsetCardClassName, adminMutedCopyClassName)}>
-                  向当前评测集 <span className="text-stone-100">{selectedDataset.code}</span> 导入素材后，会自动生成
-                  <span className="mx-1 font-mono text-stone-200">taskCode=fragment-&lt;id&gt;</span>
+                  向当前评测集 <span className="text-ink">{selectedDataset.code}</span> 导入素材后，会自动生成
+                  <span className="mx-1 font-mono text-inkSoft">taskCode=fragment-&lt;id&gt;</span>
                   的 case 草稿，并预填素材包、来源边界和关联背景卡。
                 </div>
                 <input
@@ -2126,7 +2126,7 @@ export function AdminWritingEvalDatasetsClient({
                       <div className={cn("mt-2", adminMutedCopyClassName)}>优先挑带外链、截图或已沉淀背景卡的素材，能更快补足 fact/density 维度。</div>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
-                      <div className="text-xs text-stone-500">{recentFragmentOptions.length} 条</div>
+                      <div className="text-xs text-inkMuted">{recentFragmentOptions.length} 条</div>
                       <button
                         type="button"
                         onClick={() => void handleImportRecentFragments(5)}
@@ -2145,8 +2145,8 @@ export function AdminWritingEvalDatasetsClient({
                           <div key={`fragment-import-option-${fragment.id}`} className={adminListCardClassName}>
                             <div className="flex items-start justify-between gap-3">
                               <div className="min-w-0">
-                                <div className="text-sm text-stone-100">{fragment.title || `fragment-${fragment.id}`}</div>
-                                <div className="mt-1 text-xs text-stone-500">
+                                <div className="text-sm text-ink">{fragment.title || `fragment-${fragment.id}`}</div>
+                                <div className="mt-1 text-xs text-inkMuted">
                                   #{fragment.id} · {fragment.sourceType}
                                   {fragment.hasScreenshot ? " · screenshot" : ""}
                                   {` · ${formatWritingEvalDateTime(fragment.createdAt)}`}
@@ -2178,7 +2178,7 @@ export function AdminWritingEvalDatasetsClient({
                         );
                       })
                     ) : (
-                      <div className="text-sm text-stone-500">当前没有可用于导入的素材。</div>
+                      <div className="text-sm text-inkMuted">当前没有可用于导入的素材。</div>
                     )}
                   </div>
                 </div>
@@ -2223,7 +2223,7 @@ export function AdminWritingEvalDatasetsClient({
                     去 Runs 发起实验
                   </Link>
                 ) : null}
-                <label className="flex items-center gap-2 text-sm text-stone-400">
+                <label className="flex items-center gap-2 text-sm text-inkSoft">
                   <input aria-label="input control" type="checkbox" checked={editorForm.isEnabled} onChange={(event) => setEditorForm((prev) => ({ ...prev, isEnabled: event.target.checked }))} />
                   启用
                 </label>
@@ -2231,11 +2231,11 @@ export function AdminWritingEvalDatasetsClient({
             </div>
             {selectedCase ? (
               <>
-                <div className={cn(adminInsetCardClassName, "text-sm text-stone-400")}>
+                <div className={cn(adminInsetCardClassName, "text-sm text-inkSoft")}>
                   <div className={adminSubEyebrowClassName}>样本来源</div>
-                  <div className="mt-3 text-stone-100">{getCaseSourceBadge(selectedCase)}</div>
+                  <div className="mt-3 text-ink">{getCaseSourceBadge(selectedCase)}</div>
                   {getCaseSourceDetail(selectedCase) ? (
-                    <div className="mt-2 text-xs leading-6 text-stone-500">{getCaseSourceDetail(selectedCase)}</div>
+                    <div className="mt-2 text-xs leading-6 text-inkMuted">{getCaseSourceDetail(selectedCase)}</div>
                   ) : null}
                   {selectedCase.sourceUrl ? (
                     <div className="mt-3">
@@ -2245,7 +2245,7 @@ export function AdminWritingEvalDatasetsClient({
                     </div>
                   ) : null}
                 </div>
-                <div className={cn(adminInsetCardClassName, "text-sm text-stone-400")}>
+                <div className={cn(adminInsetCardClassName, "text-sm text-inkSoft")}>
                   <div className={adminSubEyebrowClassName}>样本完备度</div>
                   <div className="mt-3 flex flex-wrap gap-2">
                     {[
@@ -2266,7 +2266,7 @@ export function AdminWritingEvalDatasetsClient({
                       </span>
                     ))}
                   </div>
-                  <div className="mt-3 text-xs leading-6 text-stone-500">
+                  <div className="mt-3 text-xs leading-6 text-inkMuted">
                     {selectedCaseMissingFields.length > 0
                       ? `当前缺项：${selectedCaseMissingFields.join("、")}。补齐这些字段后，再去 Runs 做离线实验更稳定。`
                       : "当前样本已补齐基础输入、爆款目标和事实上下文字段，可以直接参与离线实验。"}

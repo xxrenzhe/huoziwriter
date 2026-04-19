@@ -13,10 +13,10 @@ export function SentenceRhythmMap({ text }: { text: string }) {
 
   if (rhythm.length === 0) {
     return (
-      <div className="border border-stone-300 bg-[radial-gradient(circle_at_top_left,rgba(196,138,58,0.12),transparent_28%),linear-gradient(180deg,#fffdfa_0%,#faf7f0_100%)] p-4">
-        <div className="text-xs uppercase tracking-[0.18em] text-stone-500">句子呼吸感图谱</div>
+      <div className="border border-lineStrong bg-[radial-gradient(circle_at_top_left,rgba(196,138,58,0.12),transparent_28%),linear-gradient(180deg,rgba(255,255,255,0.86)_0%,var(--paper)_100%)] p-4">
+        <div className="text-xs uppercase tracking-[0.18em] text-inkMuted">句子呼吸感图谱</div>
         <div className="mt-3 font-serifCn text-2xl text-ink text-balance">先写出几句可读正文，再看呼吸是否自然。</div>
-        <div className="mt-2 text-sm leading-7 text-stone-700">
+        <div className="mt-2 text-sm leading-7 text-inkSoft">
           节奏图不适合在空白页上催你动笔。等正文出现后，它会帮你看出哪里一口气太长、哪里整段都落在同一节拍里。
         </div>
         <div className="mt-4 grid gap-2 sm:grid-cols-3">
@@ -25,7 +25,7 @@ export function SentenceRhythmMap({ text }: { text: string }) {
             "先写判断或场景，短句会自然出现。",
             "要修机器味时，优先看长句和连续同节拍。",
           ].map((tip) => (
-            <div key={tip} className="border border-stone-300/60 bg-white/80 px-3 py-3 text-xs leading-6 text-stone-600">
+            <div key={tip} className="border border-lineStrong/60 bg-surface/80 px-3 py-3 text-xs leading-6 text-inkMuted">
               {tip}
             </div>
           ))}
@@ -61,45 +61,45 @@ export function SentenceRhythmMap({ text }: { text: string }) {
           : "长短句切换还算自然，可以继续保持。";
 
   return (
-    <div className="w-full border border-stone-300 bg-white p-4">
+    <div className="w-full border border-lineStrong bg-surface p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <div className="text-xs uppercase tracking-[0.18em] text-stone-500">句子呼吸感图谱</div>
-          <div className="mt-2 text-sm leading-7 text-stone-700">{rhythmHint}</div>
+          <div className="text-xs uppercase tracking-[0.18em] text-inkMuted">句子呼吸感图谱</div>
+          <div className="mt-2 text-sm leading-7 text-inkSoft">{rhythmHint}</div>
         </div>
-        <div className="text-xs text-stone-500">共 {rhythm.length} 句</div>
+        <div className="text-xs text-inkMuted">共 {rhythm.length} 句</div>
       </div>
 
       <div className="mt-4 grid gap-3 sm:grid-cols-4">
-        <div className="border border-stone-300/70 bg-[#faf7f0] px-3 py-3">
-          <div className="text-[11px] uppercase tracking-[0.16em] text-stone-500">平均句长</div>
+        <div className="border border-lineStrong/70 bg-paperStrong px-3 py-3">
+          <div className="text-[11px] uppercase tracking-[0.16em] text-inkMuted">平均句长</div>
           <div className="mt-2 font-serifCn text-2xl text-ink text-balance">{avgLength}</div>
         </div>
-        <div className="border border-stone-300/70 bg-[#faf7f0] px-3 py-3">
-          <div className="text-[11px] uppercase tracking-[0.16em] text-stone-500">短句</div>
-          <div className="mt-2 font-serifCn text-2xl text-[#576b95] text-balance">{shortCount}</div>
+        <div className="border border-lineStrong/70 bg-paperStrong px-3 py-3">
+          <div className="text-[11px] uppercase tracking-[0.16em] text-inkMuted">短句</div>
+          <div className="mt-2 font-serifCn text-2xl text-sky-700 text-balance">{shortCount}</div>
         </div>
-        <div className="border border-stone-300/70 bg-[#faf7f0] px-3 py-3">
-          <div className="text-[11px] uppercase tracking-[0.16em] text-stone-500">平稳句</div>
-          <div className="mt-2 font-serifCn text-2xl text-[#607a5b] text-balance">{steadyCount}</div>
+        <div className="border border-lineStrong/70 bg-paperStrong px-3 py-3">
+          <div className="text-[11px] uppercase tracking-[0.16em] text-inkMuted">平稳句</div>
+          <div className="mt-2 font-serifCn text-2xl text-emerald-700 text-balance">{steadyCount}</div>
         </div>
-        <div className="border border-stone-300/70 bg-[#faf7f0] px-3 py-3">
-          <div className="text-[11px] uppercase tracking-[0.16em] text-stone-500">长句 / 连续</div>
-          <div className="mt-2 font-serifCn text-2xl text-[#8f3136] text-balance">
+        <div className="border border-lineStrong/70 bg-paperStrong px-3 py-3">
+          <div className="text-[11px] uppercase tracking-[0.16em] text-inkMuted">长句 / 连续</div>
+          <div className="mt-2 font-serifCn text-2xl text-danger text-balance">
             {longCount} / {longestRun}
           </div>
         </div>
       </div>
 
-      <div className="mt-4 flex h-28 items-end gap-[3px] overflow-x-auto border border-stone-200 bg-[#fcfbf8] px-3 pb-3 pt-4">
+      <div className="mt-4 flex h-28 items-end gap-[3px] overflow-x-auto border border-line bg-surfaceWarm px-3 pb-3 pt-4">
         {rhythm.map((sentence, idx) => {
           const heightPercent = Math.max(10, (sentence.length / maxLength) * 100);
           const colorClass =
             sentence.bucket === "long"
-              ? "bg-[#d8b0b2] hover:bg-cinnabar"
+              ? "bg-danger/40 hover:bg-cinnabar"
               : sentence.bucket === "short"
-                ? "bg-[#a6b1c4] hover:bg-[#576b95]"
-                : "bg-[#b0c4b1] hover:bg-emerald-600";
+                ? "bg-sky-300 hover:bg-sky-700"
+                : "bg-emerald-300 hover:bg-emerald-600";
 
           return (
             <div
@@ -112,23 +112,23 @@ export function SentenceRhythmMap({ text }: { text: string }) {
         })}
       </div>
 
-      <div className="mt-3 flex flex-wrap items-center gap-4 text-xs text-stone-500">
+      <div className="mt-3 flex flex-wrap items-center gap-4 text-xs text-inkMuted">
         <div className="flex items-center gap-1">
-          <span className="h-2 w-2 rounded-full bg-[#a6b1c4]" />
+          <span className="h-2 w-2 rounded-full bg-sky-300" />
           短促有力
         </div>
         <div className="flex items-center gap-1">
-          <span className="h-2 w-2 rounded-full bg-[#b0c4b1]" />
+          <span className="h-2 w-2 rounded-full bg-emerald-300" />
           长度适中
         </div>
         <div className="flex items-center gap-1">
-          <span className="h-2 w-2 rounded-full bg-[#d8b0b2]" />
+          <span className="h-2 w-2 rounded-full bg-danger/40" />
           容易疲劳 (&gt;45 字)
         </div>
       </div>
 
       {(longCount > 0 || longestRun >= 4) && (
-        <div className="mt-3 border-l-2 border-cinnabar pl-3 text-xs leading-6 text-stone-600">
+        <div className="mt-3 border-l-2 border-cinnabar pl-3 text-xs leading-6 text-inkMuted">
           {longCount > 0
             ? "发现较长句子。机器生成文本常把判断压进过长的一口气里，拆句后会更像人写。"
             : "连续句长过于一致，建议插入短句、问句或更直接的判断，打破模板节奏。"}

@@ -7,6 +7,10 @@ export const size = {
 
 export const contentType = "image/png";
 
+const iconPaperTone = "rgb(250 247 240)";
+const iconPaperStrongTone = "rgb(242 237 226)";
+const iconCinnabarTone = "rgb(167 48 50)";
+
 export default function Icon() {
   return new ImageResponse(
     (
@@ -17,7 +21,7 @@ export default function Icon() {
           width: "100%",
           alignItems: "center",
           justifyContent: "center",
-          background: "#faf7f0",
+          background: iconPaperTone,
           padding: 2,
         }}
       >
@@ -28,18 +32,65 @@ export default function Icon() {
             width: "100%",
             alignItems: "center",
             justifyContent: "center",
-            background: "linear-gradient(180deg, #fdfaf4 0%, #f2ede2 100%)",
-            border: "2px solid #a73032",
+            position: "relative",
+            background: iconPaperStrongTone,
+            border: `2px solid ${iconCinnabarTone}`,
             boxSizing: "border-box",
-            color: "#a73032",
-            fontFamily: '"Noto Serif SC", "Songti SC", serif',
-            fontSize: 20,
-            fontWeight: 700,
-            letterSpacing: "-0.02em",
-            lineHeight: 1,
           }}
         >
-          活
+          <div
+            style={{
+              position: "absolute",
+              top: 6,
+              left: 6,
+              right: 6,
+              bottom: 6,
+              border: `2px solid ${iconCinnabarTone}`,
+              boxSizing: "border-box",
+            }}
+          />
+          <div
+            style={{
+              position: "absolute",
+              top: 8,
+              left: "50%",
+              width: 3,
+              height: 16,
+              transform: "translateX(-50%)",
+              background: iconCinnabarTone,
+            }}
+          />
+          <div
+            style={{
+              position: "absolute",
+              top: "50%",
+              left: 8,
+              right: 8,
+              height: 3,
+              transform: "translateY(-50%)",
+              background: iconCinnabarTone,
+            }}
+          />
+          <div
+            style={{
+              position: "absolute",
+              bottom: 8,
+              left: 8,
+              width: 8,
+              height: 3,
+              background: iconCinnabarTone,
+            }}
+          />
+          <div
+            style={{
+              position: "absolute",
+              bottom: 8,
+              right: 8,
+              width: 8,
+              height: 3,
+              background: iconCinnabarTone,
+            }}
+          />
         </div>
       </div>
     ),

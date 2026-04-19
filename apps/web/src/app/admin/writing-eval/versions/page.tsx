@@ -17,8 +17,8 @@ type WritingEvalVersionSummaryCard = {
 };
 
 const ROLLOUT_MANAGED_VERSION_TYPES: readonly RolloutManagedVersionType[] = ["prompt_version", "layout_strategy", "apply_command_template", "scoring_profile"];
-const adminWritingEvalVersionsPanelBaseClassName = cn(surfaceCardStyles(), "border-stone-800 bg-[#171718] shadow-none");
-const adminWritingEvalVersionsHeroClassName = cn(adminWritingEvalVersionsPanelBaseClassName, "bg-stone-950 p-6 md:p-8");
+const adminWritingEvalVersionsPanelBaseClassName = cn(surfaceCardStyles(), "border-lineStrong bg-surface shadow-none");
+const adminWritingEvalVersionsHeroClassName = cn(adminWritingEvalVersionsPanelBaseClassName, "bg-paperStrong p-6 md:p-8");
 const adminWritingEvalVersionsMetricCardClassName = cn(adminWritingEvalVersionsPanelBaseClassName, "p-5");
 const adminWritingEvalVersionsNavClassName = "flex flex-wrap gap-3";
 
@@ -392,21 +392,21 @@ export default async function AdminWritingEvalVersionsPage({
         <div className="flex items-start justify-between gap-4">
           <div>
             <div className="text-xs uppercase tracking-[0.28em] text-cinnabar">Writing Eval Versions</div>
-            <h1 className="mt-4 font-serifCn text-4xl text-stone-100 text-balance">保留与回滚账本</h1>
-            <p className="mt-4 max-w-4xl text-sm leading-7 text-stone-400">
+            <h1 className="mt-4 font-serifCn text-4xl text-ink text-balance">保留与回滚账本</h1>
+            <p className="mt-4 max-w-4xl text-sm leading-7 text-inkMuted">
               在同一页核对写作评测版本的实验来源、账本决策和灰度治理状态，再决定是继续放量、保持观察，还是回滚到上一版资产。
             </p>
           </div>
-          <AdminWritingEvalNav sections={["overview", "datasets", "runs"]} className={adminWritingEvalVersionsNavClassName} />
+          <AdminWritingEvalNav sections={["overview", "datasets", "runs", "insights", "scoring", "schedules", "governance"]} className={adminWritingEvalVersionsNavClassName} />
         </div>
       </section>
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         {summaryCards.map((item) => (
           <article key={item.label} className={adminWritingEvalVersionsMetricCardClassName}>
-            <div className="text-xs uppercase tracking-[0.18em] text-stone-500">{item.label}</div>
-            <div className="mt-3 text-3xl text-stone-100 text-balance">{item.value}</div>
-            <div className="mt-3 text-sm text-stone-500">{item.detail}</div>
+            <div className="text-xs uppercase tracking-[0.18em] text-inkMuted">{item.label}</div>
+            <div className="mt-3 text-3xl text-ink text-balance">{item.value}</div>
+            <div className="mt-3 text-sm text-inkMuted">{item.detail}</div>
           </article>
         ))}
       </section>

@@ -45,7 +45,7 @@ export function AdminWritingEvalRiskBatchActions({ actions }: { actions: Governa
       <button type="button" className={uiPrimitives.primaryButton} onClick={() => void handleClick()} disabled={submitting || actions.length === 0}>
         {submitting ? "执行中…" : `批量应用高优先建议 (${actions.length})`}
       </button>
-      {message ? <div className="text-xs leading-6 text-stone-500">{message}</div> : null}
+      {message ? <div className="text-xs leading-6 text-inkMuted">{message}</div> : null}
     </div>
   );
 }

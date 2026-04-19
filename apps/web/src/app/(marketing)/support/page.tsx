@@ -63,7 +63,7 @@ export default function SupportPage({
             </div>
             <div className="mt-5 text-xs uppercase tracking-[0.24em] text-inkMuted">Inner Circle</div>
             <h2 className="mt-3 font-serifCn text-3xl text-ink text-balance">扫码加入试用交流群</h2>
-            <div className="mt-5 grid h-44 w-44 place-items-center border border-lineStrong bg-[linear-gradient(135deg,#fff_25%,#f5f1e8_25%,#f5f1e8_50%,#fff_50%,#fff_75%,#f5f1e8_75%,#f5f1e8_100%)] bg-[length:20px_20px]">
+            <div className="mt-5 grid h-44 w-44 place-items-center border border-lineStrong bg-[linear-gradient(135deg,rgba(255,255,255,0.96)_25%,var(--paper-strong)_25%,var(--paper-strong)_50%,rgba(255,255,255,0.96)_50%,rgba(255,255,255,0.96)_75%,var(--paper-strong)_75%,var(--paper-strong)_100%)] bg-[length:20px_20px]">
               <div className="flex h-16 w-16 items-center justify-center border border-ink bg-surface text-ink">
                 <Waypoints size={24} />
               </div>

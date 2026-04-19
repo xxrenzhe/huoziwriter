@@ -1,4 +1,4 @@
-export type AdminWritingEvalSection = "overview" | "datasets" | "runs" | "versions" | "insights";
+export type AdminWritingEvalSection = "overview" | "datasets" | "runs" | "versions" | "insights" | "scoring" | "schedules" | "governance";
 
 const ADMIN_WRITING_EVAL_SECTION_CONFIG = {
   overview: {
@@ -20,6 +20,18 @@ const ADMIN_WRITING_EVAL_SECTION_CONFIG = {
   insights: {
     label: "Insights",
     href: "/admin/writing-eval/insights",
+  },
+  scoring: {
+    label: "Scoring",
+    href: "/admin/writing-eval/scoring",
+  },
+  schedules: {
+    label: "Schedules",
+    href: "/admin/writing-eval/schedules",
+  },
+  governance: {
+    label: "Governance",
+    href: "/admin/writing-eval/governance",
   },
 } as const satisfies Record<AdminWritingEvalSection, { label: string; href: string }>;
 
