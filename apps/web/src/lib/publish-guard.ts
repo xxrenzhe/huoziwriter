@@ -1,10 +1,12 @@
 import { analyzeAiNoise } from "./ai-noise-scan";
-import { getArticleEvidenceStats } from "./article-evidence";
-import { getHumanSignalScore, getStrategyCardMissingFields, isStrategyCardComplete } from "./article-strategy";
+import { evaluateArchetypeRhythmConsistency } from "./archetype-rhythm";
+import { EVIDENCE_HOOK_TAG_OPTIONS, getArticleEvidenceStats } from "./article-evidence";
+import { getHumanSignalScore, getStrategyCardMissingFields, isStrategyCardComplete, STRATEGY_ARCHETYPE_OPTIONS } from "./article-strategy";
 import { getArticleNodes } from "./article-outline";
 import { getArticleStageArtifact, getArticleStageArtifactsByDocumentIds } from "./article-stage-artifacts";
 import { getActiveTemplateById } from "./layout-templates";
 import { getArticleById, getArticleEvidenceItems, getArticlesByUser, getArticleStrategyCard, getLatestArticleCoverImage, getLatestWechatSyncLogForArticle, getWechatConnectionRaw } from "./repositories";
+import { evaluateTitleGuardChecks } from "./title-patterns";
 import { buildWritingDiversityReport } from "./writing-diversity";
 import { buildWritingQualityPanel } from "./writing-quality";
 
@@ -77,6 +79,15 @@ function getRecordArray(value: unknown) {
 
 function getStringArray(value: unknown, limit = 8) {
   return Array.isArray(value) ? value.map((item) => String(item || "").trim()).filter(Boolean).slice(0, limit) : [];
+}
+
+function getNumericValue(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
 }
 
 function hasArtifactPayload(value: { payload?: Record<string, unknown> | null } | null) {
@@ -154,7 +165,16 @@ export async function evaluatePublishGuard(input: {
 
   const outlineSelection = getRecord(outlineArtifact?.payload?.selection);
   const selectedTitle = getString(outlineSelection?.selectedTitle) || getString(outlineArtifact?.payload?.workingTitle);
-  const titleConfirmed = selectedTitle.length > 0;
+  const selectedTitleOption = getRecordArray(outlineArtifact?.payload?.titleOptions).find(
+    (item) => getString(item.title) === selectedTitle,
+  ) ?? null;
+  const titleGuardEvaluation = evaluateTitleGuardChecks({
+    selectedTitle,
+    selectedTitleOption,
+    titleAuditedAt: outlineArtifact?.payload?.titleAuditedAt,
+    outlineUpdatedAt: outlineArtifact?.payload?.outlineUpdatedAt,
+  });
+  const { titleConfirmed } = titleGuardEvaluation;
   const outlineGapHints = getStringArray(outlineArtifact?.payload?.materialGapHints, 4);
   const historyReferencePlan = getStringArray(deepWritingArtifact?.payload?.historyReferencePlan ? ["history"] : [], 1);
   const languageGuardHits = Array.isArray(prosePolishArtifact?.payload?.languageGuardHits)
@@ -199,6 +219,34 @@ export async function evaluatePublishGuard(input: {
   const strategyCardReady = isStrategyCardComplete(strategyCard);
   const humanSignalScore = getHumanSignalScore(strategyCard);
   const evidenceStats = getArticleEvidenceStats(evidenceItems);
+  const hookCoverageReady = evidenceStats.hookTagCoverageCount >= 2;
+  const missingHookTags = EVIDENCE_HOOK_TAG_OPTIONS.filter((tag) => !evidenceStats.hookTagCoverage.includes(tag));
+  const fourPointAudit = getRecord(strategyCard?.fourPointAudit);
+  const fourPointScores = [
+    { key: "cognitiveFlip", label: "认知翻转", score: getNumericValue(getRecord(fourPointAudit?.cognitiveFlip)?.score) },
+    { key: "readerSnapshot", label: "读者快照", score: getNumericValue(getRecord(fourPointAudit?.readerSnapshot)?.score) },
+    { key: "coreTension", label: "核心张力", score: getNumericValue(getRecord(fourPointAudit?.coreTension)?.score) },
+    { key: "impactVector", label: "发力方向", score: getNumericValue(getRecord(fourPointAudit?.impactVector)?.score) },
+  ] as const;
+  const fourPointAuditReady = fourPointScores.every((item) => item.score !== null);
+  const fourPointAuditLockable = fourPointAuditReady && fourPointScores.every((item) => (item.score ?? 0) >= 3);
+  const fourPointWeakLabels = fourPointScores.filter((item) => item.score !== null && (item.score ?? 0) < 3).map((item) => item.label);
+  const fourPointScoreSummary = fourPointScores
+    .filter((item) => item.score !== null)
+    .map((item) => `${item.label} ${item.score}/5`)
+    .join("，");
+  const expectedPrototype = STRATEGY_ARCHETYPE_OPTIONS.find((item) => item.key === strategyCard?.archetype) ?? null;
+  const actualPrototypeCode = getString(deepWritingArtifact?.payload?.articlePrototype);
+  const actualPrototypeLabel = getString(deepWritingArtifact?.payload?.articlePrototypeLabel) || actualPrototypeCode;
+  const rhythmConsistency = evaluateArchetypeRhythmConsistency({
+    archetype: strategyCard?.archetype ?? null,
+    expectedPrototypeCode: expectedPrototype?.prototypeCode ?? null,
+    actualPrototypeCode: actualPrototypeCode || null,
+    markdownContent: article?.markdown_content || "",
+    deepWritingPayload: deepWritingArtifact?.payload || null,
+  });
+  const rhythmConsistencyReady = rhythmConsistency.status === "aligned";
+  const rhythmConsistencyNeedsAttention = Boolean(strategyCard?.archetype) && rhythmConsistency.status !== "aligned";
   const hasCounterEvidence = evidenceStats.counterEvidenceCount > 0 || factCheckCounterEvidenceCount > 0;
   const researchHollowRiskItems = [
     !researchReady ? "研究简报尚未生成，当前还无法确认内容是不是只有表达没有研究。" : null,
@@ -333,6 +381,31 @@ export async function evaluatePublishGuard(input: {
   });
 
   pushCheck(checks, blockers, warnings, suggestions, {
+    key: "fourPointAudit",
+    label: "策略卡四元强度",
+    status:
+      !strategyCard
+        ? "warning"
+        : fourPointAuditLockable
+          ? "passed"
+          : "warning",
+    severity:
+      !strategyCard || !fourPointAuditLockable
+        ? "warning"
+        : "suggestion",
+    detail:
+      !strategyCard
+        ? "策略卡还没保存，暂时无法评估四元强度。"
+        : !fourPointAuditReady
+          ? "四元强度还未跑完，当前无法确认是否达到可锁定标准。"
+          : fourPointAuditLockable
+            ? `四元强度已过线：${fourPointScoreSummary}。当前策略已满足锁定条件。`
+            : `${strategyCard.strategyOverride ? "当前策略已标记强行锁定。" : "当前策略还没达到锁定线。"} ${fourPointScoreSummary}。建议优先补强：${fourPointWeakLabels.join("、")}。`,
+    targetStageCode: "audienceAnalysis",
+    actionLabel: fourPointAuditLockable ? undefined : "去补四元强度",
+  });
+
+  pushCheck(checks, blockers, warnings, suggestions, {
     key: "evidencePackage",
     label: "证据包",
     status: evidenceStats.ready ? "passed" : "blocked",
@@ -344,6 +417,29 @@ export async function evaluatePublishGuard(input: {
       : `证据包未达发布标准：${evidenceStats.flags.join("；") || evidenceStats.detail}`,
     targetStageCode: "outlinePlanning",
     actionLabel: evidenceStats.ready ? undefined : "去补证据包",
+  });
+
+  pushCheck(checks, blockers, warnings, suggestions, {
+    key: "hookCoverage",
+    label: "爆点覆盖度",
+    status:
+      evidenceStats.itemCount === 0
+        ? "warning"
+        : hookCoverageReady
+          ? "passed"
+          : "warning",
+    severity:
+      evidenceStats.itemCount === 0 || !hookCoverageReady
+        ? "warning"
+        : "suggestion",
+    detail:
+      evidenceStats.itemCount === 0
+        ? "证据包还没确认，暂时无法评估爆点覆盖度。"
+        : hookCoverageReady
+          ? `证据包已覆盖 ${evidenceStats.hookTagCoverageCount} 类爆点标签：${evidenceStats.hookTagCoverage.join("、")}。`
+          : `当前只覆盖 ${evidenceStats.hookTagCoverageCount} 类爆点标签，至少需要 2 类。建议补：${missingHookTags.slice(0, 2).join("、") || "反常识或具身细节"}。`,
+    targetStageCode: "evidence",
+    actionLabel: hookCoverageReady ? undefined : "去补爆点标签",
   });
 
   pushCheck(checks, blockers, warnings, suggestions, {
@@ -361,15 +457,9 @@ export async function evaluatePublishGuard(input: {
     actionLabel: humanSignalScore >= 3 ? undefined : "去补人类信号",
   });
 
-  pushCheck(checks, blockers, warnings, suggestions, {
-    key: "title_confirmation",
-    label: "标题确认",
-    status: titleConfirmed ? "passed" : "blocked",
-    severity: titleConfirmed ? "suggestion" : "blocking",
-    detail: titleConfirmed ? `已确认发布标题：${selectedTitle}` : "发布前需要先确认一个可落地标题。",
-    targetStageCode: "outlinePlanning",
-    actionLabel: titleConfirmed ? undefined : "去确认标题",
-  });
+  for (const check of titleGuardEvaluation.checks) {
+    pushCheck(checks, blockers, warnings, suggestions, check);
+  }
 
   pushCheck(checks, blockers, warnings, suggestions, {
     key: "researchBrief",
@@ -515,6 +605,29 @@ export async function evaluatePublishGuard(input: {
         : "发布前需要先完成深度写作。",
     targetStageCode: "deepWriting",
     actionLabel: deepWritingArtifact?.status === "ready" && hasArtifactPayload(deepWritingArtifact) ? undefined : "去补执行卡",
+  });
+
+  pushCheck(checks, blockers, warnings, suggestions, {
+    key: "archetypeRhythmConsistency",
+    label: "原型节奏一致性",
+    status:
+      !strategyCard?.archetype || !expectedPrototype?.prototypeCode
+        ? "warning"
+        : rhythmConsistencyReady
+          ? "passed"
+          : "warning",
+    severity:
+      !strategyCard?.archetype || !expectedPrototype?.prototypeCode || !rhythmConsistencyReady
+        ? "warning"
+        : "suggestion",
+    detail:
+      !strategyCard?.archetype || !expectedPrototype?.prototypeCode
+        ? "策略原型还没锁定，暂时无法校验执行卡和原型节奏是否一致。"
+        : rhythmConsistencyReady
+          ? `当前策略原型是「${expectedPrototype.label}」，执行卡按「${actualPrototypeLabel || actualPrototypeCode || expectedPrototype.prototypeCode}」推进；${rhythmConsistency.detail}`
+          : `当前策略原型是「${expectedPrototype.label}」，执行卡按「${actualPrototypeLabel || actualPrototypeCode || "未标明"}」推进；${rhythmConsistency.detail}`,
+    targetStageCode: "deepWriting",
+    actionLabel: rhythmConsistencyReady ? undefined : "去校准执行卡",
   });
 
   pushCheck(checks, blockers, warnings, suggestions, {
@@ -740,13 +853,24 @@ export async function evaluatePublishGuard(input: {
     {
       stageCode: "audienceAnalysis",
       title: "策略卡",
-      status: !strategyCardReady ? "blocked" : humanSignalScore >= 3 ? "ready" : humanSignalScore >= 2 ? "needs_attention" : "blocked",
+      status:
+        !strategyCardReady
+          ? "blocked"
+          : humanSignalScore < 2
+            ? "blocked"
+            : humanSignalScore >= 3 && fourPointAuditLockable
+              ? "ready"
+              : "needs_attention",
       detail: strategyCardReady
-        ? humanSignalScore >= 3
-          ? "目标读者、核心判断和人类信号都已到位。"
-          : humanSignalScore >= 2
-            ? "策略卡已确认，但人类信号仍偏薄，建议继续补真实观察和体感。"
-            : "策略卡已确认，但人类信号不足，发布前需要先补。"
+        ? humanSignalScore < 2
+          ? "策略卡已确认，但人类信号不足，发布前需要先补。"
+          : !fourPointAuditReady
+            ? "策略卡已确认，但四元强度还没跑完，暂时不建议锁定。"
+            : !fourPointAuditLockable
+              ? `策略卡已确认，但四元强度仍偏弱：${fourPointWeakLabels.join("、")}。`
+              : humanSignalScore >= 3
+                ? "目标读者、核心判断、人类信号和四元强度都已到位。"
+                : "策略卡已确认，四元强度达标，但人类信号仍偏薄，建议继续补真实观察和体感。"
         : strategyCard
           ? `策略卡仍缺：${strategyCardMissingFields.join("；")}。`
           : "先补并保存策略卡，再进入发布守门。",
@@ -754,11 +878,18 @@ export async function evaluatePublishGuard(input: {
     {
       stageCode: "evidence",
       title: "证据包",
-      status: evidenceStats.ready ? (evidenceStats.status === "warning" ? "needs_attention" : "ready") : "blocked",
+      status:
+        evidenceStats.ready
+          ? evidenceStats.status === "warning" || !hookCoverageReady
+            ? "needs_attention"
+            : "ready"
+          : "blocked",
       detail: evidenceStats.ready
         ? evidenceStats.status === "warning"
           ? `证据包已确认，但仍建议处理：${evidenceStats.flags.join("；")}。`
-          : `已确认 ${evidenceStats.itemCount} 条证据，可进入发布守门。`
+          : !hookCoverageReady
+            ? `证据包已确认，但爆点标签只覆盖 ${evidenceStats.hookTagCoverageCount} 类，建议继续补到至少 2 类。`
+            : `已确认 ${evidenceStats.itemCount} 条证据，并覆盖 ${evidenceStats.hookTagCoverageCount} 类爆点标签。`
         : evidenceStats.detail,
     },
     {
@@ -777,15 +908,17 @@ export async function evaluatePublishGuard(input: {
       title: "深度写作",
       status:
         deepWritingArtifact?.status === "ready" && hasArtifactPayload(deepWritingArtifact)
-          ? historyReferencePlan.length > 0
+          ? historyReferencePlan.length > 0 && !rhythmConsistencyNeedsAttention
             ? "ready"
             : "needs_attention"
           : "blocked",
       detail:
         deepWritingArtifact?.status === "ready" && hasArtifactPayload(deepWritingArtifact)
-          ? historyReferencePlan.length > 0
-            ? "执行卡、系列承接与关键事实都已准备。"
-            : "执行卡已准备，但系列旧文承接仍可补强。"
+          ? rhythmConsistencyNeedsAttention
+            ? "执行卡已准备，但当前正文原型和策略原型还没完全对齐。"
+            : historyReferencePlan.length > 0
+              ? "执行卡、系列承接与关键事实都已准备。"
+              : "执行卡已准备，但系列旧文承接仍可补强。"
           : "先生成写作执行卡。",
     },
     {
@@ -830,9 +963,9 @@ export async function evaluatePublishGuard(input: {
           || humanSignalScore < 2
           || !evidenceStats.ready
           ? "blocked"
-          : coverImage && connectionHealth.status === "valid"
+          : coverImage && connectionHealth.status === "valid" && hookCoverageReady && fourPointAuditLockable && !rhythmConsistencyNeedsAttention
             ? "ready"
-            : coverImage || connectionHealth.status === "valid"
+            : coverImage || connectionHealth.status === "valid" || !hookCoverageReady || !fourPointAuditLockable || rhythmConsistencyNeedsAttention
               ? "needs_attention"
               : "blocked",
       detail:
@@ -842,9 +975,17 @@ export async function evaluatePublishGuard(input: {
             ? "人类信号不足，正文还没有稳固的作者真实感，发布仍处于阻断状态。"
           : !evidenceStats.ready
             ? "证据包尚未确认到发布标准，发布仍处于阻断状态。"
-          : coverImage && connectionHealth.status === "valid"
+          : coverImage && connectionHealth.status === "valid" && hookCoverageReady && fourPointAuditLockable && !rhythmConsistencyNeedsAttention
             ? "连接、封面和模板已准备。"
-            : "发布前还需要处理连接或封面缺口。",
+            : `发布前仍建议处理这些方法论闸门：${[
+                !hookCoverageReady ? "爆点覆盖度不足" : null,
+                !fourPointAuditLockable ? "四元强度未达锁定线" : null,
+                rhythmConsistencyNeedsAttention ? "原型节奏还未对齐" : null,
+                !coverImage ? "缺封面图" : null,
+                connectionHealth.status !== "valid" ? "公众号连接待确认" : null,
+              ]
+                .filter(Boolean)
+                .join("、")}。`,
     },
   ];
 

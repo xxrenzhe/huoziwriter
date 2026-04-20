@@ -151,7 +151,7 @@ function EmptyState({
 
 export default async function ReviewsPage() {
   const { session } = await requireWriterSession();
-  const { publishedArticles, hitCandidates, nearMisses, seriesPlaybooks, playbooks } = await getReviewData(session.userId);
+  const { publishedArticles, hitCandidates, nearMisses, seriesPlaybooks, playbooks, attributionViews } = await getReviewData(session.userId);
   const visibleHitCandidates = hitCandidates.slice(0, 6);
   const visibleNearMisses = nearMisses.slice(0, 6);
   const isFirstReviewState = publishedArticles.length === 0;
@@ -377,6 +377,66 @@ export default async function ReviewsPage() {
               }
             />
           ) : null}
+        </div>
+      </section>
+
+      <section className={standardSurfaceClassName}>
+        <SectionHeader
+          eyebrow="高命中结构归因"
+          title="把高命中样本拆回原型、强度和爆点组合。"
+          summary={`原型 ${attributionViews.archetypes.length} · 强度 ${attributionViews.strategyStrengths.length} · 组合 ${attributionViews.hookCombos.length}`}
+        />
+        <div className="mt-6 grid gap-6 xl:grid-cols-3">
+          {[
+            {
+              key: "archetypes",
+              title: "原型分布",
+              detail: "看哪些文章原型更容易打中。",
+              items: attributionViews.archetypes,
+            },
+            {
+              key: "strengths",
+              title: "强度分布",
+              detail: "看四元强度落在哪些区间更稳。",
+              items: attributionViews.strategyStrengths,
+            },
+            {
+              key: "hooks",
+              title: "爆点组合",
+              detail: "看哪些爆点标签组合最常命中。",
+              items: attributionViews.hookCombos,
+            },
+          ].map((group) => (
+            <div key={group.key} className="space-y-3">
+              <div>
+                <div className={sectionEyebrowClassName}>{group.title}</div>
+                <div className={cn("mt-2", bodyCopyClassName)}>{group.detail}</div>
+              </div>
+              <div className="grid gap-3">
+                {group.items.slice(0, 5).map((item) => (
+                  <article key={`${group.key}-${item.label}`} className={compactHighlightSurfaceClassName}>
+                    <div className={statLabelClassName}>{item.detail}</div>
+                    <div className="mt-2 font-medium text-ink">{item.label}</div>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <span className={metricChipClassName}>命中 {item.hitCount} 篇</span>
+                      <span className={mutedMetricChipClassName}>差一点 {item.nearMissCount} 篇</span>
+                    </div>
+                    <div className={cn("mt-3", cardMetaClassName)}>
+                      {item.latestArticleTitle ? `最近出现在《${item.latestArticleTitle}》` : "等待更多结果样本"}
+                    </div>
+                  </article>
+                ))}
+                {group.items.length === 0 ? (
+                  <EmptyState
+                    eyebrow={group.title}
+                    title={`当前还没有${group.title}样本。`}
+                    detail="先补结果回流，系统才会把高命中样本拆成可复用的结构归因。"
+                    className="border-dashed"
+                  />
+                ) : null}
+              </div>
+            </div>
+          ))}
         </div>
       </section>
     </div>

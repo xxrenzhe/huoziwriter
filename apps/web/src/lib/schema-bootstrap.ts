@@ -1022,6 +1022,7 @@ export async function ensureExtendedProductSchema() {
       user_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"} NOT NULL,
       target_package TEXT,
       scorecard_json TEXT NOT NULL DEFAULT '{}',
+      attribution_json ${getDatabase().type === "postgres" ? "JSONB" : "TEXT"},
       hit_status TEXT NOT NULL DEFAULT 'pending',
       review_summary TEXT,
       next_action TEXT,
@@ -1033,6 +1034,8 @@ export async function ensureExtendedProductSchema() {
       id ${getDatabase().type === "postgres" ? "BIGSERIAL" : "INTEGER"} PRIMARY KEY ${getDatabase().type === "postgres" ? "" : "AUTOINCREMENT"},
       article_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"} NOT NULL UNIQUE,
       user_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"} NOT NULL,
+      archetype TEXT,
+      mainstream_belief TEXT,
       target_reader TEXT,
       core_assertion TEXT,
       why_now TEXT,
@@ -1048,6 +1051,9 @@ export async function ensureExtendedProductSchema() {
       real_scene_or_dialogue TEXT,
       want_to_complain TEXT,
       non_delegable_truth TEXT,
+      four_point_audit_json ${getDatabase().type === "postgres" ? "JSONB" : "TEXT"},
+      strategy_locked_at ${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"},
+      strategy_override ${getDatabase().type === "postgres" ? "BOOLEAN" : "INTEGER"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "FALSE" : "0"},
       created_at ${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "NOW()" : "(datetime('now'))"},
       updated_at ${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "NOW()" : "(datetime('now'))"}
     )`,
@@ -1066,6 +1072,10 @@ export async function ensureExtendedProductSchema() {
       usage_mode TEXT,
       rationale TEXT,
       research_tag TEXT,
+      hook_tags_json ${getDatabase().type === "postgres" ? "JSONB" : "TEXT"},
+      hook_strength REAL,
+      hook_tagged_by TEXT,
+      hook_tagged_at ${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"},
       evidence_role TEXT NOT NULL DEFAULT 'supportingEvidence',
       sort_order INTEGER NOT NULL DEFAULT 1,
       created_at ${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "NOW()" : "(datetime('now'))"},
@@ -1176,9 +1186,64 @@ export async function ensureExtendedProductSchema() {
       thesis TEXT,
       target_audience TEXT,
       active_status TEXT NOT NULL DEFAULT 'active',
+      pre_hook TEXT,
+      post_hook TEXT,
+      default_layout_template_id TEXT,
+      platform_preference TEXT,
+      target_pack_hint TEXT,
+      default_archetype TEXT,
+      default_dna_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"},
+      rhythm_override_json ${getDatabase().type === "postgres" ? "JSONB" : "TEXT"},
       created_at ${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "NOW()" : "(datetime('now'))"},
       updated_at ${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "NOW()" : "(datetime('now'))"},
       UNIQUE(user_id, name)
+    )`,
+    `CREATE TABLE IF NOT EXISTS topic_backlogs (
+      id ${getDatabase().type === "postgres" ? "BIGSERIAL" : "INTEGER"} PRIMARY KEY ${getDatabase().type === "postgres" ? "" : "AUTOINCREMENT"},
+      user_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"} NOT NULL,
+      series_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"},
+      name TEXT NOT NULL,
+      description TEXT,
+      last_generated_at ${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"},
+      created_at ${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "NOW()" : "(datetime('now'))"},
+      updated_at ${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "NOW()" : "(datetime('now'))"},
+      UNIQUE(user_id, name)
+    )`,
+    `CREATE TABLE IF NOT EXISTS topic_backlog_items (
+      id ${getDatabase().type === "postgres" ? "BIGSERIAL" : "INTEGER"} PRIMARY KEY ${getDatabase().type === "postgres" ? "" : "AUTOINCREMENT"},
+      backlog_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"} NOT NULL,
+      user_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"} NOT NULL,
+      topic_lead_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"},
+      source_type TEXT NOT NULL DEFAULT 'manual',
+      fission_mode TEXT,
+      theme TEXT NOT NULL,
+      archetype TEXT,
+      evidence_refs_json ${getDatabase().type === "postgres" ? "JSONB" : "TEXT"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "'[]'::jsonb" : "'[]'"},
+      strategy_draft_json ${getDatabase().type === "postgres" ? "JSONB" : "TEXT"},
+	      target_audience TEXT,
+	      reader_snapshot_hint TEXT,
+	      status TEXT NOT NULL DEFAULT 'draft',
+	      generated_article_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"},
+	      generated_batch_id TEXT,
+	      generated_at ${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"},
+	      created_at ${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "NOW()" : "(datetime('now'))"},
+	      updated_at ${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "NOW()" : "(datetime('now'))"}
+	    )`,
+    `CREATE TABLE IF NOT EXISTS topic_leads (
+      id ${getDatabase().type === "postgres" ? "BIGSERIAL" : "INTEGER"} PRIMARY KEY ${getDatabase().type === "postgres" ? "" : "AUTOINCREMENT"},
+      user_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"} NOT NULL,
+      source TEXT NOT NULL DEFAULT 'radar',
+      fission_mode TEXT,
+      source_track_label TEXT,
+      topic TEXT NOT NULL,
+      target_audience TEXT,
+      description TEXT,
+      predicted_flip_strength REAL,
+      archetype_suggestion TEXT,
+      adopted_article_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"},
+      adopted_backlog_item_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"},
+      created_at ${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "NOW()" : "(datetime('now'))"},
+      updated_at ${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "NOW()" : "(datetime('now'))"}
     )`,
     `CREATE TABLE IF NOT EXISTS persona_tags (
       id ${getDatabase().type === "postgres" ? "BIGSERIAL" : "INTEGER"} PRIMARY KEY ${getDatabase().type === "postgres" ? "" : "AUTOINCREMENT"},
@@ -1251,6 +1316,34 @@ export async function ensureExtendedProductSchema() {
       auto_mode TEXT NOT NULL DEFAULT 'manual',
       change_notes TEXT,
       UNIQUE(prompt_id, version)
+    )`,
+    `CREATE TABLE IF NOT EXISTS ima_connections (
+      id ${getDatabase().type === "postgres" ? "BIGSERIAL" : "INTEGER"} PRIMARY KEY ${getDatabase().type === "postgres" ? "" : "AUTOINCREMENT"},
+      user_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"} NOT NULL,
+      label TEXT NOT NULL,
+      client_id_encrypted TEXT NOT NULL,
+      api_key_encrypted TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'valid',
+      last_verified_at ${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"},
+      last_error TEXT,
+      created_at ${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "NOW()" : "(datetime('now'))"},
+      updated_at ${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "NOW()" : "(datetime('now'))"},
+      UNIQUE(user_id, label)
+    )`,
+    `CREATE TABLE IF NOT EXISTS ima_knowledge_bases (
+      id ${getDatabase().type === "postgres" ? "BIGSERIAL" : "INTEGER"} PRIMARY KEY ${getDatabase().type === "postgres" ? "" : "AUTOINCREMENT"},
+      user_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"} NOT NULL,
+      connection_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"} NOT NULL,
+      kb_id TEXT NOT NULL,
+      kb_name TEXT NOT NULL,
+      description TEXT,
+      content_count INTEGER,
+      is_enabled ${getDatabase().type === "postgres" ? "BOOLEAN" : "INTEGER"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "TRUE" : "1"},
+      is_default ${getDatabase().type === "postgres" ? "BOOLEAN" : "INTEGER"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "FALSE" : "0"},
+      last_synced_at ${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"},
+      created_at ${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "NOW()" : "(datetime('now'))"},
+      updated_at ${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "NOW()" : "(datetime('now'))"},
+      UNIQUE(user_id, connection_id, kb_id)
     )`,
     `CREATE TABLE IF NOT EXISTS prompt_rollout_observations (
       id ${getDatabase().type === "postgres" ? "BIGSERIAL" : "INTEGER"} PRIMARY KEY ${getDatabase().type === "postgres" ? "" : "AUTOINCREMENT"},
@@ -1498,6 +1591,9 @@ export async function ensureExtendedProductSchema() {
       title TEXT NOT NULL,
       slug TEXT NOT NULL,
       summary TEXT,
+      track_label TEXT,
+      hook_tags_json ${getDatabase().type === "postgres" ? "JSONB" : "TEXT"},
+      sample_paragraph TEXT,
       key_facts_json TEXT,
       open_questions_json TEXT,
       conflict_flags_json ${getDatabase().type === "postgres" ? "JSONB" : "TEXT"},
@@ -1846,8 +1942,55 @@ export async function ensureExtendedProductSchema() {
   await ensureColumn("article_strategy_cards", "research_hypothesis", "TEXT");
   await ensureColumn("article_strategy_cards", "market_position_insight", "TEXT");
   await ensureColumn("article_strategy_cards", "historical_turning_point", "TEXT");
+  await ensureColumn("article_outcomes", "attribution_json", getDatabase().type === "postgres" ? "JSONB" : "TEXT");
+  await ensureColumn("article_strategy_cards", "archetype", "TEXT");
+  await ensureColumn("article_strategy_cards", "mainstream_belief", "TEXT");
+  await ensureColumn("article_strategy_cards", "four_point_audit_json", getDatabase().type === "postgres" ? "JSONB" : "TEXT");
+  await ensureColumn("article_strategy_cards", "strategy_locked_at", getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT");
+  await ensureColumn("article_strategy_cards", "strategy_override", `${getDatabase().type === "postgres" ? "BOOLEAN" : "INTEGER"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "FALSE" : "0"}`);
   await ensureColumn("article_evidence_items", "research_tag", "TEXT");
+  await ensureColumn("article_evidence_items", "hook_tags_json", getDatabase().type === "postgres" ? "JSONB" : "TEXT");
+  await ensureColumn("article_evidence_items", "hook_strength", "REAL");
+  await ensureColumn("article_evidence_items", "hook_tagged_by", "TEXT");
+  await ensureColumn("article_evidence_items", "hook_tagged_at", getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT");
   await ensureColumn("article_evidence_items", "evidence_role", "TEXT NOT NULL DEFAULT 'supportingEvidence'");
+  await ensureColumn("series", "pre_hook", "TEXT");
+  await ensureColumn("series", "post_hook", "TEXT");
+  await ensureColumn("series", "default_layout_template_id", "TEXT");
+  await ensureColumn("series", "platform_preference", "TEXT");
+  await ensureColumn("series", "target_pack_hint", "TEXT");
+  await ensureColumn("series", "default_archetype", "TEXT");
+  await ensureColumn("series", "default_dna_id", getDatabase().type === "postgres" ? "BIGINT" : "INTEGER");
+  await ensureColumn("series", "rhythm_override_json", getDatabase().type === "postgres" ? "JSONB" : "TEXT");
+  await ensureColumn("topic_backlogs", "series_id", getDatabase().type === "postgres" ? "BIGINT" : "INTEGER");
+  await ensureColumn("topic_backlogs", "description", "TEXT");
+  await ensureColumn("topic_backlogs", "last_generated_at", getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT");
+  await ensureColumn("topic_backlogs", "updated_at", `${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "NOW()" : "(datetime('now'))"}`);
+  await ensureColumn("topic_backlog_items", "source_type", "TEXT NOT NULL DEFAULT 'manual'");
+  await ensureColumn("topic_backlog_items", "topic_lead_id", getDatabase().type === "postgres" ? "BIGINT" : "INTEGER");
+  await ensureColumn("topic_backlog_items", "fission_mode", "TEXT");
+  await ensureColumn("topic_backlog_items", "theme", "TEXT");
+  await ensureColumn("topic_backlog_items", "archetype", "TEXT");
+  await ensureColumn("topic_backlog_items", "evidence_refs_json", getDatabase().type === "postgres" ? "JSONB" : "TEXT");
+  await ensureColumn("topic_backlog_items", "strategy_draft_json", getDatabase().type === "postgres" ? "JSONB" : "TEXT");
+  await ensureColumn("topic_backlog_items", "target_audience", "TEXT");
+  await ensureColumn("topic_backlog_items", "reader_snapshot_hint", "TEXT");
+  await ensureColumn("topic_backlog_items", "status", "TEXT NOT NULL DEFAULT 'draft'");
+  await ensureColumn("topic_backlog_items", "generated_article_id", getDatabase().type === "postgres" ? "BIGINT" : "INTEGER");
+  await ensureColumn("topic_backlog_items", "generated_batch_id", "TEXT");
+  await ensureColumn("topic_backlog_items", "generated_at", getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT");
+  await ensureColumn("topic_backlog_items", "updated_at", `${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "NOW()" : "(datetime('now'))"}`);
+  await ensureColumn("topic_leads", "source", "TEXT NOT NULL DEFAULT 'radar'");
+  await ensureColumn("topic_leads", "fission_mode", "TEXT");
+  await ensureColumn("topic_leads", "source_track_label", "TEXT");
+  await ensureColumn("topic_leads", "topic", "TEXT");
+  await ensureColumn("topic_leads", "target_audience", "TEXT");
+  await ensureColumn("topic_leads", "description", "TEXT");
+  await ensureColumn("topic_leads", "predicted_flip_strength", "REAL");
+  await ensureColumn("topic_leads", "archetype_suggestion", "TEXT");
+  await ensureColumn("topic_leads", "adopted_article_id", getDatabase().type === "postgres" ? "BIGINT" : "INTEGER");
+  await ensureColumn("topic_leads", "adopted_backlog_item_id", getDatabase().type === "postgres" ? "BIGINT" : "INTEGER");
+  await ensureColumn("topic_leads", "updated_at", `${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "NOW()" : "(datetime('now'))"}`);
   await ensureColumn("article_outcome_snapshots", "writing_state_feedback_json", getDatabase().type === "postgres" ? "JSONB" : "TEXT");
   await ensureColumn("persona_tags", "description", "TEXT");
   await ensureColumn("persona_tags", "sort_order", "INTEGER NOT NULL DEFAULT 100");
@@ -1865,6 +2008,9 @@ export async function ensureExtendedProductSchema() {
   await ensureColumn("knowledge_cards", "conflict_flags_json", getDatabase().type === "postgres" ? "JSONB" : "TEXT");
   await ensureColumn("knowledge_cards", "latest_change_summary", "TEXT");
   await ensureColumn("knowledge_cards", "overturned_judgements_json", getDatabase().type === "postgres" ? "JSONB" : "TEXT");
+  await ensureColumn("knowledge_cards", "track_label", "TEXT");
+  await ensureColumn("knowledge_cards", "hook_tags_json", getDatabase().type === "postgres" ? "JSONB" : "TEXT");
+  await ensureColumn("knowledge_cards", "sample_paragraph", "TEXT");
   await ensureColumn("article_fragment_refs", "usage_mode", "TEXT NOT NULL DEFAULT 'rewrite'");
   await ensureColumn("article_workflows", "pending_publish_intent_json", getDatabase().type === "postgres" ? "JSONB" : "TEXT");
   await ensureColumn("wechat_sync_logs", "article_id", getDatabase().type === "postgres" ? "BIGINT" : "INTEGER");
@@ -2043,6 +2189,9 @@ export async function ensureExtendedProductSchema() {
     "CREATE INDEX IF NOT EXISTS idx_prompt_rollout_observations_prompt_version_last_hit ON prompt_rollout_observations(prompt_id, version, last_hit_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_prompt_rollout_observations_reason_last_hit ON prompt_rollout_observations(resolution_reason, last_hit_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_prompt_rollout_daily_metrics_prompt_version_date ON prompt_rollout_daily_metrics(prompt_id, version, metric_date DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_ima_connections_user_status_updated_at ON ima_connections(user_id, status, updated_at DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_ima_knowledge_bases_user_connection_enabled ON ima_knowledge_bases(user_id, connection_id, is_enabled, updated_at DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_ima_knowledge_bases_user_default ON ima_knowledge_bases(user_id, is_default, updated_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_writing_active_assets_type_updated_at ON writing_active_assets(asset_type, updated_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_writing_asset_rollouts_type_enabled_updated_at ON writing_asset_rollouts(asset_type, is_enabled, updated_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_writing_asset_rollout_obs_type_ref_last_hit ON writing_asset_rollout_observations(asset_type, asset_ref, last_hit_at DESC)",
@@ -2062,6 +2211,13 @@ export async function ensureExtendedProductSchema() {
     "CREATE INDEX IF NOT EXISTS idx_writing_eval_online_feedback_result_captured_at ON writing_eval_online_feedback(result_id, captured_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_writing_eval_online_feedback_article_captured_at ON writing_eval_online_feedback(article_id, captured_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_writing_eval_online_feedback_sync_log ON writing_eval_online_feedback(wechat_sync_log_id)",
+    "CREATE INDEX IF NOT EXISTS idx_topic_backlogs_user_series_updated_at ON topic_backlogs(user_id, series_id, updated_at DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_topic_backlog_items_backlog_status_updated_at ON topic_backlog_items(backlog_id, status, updated_at DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_topic_backlog_items_generated_article_id ON topic_backlog_items(generated_article_id)",
+    "CREATE INDEX IF NOT EXISTS idx_topic_backlog_items_topic_lead_id ON topic_backlog_items(topic_lead_id)",
+    "CREATE INDEX IF NOT EXISTS idx_topic_leads_user_source_created_at ON topic_leads(user_id, source, created_at DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_topic_leads_adopted_article_id ON topic_leads(adopted_article_id)",
+    "CREATE INDEX IF NOT EXISTS idx_topic_leads_adopted_backlog_item_id ON topic_leads(adopted_backlog_item_id)",
   ]);
   await ensureTopicSourceScopedUniqueness();
   await ensureColumn("topic_sources", "source_type", "TEXT NOT NULL DEFAULT 'news'");

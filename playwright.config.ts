@@ -17,17 +17,19 @@ export default defineConfig({
     channel: browserChannel,
   },
   webServer: {
-    command: "pnpm db:init && cd apps/web && rm -rf .next-e2e && pnpm build && pnpm start --port 3101 --hostname 127.0.0.1",
+    command:
+      "zsh -lc 'set -euo pipefail && pnpm db:init && cd apps/web && NEXT_OUTPUT_MODE=standalone NEXT_DIST_DIR=.next-e2e pnpm build && test -f .next-e2e/standalone/apps/web/server.js && cd .next-e2e/standalone/apps/web && PORT=3101 HOSTNAME=127.0.0.1 node server.js'",
     url: "http://127.0.0.1:3101/login",
     reuseExistingServer: false,
-    timeout: 300_000,
+    timeout: 900_000,
     env: {
       ...process.env,
       PORT: "3101",
       HOSTNAME: "127.0.0.1",
-      NEXT_DIST_DIR: ".next-e2e",
+      NEXT_TELEMETRY_DISABLED: "1",
       DATABASE_PATH: databasePath,
       DEFAULT_ADMIN_PASSWORD: e2eAdminPassword,
+      IMA_OPENAPI_BASE_URL: "http://127.0.0.1:3101/api/tools/mock-ima",
     },
   },
 });

@@ -20,6 +20,7 @@ import { loadPromptWithMeta } from "./prompt-loader";
 import { getArticleById, getArticleOutcomeBundlesByUser, getArticlesByUser, replaceArticleResearchCards } from "./repositories";
 import { ensureExtendedProductSchema } from "./schema-bootstrap";
 import { scoreSemanticMatch } from "./semantic-search";
+import { TITLE_OPTION_LIMIT, buildFallbackTitleOptions, ensureSingleRecommendedTitleOption, normalizeTitleOptions } from "./title-patterns";
 import { WRITING_EVAL_APPLY_COMMAND_TEMPLATES } from "./writing-eval-assets";
 import { getActiveWritingEvalScoringProfile } from "./writing-eval";
 import { buildWritingDiversityReport } from "./writing-diversity";
@@ -143,9 +144,17 @@ type GenerationContext = {
     driftRisks: string[];
     backgroundChecklist: string[];
     whyNow: string[];
+    preHook?: string | null;
+    postHook?: string | null;
+    platformPreference?: string | null;
+    targetPackHint?: string | null;
+    defaultArchetype?: string | null;
+    defaultLayoutTemplateId?: string | null;
     relatedArticleCount: number;
   } | null;
   strategyCard: {
+    archetype: "opinion" | "case" | "howto" | "hotTake" | "phenomenon" | null;
+    mainstreamBelief: string | null;
     targetReader: string | null;
     coreAssertion: string | null;
     whyNow: string | null;
@@ -346,6 +355,15 @@ function stripMarkdown(text: string) {
 
 function truncateText(text: string, limit = 160) {
   return text.length > limit ? `${text.slice(0, limit)}…` : text;
+}
+
+function normalizeIsoTimestamp(value: unknown) {
+  const text = String(value || "").trim();
+  if (!text) {
+    return null;
+  }
+  const timestamp = Date.parse(text);
+  return Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : null;
 }
 
 function listPersonaSummary(context: GenerationContext) {
@@ -1103,6 +1121,8 @@ function fallbackOutlinePlanning(context: GenerationContext) {
   const seedFacts = getSourceFacts(context, 4);
   const materialBundle = getMaterialBundle(context, 8);
   const baseTitle = truncateText(String(context.article.title || "").trim(), 28) || "这件事";
+  const titleOptions = buildFallbackTitleOptions(baseTitle);
+  const now = new Date().toISOString();
   const preferredResearchSignals = getPreferredResearchSignals(context);
   const researchInsights = getRecordArray(context.researchBrief?.intersectionInsights).map((item) => String(item.insight || "").trim()).filter(Boolean);
   const timelineCards = getRecordArray(context.researchBrief?.timelineCards);
@@ -1196,33 +1216,13 @@ function fallbackOutlinePlanning(context: GenerationContext) {
   return {
     summary: "建议采用“历史转折—横向差异—核心判断—读者动作”的递进结构，把研究卡真正压进大纲骨架里。",
     workingTitle: context.article.title,
-    titleOptions: [
-      {
-        title: `${baseTitle}：别只盯表面变化，真正该看的只有这一层`,
-        styleLabel: "观点判断型",
-        angle: "先给判断，再补证据",
-        reason: "直接亮出主判断，适合快速建立立场和信息密度。",
-        riskHint: "信息密度偏高，正文第一段必须尽快补事实锚点。",
-      },
-      {
-        title: `为什么说${baseTitle}，最容易被误读的不是结果`,
-        styleLabel: "场景问题型",
-        angle: "用误读和疑问把读者拉进来",
-        reason: "先激活问题意识，再承接后续拆解过程。",
-        riskHint: "冲突感够强，但如果后文拆解不具体，容易显得问题大于答案。",
-      },
-      {
-        title: `${baseTitle}之后，谁会先受益，谁会先承压`,
-        styleLabel: "结果反差型",
-        angle: "把结果分化直接摆出来",
-        reason: "突出影响分化，更适合承接影响与行动建议。",
-        riskHint: "要确保正文真的展开“谁受益、谁承压”，否则会有轻微标题先行风险。",
-      },
-    ],
+    titleOptions,
     titleStrategyNotes: [
-      "3 个标题分别抓住主判断、误读冲突和结果分化，但都围绕同一主题主轴。",
+      "6 个标题围绕同一主轴分别从判断、误读、结果分化、细节切口和读者提醒切入，方便横向比较打开率潜力。",
       "标题只放大正文里会真正展开的矛盾和收益点，不拿正文无法兑现的结果做诱饵。",
     ],
+    titleAuditedAt: now,
+    outlineUpdatedAt: now,
     centralThesis: String(researchBackbone.coreInsightAnchor || "").trim() || `围绕“${context.article.title}”，用一条主判断串起事实，不做散点式罗列。`,
     openingHook: `开头优先从这条历史节点切入：${String(researchBackbone.openingTimelineAnchor || "").trim()}`,
     openingHookOptions: [
@@ -2287,16 +2287,7 @@ function normalizeOutlinePayload(value: unknown, fallback: Record<string, unknow
     .map((item) => normalizeOutlineSection(item))
     .filter((item) => item.heading)
     .slice(0, 8);
-  const fallbackTitleOptions = getRecordArray(fallback.titleOptions)
-    .map((item) => ({
-      title: String(item.title || "").trim(),
-      styleLabel: String(item.styleLabel || "").trim(),
-      angle: String(item.angle || "").trim(),
-      reason: String(item.reason || "").trim(),
-      riskHint: String(item.riskHint || "").trim(),
-    }))
-    .filter((item) => item.title)
-    .slice(0, 3);
+  const fallbackTitleOptions = normalizeTitleOptions(getRecordArray(fallback.titleOptions), buildFallbackTitleOptions(String(fallback.workingTitle || "").trim()));
   const sections = Array.isArray(payload?.outlineSections)
     ? payload.outlineSections
         .map((item) => normalizeRecord(item))
@@ -2311,22 +2302,17 @@ function normalizeOutlinePayload(value: unknown, fallback: Record<string, unknow
   return {
     summary: String(payload?.summary || fallback.summary || "").trim(),
     workingTitle: String(payload?.workingTitle || fallback.workingTitle || "").trim(),
-    titleOptions: getRecordArray(payload?.titleOptions).length
-      ? getRecordArray(payload?.titleOptions)
-          .map((item) => ({
-            title: String(item.title || "").trim(),
-            styleLabel: String(item.styleLabel || "").trim(),
-            angle: String(item.angle || "").trim(),
-            reason: String(item.reason || "").trim(),
-            riskHint: String(item.riskHint || "").trim(),
-          }))
-          .filter((item) => item.title)
-          .slice(0, 3)
-      : fallbackTitleOptions,
+    titleOptions: normalizeTitleOptions(payload?.titleOptions, fallbackTitleOptions),
     titleStrategyNotes:
       uniqueStrings(payload?.titleStrategyNotes, 4).length
         ? uniqueStrings(payload?.titleStrategyNotes, 4)
         : uniqueStrings(fallback.titleStrategyNotes, 4),
+    titleAuditedAt:
+      normalizeIsoTimestamp(payload?.titleAuditedAt)
+      || normalizeIsoTimestamp(fallback.titleAuditedAt),
+    outlineUpdatedAt:
+      normalizeIsoTimestamp(payload?.outlineUpdatedAt)
+      || normalizeIsoTimestamp(fallback.outlineUpdatedAt),
     centralThesis: String(payload?.centralThesis || fallback.centralThesis || "").trim(),
     openingHook: String(payload?.openingHook || fallback.openingHook || "").trim(),
     openingHookOptions:
@@ -3145,7 +3131,7 @@ async function upsertArtifact(input: {
 async function generateWithPrompt(input: {
   stageCode: ArticleArtifactStageCode;
   promptId: string;
-  sceneCode: "researchBrief" | "articleWrite" | "languageGuardAudit" | "audienceProfile" | "outlinePlan" | "deepWrite" | "factCheck" | "prosePolish";
+  sceneCode: "researchBrief" | "articleWrite" | "languageGuardAudit" | "audienceProfile" | "outlinePlan" | "titleOptimizer" | "deepWrite" | "factCheck" | "prosePolish";
   userPrompt: string;
   fallback: Record<string, unknown>;
   normalize: (value: unknown, fallback: Record<string, unknown>) => Record<string, unknown>;
@@ -3309,17 +3295,133 @@ async function generateAudienceAnalysis(context: GenerationContext) {
   });
 }
 
+async function runTitleOptimizer(context: GenerationContext, outlinePayload: Record<string, unknown>) {
+  const fallbackTitleOptions = normalizeTitleOptions(
+    outlinePayload.titleOptions,
+    buildFallbackTitleOptions(String(outlinePayload.workingTitle || context.article.title || "").trim()),
+  );
+  const outlineSections = getRecordArray(outlinePayload.outlineSections)
+    .slice(0, 6)
+    .map((section, index) =>
+      [
+        `${index + 1}. ${String(section.heading || "").trim() || `章节 ${index + 1}`}`,
+        String(section.goal || "").trim() ? `目标：${String(section.goal).trim()}` : null,
+        getStringArray(section.keyPoints, 4).length ? `关键点：${getStringArray(section.keyPoints, 4).join("；")}` : null,
+      ].filter(Boolean).join(" / "),
+    );
+  const userPrompt = [
+    "请输出 JSON，不要解释，不要 markdown。",
+    '字段：{"titleOptions":[{"title":"字符串","styleLabel":"字符串","angle":"字符串","reason":"字符串","riskHint":"字符串","openRateScore":42,"elementsHit":{"specific":true,"curiosityGap":true,"readerView":false},"forbiddenHits":[""],"recommendReason":"字符串"}],"recommendedIndex":0}',
+    "固定返回 6 个 titleOptions，recommendedIndex 取 0-5，代表唯一推荐项。",
+    "每个标题至少满足三要素里的 2 项：具体元素、好奇缺口、读者视角。",
+    "具体元素：标题里尽量出现数字、产品名、人名、场景、结果、角色或具体对象。",
+    "好奇缺口：制造信息差，但不要把结论剧透成清单答案。",
+    "读者视角：优先说读者能得到什么判断或提醒，不要写成作者自我倾诉。",
+    "禁止清单：震惊、不看后悔、99% 的人都、太可怕了、关于…的思考、…的一些感悟、…的 5 个方法、…的 3 个要点、自我复盘式标题、夸大事实、承诺正文无法兑现的结果。",
+    "forbiddenHits 必须列出命中的禁区标签；没命中时返回空数组。",
+    "openRateScore 取 0-50；只有 forbiddenHits 为空且至少命中 2 个要素，才能进入 40 分以上区间。",
+    "6 个标题必须围绕同一主轴，但风格要明显分开，例如观点判断型、误读切口型、结果反差型、数字反差型、读者提醒型。",
+    "title 长度尽量克制，避免空泛大词，不要写成提纲式或方法清单式标题。",
+    `稿件标题：${context.article.title}`,
+    `当前工作标题：${String(outlinePayload.workingTitle || context.article.title).trim()}`,
+    String(outlinePayload.centralThesis || "").trim() ? `核心判断：${String(outlinePayload.centralThesis).trim()}` : null,
+    context.audienceSelection?.selectedReaderLabel ? `目标读者：${context.audienceSelection.selectedReaderLabel}` : null,
+    getStringArray(outlinePayload.titleStrategyNotes, 4).length ? `当前标题主轴：${getStringArray(outlinePayload.titleStrategyNotes, 4).join("；")}` : null,
+    outlineSections.length ? `大纲骨架：\n${outlineSections.join("\n")}` : null,
+    `关键事实：${getSourceFacts(context, 6).join("；") || "暂无关键事实，请围绕现有判断生成标题。"}`,
+    `当前正文摘要：${truncateText(stripMarkdown(context.article.markdownContent), 600) || "暂无正文，请根据标题、判断和大纲生成候选。"}`,
+  ].filter(Boolean).join("\n");
+
+  try {
+    const promptMeta = await loadPromptWithMeta("title_optimizer", {
+      userId: context.userId,
+      role: context.userRole,
+      planCode: context.planCode,
+    });
+    const result = await generateSceneText({
+      sceneCode: "titleOptimizer",
+      systemPrompt: promptMeta.content,
+      userPrompt,
+      temperature: 0.2,
+    });
+    const titleOptimizerRuntimeMeta = buildArticleArtifactRuntimeMetaPatch({
+      promptVersionRefs: [`${promptMeta.promptId}@${promptMeta.version}`],
+    }).runtimeMeta as Record<string, unknown> | undefined;
+    const raw = normalizeRecord(extractJsonObject(result.text)) || {};
+    const recommendedIndexRaw = typeof raw.recommendedIndex === "number"
+      ? raw.recommendedIndex
+      : typeof raw.recommendedIndex === "string" && raw.recommendedIndex.trim()
+        ? Number(raw.recommendedIndex)
+        : -1;
+    const hasRecommendedIndex = Number.isInteger(recommendedIndexRaw) && recommendedIndexRaw >= 0;
+    const normalizedOptions = normalizeTitleOptions(raw.titleOptions, fallbackTitleOptions).map((item, index) => ({
+      ...item,
+      isRecommended: hasRecommendedIndex
+        ? index === Math.max(0, Math.min(TITLE_OPTION_LIMIT - 1, Number(recommendedIndexRaw)))
+        : item.isRecommended,
+    }));
+    const titleOptions = ensureSingleRecommendedTitleOption(normalizedOptions);
+    return {
+      titleOptions,
+      titleAuditedAt: new Date().toISOString(),
+      runtimeMetaPatch: {
+        runtimeMeta: {
+          ...(titleOptimizerRuntimeMeta ?? {}),
+          titleOptimizer: {
+            promptId: promptMeta.promptId,
+            version: promptMeta.version,
+            ref: `${promptMeta.promptId}@${promptMeta.version}`,
+            resolutionMode: promptMeta.resolutionMode,
+            resolutionReason: promptMeta.resolutionReason,
+          },
+        },
+      },
+      model: result.model,
+      provider: result.provider,
+    };
+  } catch {
+    return {
+      titleOptions: ensureSingleRecommendedTitleOption(fallbackTitleOptions),
+      titleAuditedAt: new Date().toISOString(),
+      runtimeMetaPatch: undefined,
+      model: null,
+      provider: null,
+    };
+  }
+}
+
+async function refreshOutlineTitleOptions(input: {
+  context: GenerationContext;
+  artifact: ArticleStageArtifact;
+  fallback: Record<string, unknown>;
+  preserveOutlineUpdatedAt?: boolean;
+}) {
+  const normalized = normalizeOutlinePayload(input.artifact.payload, input.fallback);
+  const optimized = await runTitleOptimizer(input.context, normalized);
+  return updateArticleStageArtifactPayload({
+    articleId: input.context.article.id,
+    userId: input.context.userId,
+    stageCode: "outlinePlanning",
+    payloadPatch: {
+      titleOptions: optimized.titleOptions,
+      titleAuditedAt: optimized.titleAuditedAt,
+      outlineUpdatedAt:
+        input.preserveOutlineUpdatedAt
+          ? normalized.outlineUpdatedAt || null
+          : new Date().toISOString(),
+      ...(optimized.runtimeMetaPatch ?? {}),
+    },
+  });
+}
+
 async function generateOutlinePlanning(context: GenerationContext) {
   const fallback = fallbackOutlinePlanning(context);
   const preferredResearchSignals = getPreferredResearchSignals(context);
   const userPrompt = [
     "请输出 JSON，不要解释，不要 markdown。",
-    '字段：{"summary":"字符串","workingTitle":"字符串","titleOptions":[{"title":"字符串","styleLabel":"字符串","angle":"字符串","reason":"字符串","riskHint":"字符串"}],"titleStrategyNotes":[""],"centralThesis":"字符串","openingHook":"字符串","openingHookOptions":[""],"targetEmotion":"字符串","targetEmotionOptions":[""],"researchBackbone":{"openingTimelineAnchor":"字符串","middleComparisonAnchor":"字符串","coreInsightAnchor":"字符串","sequencingNote":"字符串"},"supplementalViewpoints":[""],"viewpointIntegration":[{"viewpoint":"字符串","action":"adopted|softened|deferred|conflicted","note":"字符串"}],"materialBundle":[{"fragmentId":1,"title":"字符串","usageMode":"rewrite|image","sourceType":"manual|url|screenshot","summary":"字符串","screenshotPath":"字符串或空"}],"outlineSections":[{"heading":"字符串","goal":"字符串","keyPoints":[""],"evidenceHints":[""],"materialRefs":[1],"transition":"字符串","researchFocus":"timeline|comparison|intersection|support","researchAnchor":"字符串"}],"materialGapHints":[""],"endingStrategy":"字符串","endingStrategyOptions":[""]}',
+    '字段：{"summary":"字符串","workingTitle":"字符串","titleStrategyNotes":[""],"centralThesis":"字符串","openingHook":"字符串","openingHookOptions":[""],"targetEmotion":"字符串","targetEmotionOptions":[""],"researchBackbone":{"openingTimelineAnchor":"字符串","middleComparisonAnchor":"字符串","coreInsightAnchor":"字符串","sequencingNote":"字符串"},"supplementalViewpoints":[""],"viewpointIntegration":[{"viewpoint":"字符串","action":"adopted|softened|deferred|conflicted","note":"字符串"}],"materialBundle":[{"fragmentId":1,"title":"字符串","usageMode":"rewrite|image","sourceType":"manual|url|screenshot","summary":"字符串","screenshotPath":"字符串或空"}],"outlineSections":[{"heading":"字符串","goal":"字符串","keyPoints":[""],"evidenceHints":[""],"materialRefs":[1],"transition":"字符串","researchFocus":"timeline|comparison|intersection|support","researchAnchor":"字符串"}],"materialGapHints":[""],"endingStrategy":"字符串","endingStrategyOptions":[""]}',
     "outlineSections 返回 3-6 节，每节 2-4 个关键点。",
-    "titleOptions 固定返回 3 项，且 3 个标题必须围绕同一主轴，但风格明显区分，例如观点判断型、场景问题型、结果反差型。",
-    "titleOptions.title 必须主题明确、有读者收益感，但不能承诺正文无法兑现的结果，也不能夸大事实。",
-    "titleOptions.riskHint 必须指出这个标题最需要防的风险，例如信息密度偏高、冲突感偏弱、轻微标题先行，不要写空话。",
-    "titleStrategyNotes 说明这 3 个标题分别抓住了什么价值点，以及为什么不属于标题党。",
+    "titleStrategyNotes 返回 2-4 条，说明这篇稿子的标题主轴、读者收益点、信息差方向与禁止踩的标题风险。",
     "大纲要体现论证递进，不允许各节只是并列堆料。",
     "主论点必须由系统综合选题、人设、受众和素材形成，用户补充观点只能作为校准或强调，不能直接取代主论点。",
     "openingHookOptions 给出不同开头策略，例如事实冲突、反常识判断、人物切口、问题切口。",
@@ -3359,7 +3461,7 @@ async function generateOutlinePlanning(context: GenerationContext) {
     `当前可用素材包：${getMaterialBundle(context, 8).map((item) => `${item.fragmentId}. ${item.title}（${item.usageMode}/${item.sourceType}）${item.screenshotPath ? `，原图：${item.screenshotPath}` : ""}：${item.summary}`).join("；") || "暂无已挂载素材"}`,
   ].filter(Boolean).join("\n");
 
-  return generateWithPrompt({
+  const artifact = await generateWithPrompt({
     stageCode: "outlinePlanning",
     promptId: "outline_planning",
     sceneCode: "outlinePlan",
@@ -3367,6 +3469,11 @@ async function generateOutlinePlanning(context: GenerationContext) {
     fallback,
     normalize: normalizeOutlinePayload,
     context,
+  });
+  return refreshOutlineTitleOptions({
+    context,
+    artifact,
+    fallback,
   });
 }
 
@@ -3728,6 +3835,7 @@ export async function generateArticleStageArtifact(input: {
   stageCode: ArticleArtifactStageCode;
   deepWritingPrototypeCode?: ArticlePrototypeCode | null;
   deepWritingStateVariantCode?: WritingStateVariantCode | null;
+  outlineTitleOptionsOnly?: boolean;
 }) {
   if (input.stageCode === "researchBrief") {
     const initialContext = await buildGenerationContext(input.articleId, input.userId);
@@ -3758,6 +3866,18 @@ export async function generateArticleStageArtifact(input: {
     return generateAudienceAnalysis(context);
   }
   if (input.stageCode === "outlinePlanning") {
+    if (input.outlineTitleOptionsOnly) {
+      const existingOutlineArtifact = await getArticleStageArtifact(input.articleId, input.userId, "outlinePlanning");
+      if (!existingOutlineArtifact?.payload) {
+        return generateOutlinePlanning(context);
+      }
+      return refreshOutlineTitleOptions({
+        context,
+        artifact: existingOutlineArtifact,
+        fallback: fallbackOutlinePlanning(context),
+        preserveOutlineUpdatedAt: true,
+      });
+    }
     return generateOutlinePlanning(context);
   }
   if (input.stageCode === "deepWriting") {

@@ -1,4 +1,5 @@
 import { resolveArticleOutcomeBundle } from "@/lib/article-outcomes";
+import { buildArticleOutcomeAttribution } from "@/lib/article-outcome-attribution";
 import { buildArticleScorecard } from "@/lib/article-scorecard";
 import { ensureUserSession } from "@/lib/auth";
 import { getArticleStageArtifacts } from "@/lib/article-stage-artifacts";
@@ -6,10 +7,13 @@ import { getArticleWorkflow } from "@/lib/article-workflows";
 import { getArticleNodes } from "@/lib/article-outline";
 import { fail, ok } from "@/lib/http";
 import {
-  getArticleById,
-  getArticleOutcomeBundle,
-  upsertArticleOutcome,
-  upsertArticleOutcomeSnapshot,
+    getArticleById,
+    getArticleEvidenceItems,
+    getArticleOutcomeBundle,
+    getArticleStrategyCard,
+    getArticleTopicAttribution,
+    upsertArticleOutcome,
+    upsertArticleOutcomeSnapshot,
 } from "@/lib/repositories";
 import { getActiveWritingEvalScoringProfile } from "@/lib/writing-eval";
 
@@ -136,11 +140,14 @@ export async function POST(request: Request, { params }: { params: { id: string 
   if (!windowCode) {
     return fail("windowCode 必须是 24h / 72h / 7d", 400);
   }
-  const [workflow, stageArtifacts, nodes, activeScoringProfile] = await Promise.all([
+  const [workflow, stageArtifacts, nodes, activeScoringProfile, strategyCard, evidenceItems, topicAttribution] = await Promise.all([
     getArticleWorkflow(article.id, session.userId),
     getArticleStageArtifacts(article.id, session.userId),
     getArticleNodes(article.id),
     getActiveWritingEvalScoringProfile(),
+    getArticleStrategyCard(article.id, session.userId),
+    getArticleEvidenceItems(article.id, session.userId),
+    getArticleTopicAttribution(article.id, session.userId),
   ]);
   const computedScorecard = buildArticleScorecard({
     title: article.title,
@@ -157,12 +164,20 @@ export async function POST(request: Request, { params }: { params: { id: string 
     nodes,
   });
   const writingStateFeedback = buildWritingStateFeedback(stageArtifacts);
+  const computedAttribution = buildArticleOutcomeAttribution({
+    markdownContent: article.markdown_content,
+    strategyCard,
+    evidenceItems,
+    stageArtifacts,
+    topicAttribution,
+  });
 
   await upsertArticleOutcome({
     articleId: article.id,
     userId: session.userId,
     targetPackage: body.targetPackage === undefined ? undefined : String(body.targetPackage || "").trim() || null,
     scorecard: computedScorecard,
+    attribution: computedAttribution,
     hitStatus: body.hitStatus === undefined ? undefined : normalizeHitStatus(body.hitStatus),
     reviewSummary: body.reviewSummary === undefined ? undefined : String(body.reviewSummary || "").trim() || null,
     nextAction: body.nextAction === undefined ? undefined : String(body.nextAction || "").trim() || null,

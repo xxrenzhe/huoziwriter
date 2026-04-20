@@ -13,8 +13,11 @@ const EVIDENCE_ROLE_LABELS = {
   counterEvidence: "反证/反例",
 } as const;
 
+export const EVIDENCE_HOOK_TAG_OPTIONS = ["反常识", "具身细节", "身份标签", "情绪造句"] as const;
+
 export type EvidenceResearchTag = keyof typeof EVIDENCE_RESEARCH_TAG_LABELS;
 export type EvidenceRole = keyof typeof EVIDENCE_ROLE_LABELS;
+export type EvidenceHookTag = (typeof EVIDENCE_HOOK_TAG_OPTIONS)[number];
 
 type EvidenceNodeLike = {
   id: number;
@@ -54,6 +57,14 @@ export function normalizeEvidenceRole(value: unknown): EvidenceRole {
   return getString(value) === "counterEvidence" ? "counterEvidence" : "supportingEvidence";
 }
 
+export function normalizeEvidenceHookTag(value: unknown): EvidenceHookTag | null {
+  const normalized = getString(value).replace(/^!+/, "");
+  if (normalized === "反常识" || normalized === "具身细节" || normalized === "身份标签" || normalized === "情绪造句") {
+    return normalized;
+  }
+  return null;
+}
+
 export function formatEvidenceResearchTagLabel(value: unknown) {
   const normalized = normalizeEvidenceResearchTag(value);
   return normalized ? EVIDENCE_RESEARCH_TAG_LABELS[normalized] : "";
@@ -81,6 +92,22 @@ function looksLikeTurningPoint(text: string) {
 
 function looksLikeTimeline(text: string) {
   return /(19\d{2}|20\d{2}|此前|后来|阶段|历史|演化|timeline|去年|今年|本月)/i.test(text);
+}
+
+function looksLikeCounterIntuition(text: string) {
+  return /(反常识|没想到|误区|真相|其实|却|反而|并不是|不是.+而是|以为|居然|偏偏|误读|吊诡)/i.test(text);
+}
+
+function looksLikeEmbodiedDetail(text: string) {
+  return /(周[一二三四五六日天]|早上|晚上|凌晨|\d{1,2}\s*点|工位|办公室|地铁|电梯|家里|咖啡馆|手机|微信|屏幕|弹出|盯着|坐着|走进|看到|发来|手心|后背|喉咙|呼吸|对话|现场)/i.test(text);
+}
+
+function looksLikeIdentityTag(text: string) {
+  return /(打工人|创业者|老板|管理者|产品经理|运营|程序员|开发|设计师|创作者|公众号|博主|销售|学生|宝妈|家长|职场人|应届生|中年人|个体户|自由职业)/i.test(text);
+}
+
+function looksLikeEmotionalSentence(text: string) {
+  return /(焦虑|委屈|愤怒|上头|破防|崩溃|窒息|后悔|不甘|刺痛|扎心|emo|心酸|怕|烦|爽|委屈|憋屈|无力|慌)/i.test(text);
 }
 
 export function inferEvidenceResearchTag(input: {
@@ -128,6 +155,68 @@ export function inferEvidenceRole(input: {
   return researchTag === "contradiction" ? "counterEvidence" : "supportingEvidence";
 }
 
+export function inferEvidenceHookTags(input: {
+  title?: string | null;
+  excerpt?: string | null;
+  claim?: string | null;
+  rationale?: string | null;
+  sourceUrl?: string | null;
+}) {
+  const seed = [input.title, input.excerpt, input.claim, input.rationale, input.sourceUrl].map((item) => getString(item)).filter(Boolean).join(" ");
+  if (!seed) {
+    return [] as EvidenceHookTag[];
+  }
+  const tags: EvidenceHookTag[] = [];
+  if (looksLikeCounterIntuition(seed)) tags.push("反常识");
+  if (looksLikeEmbodiedDetail(seed)) tags.push("具身细节");
+  if (looksLikeIdentityTag(seed)) tags.push("身份标签");
+  if (looksLikeEmotionalSentence(seed)) tags.push("情绪造句");
+  return tags;
+}
+
+export function inferEvidenceHookStrength(input: {
+  title?: string | null;
+  excerpt?: string | null;
+  claim?: string | null;
+  rationale?: string | null;
+  sourceUrl?: string | null;
+  hookTags?: EvidenceHookTag[] | null;
+}) {
+  const tags = Array.isArray(input.hookTags) && input.hookTags.length > 0 ? input.hookTags : inferEvidenceHookTags(input);
+  const seed = [input.title, input.excerpt, input.claim, input.rationale, input.sourceUrl].map((item) => getString(item)).filter(Boolean).join(" ");
+  let score = 0;
+  score += tags.length;
+  if (seed.length >= 80) score += 1;
+  if (looksLikeCounterIntuition(seed) && looksLikeEmotionalSentence(seed)) score += 1;
+  if (looksLikeEmbodiedDetail(seed) && looksLikeIdentityTag(seed)) score += 1;
+  return Math.max(0, Math.min(5, score));
+}
+
+export function tagEvidenceItemHooks<T extends Partial<ArticleEvidenceItem>>(item: T, taggedBy: "ai" | "author" = "ai") {
+  const hookTags = inferEvidenceHookTags({
+    title: item.title,
+    excerpt: item.excerpt,
+    claim: item.claim,
+    rationale: item.rationale,
+    sourceUrl: item.sourceUrl,
+  });
+  const hookStrength = inferEvidenceHookStrength({
+    title: item.title,
+    excerpt: item.excerpt,
+    claim: item.claim,
+    rationale: item.rationale,
+    sourceUrl: item.sourceUrl,
+    hookTags,
+  });
+  return {
+    ...item,
+    hookTags,
+    hookStrength,
+    hookTaggedBy: taggedBy,
+    hookTaggedAt: new Date().toISOString(),
+  };
+}
+
 function buildEvidenceKey(input: {
   fragmentId?: number | null;
   sourceUrl?: string | null;
@@ -147,6 +236,13 @@ function buildEvidenceKey(input: {
 export function getArticleEvidenceStats(items: Array<Partial<ArticleEvidenceItem>> | null | undefined) {
   const normalizedItems = (items ?? []).filter((item) => getString(item.excerpt) || getString(item.title));
   const uniqueSourceTypes = new Set(normalizedItems.map((item) => getString(item.sourceType) || "manual"));
+  const hookTagCoverage = Array.from(new Set(
+    normalizedItems.flatMap((item) => {
+      return Array.isArray(item.hookTags)
+        ? item.hookTags.map((tag) => normalizeEvidenceHookTag(tag)).filter(Boolean) as EvidenceHookTag[]
+        : [];
+    }),
+  ));
   const externalEvidenceCount = normalizedItems.filter((item) => getString(item.sourceUrl)).length;
   const screenshotEvidenceCount = normalizedItems.filter(
     (item) => getString(item.screenshotPath) || getString(item.sourceType) === "screenshot" || getString(item.usageMode) === "image",
@@ -168,6 +264,8 @@ export function getArticleEvidenceStats(items: Array<Partial<ArticleEvidenceItem
   return {
     itemCount: normalizedItems.length,
     uniqueSourceTypeCount: uniqueSourceTypes.size,
+    hookTagCoverage,
+    hookTagCoverageCount: hookTagCoverage.length,
     externalEvidenceCount,
     screenshotEvidenceCount,
     counterEvidenceCount,
@@ -256,6 +354,10 @@ export function buildSuggestedEvidenceItems(input: {
         usageMode: getString(fragment.usageMode) || "rewrite",
         rationale,
         researchTag,
+        hookTags: [],
+        hookStrength: null,
+        hookTaggedBy: null,
+        hookTaggedAt: null,
         evidenceRole,
         sortOrder: items.length + 1,
         createdAt: new Date().toISOString(),
@@ -326,6 +428,10 @@ export function buildSuggestedEvidenceItems(input: {
           usageMode: null,
           rationale,
           researchTag,
+          hookTags: [],
+          hookStrength: null,
+          hookTaggedBy: null,
+          hookTaggedAt: null,
           evidenceRole,
           sortOrder: items.length + 1,
           createdAt: new Date().toISOString(),

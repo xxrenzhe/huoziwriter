@@ -2,6 +2,7 @@ export type SettingsSectionKey =
   | "author"
   | "assets"
   | "sources"
+  | "intelligence-kb"
   | "publish"
   | "account"
   | "language-guard";
@@ -41,6 +42,15 @@ export const settingsSections: Array<{
     description: "系统源与自定义来源池",
     href: "/settings/sources",
     legacyAnchorId: "topic-sources",
+  },
+  {
+    key: "intelligence-kb",
+    title: "智库信源",
+    shortTitle: "智库",
+    eyebrow: "Intelligence",
+    description: "IMA 知识库绑定、默认库与健康状态",
+    href: "/settings/intelligence-kb",
+    legacyAnchorId: "ima-integration",
   },
   {
     key: "publish",

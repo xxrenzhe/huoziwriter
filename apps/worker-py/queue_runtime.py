@@ -67,6 +67,24 @@ def dispatch_writing_eval_auto_resolve(run_id: int, decision: str, reason: str) 
         return payload.get("data") if isinstance(payload, dict) else None
 
 
+def dispatch_topic_backlog_generate(payload: dict[str, Any]) -> dict[str, Any] | None:
+    base_url = os.environ.get("SCHEDULER_SERVICE_URL", "http://127.0.0.1:3000").rstrip("/")
+    token = os.environ.get("SCHEDULER_SERVICE_TOKEN") or os.environ.get("JWT_SECRET")
+    if not token:
+        return None
+    response = request_json(
+        f"{base_url}/api/service/topic-backlogs/generate-item",
+        {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        },
+        payload,
+        timeout=90,
+    )
+    data = response.get("data")
+    return data if isinstance(data, dict) else None
+
+
 def get_current_topic_sync_window(now_utc: datetime) -> datetime | None:
     now_beijing = now_utc.astimezone(BEIJING_TIMEZONE)
     if (now_beijing.hour, now_beijing.minute) not in TOPIC_SYNC_TRIGGER_SLOTS_BEIJING:
@@ -100,6 +118,23 @@ WRITING_NOVELTY_CUES = ["反常识", "真正", "少有人提", "容易忽略", "
 WRITING_TIMELINESS_CUES = ["今天", "刚刚", "最新", "本周", "这两天", "这次", "财报", "发布", "上线", "宣布", "增长", "下滑"]
 WRITING_SHAREABILITY_CUES = ["记住", "一句话", "最重要", "真正的问题", "别忽略", "值得转发", "结论是", "核心判断"]
 WRITING_FACT_UNITS = ["年", "月", "日", "%", "亿元", "万美元", "万人", "倍", "次", "小时", "分钟"]
+TITLE_FORBIDDEN_RULES = [
+    ("震惊", re.compile(r"震惊", re.IGNORECASE)),
+    ("不看后悔", re.compile(r"不看后悔", re.IGNORECASE)),
+    ("99% 的人都", re.compile(r"99%\s*的?\s*人都", re.IGNORECASE)),
+    ("太可怕了", re.compile(r"太可怕了", re.IGNORECASE)),
+    ("抽象概念堆砌", re.compile(r"关于.+的思考|.+的一些感悟|.+时代的内容创作|关于.+的复盘")),
+    ("结论提前剧透", re.compile(r"(?:\d+\s*(?:个|条|种|步)|[一二三四五六七八九十]+\s*(?:个|条|种|步)).{0,8}(?:方法|要点|建议|步骤|技巧|原则|结论)")),
+    ("自我视角倾诉", re.compile(r"^(?:我|我的|我们|咱们).*(?:复盘|总结|回顾|感悟)")),
+]
+
+
+def env_flag_enabled(name: str) -> bool:
+    return str(os.environ.get(name) or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def is_writing_eval_local_mock_enabled() -> bool:
+    return env_flag_enabled("WRITING_EVAL_LOCAL_MOCK")
 WRITING_RISK_CUES = ["据传", "内部人士", "有人说", "一定会", "绝对", "毫无疑问", "普遍认为"]
 WRITING_SERIES_CONTINUITY_CUES = ["继续", "这次", "上次", "上一轮", "之前", "后来", "延续", "再次", "仍然", "一直", "过去", "回到"]
 SUPPORTED_WRITING_SCENES = {
@@ -109,6 +144,7 @@ SUPPORTED_WRITING_SCENES = {
     "factCheck",
     "audienceProfile",
     "outlinePlan",
+    "titleOptimizer",
     "publishGuard",
 }
 DEFAULT_WRITING_EVAL_PROMPT = "你是中文爆款文章编辑。写作要短句、具体、有判断、有信息密度，避免机器腔。"
@@ -540,7 +576,7 @@ def resolve_writing_eval_prompt(connection: RuntimeConnection, version_type: str
         version = version.strip()
         if normalized_type == "fact_check" and prompt_id != "fact_check":
             raise RuntimeError(f"fact_check prompt ref invalid: {normalized_ref}")
-        if normalized_type == "title_template" and prompt_id != "outline_planning":
+        if normalized_type == "title_template" and prompt_id != "title_optimizer":
             raise RuntimeError(f"title_template prompt ref invalid: {normalized_ref}")
         if normalized_type == "lead_template" and prompt_id != "prose_polish":
             raise RuntimeError(f"lead_template prompt ref invalid: {normalized_ref}")
@@ -743,6 +779,230 @@ def markdown_to_plain_text(content: str) -> str:
     text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)
     text = re.sub(r"[*_>~-]", " ", text)
     return re.sub(r"\s+", " ", text).strip()
+
+
+def detect_title_forbidden_hits(title: str) -> list[str]:
+    normalized = str(title or "").strip()
+    hits = [label for label, pattern in TITLE_FORBIDDEN_RULES if pattern.search(normalized)]
+    return list(dict.fromkeys(hits))
+
+
+def infer_title_elements_hit(title: str) -> dict[str, bool]:
+    normalized = str(title or "").strip()
+    self_view = bool(re.search(r"^(?:我|我的|我们|咱们).*(?:复盘|总结|回顾|感悟)", normalized))
+    return {
+        "specific": bool(re.search(r"\d|%|19\d{2}|20\d{2}|AI|ChatGPT|OpenAI|微信|公众号|小红书|抖音|知乎|苹果|腾讯|字节|阿里|拼多多|特斯拉|英伟达|产品|用户|营收|利润|融资|草稿箱|封面|编辑|团队|会议室|地铁|凌晨|晚上", normalized, re.IGNORECASE)),
+        "curiosityGap": bool(re.search(r"[？?]|为什么|怎么|到底|真正|误读|背后|却|反而|不是|而是|先受益|先承压|别只|别急|结果|之后", normalized)),
+        "readerView": (not self_view) and bool(re.search(r"(你|你的|你能|你会|如何|怎么做|该不该|要不要|值得|别|先别|需要|能不能|会不会)", normalized)),
+    }
+
+
+def get_title_elements_hit_count(elements_hit: dict[str, bool]) -> int:
+    return sum(1 for key in ("specific", "curiosityGap", "readerView") if bool(elements_hit.get(key)))
+
+
+def estimate_title_open_rate_score(title: str, elements_hit: dict[str, bool] | None = None, forbidden_hits: list[str] | None = None) -> int:
+    normalized = str(title or "").strip()
+    current_elements = elements_hit or infer_title_elements_hit(normalized)
+    current_forbidden_hits = forbidden_hits or detect_title_forbidden_hits(normalized)
+    score = 26
+    score += 8 if current_elements.get("specific") else 0
+    score += 10 if current_elements.get("curiosityGap") else 0
+    score += 8 if current_elements.get("readerView") else 0
+    title_length = len(normalized)
+    if 12 <= title_length <= 26:
+        score += 4
+    elif title_length < 8 or title_length > 32:
+        score -= 4
+    if current_forbidden_hits:
+        score -= 16
+    if not current_forbidden_hits and get_title_elements_hit_count(current_elements) >= 2:
+        score = max(score, 40)
+    return max(0, min(50, int(round(score))))
+
+
+def analyze_title_signal(title: str) -> dict[str, Any]:
+    normalized = str(title or "").strip()
+    elements_hit = infer_title_elements_hit(normalized)
+    forbidden_hits = detect_title_forbidden_hits(normalized)
+    return {
+        "title": normalized,
+        "openRateScore": estimate_title_open_rate_score(normalized, elements_hit, forbidden_hits),
+        "elementsHit": elements_hit,
+        "elementsHitCount": get_title_elements_hit_count(elements_hit),
+        "forbiddenHits": forbidden_hits,
+        "forbiddenHitsCount": len(forbidden_hits),
+        "specificHitRate": 1.0 if elements_hit.get("specific") else 0.0,
+        "curiosityGapHitRate": 1.0 if elements_hit.get("curiosityGap") else 0.0,
+        "readerViewHitRate": 1.0 if elements_hit.get("readerView") else 0.0,
+        "forbiddenHitRate": 1.0 if forbidden_hits else 0.0,
+    }
+
+
+def extract_prompt_line(user_prompt: str, prefix: str) -> str:
+    lines = user_prompt.splitlines()
+    for index, line in enumerate(lines):
+        if not line.startswith(prefix):
+            continue
+        inline_value = line[len(prefix) :].strip()
+        if inline_value:
+            return inline_value
+        for follow_line in lines[index + 1 :]:
+            normalized = follow_line.strip()
+            if normalized:
+                return normalized
+    return ""
+
+
+def shorten_title_seed(text: str, fallback: str = "这次变化") -> str:
+    normalized = re.sub(r"\s+", " ", str(text or "")).strip()
+    normalized = re.sub(r"^[#>\-\*\d\.\s]+", "", normalized)
+    normalized = re.sub(r"[。！？!?].*$", "", normalized)
+    normalized = normalized.replace("：", " ").replace(":", " ").strip()
+    if not normalized:
+        normalized = fallback
+    if len(normalized) > 18:
+        normalized = normalized[:18].rstrip("，,、 ")
+    return normalized or fallback
+
+
+def build_local_mock_title_options(seed_title: str) -> str:
+    title_seed = shorten_title_seed(seed_title)
+    raw_titles = [
+        f"{title_seed}之后，为什么执行层先承压？",
+        f"{title_seed}这件事，你真正该先改哪一步？",
+        f"{title_seed}不是流量问题，而是成本重算",
+        f"{title_seed}刚有起色，为什么团队反而更焦虑？",
+        f"别急着跟进{title_seed}，先看真正的约束",
+        f"{title_seed}看上去是机会，为什么多数人会先踩坑？",
+    ]
+    title_options: list[dict[str, Any]] = []
+    for index, title in enumerate(raw_titles):
+        signal = analyze_title_signal(title)
+        title_options.append(
+            {
+                "title": title,
+                "styleLabel": ["判断型", "行动型", "反差型", "情绪型", "提醒型", "风险型"][index],
+                "angle": ["先承压", "先行动", "重算成本", "组织情绪", "先别跟", "避免踩坑"][index],
+                "reason": f"离线 mock：命中 {signal['elementsHitCount']} 项标题要素，便于校验评测汇总。",
+                "riskHint": "离线 mock 输出，仅用于本地验收。",
+                "openRateScore": signal["openRateScore"],
+                "elementsHit": signal["elementsHit"],
+                "forbiddenHits": signal["forbiddenHits"],
+                "recommendReason": "综合点击力、兑现度与禁区命中情况选择。",
+            }
+        )
+    recommended_index = 0
+    best_score = -1
+    for index, option in enumerate(title_options):
+        signal = analyze_title_signal(str(option.get("title") or ""))
+        if signal["forbiddenHitsCount"] > 0:
+            continue
+        candidate_score = signal["openRateScore"] * 10 + signal["elementsHitCount"]
+        if candidate_score > best_score:
+            best_score = candidate_score
+            recommended_index = index
+    return json.dumps(
+        {
+            "titleOptions": title_options,
+            "recommendedIndex": recommended_index,
+        },
+        ensure_ascii=False,
+    )
+
+
+def build_local_mock_judge_output(user_prompt: str) -> str:
+    title = extract_prompt_line(user_prompt, "待评测输出标题：")
+    lead = extract_prompt_line(user_prompt, "待评测输出开头：")
+    title_signal = analyze_title_signal(title)
+    lead_length = len(lead)
+    structure_score = min(9.2, 6.2 + title_signal["elementsHitCount"] * 0.7 + (0.3 if 24 <= lead_length <= 120 else 0.0))
+    headline_score = min(9.5, 5.8 + title_signal["openRateScore"] / 16.0 - title_signal["forbiddenHitsCount"] * 1.6)
+    hook_score = min(9.0, 5.9 + (0.8 if 24 <= lead_length <= 120 else 0.1) + title_signal["curiosityGapHitRate"] * 0.4)
+    payload = {
+        "scores": {
+            "styleScore": 7.1,
+            "languageScore": 7.4,
+            "densityScore": 6.8,
+            "emotionScore": 7.0,
+            "structureScore": round(structure_score, 2),
+            "topicMomentumScore": round(6.6 + title_signal["specificHitRate"] * 1.0, 2),
+            "headlineScore": round(headline_score, 2),
+            "hookScore": round(hook_score, 2),
+            "shareabilityScore": round(6.5 + title_signal["readerViewHitRate"] * 1.2, 2),
+            "readerValueScore": round(6.4 + title_signal["readerViewHitRate"] * 1.1, 2),
+            "noveltyScore": round(6.3 + title_signal["curiosityGapHitRate"] * 1.2, 2),
+            "platformFitScore": round(6.8 + (0.4 if 12 <= len(title) <= 28 else 0.0), 2),
+        },
+        "reasons": {
+            "style": "离线 mock 仅做稳定回归，不评估真实文风细节。",
+            "language": "输出格式完整，可用于校验 worker 汇总链路。",
+            "density": "标题专项实验默认保留正文，因此信息密度按中位给分。",
+            "emotion": "标题存在一定冲突感，但仍保留人工复核空间。",
+            "structure": "标题与首段结构可对齐，适合校验 title_only 实验。",
+            "topicMomentum": "标题保留主题锚点，便于观察选题动量指标。",
+            "headline": "标题三要素命中数已注入，适合检验 headline 相关回流。",
+            "hook": "首段沿用参考内容，主要验证标题改动对 hook 的影响。",
+            "shareability": "包含读者视角或提醒语气，具备基础转发动机。",
+            "readerValue": "标题保留行动或判断导向，读者收益明确。",
+            "novelty": "存在反差或疑问表达，但不追求真实最优结果。",
+            "platformFit": "长度与公众号标题常规区间接近。",
+        },
+        "problems": ["local-mock-only", "judge-scores-are-for-offline-verification"],
+        "keepRecommendation": "keep" if title_signal["forbiddenHitsCount"] == 0 and title_signal["elementsHitCount"] >= 2 else "observe",
+        "summary": "离线 mock 评审已输出稳定分数，用于验证标题指标已进入评测汇总。",
+    }
+    return json.dumps(payload, ensure_ascii=False)
+
+
+def build_local_mock_document_output(user_prompt: str) -> str:
+    topic_title = extract_prompt_line(user_prompt, "选题：") or extract_prompt_line(user_prompt, "当前标题：") or "未命名选题"
+    seed_title = extract_prompt_line(user_prompt, "当前标题：") or topic_title
+    if "固定返回 6 个 titleOptions" in user_prompt:
+        return build_local_mock_title_options(seed_title)
+    if '"rewrittenLead"' in user_prompt:
+        rewritten_lead = f"{shorten_title_seed(topic_title)}看起来像是表达问题，真正卡住的是执行顺序和判断口径。先把最容易误判的一步说清，再展开正文。"
+        return json.dumps(
+            {
+                "rewrittenLead": rewritten_lead,
+                "punchlines": ["先判断约束，再决定表达。"],
+                "rhythmAdvice": ["第一句先给冲突，第二句补收益，第三句再展开。"],
+            },
+            ensure_ascii=False,
+        )
+    if '"workingTitle"' in user_prompt and "titleOptions 固定返回 3 个标题" in user_prompt:
+        return json.dumps(
+            {
+                "workingTitle": shorten_title_seed(seed_title),
+                "titleOptions": [
+                    {"title": f"{shorten_title_seed(seed_title)}不是趋势判断，而是成本问题", "styleLabel": "判断型", "angle": "成本重算", "reason": "离线 mock", "riskHint": ""},
+                    {"title": f"{shorten_title_seed(seed_title)}为什么总在执行时翻车？", "styleLabel": "问题型", "angle": "执行落差", "reason": "离线 mock", "riskHint": ""},
+                    {"title": f"{shorten_title_seed(seed_title)}看着变好，为什么团队更焦虑？", "styleLabel": "反差型", "angle": "组织情绪", "reason": "离线 mock", "riskHint": ""},
+                ],
+                "openingHook": f"{shorten_title_seed(topic_title)}最容易被误解的，不是方向，而是执行顺序。很多人以为问题在表达，实际卡在判断。",
+                "titleStrategyNotes": ["离线 mock 输出，仅用于 worker 验收。"],
+            },
+            ensure_ascii=False,
+        )
+
+    normalized_title = shorten_title_seed(seed_title)
+    lead = f"{normalized_title}最难的不是看懂趋势，而是知道自己先动哪一步。真正的差距，往往出在判断顺序。"
+    markdown = "\n\n".join(
+        [
+            f"# {normalized_title}",
+            lead,
+            "先把问题钉死：很多看似是表达层的困境，实际来自目标、成本和节奏三件事没有排好优先级。",
+            "如果先补表达，再补判断，团队会在执行期重复返工；反过来，先把判断口径统一，内容效率才会真正起来。",
+            "这份离线 mock 正文只用于验证 worker 链路是否能稳定生成、评分并汇总标题专项指标。",
+        ]
+    )
+    return json.dumps({"title": normalized_title, "lead": lead, "markdown": markdown}, ensure_ascii=False)
+
+
+def call_local_mock_text(system_prompt: str, user_prompt: str) -> str:
+    if DEFAULT_WRITING_EVAL_JUDGE_PROMPT[:12] in system_prompt or "请作为写作评测裁判" in user_prompt:
+        return build_local_mock_judge_output(user_prompt)
+    return build_local_mock_document_output(user_prompt)
 
 
 def extract_strings(value: Any, limit: int = 10) -> list[str]:
@@ -1044,9 +1304,44 @@ def build_scene_generation_prompt(
         expected_constraints = parse_json_value(case_row.get("expected_constraints_json")) or {}
         lines = [
             "请输出 JSON，不要解释，不要 markdown 代码块。",
-            '字段：{"workingTitle":"字符串","titleOptions":[{"title":"字符串","styleLabel":"字符串","angle":"字符串","reason":"字符串","riskHint":"字符串"}],"selectionReason":"字符串"}',
+            '字段：{"titleOptions":[{"title":"字符串","styleLabel":"字符串","angle":"字符串","reason":"字符串","riskHint":"字符串","openRateScore":42,"elementsHit":{"specific":true,"curiosityGap":true,"readerView":false},"forbiddenHits":[""],"recommendReason":"字符串"}],"recommendedIndex":0}',
             "只优化标题，不改写正文和首段，不新增事实、数据、案例和承诺。",
-            "titleOptions 固定返回 3 个标题，分别体现观点判断型、问题切口型、反差结果型。",
+            "固定返回 6 个 titleOptions，recommendedIndex 取 0-5，代表唯一推荐项。",
+            "每个标题至少满足三要素里的 2 项：具体元素、好奇缺口、读者视角。",
+            "forbiddenHits 必须列出命中的禁区标签；没命中时返回空数组。",
+            "openRateScore 取 0-50；只有 forbiddenHits 为空且至少命中 2 个要素，才能进入 40 分以上区间。",
+            "标题必须可兑现，优先提升点击力、清晰度和传播性，不要标题党。",
+            f"选题：{reference_document['topic_title']}",
+            f"当前标题：{reference_document['title']}",
+            f"当前首段：{reference_document['lead']}",
+        ]
+        if style_guide:
+            lines.extend([style_guide, ""])
+        if deep_writing_guide:
+            lines.extend([deep_writing_guide, ""])
+        lines.extend(
+            [
+                "输入上下文：",
+                json.dumps(input_payload, ensure_ascii=False, indent=2),
+                "爆款目标：",
+                json.dumps(viral_targets, ensure_ascii=False, indent=2),
+                "固定约束：",
+                json.dumps(expected_constraints, ensure_ascii=False, indent=2),
+            ]
+        )
+        return "\n".join(lines).strip()
+
+    if prompt_meta["sceneCode"] == "titleOptimizer":
+        input_payload = parse_json_value(case_row.get("input_payload_json")) or {}
+        viral_targets = parse_json_value(case_row.get("viral_targets_json")) or {}
+        expected_constraints = parse_json_value(case_row.get("expected_constraints_json")) or {}
+        lines = [
+            "请输出 JSON，不要解释，不要 markdown 代码块。",
+            '字段：{"titleOptions":[{"title":"字符串","styleLabel":"字符串","angle":"字符串","reason":"字符串","riskHint":"字符串","openRateScore":42,"elementsHit":{"specific":true,"curiosityGap":true,"readerView":false},"forbiddenHits":[""],"recommendReason":"字符串"}],"recommendedIndex":0}',
+            "固定返回 6 个 titleOptions，recommendedIndex 取 0-5，代表唯一推荐项。",
+            "每个标题至少满足三要素里的 2 项：具体元素、好奇缺口、读者视角。",
+            "forbiddenHits 必须列出命中的禁区标签；没命中时返回空数组。",
+            "openRateScore 取 0-50；只有 forbiddenHits 为空且至少命中 2 个要素，才能进入 40 分以上区间。",
             "标题必须可兑现，优先提升点击力、清晰度和传播性，不要标题党。",
             f"选题：{reference_document['topic_title']}",
             f"当前标题：{reference_document['title']}",
@@ -1143,6 +1438,8 @@ def build_scene_generation_prompt(
 
 
 def call_text_model(model: str, system_prompt: str, user_prompt: str, temperature: float) -> str:
+    if is_writing_eval_local_mock_enabled():
+        return call_local_mock_text(system_prompt, user_prompt)
     provider = infer_provider(model)
     if provider == "openai":
         return call_openai_text(model, system_prompt, user_prompt, temperature)
@@ -1187,12 +1484,18 @@ def normalize_scene_generated_document(
         try:
             payload = parse_json_object(raw_text)
             title_options = payload.get("titleOptions")
+            recommended_index = payload.get("recommendedIndex")
             chosen_title = str(payload.get("workingTitle") or "").strip() or reference_document["title"]
             if isinstance(title_options, list):
-                for item in title_options:
-                    if isinstance(item, dict) and str(item.get("title") or "").strip():
-                        chosen_title = str(item.get("title") or "").strip()
-                        break
+                if isinstance(recommended_index, int) and 0 <= recommended_index < len(title_options):
+                    recommended = title_options[recommended_index]
+                    if isinstance(recommended, dict) and str(recommended.get("title") or "").strip():
+                        chosen_title = str(recommended.get("title") or "").strip()
+                if not chosen_title or chosen_title == reference_document["title"]:
+                    for item in title_options:
+                        if isinstance(item, dict) and str(item.get("title") or "").strip():
+                            chosen_title = str(item.get("title") or "").strip()
+                            break
             body_markdown = reference_document["body_markdown"].strip()
             markdown = f"# {chosen_title}\n\n{body_markdown}".strip() if body_markdown else f"# {chosen_title}\n\n{reference_document['lead']}"
             return {
@@ -1204,6 +1507,40 @@ def normalize_scene_generated_document(
             fallback = normalize_generated_document(raw_text, reference_document["title"])
             body_markdown = reference_document["body_markdown"].strip()
             title = fallback["title"].strip() or reference_document["title"]
+            markdown = f"# {title}\n\n{body_markdown}".strip() if body_markdown else f"# {title}\n\n{reference_document['lead']}"
+            return {
+                "title": title,
+                "lead": reference_document["lead"],
+                "markdown": markdown.strip(),
+            }
+
+    if prompt_meta["sceneCode"] == "titleOptimizer":
+        try:
+            payload = parse_json_object(raw_text)
+            title_options = payload.get("titleOptions")
+            recommended_index = payload.get("recommendedIndex")
+            chosen_title = reference_document["title"] or topic_title or "未命名选题"
+            if isinstance(title_options, list):
+                if isinstance(recommended_index, int) and 0 <= recommended_index < len(title_options):
+                    recommended = title_options[recommended_index]
+                    if isinstance(recommended, dict) and str(recommended.get("title") or "").strip():
+                        chosen_title = str(recommended.get("title") or "").strip()
+                if not chosen_title or chosen_title == reference_document["title"]:
+                    for item in title_options:
+                        if isinstance(item, dict) and str(item.get("title") or "").strip():
+                            chosen_title = str(item.get("title") or "").strip()
+                            break
+            body_markdown = reference_document["body_markdown"].strip()
+            markdown = f"# {chosen_title}\n\n{body_markdown}".strip() if body_markdown else f"# {chosen_title}\n\n{reference_document['lead']}"
+            return {
+                "title": chosen_title,
+                "lead": reference_document["lead"],
+                "markdown": markdown.strip(),
+            }
+        except Exception:
+            fallback = normalize_generated_document(raw_text, reference_document["title"] or topic_title)
+            body_markdown = reference_document["body_markdown"].strip()
+            title = fallback["title"].strip() or reference_document["title"] or topic_title or "未命名选题"
             markdown = f"# {title}\n\n{body_markdown}".strip() if body_markdown else f"# {title}\n\n{reference_document['lead']}"
             return {
                 "title": title,
@@ -1821,6 +2158,7 @@ def score_writing_result(
     title = generated["title"].strip()
     lead = generated["lead"].strip()
     markdown = generated["markdown"].strip()
+    title_signal = analyze_title_signal(title)
     plain_text = markdown_to_plain_text(markdown)
     combined_text = "\n".join([title, lead, plain_text]).strip()
     sentences = split_sentences(combined_text)
@@ -2098,6 +2436,13 @@ def score_writing_result(
             "sceneCode": prompt_meta["sceneCode"],
             "topicTitle": topic_title,
             "signals": {
+                "titleOpenRateScore": title_signal["openRateScore"],
+                "titleElementsHitCount": title_signal["elementsHitCount"],
+                "titleForbiddenHitsCount": title_signal["forbiddenHitsCount"],
+                "titleSpecificHitRate": title_signal["specificHitRate"],
+                "titleCuriosityGapHitRate": title_signal["curiosityGapHitRate"],
+                "titleReaderViewHitRate": title_signal["readerViewHitRate"],
+                "titleForbiddenHitRate": title_signal["forbiddenHitRate"],
                 "factSignalCount": fact_signal_count,
                 "mustUseFactCount": len(must_use_facts),
                 "mustUseFactHits": must_use_fact_hits,
@@ -2130,6 +2475,7 @@ def score_writing_result(
                 "judgeDisagreementRisk": judge_disagreement_risk,
                 "judgeReviewerModelCount": float(judge_result.get("reviewerModelCount") or 0.0),
             },
+            "generatedTitleSignal": title_signal,
             "aiNoise": ai_noise,
             "mustUseFacts": must_use_facts,
             "totalPenalties": {
@@ -2630,6 +2976,13 @@ def summarize_writing_eval_scores(results: list[dict[str, Any]], base_results: l
         ("aiNoisePenalty", "ai_noise_penalty"),
     ]
     payload_metric_paths = [
+        ("titleOpenRateScore", ("judge_payload_json", "signals", "titleOpenRateScore")),
+        ("titleElementsHitCount", ("judge_payload_json", "signals", "titleElementsHitCount")),
+        ("titleForbiddenHitsCount", ("judge_payload_json", "signals", "titleForbiddenHitsCount")),
+        ("titleSpecificHitRate", ("judge_payload_json", "signals", "titleSpecificHitRate")),
+        ("titleCuriosityGapHitRate", ("judge_payload_json", "signals", "titleCuriosityGapHitRate")),
+        ("titleReaderViewHitRate", ("judge_payload_json", "signals", "titleReaderViewHitRate")),
+        ("titleForbiddenHitRate", ("judge_payload_json", "signals", "titleForbiddenHitRate")),
         ("historicalSimilarityRisk", ("judge_payload_json", "signals", "historicalSimilarityRisk")),
         ("judgeAgreementRatio", ("judge_payload_json", "signals", "judgeAgreementRatio")),
         ("judgeScoreStddev", ("judge_payload_json", "signals", "judgeScoreStddev")),
@@ -2727,8 +3080,9 @@ def extract_candidate_and_base_score_inputs(connection: RuntimeConnection, run_i
         judge_payload = parse_payload(row.get("judge_payload_json"))
         baseline_payload = parse_payload(judge_payload.get("baseline"))
         baseline_scores = parse_payload(baseline_payload.get("scores"))
+        baseline_judge_payload = parse_payload(baseline_payload.get("judge"))
         base_result = {key: float(baseline_scores.get(key) or 0.0) for key in score_keys}
-        base_result["judge_payload_json"] = baseline_payload
+        base_result["judge_payload_json"] = baseline_judge_payload or baseline_payload
         base_results.append(base_result)
     return candidate_results, base_results
 
@@ -4627,6 +4981,29 @@ def handle_writing_eval_promote_job(connection: RuntimeConnection, payload: dict
         raise
 
 
+def handle_topic_backlog_generate_job(_connection: RuntimeConnection, payload: dict[str, Any]) -> None:
+    user_id = int(payload.get("userId") or 0)
+    backlog_id = int(payload.get("backlogId") or 0)
+    item_id = int(payload.get("itemId") or 0)
+    if user_id <= 0:
+        raise RuntimeError("topicBacklogGenerate job missing userId")
+    if backlog_id <= 0:
+        raise RuntimeError("topicBacklogGenerate job missing backlogId")
+    if item_id <= 0:
+        raise RuntimeError("topicBacklogGenerate job missing itemId")
+    result = dispatch_topic_backlog_generate(
+        {
+            "userId": user_id,
+            "backlogId": backlog_id,
+            "itemId": item_id,
+            "seriesId": payload.get("seriesId"),
+            "batchId": payload.get("batchId"),
+        }
+    )
+    if result is None:
+        raise RuntimeError("topicBacklogGenerate job missing service dispatch result")
+
+
 def handle_job(connection: RuntimeConnection, job: dict[str, Any]) -> None:
     payload = parse_payload(job.get("payload_json"))
     job_type = job["job_type"]
@@ -4658,6 +5035,9 @@ def handle_job(connection: RuntimeConnection, job: dict[str, Any]) -> None:
         return
     if job_type == "writingEvalPromote":
         handle_writing_eval_promote_job(connection, payload)
+        return
+    if job_type == "topicBacklogGenerate":
+        handle_topic_backlog_generate_job(connection, payload)
         return
 
     connection.execute(

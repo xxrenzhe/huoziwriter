@@ -26,6 +26,14 @@ export async function POST(request: Request) {
       thesis: body.thesis,
       targetAudience: body.targetAudience,
       activeStatus: body.activeStatus,
+      preHook: body.preHook,
+      postHook: body.postHook,
+      defaultLayoutTemplateId: body.defaultLayoutTemplateId,
+      platformPreference: body.platformPreference,
+      targetPackHint: body.targetPackHint,
+      defaultArchetype: body.defaultArchetype,
+      defaultDnaId: body.defaultDnaId,
+      rhythmOverride: body.rhythmOverride,
     });
     return ok(series);
   } catch (error) {

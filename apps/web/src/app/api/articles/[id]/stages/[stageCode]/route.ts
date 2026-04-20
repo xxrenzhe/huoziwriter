@@ -44,8 +44,12 @@ export async function POST(request: Request, { params }: { params: { id: string;
     }
     const requestedPrototypeCode = typeof body?.articlePrototypeCode === "string" ? body.articlePrototypeCode.trim() : "";
     const requestedStateVariantCode = typeof body?.stateVariantCode === "string" ? body.stateVariantCode.trim() : "";
+    const titleOptionsOnly = body?.titleOptionsOnly === true;
     if ((requestedPrototypeCode || requestedStateVariantCode) && params.stageCode !== "deepWriting") {
       return fail("只有深度写作阶段支持手动切换文章原型或写作状态", 400);
+    }
+    if (titleOptionsOnly && params.stageCode !== "outlinePlanning") {
+      return fail("只有大纲规划阶段支持单独重优化标题候选", 400);
     }
     if (requestedPrototypeCode && !ARTICLE_PROTOTYPE_CODES.includes(requestedPrototypeCode as ArticlePrototypeCode)) {
       return fail("不支持的文章原型", 400);
@@ -63,6 +67,7 @@ export async function POST(request: Request, { params }: { params: { id: string;
       deepWritingStateVariantCode: requestedStateVariantCode
         ? requestedStateVariantCode as WritingStateVariantCode
         : null,
+      outlineTitleOptionsOnly: titleOptionsOnly,
     });
     return ok(artifact);
   } catch (error) {

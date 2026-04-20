@@ -168,6 +168,8 @@ export function ArticleList({
     updatedAt: string;
     seriesName?: string | null;
     targetPackage?: string | null;
+    topicBacklogName?: string | null;
+    topicBacklogBatchId?: string | null;
   }>;
   emptyState?: WriterPaperEmptyStateProps;
 }) {
@@ -197,6 +199,8 @@ export function ArticleList({
           </div>
           {article.seriesName ? <div className="mt-3 text-sm text-inkSoft">归属系列：{article.seriesName}</div> : null}
           {article.targetPackage ? <div className="mt-2 text-sm text-inkSoft">目标包：{article.targetPackage}</div> : null}
+          {article.topicBacklogName ? <div className="mt-2 text-sm text-inkSoft">选题库：{article.topicBacklogName}</div> : null}
+          {article.topicBacklogBatchId ? <div className="mt-2 text-sm text-inkSoft">生成批次：{article.topicBacklogBatchId}</div> : null}
           <div className="mt-3 text-sm text-inkMuted">最后更新：{new Date(article.updatedAt).toLocaleString("zh-CN")}</div>
         </Link>
       ))}

@@ -6,17 +6,25 @@ import { getWritingStyleProfileById } from "./writing-style-profiles";
 export async function getArticleAuthoringStyleContext(userId: number, articleId?: number) {
   const defaultPersona = await assertPersonaReady(userId);
   let persona = defaultPersona;
+  let preferredWritingStyleProfileId = defaultPersona?.boundWritingStyleProfileId ?? null;
+  let preferredWritingStyleProfileName = defaultPersona?.boundWritingStyleProfileName ?? null;
   if (articleId) {
     const article = await getArticleById(articleId, userId);
     if (!article) {
       throw new Error("稿件不存在");
     }
     if (!article.series_id) {
-      return buildArticleAuthoringStyleContext(defaultPersona, userId);
+      return buildArticleAuthoringStyleContext(defaultPersona, userId, {
+        preferredWritingStyleProfileId,
+        preferredWritingStyleProfileName,
+      });
     }
     const series = await getSeriesById(userId, article.series_id);
     if (!series) {
-      return buildArticleAuthoringStyleContext(defaultPersona, userId);
+      return buildArticleAuthoringStyleContext(defaultPersona, userId, {
+        preferredWritingStyleProfileId,
+        preferredWritingStyleProfileName,
+      });
     }
     persona = {
       id: series.personaId,
@@ -36,17 +44,35 @@ export async function getArticleAuthoringStyleContext(userId: number, articleId?
       createdAt: series.createdAt,
       updatedAt: series.updatedAt,
     };
+    preferredWritingStyleProfileId = series.defaultDnaId ?? series.boundWritingStyleProfileId ?? null;
+    preferredWritingStyleProfileName =
+      series.defaultDnaId != null
+        ? `系列默认文风 #${series.defaultDnaId}`
+        : series.boundWritingStyleProfileName ?? null;
   }
-  return buildArticleAuthoringStyleContext(persona, userId);
+  return buildArticleAuthoringStyleContext(persona, userId, {
+    preferredWritingStyleProfileId,
+    preferredWritingStyleProfileName,
+  });
 }
 
 async function buildArticleAuthoringStyleContext(
   persona: Awaited<ReturnType<typeof assertPersonaReady>>,
   userId: number,
+  options?: {
+    preferredWritingStyleProfileId?: number | null;
+    preferredWritingStyleProfileName?: string | null;
+  },
 ) {
-  const writingStyleProfile = persona?.boundWritingStyleProfileId
-    ? await getWritingStyleProfileById(userId, persona.boundWritingStyleProfileId)
+  const preferredWritingStyleProfileId = options?.preferredWritingStyleProfileId ?? persona?.boundWritingStyleProfileId ?? null;
+  const writingStyleProfile = preferredWritingStyleProfileId
+    ? await getWritingStyleProfileById(userId, preferredWritingStyleProfileId)
     : null;
+  const preferredWritingStyleProfileName =
+    writingStyleProfile?.name
+    ?? options?.preferredWritingStyleProfileName
+    ?? persona?.boundWritingStyleProfileName
+    ?? null;
 
   return {
     persona: persona
@@ -60,7 +86,7 @@ async function buildArticleAuthoringStyleContext(
           toneConstraints: persona.toneConstraints,
           audienceHints: persona.audienceHints,
           sourceMode: persona.sourceMode,
-          boundWritingStyleProfileName: persona.boundWritingStyleProfileName,
+          boundWritingStyleProfileName: preferredWritingStyleProfileName,
         }
       : null,
     writingStyleProfile: writingStyleProfile

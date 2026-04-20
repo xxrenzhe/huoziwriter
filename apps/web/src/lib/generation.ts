@@ -1,4 +1,5 @@
 import { generateSceneText } from "./ai-gateway";
+import { getMergedArchetypeRhythmHints } from "./archetype-rhythm";
 import { loadPromptWithMeta } from "./prompt-loader";
 import {
   ARTICLE_PROTOTYPE_CODES,
@@ -88,6 +89,8 @@ type WritingStyleProfileContext = {
 };
 
 type StrategyCardContext = {
+  archetype?: "opinion" | "case" | "howto" | "hotTake" | "phenomenon" | null;
+  mainstreamBelief?: string | null;
   targetReader?: string | null;
   coreAssertion?: string | null;
   whyNow?: string | null;
@@ -103,6 +106,13 @@ type SeriesInsightContext = {
   commonTerms?: string[];
   coreStances?: string[];
   whyNow?: string[];
+  preHook?: string | null;
+  postHook?: string | null;
+  platformPreference?: string | null;
+  targetPackHint?: string | null;
+  defaultArchetype?: string | null;
+  defaultLayoutTemplateId?: string | null;
+  rhythmOverride?: Record<string, unknown> | null;
 };
 
 type ResearchBriefContext = {
@@ -198,6 +208,25 @@ function buildTagText(tags: string[] = []) {
 
 function dedupeText(values: Array<string | null | undefined>, limit: number) {
   return Array.from(new Set(values.map((item) => String(item || "").trim()).filter(Boolean))).slice(0, limit);
+}
+
+function resolveGenerationRhythmHints(input: {
+  strategyCard?: StrategyCardContext | null;
+  seriesInsight?: SeriesInsightContext | null;
+}) {
+  const archetype =
+    input.strategyCard?.archetype
+    ?? (input.seriesInsight?.defaultArchetype === "opinion"
+      || input.seriesInsight?.defaultArchetype === "case"
+      || input.seriesInsight?.defaultArchetype === "howto"
+      || input.seriesInsight?.defaultArchetype === "hotTake"
+      || input.seriesInsight?.defaultArchetype === "phenomenon"
+        ? input.seriesInsight.defaultArchetype
+        : null);
+  return getMergedArchetypeRhythmHints({
+    archetype,
+    override: input.seriesInsight?.rhythmOverride ?? null,
+  });
 }
 
 function splitParagraphForFallback(text: string) {
@@ -580,6 +609,21 @@ function buildResearchGuide(input: {
   return lines.length ? ["请优先遵守以下研究层约束：", ...lines].join("\n") : "";
 }
 
+function buildSeriesRuntimeGuide(seriesInsight?: SeriesInsightContext | null) {
+  if (!seriesInsight) {
+    return "";
+  }
+  const lines = [
+    seriesInsight.preHook ? `系列前钩子：${String(seriesInsight.preHook).trim()}` : null,
+    seriesInsight.postHook ? `系列后钩子：${String(seriesInsight.postHook).trim()}` : null,
+    seriesInsight.platformPreference ? `平台偏好：${String(seriesInsight.platformPreference).trim()}` : null,
+    seriesInsight.targetPackHint ? `系列默认目标包：${String(seriesInsight.targetPackHint).trim()}` : null,
+    seriesInsight.defaultArchetype ? `系列默认原型：${String(seriesInsight.defaultArchetype).trim()}` : null,
+    seriesInsight.defaultLayoutTemplateId ? `系列默认排版模板：${String(seriesInsight.defaultLayoutTemplateId).trim()}` : null,
+  ].filter(Boolean);
+  return lines.length ? ["如果不与当前正文冲突，请优先沿用以下系列运行时默认值：", ...lines].join("\n") : "";
+}
+
 function buildDeepWritingBehaviorGuide(deepWritingPayload?: Record<string, unknown> | null) {
   const payload = getRecord(deepWritingPayload);
   if (!payload) {
@@ -646,6 +690,10 @@ export async function buildGeneratedArticleDraft(input: {
     const value = getString(input.deepWritingPayload?.stateVariantCode);
     return WRITING_STATE_VARIANT_CODES.includes(value as WritingStateVariantCode) ? value as WritingStateVariantCode : null;
   })();
+  const archetypeRhythmHints = resolveGenerationRhythmHints({
+    strategyCard: input.strategyCard,
+    seriesInsight: input.seriesInsight,
+  });
   const writingState = buildWritingStateKernel({
     title: input.title,
     humanSignals: input.humanSignals,
@@ -653,6 +701,7 @@ export async function buildGeneratedArticleDraft(input: {
     seriesInsight: input.seriesInsight,
     researchBrief: input.researchBrief,
     strategyCard: input.strategyCard,
+    archetypeRhythmHints,
     preferredPrototypeCode,
     preferredVariantCode: preferredStateVariantCode,
   });
@@ -669,6 +718,7 @@ export async function buildGeneratedArticleDraft(input: {
     strategyCard: input.strategyCard,
     seriesInsight: input.seriesInsight,
   });
+  const seriesRuntimeGuide = buildSeriesRuntimeGuide(input.seriesInsight);
   const deepWritingGuide = input.deepWritingGuide?.trim() ? input.deepWritingGuide.trim() : "";
 
   const writerUserPrompt = [
@@ -685,6 +735,7 @@ export async function buildGeneratedArticleDraft(input: {
     imageGuide,
     historyGuide,
     researchGuide,
+    seriesRuntimeGuide,
     deepWritingGuide ? `执行卡主线提醒（不要机械照抄、不要逐节翻译）：\n${deepWritingGuide}` : "",
     "请基于以下事实素材输出一篇中文 Markdown 正文。",
     "正文优先调用研究卡片里的时间节点、对比关系和交汇洞察，再决定怎么组织普通素材。",
@@ -797,6 +848,10 @@ export async function buildGeneratedOpeningPreview(input: {
     const value = getString(input.deepWritingPayload?.stateVariantCode);
     return WRITING_STATE_VARIANT_CODES.includes(value as WritingStateVariantCode) ? value as WritingStateVariantCode : null;
   })();
+  const archetypeRhythmHints = resolveGenerationRhythmHints({
+    strategyCard: input.strategyCard,
+    seriesInsight: input.seriesInsight,
+  });
   const writingState = buildWritingStateKernel({
     title: input.title,
     humanSignals: input.humanSignals,
@@ -804,6 +859,7 @@ export async function buildGeneratedOpeningPreview(input: {
     seriesInsight: input.seriesInsight,
     researchBrief: input.researchBrief,
     strategyCard: input.strategyCard,
+    archetypeRhythmHints,
     preferredPrototypeCode,
     preferredVariantCode: preferredStateVariantCode,
   });
@@ -820,6 +876,7 @@ export async function buildGeneratedOpeningPreview(input: {
     strategyCard: input.strategyCard,
     seriesInsight: input.seriesInsight,
   });
+  const seriesRuntimeGuide = buildSeriesRuntimeGuide(input.seriesInsight);
   const deepWritingGuide = input.deepWritingGuide?.trim() ? input.deepWritingGuide.trim() : "";
 
   const writerUserPrompt = [
@@ -836,6 +893,7 @@ export async function buildGeneratedOpeningPreview(input: {
     imageGuide,
     historyGuide,
     researchGuide,
+    seriesRuntimeGuide,
     deepWritingGuide ? `执行卡提醒：\n${deepWritingGuide}` : "",
     "请只输出这篇文章的开头预览，不要写完整正文。",
     "长度控制在 1-2 段、120-220 字。",
@@ -982,6 +1040,10 @@ export async function buildCommandRewrite(input: {
     const value = getString(input.deepWritingPayload?.stateVariantCode);
     return WRITING_STATE_VARIANT_CODES.includes(value as WritingStateVariantCode) ? value as WritingStateVariantCode : null;
   })();
+  const archetypeRhythmHints = resolveGenerationRhythmHints({
+    strategyCard: input.strategyCard,
+    seriesInsight: input.seriesInsight,
+  });
   const writingState = buildWritingStateKernel({
     title: input.title,
     markdownContent: input.markdownContent,
@@ -990,6 +1052,7 @@ export async function buildCommandRewrite(input: {
     seriesInsight: input.seriesInsight,
     researchBrief: input.researchBrief,
     strategyCard: input.strategyCard,
+    archetypeRhythmHints,
     preferredPrototypeCode,
     preferredVariantCode: preferredStateVariantCode,
   });
@@ -1004,6 +1067,7 @@ export async function buildCommandRewrite(input: {
     strategyCard: input.strategyCard,
     seriesInsight: input.seriesInsight,
   });
+  const seriesRuntimeGuide = buildSeriesRuntimeGuide(input.seriesInsight);
 
   const writerUserPrompt = [
     `标题：${input.title}`,
@@ -1018,6 +1082,7 @@ export async function buildCommandRewrite(input: {
     outlineGuide ? `主线提醒（只作为主线提醒，不要写成编号施工图）：\n${outlineGuide}` : "",
     knowledgeGuide,
     researchGuide,
+    seriesRuntimeGuide,
     "",
     "请基于当前正文执行改写命令，输出完整 Markdown 正文。",
     "优先遵守人类信号、写作状态和 deepWriting 行为约束，再参考大纲与知识卡。",
@@ -1272,6 +1337,10 @@ export async function buildFactCheckTargetedRewrite(input: {
     const value = getString(input.deepWritingPayload?.stateVariantCode);
     return WRITING_STATE_VARIANT_CODES.includes(value as WritingStateVariantCode) ? value as WritingStateVariantCode : null;
   })();
+  const archetypeRhythmHints = resolveGenerationRhythmHints({
+    strategyCard: input.strategyCard,
+    seriesInsight: input.seriesInsight,
+  });
   const writingState = buildWritingStateKernel({
     title: input.title,
     markdownContent: input.markdownContent,
@@ -1280,6 +1349,7 @@ export async function buildFactCheckTargetedRewrite(input: {
     seriesInsight: input.seriesInsight,
     researchBrief: input.researchBrief,
     strategyCard: input.strategyCard,
+    archetypeRhythmHints,
     preferredPrototypeCode,
     preferredVariantCode: preferredStateVariantCode,
   });
@@ -1293,6 +1363,7 @@ export async function buildFactCheckTargetedRewrite(input: {
     researchBrief: input.researchBrief,
     seriesInsight: input.seriesInsight,
   });
+  const seriesRuntimeGuide = buildSeriesRuntimeGuide(input.seriesInsight);
   const evidenceGuide = riskyChecks
     .map((check, index) => {
       const evidenceCard = input.evidenceCards?.find((item) => String(item.claim || "").trim() === String(check.claim || "").trim());
@@ -1335,6 +1406,7 @@ export async function buildFactCheckTargetedRewrite(input: {
     outlineGuide ? `主线提醒（只作为主线提醒，不要写成编号施工图）：\n${outlineGuide}` : "",
     knowledgeGuide,
     researchGuide,
+    seriesRuntimeGuide,
     "请只针对下列高风险表述做最小必要修订，返回 JSON，不要返回全文，不要解释。",
     '字段：{"rewrites":[{"original":"原句或原表述","revised":"修订后的句子"}]}',
     "要求：",
@@ -1483,6 +1555,10 @@ export async function buildProsePolishTargetedRewrite(input: {
     const value = getString(input.deepWritingPayload?.stateVariantCode);
     return WRITING_STATE_VARIANT_CODES.includes(value as WritingStateVariantCode) ? value as WritingStateVariantCode : null;
   })();
+  const archetypeRhythmHints = resolveGenerationRhythmHints({
+    strategyCard: input.strategyCard,
+    seriesInsight: input.seriesInsight,
+  });
   const writingState = buildWritingStateKernel({
     title: input.title,
     markdownContent: input.markdownContent,
@@ -1491,6 +1567,7 @@ export async function buildProsePolishTargetedRewrite(input: {
     seriesInsight: input.seriesInsight,
     researchBrief: input.researchBrief,
     strategyCard: input.strategyCard,
+    archetypeRhythmHints,
     preferredPrototypeCode,
     preferredVariantCode: preferredStateVariantCode,
   });
@@ -1504,6 +1581,7 @@ export async function buildProsePolishTargetedRewrite(input: {
     researchBrief: input.researchBrief,
     seriesInsight: input.seriesInsight,
   });
+  const seriesRuntimeGuide = buildSeriesRuntimeGuide(input.seriesInsight);
   const punchlineText = (input.punchlines || []).map((item) => String(item || "").trim()).filter(Boolean).slice(0, 4);
   const rhythmAdviceText = (input.rhythmAdvice || []).map((item) => String(item || "").trim()).filter(Boolean).slice(0, 4);
 
@@ -1519,6 +1597,7 @@ export async function buildProsePolishTargetedRewrite(input: {
     outlineGuide ? `主线提醒（只作为主线提醒，不要写成编号施工图）：\n${outlineGuide}` : "",
     knowledgeGuide,
     researchGuide,
+    seriesRuntimeGuide,
     "请只针对下列文笔问题做局部修订，返回 JSON，不要返回全文，不要解释。",
     '字段：{"rewrites":[{"original":"原句或原段","revised":"修订后的句子或段落"}]}',
     "要求：",

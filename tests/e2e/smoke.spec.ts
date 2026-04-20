@@ -11,6 +11,7 @@ import { assertFragmentQuota, getImageAssetStorageQuotaStatus } from "../../apps
 import { evaluateArticlePublishGuard } from "../../apps/web/src/lib/publish-guard";
 import { createFragment, getWechatConnections, queueJob, upsertWechatConnection } from "../../apps/web/src/lib/repositories";
 import { ensureExtendedProductSchema } from "../../apps/web/src/lib/schema-bootstrap";
+import { ensureUsageCounterSchema } from "../../apps/web/src/lib/usage";
 import { encryptWechatConnection } from "../../apps/web/src/lib/wechat";
 import { getArticleAuthoringStyleContext } from "../../apps/web/src/lib/article-authoring-style-context";
 
@@ -341,6 +342,80 @@ async function ensureMockImageEngine(baseURL: string, request: import("@playwrig
     },
   });
   expect(response.ok()).toBeTruthy();
+}
+
+async function ensureMockImaConnection(
+  baseURL: string,
+  request: import("@playwright/test").APIRequestContext,
+  cookie: string,
+) {
+  const label = `E2E IMA ${Date.now()}`;
+  const response = await request.post(`${baseURL}/api/settings/ima-connections`, {
+    headers: { Cookie: cookie },
+    data: {
+      label,
+      clientId: "mock-client-id",
+      apiKey: "mock-api-key",
+    },
+  });
+  expect(response.ok()).toBeTruthy();
+  const json = await response.json();
+  expect(json.success).toBe(true);
+  expect(String(json.data?.status || "")).toBe("valid");
+  expect(Array.isArray(json.data?.knowledgeBases)).toBeTruthy();
+  expect((json.data?.knowledgeBases as Array<unknown>).length).toBeGreaterThan(0);
+
+  const listed = await request.get(`${baseURL}/api/settings/ima-connections`, {
+    headers: { Cookie: cookie },
+  });
+  expect(listed.ok()).toBeTruthy();
+  const listedJson = await listed.json();
+  const connections = Array.isArray(listedJson.data?.connections) ? listedJson.data.connections : [];
+  const created = connections.find((item: { label?: string }) => item.label === label) ?? connections[0];
+  expect(Number(created?.id || 0)).toBeGreaterThan(0);
+  return created;
+}
+
+async function updateImaConnectionForTest(input: {
+  connectionId: number;
+  userId: number;
+  status: "valid" | "invalid";
+  lastError?: string | null;
+}) {
+  await ensureExtendedProductSchema();
+  const db = getDatabase();
+  const now = new Date().toISOString();
+  await db.exec(
+    `UPDATE ima_connections
+     SET status = ?, last_error = ?, updated_at = ?
+     WHERE id = ? AND user_id = ?`,
+    [input.status, input.lastError ?? null, now, input.connectionId, input.userId],
+  );
+}
+
+async function setUsageCounterForTest(input: {
+  userId: number;
+  counterKey: string;
+  value: number;
+  counterDate?: string;
+}) {
+  await ensureUsageCounterSchema();
+  const db = getDatabase();
+  const now = new Date().toISOString();
+  const counterDate = input.counterDate ?? now.slice(0, 10);
+  const existing = await db.queryOne<{ id: number }>(
+    "SELECT id FROM usage_counters WHERE user_id = ? AND counter_key = ? AND counter_date = ?",
+    [input.userId, input.counterKey, counterDate],
+  );
+  if (existing) {
+    await db.exec("UPDATE usage_counters SET value = ?, updated_at = ? WHERE id = ?", [input.value, now, existing.id]);
+    return;
+  }
+  await db.exec(
+    `INSERT INTO usage_counters (user_id, counter_key, counter_date, value, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [input.userId, input.counterKey, counterDate, input.value, now, now],
+  );
 }
 
 async function ensureMockWechatConnection(baseURL: string, request: import("@playwright/test").APIRequestContext, cookie: string) {
@@ -2131,6 +2206,144 @@ test("outline planning emits research backbone anchors from research brief", asy
   ).toBeTruthy();
 });
 
+test("outline planning expands title options to six audited candidates and can refresh titles without changing structure", async ({ request, baseURL }) => {
+  const cookie = await loginAsAdmin(baseURL!, request);
+  await ensurePersona(baseURL!, request, cookie);
+
+  const { articleId } = await createArticleForTest(baseURL!, request, cookie, {
+    title: "E2E 标题优化器",
+  });
+
+  const savedDraft = await request.put(`${baseURL}/api/articles/${articleId}/draft`, {
+    headers: { Cookie: cookie },
+    data: {
+      title: "E2E 标题优化器",
+      markdownContent: [
+        "# E2E 标题优化器",
+        "",
+        "周二晚上，内容团队又在草稿箱前返工了一次。",
+        "",
+        "真正的问题不是谁写得慢，而是谁在最后一公里才发现标题和结构对不上。",
+      ].join("\n"),
+    },
+  });
+  expect(savedDraft.ok()).toBeTruthy();
+
+  const outline = await request.post(`${baseURL}/api/articles/${articleId}/stages/outlinePlanning`, {
+    headers: { Cookie: cookie },
+  });
+  expect(outline.ok()).toBeTruthy();
+  const outlineJson = await outline.json();
+  const titleOptions = outlineJson.data.payload?.titleOptions as Array<Record<string, unknown>>;
+  expect(Array.isArray(titleOptions)).toBeTruthy();
+  expect(titleOptions).toHaveLength(6);
+  expect(titleOptions.filter((item) => Boolean(item.isRecommended))).toHaveLength(1);
+  for (const item of titleOptions) {
+    expect(typeof item.title).toBe("string");
+    expect(typeof item.openRateScore).toBe("number");
+    expect(Number(item.openRateScore)).toBeGreaterThanOrEqual(0);
+    expect(Number(item.openRateScore)).toBeLessThanOrEqual(50);
+    expect(typeof item.recommendReason).toBe("string");
+    expect(typeof item.elementsHit).toBe("object");
+    expect(typeof (item.elementsHit as Record<string, unknown>).specific).toBe("boolean");
+    expect(typeof (item.elementsHit as Record<string, unknown>).curiosityGap).toBe("boolean");
+    expect(typeof (item.elementsHit as Record<string, unknown>).readerView).toBe("boolean");
+    expect(Array.isArray(item.forbiddenHits)).toBeTruthy();
+  }
+
+  const originalSections = JSON.stringify(outlineJson.data.payload?.outlineSections || []);
+  const originalOutlineUpdatedAt = String(outlineJson.data.payload?.outlineUpdatedAt || "");
+  const originalTitleAuditedAt = String(outlineJson.data.payload?.titleAuditedAt || "");
+  expect(originalOutlineUpdatedAt).not.toBe("");
+  expect(originalTitleAuditedAt).not.toBe("");
+
+  const refreshedTitles = await request.post(`${baseURL}/api/articles/${articleId}/stages/outlinePlanning`, {
+    headers: { Cookie: cookie },
+    data: {
+      titleOptionsOnly: true,
+    },
+  });
+  expect(refreshedTitles.ok()).toBeTruthy();
+  const refreshedJson = await refreshedTitles.json();
+  expect(Array.isArray(refreshedJson.data.payload?.titleOptions)).toBeTruthy();
+  expect(refreshedJson.data.payload?.titleOptions).toHaveLength(6);
+  expect(JSON.stringify(refreshedJson.data.payload?.outlineSections || [])).toBe(originalSections);
+  expect(String(refreshedJson.data.payload?.outlineUpdatedAt || "")).toBe(originalOutlineUpdatedAt);
+  expect(Date.parse(String(refreshedJson.data.payload?.titleAuditedAt || ""))).toBeGreaterThanOrEqual(Date.parse(originalTitleAuditedAt));
+});
+
+test("prose polish workspace can regenerate six titles without changing outline structure", async ({ page, request, baseURL }) => {
+  const cookie = await loginAsAdmin(baseURL!, request);
+  await ensurePersona(baseURL!, request, cookie);
+
+  const { articleId } = await createArticleForTest(baseURL!, request, cookie, {
+    title: "E2E 润色阶段标题重生成",
+  });
+
+  const savedDraft = await request.put(`${baseURL}/api/articles/${articleId}/draft`, {
+    headers: { Cookie: cookie },
+    data: {
+      title: "E2E 润色阶段标题重生成",
+      markdownContent: [
+        "# E2E 润色阶段标题重生成",
+        "",
+        "周三晚上，编辑和作者又在标题上来回改了三轮。",
+        "",
+        "真正拖慢进度的不是不会写，而是总在润色阶段才发现标题的兑现度不够。",
+      ].join("\n"),
+    },
+  });
+  expect(savedDraft.ok()).toBeTruthy();
+
+  const outline = await request.post(`${baseURL}/api/articles/${articleId}/stages/outlinePlanning`, {
+    headers: { Cookie: cookie },
+  });
+  expect(outline.ok()).toBeTruthy();
+  const outlineJson = await outline.json();
+  const originalSections = JSON.stringify(outlineJson.data.payload?.outlineSections || []);
+  const originalTitleAuditedAt = String(outlineJson.data.payload?.titleAuditedAt || "");
+  expect(originalTitleAuditedAt).not.toBe("");
+
+  const setProsePolish = await request.patch(`${baseURL}/api/articles/${articleId}/workflow`, {
+    headers: { Cookie: cookie },
+    data: {
+      stageCode: "prosePolish",
+      action: "set",
+    },
+  });
+  expect(setProsePolish.ok()).toBeTruthy();
+
+  const prosePolish = await request.post(`${baseURL}/api/articles/${articleId}/stages/prosePolish`, {
+    headers: { Cookie: cookie },
+  });
+  expect(prosePolish.ok()).toBeTruthy();
+
+  await seedPageSession(page, baseURL!, cookie);
+  await page.goto(`${baseURL}/articles/${articleId}`);
+  await page.getByRole("button", { name: "阶段工作台" }).click();
+  await expect(page.getByText("标题复检")).toBeVisible();
+  await expect(page.getByRole("button", { name: "重生成 6 标题" })).toBeVisible();
+
+  const refreshResponsePromise = page.waitForResponse((response) =>
+    response.url().includes(`/api/articles/${articleId}/stages/outlinePlanning`)
+    && response.request().method() === "POST",
+  );
+  await page.getByRole("button", { name: "重生成 6 标题" }).click();
+  const refreshResponse = await refreshResponsePromise;
+  expect(refreshResponse.ok()).toBeTruthy();
+  await expect(page.getByText("标题候选已重新优化，当前只刷新标题体检结果，不会改动大纲结构。")).toBeVisible();
+
+  const refreshedOutline = await request.get(`${baseURL}/api/articles/${articleId}/stages/outlinePlanning`, {
+    headers: { Cookie: cookie },
+  });
+  expect(refreshedOutline.ok()).toBeTruthy();
+  const refreshedOutlineJson = await refreshedOutline.json();
+  expect(Array.isArray(refreshedOutlineJson.data?.payload?.titleOptions)).toBeTruthy();
+  expect(refreshedOutlineJson.data.payload?.titleOptions).toHaveLength(6);
+  expect(JSON.stringify(refreshedOutlineJson.data.payload?.outlineSections || [])).toBe(originalSections);
+  expect(Date.parse(String(refreshedOutlineJson.data.payload?.titleAuditedAt || ""))).toBeGreaterThanOrEqual(Date.parse(originalTitleAuditedAt));
+});
+
 test("deep writing execution card exposes research focus and lens from research brief", async ({ request, baseURL }) => {
   const cookie = await loginAsAdmin(baseURL!, request);
   await ensurePersona(baseURL!, request, cookie);
@@ -2728,6 +2941,69 @@ test("publish guard warns on one-sided evidence and clears after counter evidenc
   const counterPreviewJson = await counterPreview.json();
   checks = counterPreviewJson.data.publishGuard.checks as Array<{ key: string; status: string }>;
   expect(checks.find((item) => item.key === "counterEvidence")?.status).toBe("passed");
+});
+
+test("publish guard blocks forbidden titles and warns on weak title element coverage", async ({ request, baseURL }) => {
+  const cookie = await loginAsAdmin(baseURL!, request);
+  await ensurePersona(baseURL!, request, cookie);
+
+  const { articleId } = await createPublishReadyArticle(baseURL!, request, cookie, {
+    title: "E2E 标题体检守卫",
+  });
+
+  const forbiddenTitleSaved = await request.patch(`${baseURL}/api/articles/${articleId}/stages/outlinePlanning`, {
+    headers: { Cookie: cookie },
+    data: {
+      payloadPatch: {
+        selection: {
+          selectedTitle: "震惊：不看后悔的 5 个方法",
+          selectedTitleStyle: "标题党型",
+          selectedOpeningHook: "先抛结论再解释成本。",
+          selectedTargetEmotion: "建立确定感。",
+          selectedEndingStrategy: "结尾落到发布动作。",
+        },
+        titleAuditedAt: new Date().toISOString(),
+      },
+    },
+  });
+  expect(forbiddenTitleSaved.ok()).toBeTruthy();
+
+  const forbiddenPreview = await request.post(`${baseURL}/api/articles/${articleId}/publish-preview`, {
+    headers: { Cookie: cookie },
+    data: {},
+  });
+  expect(forbiddenPreview.ok()).toBeTruthy();
+  const forbiddenPreviewJson = await forbiddenPreview.json();
+  let checks = forbiddenPreviewJson.data.publishGuard.checks as Array<{ key: string; status: string; detail: string }>;
+  expect(checks.find((item) => item.key === "title_forbidden")?.status).toBe("blocked");
+  expect(String(checks.find((item) => item.key === "title_forbidden")?.detail || "")).toContain("禁止清单");
+
+  const weakTitleSaved = await request.patch(`${baseURL}/api/articles/${articleId}/stages/outlinePlanning`, {
+    headers: { Cookie: cookie },
+    data: {
+      payloadPatch: {
+        selection: {
+          selectedTitle: "为什么总有人在发布前返工",
+          selectedTitleStyle: "问题切口型",
+          selectedOpeningHook: "先抛结论再解释成本。",
+          selectedTargetEmotion: "建立确定感。",
+          selectedEndingStrategy: "结尾落到发布动作。",
+        },
+        titleAuditedAt: new Date().toISOString(),
+      },
+    },
+  });
+  expect(weakTitleSaved.ok()).toBeTruthy();
+
+  const weakPreview = await request.post(`${baseURL}/api/articles/${articleId}/publish-preview`, {
+    headers: { Cookie: cookie },
+    data: {},
+  });
+  expect(weakPreview.ok()).toBeTruthy();
+  const weakPreviewJson = await weakPreview.json();
+  checks = weakPreviewJson.data.publishGuard.checks as Array<{ key: string; status: string }>;
+  expect(checks.find((item) => item.key === "title_forbidden")?.status).toBe("passed");
+  expect(checks.find((item) => item.key === "title_elements")?.status).toBe("warning");
 });
 
 test("research evidence apply endpoint can clear counter evidence guard warning", async ({ request, baseURL }) => {
@@ -3491,6 +3767,180 @@ test("settings page exposes personal asset and connection entries", async ({ req
   expect(settingsHtml).toContain("发布连接");
   expect(settingsHtml).toContain("E2E 碎片资产");
   expect(settingsHtml).toContain(String(connection.accountName || "Mock 微信公众号"));
+});
+
+test("IMA integration supports settings binding, evidence search and fission fallback", async ({ page, request, baseURL }) => {
+  const adminCookie = await loginAsAdmin(baseURL!, request);
+  const user = await createE2EUser(baseURL!, request, adminCookie, { planCode: "pro" });
+  const cookie = await loginWithPassword(baseURL!, request, {
+    username: user.username,
+    password: user.password,
+  });
+  await ensurePersona(baseURL!, request, cookie);
+
+  const beforeSettings = await request.get(`${baseURL}/settings/intelligence-kb`, {
+    headers: { Cookie: cookie },
+  });
+  expect(beforeSettings.ok()).toBeTruthy();
+  const beforeHtml = await beforeSettings.text();
+  expect(beforeHtml).toContain("把 IMA 知识库作为高价值信源接进既有工作流");
+
+  const connection = await ensureMockImaConnection(baseURL!, request, cookie);
+  const knowledgeBases = Array.isArray(connection.knowledgeBases) ? connection.knowledgeBases : [];
+  expect(knowledgeBases.length).toBeGreaterThan(0);
+  const defaultKb = knowledgeBases.find((item: { isDefault?: boolean }) => Boolean(item.isDefault)) ?? knowledgeBases[0];
+  expect(String(defaultKb?.kbId || "")).not.toBe("");
+
+  const afterSettings = await request.get(`${baseURL}/settings/intelligence-kb`, {
+    headers: { Cookie: cookie },
+  });
+  expect(afterSettings.ok()).toBeTruthy();
+  const afterHtml = await afterSettings.text();
+  expect(afterHtml).toContain(String(connection.label || ""));
+  expect(afterHtml).toContain(String(defaultKb?.kbName || ""));
+
+  const { articleId } = await createArticleForTest(baseURL!, request, cookie, {
+    title: "E2E IMA 证据导入验证",
+  });
+  const evidenceSearch = await request.post(`${baseURL}/api/articles/${articleId}/evidence/ima-search`, {
+    headers: { Cookie: cookie },
+    data: {
+      query: "35岁危机",
+      kbId: defaultKb.kbId,
+    },
+  });
+  expect(evidenceSearch.ok()).toBeTruthy();
+  const evidenceJson = await evidenceSearch.json();
+  expect(Array.isArray(evidenceJson.data?.items)).toBeTruthy();
+  expect((evidenceJson.data.items as Array<unknown>).length).toBeGreaterThan(0);
+  expect(String(evidenceJson.data.items[0].title || "")).toContain("35岁危机");
+
+  const warroom = await request.get(`${baseURL}/api/warroom`, {
+    headers: { Cookie: cookie },
+  });
+  expect(warroom.ok()).toBeTruthy();
+  const warroomJson = await warroom.json();
+  const topicPool = Array.isArray(warroomJson.data?.topicPool) ? warroomJson.data.topicPool : [];
+  expect(topicPool.length).toBeGreaterThan(0);
+
+  const fission = await request.post(`${baseURL}/api/topic-recommendations/${topicPool[0].id}/fission`, {
+    headers: { Cookie: cookie },
+    data: {
+      mode: "regularity",
+      engine: "ima",
+    },
+  });
+  expect(fission.ok()).toBeTruthy();
+  const fissionJson = await fission.json();
+  expect(String(fissionJson.data?.engine || "")).toBe("local");
+  expect(String(fissionJson.data?.degradedReason || "")).not.toBe("");
+  expect(Array.isArray(fissionJson.data?.candidates)).toBeTruthy();
+  expect((fissionJson.data.candidates as Array<unknown>).length).toBeGreaterThan(0);
+
+  await seedPageSession(page, baseURL!, cookie);
+  await page.goto(`${baseURL}/settings/intelligence-kb`);
+  await expect(page.getByText("把 IMA 知识库作为高价值信源接进既有工作流。")).toBeVisible();
+  await expect(page.getByText(String(connection.label || ""))).toBeVisible();
+});
+
+test("IMA evidence search returns degradedReason instead of hard failure when connection becomes invalid", async ({ request, baseURL }) => {
+  const adminCookie = await loginAsAdmin(baseURL!, request);
+  const user = await createE2EUser(baseURL!, request, adminCookie, { planCode: "pro" });
+  const cookie = await loginWithPassword(baseURL!, request, {
+    username: user.username,
+    password: user.password,
+  });
+  await ensurePersona(baseURL!, request, cookie);
+
+  const userId = await getCurrentUserId(baseURL!, request, cookie);
+  const connection = await ensureMockImaConnection(baseURL!, request, cookie);
+  const knowledgeBases = Array.isArray(connection.knowledgeBases) ? connection.knowledgeBases : [];
+  expect(knowledgeBases.length).toBeGreaterThan(0);
+  const defaultKb = knowledgeBases.find((item: { isDefault?: boolean }) => Boolean(item.isDefault)) ?? knowledgeBases[0];
+  const { articleId } = await createArticleForTest(baseURL!, request, cookie, {
+    title: "E2E IMA 降级返回验证",
+  });
+
+  await updateImaConnectionForTest({
+    connectionId: Number(connection.id),
+    userId,
+    status: "invalid",
+    lastError: "IMA 凭证失效，请前往设置重新绑定",
+  });
+
+  const response = await request.post(`${baseURL}/api/articles/${articleId}/evidence/ima-search`, {
+    headers: { Cookie: cookie },
+    data: {
+      query: "35岁危机",
+      kbId: defaultKb.kbId,
+    },
+  });
+  expect(response.ok()).toBeTruthy();
+  const json = await response.json();
+  expect(Array.isArray(json.data?.items)).toBeTruthy();
+  expect((json.data.items as Array<unknown>).length).toBe(0);
+  expect(Boolean(json.data?.isEnd)).toBe(true);
+  expect(String(json.data?.degradedReason || "")).toContain("还没有可用的 IMA 连接");
+});
+
+test("IMA endpoints return 429 when daily quota is exhausted", async ({ request, baseURL }) => {
+  const adminCookie = await loginAsAdmin(baseURL!, request);
+  const user = await createE2EUser(baseURL!, request, adminCookie, { planCode: "pro" });
+  const cookie = await loginWithPassword(baseURL!, request, {
+    username: user.username,
+    password: user.password,
+  });
+  await ensurePersona(baseURL!, request, cookie);
+
+  const userId = await getCurrentUserId(baseURL!, request, cookie);
+  const connection = await ensureMockImaConnection(baseURL!, request, cookie);
+  const knowledgeBases = Array.isArray(connection.knowledgeBases) ? connection.knowledgeBases : [];
+  expect(knowledgeBases.length).toBeGreaterThan(0);
+  const defaultKb = knowledgeBases.find((item: { isDefault?: boolean }) => Boolean(item.isDefault)) ?? knowledgeBases[0];
+  const { articleId } = await createArticleForTest(baseURL!, request, cookie, {
+    title: "E2E IMA 配额上限验证",
+  });
+
+  await setUsageCounterForTest({
+    userId,
+    counterKey: "daily_ima_evidence_search",
+    value: 50,
+  });
+  await setUsageCounterForTest({
+    userId,
+    counterKey: "daily_ima_fission",
+    value: 30,
+  });
+
+  const evidenceResponse = await request.post(`${baseURL}/api/articles/${articleId}/evidence/ima-search`, {
+    headers: { Cookie: cookie },
+    data: {
+      query: "35岁危机",
+      kbId: defaultKb.kbId,
+    },
+  });
+  expect(evidenceResponse.status()).toBe(429);
+  const evidenceJson = await evidenceResponse.json();
+  expect(String(evidenceJson.error || "")).toContain("IMA 证据检索上限");
+
+  const warroom = await request.get(`${baseURL}/api/warroom`, {
+    headers: { Cookie: cookie },
+  });
+  expect(warroom.ok()).toBeTruthy();
+  const warroomJson = await warroom.json();
+  const topicPool = Array.isArray(warroomJson.data?.topicPool) ? warroomJson.data.topicPool : [];
+  expect(topicPool.length).toBeGreaterThan(0);
+
+  const fissionResponse = await request.post(`${baseURL}/api/topic-recommendations/${topicPool[0].id}/fission`, {
+    headers: { Cookie: cookie },
+    data: {
+      mode: "regularity",
+      engine: "ima",
+    },
+  });
+  expect(fissionResponse.status()).toBe(429);
+  const fissionJson = await fissionResponse.json();
+  expect(String(fissionJson.error || "")).toContain("IMA 裂变调用上限");
 });
 
 test("service scheduler topic sync route supports idempotent window trigger", async ({ request, baseURL }) => {

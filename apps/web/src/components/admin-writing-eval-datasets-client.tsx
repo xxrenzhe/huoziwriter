@@ -7,6 +7,11 @@ import { cn, surfaceCardStyles, uiPrimitives } from "@huoziwriter/ui";
 import { AdminWritingEvalNav } from "@/components/admin-writing-eval-nav";
 import { buildAdminWritingEvalRunsHref, getAdminWritingEvalHref } from "@/lib/admin-writing-eval-links";
 import { formatWritingEvalDateTime } from "@/lib/writing-eval-format";
+import {
+  getWritingEvalDatasetCreatePresets,
+  getWritingEvalTaskTypeLabel,
+  WRITING_EVAL_TASK_TYPE_OPTIONS,
+} from "@/lib/writing-eval-plan17";
 import { getWritingEvalReadinessMeta as getDatasetReadinessMeta } from "@/lib/writing-eval-view";
 
 type DatasetItem = {
@@ -18,6 +23,14 @@ type DatasetItem = {
   sampleCount: number;
   createdAt: string;
   updatedAt: string;
+  focus?: {
+    key: string;
+    label: string;
+    description: string;
+    promptIds: readonly string[];
+    recommendedSourceTypes: readonly string[];
+    targetTaskTypes: readonly string[];
+  };
   readiness: {
     status: "ready" | "warning" | "blocked";
     enabledCaseCount: number;
@@ -167,8 +180,9 @@ type AutoFillAuditLogItem = {
 };
 
 const DATASET_STATUS_OPTIONS = ["draft", "active", "archived"] as const;
-const TASK_TYPE_OPTIONS = ["tech_commentary", "business_breakdown", "experience_recap", "series_observation"] as const;
+const TASK_TYPE_OPTIONS = WRITING_EVAL_TASK_TYPE_OPTIONS;
 const DIFFICULTY_LEVEL_OPTIONS = ["light", "medium", "hard"] as const;
+const DATASET_CREATE_PRESETS = getWritingEvalDatasetCreatePresets();
 
 const adminPanelBaseClassName = cn(
   surfaceCardStyles(),
@@ -435,6 +449,7 @@ export function AdminWritingEvalDatasetsClient({
   });
 
   const selectedDataset = datasets.find((item) => item.id === selectedDatasetId) ?? null;
+  const selectedDatasetFocus = selectedDataset?.focus ?? null;
   const selectedDatasetAutoFillLogs = selectedDataset
     ? autoFillAuditLogs.filter((item) => item.targetId === String(selectedDataset.id)).slice(0, 6)
     : [];
@@ -743,6 +758,15 @@ export function AdminWritingEvalDatasetsClient({
       isEnabled: selectedCase.isEnabled,
     });
   }, [selectedCase]);
+
+  function applyDatasetCreatePreset(preset: (typeof DATASET_CREATE_PRESETS)[number]) {
+    setDatasetForm({
+      code: preset.code,
+      name: preset.name,
+      description: preset.description,
+      status: preset.status,
+    });
+  }
 
   async function handleCreateDataset(event: FormEvent) {
     event.preventDefault();
@@ -1349,6 +1373,21 @@ export function AdminWritingEvalDatasetsClient({
       <section className="grid gap-6 xl:grid-cols-[360px_minmax(0,1fr)]">
         <form onSubmit={handleCreateDataset} className={adminFormPanelClassName}>
           <div className={adminEyebrowClassName}>新建评测集</div>
+          <div className="flex flex-wrap gap-2">
+            {DATASET_CREATE_PRESETS.map((preset) => (
+              <button
+                key={preset.key}
+                type="button"
+                onClick={() => applyDatasetCreatePreset(preset)}
+                className={adminSecondaryButtonClassName}
+              >
+                {preset.label}
+              </button>
+            ))}
+          </div>
+          <div className="text-xs leading-6 text-inkMuted">
+            17 号方案新增的评测场景可直接套用预设，自动填好编码、名称和说明。
+          </div>
           <input aria-label="编码，例如 viral-mvp-v1" value={datasetForm.code} onChange={(event) => setDatasetForm((prev) => ({ ...prev, code: event.target.value }))} placeholder="编码，例如 viral-mvp-v1" className={adminInputClassName} />
           <input aria-label="名称" value={datasetForm.name} onChange={(event) => setDatasetForm((prev) => ({ ...prev, name: event.target.value }))} placeholder="名称" className={adminInputClassName} />
           <textarea aria-label="说明" value={datasetForm.description} onChange={(event) => setDatasetForm((prev) => ({ ...prev, description: event.target.value }))} placeholder="说明" className={getAdminTextareaClassName("min-h-[120px]")} />
@@ -1392,6 +1431,12 @@ export function AdminWritingEvalDatasetsClient({
                     </div>
                   </div>
                   <div className="mt-3 text-sm leading-7 text-inkSoft">{dataset.description || "暂无说明"}</div>
+                  {dataset.focus ? (
+                    <div className="mt-3 text-xs leading-6 text-inkMuted">
+                      聚焦 {dataset.focus.label}
+                      {dataset.focus.promptIds.length > 0 ? ` · ${dataset.focus.promptIds.join(" / ")}` : ""}
+                    </div>
+                  ) : null}
                   <div className="mt-4 text-xs text-inkMuted">
                     样本数 {dataset.sampleCount} · 更新于 {formatWritingEvalDateTime(dataset.updatedAt)}
                   </div>
@@ -1451,8 +1496,14 @@ export function AdminWritingEvalDatasetsClient({
                     标题目标 {selectedDataset.readiness.coverage.titleGoal} · 开头目标 {selectedDataset.readiness.coverage.hookGoal} ·
                     传播目标 {selectedDataset.readiness.coverage.shareTriggerGoal} · 事实素材 {selectedDataset.readiness.coverage.sourceFacts}
                   </div>
+                  {selectedDatasetFocus ? (
+                    <div className="mt-2 text-xs leading-6 text-inkMuted">
+                      当前聚焦 {selectedDatasetFocus.label}
+                      {selectedDatasetFocus.promptIds.length > 0 ? ` · Prompt ${selectedDatasetFocus.promptIds.join(" / ")}` : ""}
+                    </div>
+                  ) : null}
                   <div className="mt-2 text-xs leading-6 text-inkMuted">
-                    题型 {selectedDataset.readiness.qualityTargets.distinctTaskTypeCount}/4 ·
+                    题型 {selectedDataset.readiness.qualityTargets.distinctTaskTypeCount}/{selectedDatasetFocus?.targetTaskTypes?.length || 4} ·
                     light {selectedDataset.readiness.qualityTargets.lightCount} ·
                     medium {selectedDataset.readiness.qualityTargets.mediumCount} ·
                     hard {selectedDataset.readiness.qualityTargets.hardCount} ·
@@ -1493,7 +1544,11 @@ export function AdminWritingEvalDatasetsClient({
                   <div className="flex items-center justify-between gap-3">
                     <div>
                       <div className={adminSubEyebrowClassName}>样本覆盖度</div>
-                      <div className={cn("mt-2", adminMutedCopyClassName)}>对齐方案要求，优先补齐标题目标、开头目标、传播目标和事实素材上下文。</div>
+                      <div className={cn("mt-2", adminMutedCopyClassName)}>
+                        {selectedDatasetFocus?.key && selectedDatasetFocus.key !== "general"
+                          ? `${selectedDatasetFocus.label} 优先看专用题型是否命中，再补齐标题目标、开头目标、传播目标和事实素材上下文。`
+                          : "对齐方案要求，优先补齐标题目标、开头目标、传播目标和事实素材上下文。"}
+                      </div>
                     </div>
                     <div className="text-xs text-inkMuted">{cases.length} 条样本</div>
                   </div>
@@ -1580,7 +1635,7 @@ export function AdminWritingEvalDatasetsClient({
                     <div className="mt-4 grid gap-3 text-sm text-inkSoft sm:grid-cols-2">
                       <div>
                         <div className="text-[11px] uppercase tracking-[0.18em] text-inkMuted">类型</div>
-                        <div className="mt-1">{item.taskType}</div>
+                        <div className="mt-1">{getWritingEvalTaskTypeLabel(item.taskType)}</div>
                       </div>
                       <div>
                         <div className="text-[11px] uppercase tracking-[0.18em] text-inkMuted">来源</div>
@@ -1632,7 +1687,7 @@ export function AdminWritingEvalDatasetsClient({
                       onClick={() => setSelectedCaseId(item.id)}
                     >
                       <td className="py-4 font-mono text-xs text-inkSoft">{item.taskCode}</td>
-                      <td className="py-4 text-inkSoft">{item.taskType}</td>
+                      <td className="py-4 text-inkSoft">{getWritingEvalTaskTypeLabel(item.taskType)}</td>
                       <td className="py-4 text-xs text-inkMuted">{getCaseSourceBadge(item)}</td>
                       <td className="py-4 text-ink">{item.topicTitle}</td>
                       <td className="py-4 text-inkSoft">{item.difficultyLevel}</td>
@@ -1669,7 +1724,9 @@ export function AdminWritingEvalDatasetsClient({
               <>
                 <div className={cn(adminInsetCardClassName, adminMutedCopyClassName)}>
                   当前围绕评测集 <span className="text-ink">{selectedDataset.code}</span> 的题型、难度和 coverage 缺口生成推荐。
-                  会优先补样本总量、缺失题型、缺失难度，以及 `sourceFacts / knowledgeCards / historyReferences / referenceGoodOutput` 等薄弱项。
+                  {selectedDatasetFocus?.key && selectedDatasetFocus.key !== "general"
+                    ? ` 该数据集当前聚焦 ${selectedDatasetFocus.label}，会优先推荐 ${selectedDatasetFocus.recommendedSourceTypes.join(" / ")} 来源，并把专用题型补齐。`
+                    : " 会优先补样本总量、缺失题型、缺失难度，以及 `sourceFacts / knowledgeCards / historyReferences / referenceGoodOutput` 等薄弱项。"}
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <button
@@ -1720,7 +1777,7 @@ export function AdminWritingEvalDatasetsClient({
                           </button>
                         </div>
                         <div className="mt-3 flex flex-wrap gap-2 text-xs">
-                          <span className={adminChipClassName}>{item.suggestedTaskType}</span>
+                          <span className={adminChipClassName}>{getWritingEvalTaskTypeLabel(item.suggestedTaskType)}</span>
                           <span className={adminChipClassName}>{item.suggestedDifficultyLevel}</span>
                           <span className={adminChipClassName}>facts {item.sourceFactCount}</span>
                           <span className={adminChipClassName}>knowledge {item.knowledgeCardCount}</span>
@@ -1885,7 +1942,7 @@ export function AdminWritingEvalDatasetsClient({
                               </button>
                             </div>
                             <div className="mt-3 flex flex-wrap gap-2 text-xs">
-                              <span className={adminChipClassName}>{article.suggestedTaskType}</span>
+                              <span className={adminChipClassName}>{getWritingEvalTaskTypeLabel(article.suggestedTaskType)}</span>
                               <span className={adminChipClassName}>{article.suggestedDifficultyLevel}</span>
                               <span className={adminChipClassName}>facts {article.sourceFactCount}</span>
                               <span className={adminChipClassName}>knowledge {article.knowledgeCardCount}</span>
@@ -1979,7 +2036,7 @@ export function AdminWritingEvalDatasetsClient({
                               </button>
                             </div>
                             <div className="mt-3 flex flex-wrap gap-2 text-xs">
-                              <span className={adminChipClassName}>{card.suggestedTaskType}</span>
+                              <span className={adminChipClassName}>{getWritingEvalTaskTypeLabel(card.suggestedTaskType)}</span>
                               <span className={adminChipClassName}>{card.suggestedDifficultyLevel}</span>
                               <span className={adminChipClassName}>confidence {Math.round(card.confidenceScore * 100)}%</span>
                               <span className={adminChipClassName}>facts {card.sourceFactCount}</span>
@@ -2072,7 +2129,7 @@ export function AdminWritingEvalDatasetsClient({
                               </button>
                             </div>
                             <div className="mt-3 flex flex-wrap gap-2 text-xs">
-                              <span className={adminChipClassName}>{topic.suggestedTaskType}</span>
+                              <span className={adminChipClassName}>{getWritingEvalTaskTypeLabel(topic.suggestedTaskType)}</span>
                               <span className={adminChipClassName}>{topic.suggestedDifficultyLevel}</span>
                               <span className={adminChipClassName}>facts {topic.sourceFactCount}</span>
                               <span className={adminChipClassName}>knowledge {topic.knowledgeCardCount}</span>
@@ -2165,7 +2222,7 @@ export function AdminWritingEvalDatasetsClient({
                               </button>
                             </div>
                             <div className="mt-3 flex flex-wrap gap-2 text-xs">
-                              <span className={adminChipClassName}>{fragment.suggestedTaskType}</span>
+                              <span className={adminChipClassName}>{getWritingEvalTaskTypeLabel(fragment.suggestedTaskType)}</span>
                               <span className={adminChipClassName}>{fragment.suggestedDifficultyLevel}</span>
                               <span className={adminChipClassName}>facts {fragment.sourceFactCount}</span>
                               <span className={adminChipClassName}>knowledge {fragment.knowledgeCardCount}</span>
@@ -2193,8 +2250,8 @@ export function AdminWritingEvalDatasetsClient({
             <input aria-label="taskCode" value={caseForm.taskCode} onChange={(event) => setCaseForm((prev) => ({ ...prev, taskCode: event.target.value }))} placeholder="taskCode" className={adminInputClassName} />
             <input aria-label="topicTitle" value={caseForm.topicTitle} onChange={(event) => setCaseForm((prev) => ({ ...prev, topicTitle: event.target.value }))} placeholder="topicTitle" className={adminInputClassName} />
             <select aria-label="select control" value={caseForm.taskType} onChange={(event) => setCaseForm((prev) => ({ ...prev, taskType: event.target.value }))} className={adminSelectClassName}>
-              {TASK_TYPE_OPTIONS.map((taskType) => (
-                <option key={taskType} value={taskType}>{taskType}</option>
+              {WRITING_EVAL_TASK_TYPE_OPTIONS.map((taskType) => (
+                <option key={taskType} value={taskType}>{getWritingEvalTaskTypeLabel(taskType)}</option>
               ))}
             </select>
             <select value={caseForm.difficultyLevel} onChange={(event) => setCaseForm((prev) => ({ ...prev, difficultyLevel: event.target.value }))} className={adminSelectClassName}>
@@ -2275,8 +2332,8 @@ export function AdminWritingEvalDatasetsClient({
                 <input aria-label="input control" value={editorForm.taskCode} onChange={(event) => setEditorForm((prev) => ({ ...prev, taskCode: event.target.value }))} className={adminInputClassName} />
                 <input aria-label="input control" value={editorForm.topicTitle} onChange={(event) => setEditorForm((prev) => ({ ...prev, topicTitle: event.target.value }))} className={adminInputClassName} />
                 <select aria-label="select control" value={editorForm.taskType} onChange={(event) => setEditorForm((prev) => ({ ...prev, taskType: event.target.value }))} className={adminSelectClassName}>
-                  {TASK_TYPE_OPTIONS.map((taskType) => (
-                    <option key={taskType} value={taskType}>{taskType}</option>
+                  {WRITING_EVAL_TASK_TYPE_OPTIONS.map((taskType) => (
+                    <option key={taskType} value={taskType}>{getWritingEvalTaskTypeLabel(taskType)}</option>
                   ))}
                 </select>
                 <select value={editorForm.difficultyLevel} onChange={(event) => setEditorForm((prev) => ({ ...prev, difficultyLevel: event.target.value }))} className={adminSelectClassName}>

@@ -12,9 +12,30 @@ type SeriesRow = {
   thesis: string | null;
   target_audience: string | null;
   active_status: string;
+  pre_hook: string | null;
+  post_hook: string | null;
+  default_layout_template_id: string | null;
+  platform_preference: string | null;
+  target_pack_hint: string | null;
+  default_archetype: string | null;
+  default_dna_id: number | null;
+  rhythm_override_json: string | Record<string, unknown> | null;
   created_at: string;
   updated_at: string;
 };
+
+function parseJsonRecord(value: unknown) {
+  if (!value) return null;
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value) as Record<string, unknown>;
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null;
+    } catch {
+      return null;
+    }
+  }
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+}
 
 function normalizeSeriesStatus(value: unknown) {
   const normalized = String(value || "").trim();
@@ -27,7 +48,7 @@ function normalizeSeriesStatus(value: unknown) {
 async function getSeriesRow(userId: number, seriesId: number) {
   const db = getDatabase();
   return db.queryOne<SeriesRow>(
-    `SELECT id, user_id, name, persona_id, thesis, target_audience, active_status, created_at, updated_at
+    `SELECT id, user_id, name, persona_id, thesis, target_audience, active_status, pre_hook, post_hook, default_layout_template_id, platform_preference, target_pack_hint, default_archetype, default_dna_id, rhythm_override_json, created_at, updated_at
      FROM ${SERIES_TABLE}
      WHERE id = ? AND user_id = ?`,
     [seriesId, userId],
@@ -60,7 +81,7 @@ export async function getSeries(userId: number) {
   const db = getDatabase();
   const [rows, personas] = await Promise.all([
     db.query<SeriesRow>(
-      `SELECT id, user_id, name, persona_id, thesis, target_audience, active_status, created_at, updated_at
+      `SELECT id, user_id, name, persona_id, thesis, target_audience, active_status, pre_hook, post_hook, default_layout_template_id, platform_preference, target_pack_hint, default_archetype, default_dna_id, rhythm_override_json, created_at, updated_at
        FROM ${SERIES_TABLE}
        WHERE user_id = ?
        ORDER BY CASE active_status WHEN 'active' THEN 0 WHEN 'paused' THEN 1 ELSE 2 END, updated_at DESC, id DESC`,
@@ -90,6 +111,17 @@ export async function getSeries(userId: number) {
       thesis: row.thesis,
       targetAudience: row.target_audience,
       activeStatus: normalizeSeriesStatus(row.active_status),
+      preHook: row.pre_hook,
+      postHook: row.post_hook,
+      defaultLayoutTemplateId: row.default_layout_template_id,
+      platformPreference: row.platform_preference,
+      targetPackHint: row.target_pack_hint,
+      defaultArchetype:
+        row.default_archetype === "opinion" || row.default_archetype === "case" || row.default_archetype === "howto" || row.default_archetype === "hotTake" || row.default_archetype === "phenomenon"
+          ? row.default_archetype
+          : null,
+      defaultDnaId: row.default_dna_id,
+      rhythmOverride: parseJsonRecord(row.rhythm_override_json),
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };
@@ -116,6 +148,14 @@ export async function createSeries(input: {
   thesis?: unknown;
   targetAudience?: unknown;
   activeStatus?: unknown;
+  preHook?: unknown;
+  postHook?: unknown;
+  defaultLayoutTemplateId?: unknown;
+  platformPreference?: unknown;
+  targetPackHint?: unknown;
+  defaultArchetype?: unknown;
+  defaultDnaId?: unknown;
+  rhythmOverride?: Record<string, unknown> | null;
 }) {
   await ensureExtendedProductSchema();
   const db = getDatabase();
@@ -135,8 +175,8 @@ export async function createSeries(input: {
   const now = new Date().toISOString();
   const result = await db.exec(
     `INSERT INTO ${SERIES_TABLE} (
-      user_id, name, persona_id, thesis, target_audience, active_status, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      user_id, name, persona_id, thesis, target_audience, active_status, pre_hook, post_hook, default_layout_template_id, platform_preference, target_pack_hint, default_archetype, default_dna_id, rhythm_override_json, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       input.userId,
       name,
@@ -144,6 +184,14 @@ export async function createSeries(input: {
       thesis,
       targetAudience,
       normalizeSeriesStatus(input.activeStatus),
+      String(input.preHook || "").trim() || null,
+      String(input.postHook || "").trim() || null,
+      String(input.defaultLayoutTemplateId || "").trim() || null,
+      String(input.platformPreference || "").trim() || null,
+      String(input.targetPackHint || "").trim() || null,
+      String(input.defaultArchetype || "").trim() || null,
+      Number(input.defaultDnaId || 0) || null,
+      JSON.stringify(input.rhythmOverride ?? null),
       now,
       now,
     ],
@@ -163,6 +211,14 @@ export async function updateSeries(input: {
   thesis?: unknown;
   targetAudience?: unknown;
   activeStatus?: unknown;
+  preHook?: unknown;
+  postHook?: unknown;
+  defaultLayoutTemplateId?: unknown;
+  platformPreference?: unknown;
+  targetPackHint?: unknown;
+  defaultArchetype?: unknown;
+  defaultDnaId?: unknown;
+  rhythmOverride?: Record<string, unknown> | null;
 }) {
   await ensureExtendedProductSchema();
   const current = await getSeriesRow(input.userId, input.seriesId);
@@ -180,6 +236,19 @@ export async function updateSeries(input: {
   const thesis = input.thesis === undefined ? current.thesis : String(input.thesis || "").trim() || null;
   const targetAudience =
     input.targetAudience === undefined ? current.target_audience : String(input.targetAudience || "").trim() || null;
+  const preHook = input.preHook === undefined ? current.pre_hook : String(input.preHook || "").trim() || null;
+  const postHook = input.postHook === undefined ? current.post_hook : String(input.postHook || "").trim() || null;
+  const defaultLayoutTemplateId =
+    input.defaultLayoutTemplateId === undefined ? current.default_layout_template_id : String(input.defaultLayoutTemplateId || "").trim() || null;
+  const platformPreference =
+    input.platformPreference === undefined ? current.platform_preference : String(input.platformPreference || "").trim() || null;
+  const targetPackHint =
+    input.targetPackHint === undefined ? current.target_pack_hint : String(input.targetPackHint || "").trim() || null;
+  const defaultArchetype =
+    input.defaultArchetype === undefined ? current.default_archetype : String(input.defaultArchetype || "").trim() || null;
+  const defaultDnaId = input.defaultDnaId === undefined ? current.default_dna_id : Number(input.defaultDnaId || 0) || null;
+  const rhythmOverrideJson =
+    input.rhythmOverride === undefined ? JSON.stringify(parseJsonRecord(current.rhythm_override_json) ?? null) : JSON.stringify(input.rhythmOverride ?? null);
   if (!thesis) {
     throw new Error("系列必须写明核心判断");
   }
@@ -190,7 +259,7 @@ export async function updateSeries(input: {
   const db = getDatabase();
   await db.exec(
     `UPDATE ${SERIES_TABLE}
-     SET name = ?, persona_id = ?, thesis = ?, target_audience = ?, active_status = ?, updated_at = ?
+     SET name = ?, persona_id = ?, thesis = ?, target_audience = ?, active_status = ?, pre_hook = ?, post_hook = ?, default_layout_template_id = ?, platform_preference = ?, target_pack_hint = ?, default_archetype = ?, default_dna_id = ?, rhythm_override_json = ?, updated_at = ?
      WHERE id = ? AND user_id = ?`,
     [
       nextName,
@@ -198,6 +267,14 @@ export async function updateSeries(input: {
       thesis,
       targetAudience,
       input.activeStatus === undefined ? normalizeSeriesStatus(current.active_status) : normalizeSeriesStatus(input.activeStatus),
+      preHook,
+      postHook,
+      defaultLayoutTemplateId,
+      platformPreference,
+      targetPackHint,
+      defaultArchetype,
+      defaultDnaId,
+      rhythmOverrideJson,
       now,
       input.seriesId,
       input.userId,
@@ -223,6 +300,13 @@ export async function deleteSeries(userId: number, seriesId: number) {
   );
   if ((linkedArticles?.count ?? 0) > 0) {
     throw new Error("该系列下还有稿件，先把稿件改绑到其他系列后再删除");
+  }
+  const linkedBacklogs = await db.queryOne<{ count: number }>(
+    "SELECT COUNT(*) as count FROM topic_backlogs WHERE user_id = ? AND series_id = ?",
+    [userId, seriesId],
+  );
+  if ((linkedBacklogs?.count ?? 0) > 0) {
+    throw new Error("该系列下还有选题库，先把选题库改绑到其他系列或解绑后再删除");
   }
   if ((await countSeries(userId)) <= 1) {
     throw new Error("至少保留 1 个系列，避免稿件失去归属");

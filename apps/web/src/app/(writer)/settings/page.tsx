@@ -17,6 +17,7 @@ const sectionIcons: Record<SettingsSectionKey, JSX.Element> = {
   author: <BookUser className="h-5 w-5" />,
   assets: <Blocks className="h-5 w-5" />,
   sources: <Globe2 className="h-5 w-5" />,
+  "intelligence-kb": <Globe2 className="h-5 w-5" />,
   publish: <Send className="h-5 w-5" />,
   account: <WalletCards className="h-5 w-5" />,
   "language-guard": <ShieldAlert className="h-5 w-5" />,
@@ -49,6 +50,7 @@ export default async function SettingsPage() {
     dailyGenerationUsage,
     workspaceAssets,
     connections,
+    imaConnections,
     topicSources,
     languageGuardRules,
     fragments,
@@ -115,6 +117,13 @@ export default async function SettingsPage() {
           href: "/settings/sources",
         }
       : null,
+    planSnapshot.canManageTopicSources && imaConnections.length === 0
+      ? {
+          label: "补 1 个 IMA 智库连接",
+          detail: "作战台裂变和证据检索还无法吃到你的高价值知识库，先绑定并设一个默认库。",
+          href: "/settings/intelligence-kb",
+        }
+      : null,
     planSnapshot.canPublishToWechat && connections.length === 0
       ? {
           label: "还没有公众号发布连接",
@@ -153,6 +162,11 @@ export default async function SettingsPage() {
       metric: planSnapshot.canManageTopicSources ? `${customTopicSources.length}` : "未开放",
       note: planSnapshot.canManageTopicSources ? "自定义信源" : displayPlanName,
       description: "管理系统源与个人来源池，直接影响热点排序和作战台里的机会质量。",
+    },
+    "intelligence-kb": {
+      metric: planSnapshot.canManageTopicSources ? `${imaConnections.length}` : "未开放",
+      note: planSnapshot.canManageTopicSources ? "IMA 连接数" : displayPlanName,
+      description: "绑定 IMA 凭证、启用知识库并指定默认库，给裂变与证据检索提供高价值语料底座。",
     },
     publish: {
       metric: planSnapshot.canPublishToWechat ? `${connections.length}` : "未开放",

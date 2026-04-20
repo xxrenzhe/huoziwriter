@@ -11,9 +11,10 @@ import { ensureArticleWorkflow } from "./article-workflows";
 import { ensureTemplateLibrarySeeds, ensureExtendedProductSchema } from "./schema-bootstrap";
 import { appendAuditLog } from "./audit";
 import { getUserAccessScope } from "./access-scope";
+import { inferEvidenceHookStrength, normalizeEvidenceHookTag, tagEvidenceItemHooks } from "./article-evidence";
 import { buildSemanticEmbedding, parseSemanticEmbedding, scoreSemanticMatch } from "./semantic-search";
 import { normalizeArticleStatus, toStoredArticleStatus } from "./article-status-label";
-import { resolveArticleSeriesId } from "./series";
+import { getSeriesById, resolveArticleSeriesId } from "./series";
 import { resolvePlanFeatureSnapshot, type PlanFeatureSourceRecord } from "./plan-entitlements";
 
 let articleSnapshotsArticleColumnPromise: Promise<"article_id" | "document_id"> | null = null;
@@ -109,6 +110,173 @@ const DEFAULT_PROMPT_SEEDS = [
     changeNotes: "移除 X 作为 P0 常规补证来源，补充官方 Blog / Newsroom 与 RSS / Feed 优先级",
   },
   {
+    promptId: "topic_backlog_ideation",
+    version: "v1.0.0",
+    category: "analysis",
+    name: "选题库 AI 生题",
+    description: "围绕种子主题批量生成可入库的选题条目",
+    filePath: "system:analysis",
+    functionName: "topicBacklogIdeation",
+    promptContent: [
+      "你是中文公众号选题策划编辑。",
+      "你的任务是围绕一个种子主题，为选题库生成一批可继续深化的候选条目，而不是直接写正文标题。",
+      "每条都必须包含：theme、archetype、targetAudience、readerSnapshotHint、coreAssertion、whyNow、mainstreamBelief。",
+      "readerSnapshotHint 必须写成具体处境，不要只写年龄、人群或行业名。",
+      "coreAssertion 必须是一个能成立的判断，不要复述事实。",
+      "同一批次尽量覆盖不同 archetype，但不要为了凑数牺牲相关性。",
+      "只返回 JSON，不要 markdown，不要解释。",
+    ].join("\n"),
+    language: "zh-CN",
+    changeNotes: "新增选题库种子主题批量生题场景",
+  },
+  {
+    promptId: "ima_hook_pattern_distill",
+    version: "v1.0.0",
+    category: "analysis",
+    name: "IMA 爆点规律提炼",
+    description: "基于 IMA 知识库命中的真实爆款，提炼赛道规律并生成裂变候选",
+    filePath: "apps/web/src/lib/prompts/topic/imaHookPatternDistill.md",
+    functionName: "imaHookPatternDistill",
+    promptContent: [
+      "你是笔尖 5.0 风格的赛道爆点分析师。",
+      "",
+      "你的任务是基于一个赛道关键词，以及同赛道的真实爆款标题与片段，提炼共同规律，并生成可直接起稿的差异化选题。",
+      "",
+      "输出严格 JSON，结构如下：",
+      '{"hookPatterns":[{"name":"字符串","description":"字符串","triggerPsychology":"字符串","sampleTitles":["字符串"]}],"differentiatedAngles":[{"title":"字符串","fissionMode":"regularity|contrast|cross-domain","targetReader":"字符串","description":"字符串","sampleTitles":["字符串"]}]}',
+      "",
+      "硬约束：",
+      "1. 只能引用输入里真实存在的标题，禁止改写 sampleTitles。",
+      "2. 禁止编造未出现的事实、数据、案例或标题。",
+      "3. hookPatterns 输出 2-4 条；differentiatedAngles 输出 3-6 条。",
+      "4. 名称简洁，description 与 triggerPsychology 使用自然中文，不要空话。",
+      "5. 禁止使用：赋能、底层逻辑、抓手、闭环、破圈、跃迁、心智模型、降维打击、颗粒度、顶层设计。",
+      "6. 不要输出 markdown，不要解释，只返回 JSON。",
+    ].join("\n"),
+    language: "zh-CN",
+    changeNotes: "新增 IMA 知识库爆款规律提炼场景",
+  },
+  {
+    promptId: "topicFission.regularity",
+    version: "v1.0.0",
+    category: "analysis",
+    name: "选题裂变·规律裂变",
+    description: "基于赛道规律生成结构化裂变选题",
+    filePath: "system:analysis",
+    functionName: "topicFissionRegularity",
+    promptContent: "你是公众号赛道爆点分析师。先提炼赛道规律，再产出结构化裂变选题。输出 JSON，不要解释。",
+    language: "zh-CN",
+    changeNotes: "新增 17 号方案 topicFission.regularity 场景",
+  },
+  {
+    promptId: "topicFission.contrast",
+    version: "v1.0.0",
+    category: "analysis",
+    name: "选题裂变·差异化",
+    description: "基于赛道常见写法生成差异化选题",
+    filePath: "system:analysis",
+    functionName: "topicFissionContrast",
+    promptContent: "你是公众号差异化选题编辑。先指出赛道被写烂的角度，再产出结构化差异化选题。输出 JSON，不要解释。",
+    language: "zh-CN",
+    changeNotes: "新增 17 号方案 topicFission.contrast 场景",
+  },
+  {
+    promptId: "topicFission.crossDomain",
+    version: "v1.0.0",
+    category: "analysis",
+    name: "选题裂变·跨赛道迁移",
+    description: "提取原赛道传播基因并迁移到目标赛道",
+    filePath: "system:analysis",
+    functionName: "topicFissionCrossDomain",
+    promptContent: "你是跨赛道选题编辑。先抽取原赛道的传播基因，再迁移到目标赛道形成结构化选题。输出 JSON，不要解释。",
+    language: "zh-CN",
+    changeNotes: "新增 17 号方案 topicFission.crossDomain 场景",
+  },
+  {
+    promptId: "strategyCard.autoDraft",
+    version: "v1.0.0",
+    category: "analysis",
+    name: "策略卡自动初稿",
+    description: "根据选题生成 StrategyCard 底层字段初稿",
+    filePath: "system:analysis",
+    functionName: "strategyCardAutoDraft",
+    promptContent: "你是内容策略编辑。根据选题、读者和素材，生成策略卡底层字段初稿。输出 JSON，不要解释。",
+    language: "zh-CN",
+    changeNotes: "新增 17 号方案 strategyCard.autoDraft 场景",
+  },
+  {
+    promptId: "strategyCard.fourPointAggregate",
+    version: "v1.0.0",
+    category: "analysis",
+    name: "策略卡四元聚合",
+    description: "从底层策略字段聚合笔尖四元视图",
+    filePath: "system:analysis",
+    functionName: "strategyCardFourPointAggregate",
+    promptContent: "你是笔尖方法论编辑。请把底层策略字段聚合成认知翻转、读者快照、核心张力、发力方向四元视图。输出 JSON，不要解释。",
+    language: "zh-CN",
+    changeNotes: "新增 17 号方案 strategyCard.fourPointAggregate 场景",
+  },
+  {
+    promptId: "strategyCard.strengthAudit",
+    version: "v1.0.0",
+    category: "review",
+    name: "策略卡强度自检",
+    description: "对笔尖四元做结构化强度评分",
+    filePath: "system:review",
+    functionName: "strategyCardStrengthAudit",
+    promptContent: "你是内容策略审校。请对认知翻转、读者快照、核心张力、发力方向做 1-5 分评分并给出补强建议。输出 JSON，不要解释。",
+    language: "zh-CN",
+    changeNotes: "新增 17 号方案 strategyCard.strengthAudit 场景",
+  },
+  {
+    promptId: "strategyCard.reverseWriteback",
+    version: "v1.0.0",
+    category: "analysis",
+    name: "策略卡反写回底层字段",
+    description: "把笔尖视角编辑结果反写到底层策略字段",
+    filePath: "system:analysis",
+    functionName: "strategyCardReverseWriteback",
+    promptContent: "你是策略卡反写助手。请把笔尖四元视角的修改拆回到底层字段。输出 JSON，不要解释。",
+    language: "zh-CN",
+    changeNotes: "新增 17 号方案 strategyCard.reverseWriteback 场景",
+  },
+  {
+    promptId: "evidenceHookTagging",
+    version: "v1.0.0",
+    category: "evidence",
+    name: "证据爆点标注",
+    description: "为证据自动标注爆点标签与强度",
+    filePath: "system:evidence",
+    functionName: "evidenceHookTagging",
+    promptContent: "你是传播爆点标注器。请为证据识别反常识、具身细节、身份标签、情绪造句四类标签，并评估强度。输出 JSON，不要解释。",
+    language: "zh-CN",
+    changeNotes: "新增 17 号方案 evidenceHookTagging 场景",
+  },
+  {
+    promptId: "styleDna.crossCheck",
+    version: "v1.0.0",
+    category: "analysis",
+    name: "风格 DNA 交叉校验",
+    description: "多篇样本交叉提炼稳定风格共性",
+    filePath: "system:analysis",
+    functionName: "styleDnaCrossCheck",
+    promptContent: "你是中文文风分析师。请对多篇样本做交叉聚合，输出稳定风格共性与各维度置信度。输出 JSON，不要解释。",
+    language: "zh-CN",
+    changeNotes: "新增 17 号方案 styleDna.crossCheck 场景",
+  },
+  {
+    promptId: "publishGate.rhythmConsistency",
+    version: "v1.0.0",
+    category: "review",
+    name: "发布前原型节奏一致性",
+    description: "评估策略原型与成稿节奏是否一致",
+    filePath: "system:review",
+    functionName: "publishGateRhythmConsistency",
+    promptContent: "你是发布前总控编辑。请评估策略原型与当前成稿节奏是否一致，并给出结构化偏离说明。输出 JSON，不要解释。",
+    language: "zh-CN",
+    changeNotes: "新增 17 号方案 publishGate.rhythmConsistency 场景",
+  },
+  {
     promptId: "language_guard_audit",
     version: "v1.0.0",
     category: "review",
@@ -167,6 +335,28 @@ const DEFAULT_PROMPT_SEEDS = [
     promptContent: "你是专栏主编。请基于主题、人设、受众和素材，设计一份真正可写的结构化文章大纲。大纲必须体现核心观点、论证递进、证据挂载、情绪转折、开头策略和结尾动作，不能把信息并列堆砌成目录。",
     language: "zh-CN",
     changeNotes: "新增二期标准场景码 outlinePlan",
+  },
+  {
+    promptId: "title_optimizer",
+    version: "v1.0.0",
+    category: "writing",
+    name: "标题优化器",
+    description: "围绕同一主轴生成 6 个公众号标题候选并做打开率体检",
+    filePath: "system:writing",
+    functionName: "titleOptimizer",
+    promptContent: [
+      "你是公众号标题优化专家，目标是在 1 秒内让读者决定要不要点开。",
+      "你只负责标题，不负责改大纲。",
+      "请围绕同一主轴生成 6 个候选标题，并明确哪一个最推荐。",
+      "每个标题至少满足三要素中的 2 项：具体元素、好奇缺口、读者视角。",
+      "具体元素：数字 / 产品名 / 人名 / 场景 / 结果 / 角色 / 具体对象。",
+      "好奇缺口：有明确信息差，但不要把结论剧透成清单答案。",
+      "读者视角：告诉读者能得到什么判断、提醒或动作，不要写成作者自我倾诉。",
+      "禁止清单：震惊、不看后悔、99% 的人都、太可怕了、关于…的思考、…的一些感悟、…的 5 个方法、…的 3 个要点、自我复盘式标题、夸大事实、承诺正文无法兑现的结果。",
+      "输出必须是 JSON，不要解释，不要 markdown。",
+    ].join("\n"),
+    language: "zh-CN",
+    changeNotes: "新增独立标题优化 prompt 资产，用于 6 候选、三要素命中与禁词体检",
   },
   {
     promptId: "deep_write",
@@ -540,7 +730,37 @@ export async function getArticlesByUser(userId: number) {
     wechat_template_id: string | null;
     updated_at: string;
     created_at: string;
-  }>("SELECT * FROM articles WHERE user_id = ? ORDER BY updated_at DESC, id DESC", [userId]);
+    topic_backlog_id: number | null;
+    topic_backlog_name: string | null;
+    topic_backlog_item_id: number | null;
+    topic_backlog_batch_id: string | null;
+  }>(
+    `SELECT
+       a.id,
+       a.title,
+       a.markdown_content,
+       a.html_content,
+       a.status,
+       a.series_id,
+       a.layout_strategy_id,
+       a.wechat_template_id,
+       a.updated_at,
+       a.created_at,
+       tbi.backlog_id as topic_backlog_id,
+       tb.name as topic_backlog_name,
+       tbi.id as topic_backlog_item_id,
+       tbi.generated_batch_id as topic_backlog_batch_id
+     FROM articles a
+     LEFT JOIN topic_backlog_items tbi
+       ON tbi.generated_article_id = a.id
+      AND tbi.user_id = a.user_id
+     LEFT JOIN topic_backlogs tb
+       ON tb.id = tbi.backlog_id
+      AND tb.user_id = a.user_id
+     WHERE a.user_id = ?
+     ORDER BY a.updated_at DESC, a.id DESC`,
+    [userId],
+  );
   return articles.map((article) => ({
     ...article,
     status: normalizeArticleStatus(article.status),
@@ -596,15 +816,34 @@ export async function createArticle(userId: number, title: string, seriesId?: nu
   await ensureExtendedProductSchema();
   const db = getDatabase();
   const now = new Date().toISOString();
-  const html = await renderMarkdownToHtml("", { title });
   const resolvedSeriesId = await resolveArticleSeriesId(userId, seriesId);
+  const boundSeries = await getSeriesById(userId, resolvedSeriesId);
+  const initialWechatTemplateId = boundSeries?.defaultLayoutTemplateId ?? null;
+  const template = initialWechatTemplateId ? await getActiveTemplateById(initialWechatTemplateId, userId) : null;
+  const html = await renderMarkdownToHtml("", {
+    title,
+    template: resolveTemplateRenderConfig(template),
+  });
   const result = await db.exec(
-    `INSERT INTO articles (user_id, title, markdown_content, html_content, status, series_id, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    [userId, title, "", html, "draft", resolvedSeriesId, now, now],
+    `INSERT INTO articles (user_id, title, markdown_content, html_content, status, series_id, wechat_template_id, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [userId, title, "", html, "draft", resolvedSeriesId, initialWechatTemplateId, now, now],
   );
   await ensureDefaultArticleNodes(result.lastInsertRowid!);
   await ensureArticleWorkflow(result.lastInsertRowid!, "opportunity");
+  if (boundSeries && (boundSeries.targetAudience || boundSeries.targetPackHint || boundSeries.defaultArchetype)) {
+    const seriesArchetype =
+      boundSeries.defaultArchetype === "opinion" || boundSeries.defaultArchetype === "case" || boundSeries.defaultArchetype === "howto" || boundSeries.defaultArchetype === "hotTake" || boundSeries.defaultArchetype === "phenomenon"
+        ? boundSeries.defaultArchetype
+        : null;
+    await upsertArticleStrategyCard({
+      articleId: Number(result.lastInsertRowid!),
+      userId,
+      targetReader: boundSeries.targetAudience ?? null,
+      targetPackage: boundSeries.targetPackHint ?? null,
+      archetype: seriesArchetype,
+    });
+  }
   await appendAuditLog({
     userId,
     action: "article.create",
@@ -848,6 +1087,16 @@ function parseJsonStringArray(value: unknown): string[] {
   return [];
 }
 
+function parseJsonBoolean(value: unknown) {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value !== 0;
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    return normalized === "true" || normalized === "1";
+  }
+  return false;
+}
+
 function normalizeOutcomeHitStatus(value: unknown): "pending" | "hit" | "near_miss" | "miss" {
   if (value === "hit" || value === "near_miss" || value === "miss") {
     return value;
@@ -876,6 +1125,7 @@ export type ArticleOutcome = {
   userId: number;
   targetPackage: string | null;
   scorecard: Record<string, unknown>;
+  attribution: Record<string, unknown> | null;
   hitStatus: "pending" | "hit" | "near_miss" | "miss";
   reviewSummary: string | null;
   nextAction: string | null;
@@ -888,6 +1138,8 @@ export type ArticleStrategyCard = {
   id: number;
   articleId: number;
   userId: number;
+  archetype: "opinion" | "case" | "howto" | "hotTake" | "phenomenon" | null;
+  mainstreamBelief: string | null;
   targetReader: string | null;
   coreAssertion: string | null;
   whyNow: string | null;
@@ -903,6 +1155,9 @@ export type ArticleStrategyCard = {
   realSceneOrDialogue: string | null;
   wantToComplain: string | null;
   nonDelegableTruth: string | null;
+  fourPointAudit: Record<string, unknown> | null;
+  strategyLockedAt: string | null;
+  strategyOverride: boolean;
   createdAt: string;
   updatedAt: string;
 };
@@ -922,6 +1177,10 @@ export type ArticleEvidenceItem = {
   usageMode: string | null;
   rationale: string | null;
   researchTag: string | null;
+  hookTags: string[];
+  hookStrength: number | null;
+  hookTaggedBy: string | null;
+  hookTaggedAt: string | null;
   evidenceRole: string;
   sortOrder: number;
   createdAt: string;
@@ -1001,6 +1260,18 @@ export type ArticleOutcomeBundle = {
   nextWindowCode: "24h" | "72h" | "7d" | null;
 };
 
+export type ArticleTopicAttribution = {
+  topicLeadId: number | null;
+  source: string | null;
+  fissionMode: string | null;
+  sourceTrackLabel: string | null;
+  predictedFlipStrength: number | null;
+  backlogId: number | null;
+  backlogName: string | null;
+  backlogItemId: number | null;
+  batchId: string | null;
+};
+
 export type AuthorPlaybookItem = {
   label: string;
   hitCount: number;
@@ -1016,6 +1287,7 @@ function mapArticleOutcome(row: {
   user_id: number;
   target_package: string | null;
   scorecard_json: string | Record<string, unknown> | null;
+  attribution_json: string | Record<string, unknown> | null;
   hit_status: string;
   review_summary: string | null;
   next_action: string | null;
@@ -1029,6 +1301,7 @@ function mapArticleOutcome(row: {
     userId: row.user_id,
     targetPackage: row.target_package,
     scorecard: parseJsonRecord(row.scorecard_json),
+    attribution: Object.keys(parseJsonRecord(row.attribution_json)).length > 0 ? parseJsonRecord(row.attribution_json) : null,
     hitStatus: normalizeOutcomeHitStatus(row.hit_status),
     reviewSummary: row.review_summary,
     nextAction: row.next_action,
@@ -1042,6 +1315,8 @@ function mapArticleStrategyCard(row: {
   id: number;
   article_id: number;
   user_id: number;
+  archetype: string | null;
+  mainstream_belief: string | null;
   target_reader: string | null;
   core_assertion: string | null;
   why_now: string | null;
@@ -1057,6 +1332,9 @@ function mapArticleStrategyCard(row: {
   real_scene_or_dialogue: string | null;
   want_to_complain: string | null;
   non_delegable_truth: string | null;
+  four_point_audit_json: string | Record<string, unknown> | null;
+  strategy_locked_at: string | null;
+  strategy_override: boolean | number | string | null;
   created_at: string;
   updated_at: string;
 }): ArticleStrategyCard {
@@ -1064,6 +1342,11 @@ function mapArticleStrategyCard(row: {
     id: row.id,
     articleId: row.article_id,
     userId: row.user_id,
+    archetype:
+      row.archetype === "opinion" || row.archetype === "case" || row.archetype === "howto" || row.archetype === "hotTake" || row.archetype === "phenomenon"
+        ? row.archetype
+        : null,
+    mainstreamBelief: row.mainstream_belief,
     targetReader: row.target_reader,
     coreAssertion: row.core_assertion,
     whyNow: row.why_now,
@@ -1079,6 +1362,9 @@ function mapArticleStrategyCard(row: {
     realSceneOrDialogue: row.real_scene_or_dialogue,
     wantToComplain: row.want_to_complain,
     nonDelegableTruth: row.non_delegable_truth,
+    fourPointAudit: Object.keys(parseJsonRecord(row.four_point_audit_json)).length ? parseJsonRecord(row.four_point_audit_json) : null,
+    strategyLockedAt: row.strategy_locked_at,
+    strategyOverride: parseJsonBoolean(row.strategy_override),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -1099,6 +1385,10 @@ function mapArticleEvidenceItem(row: {
   usage_mode: string | null;
   rationale: string | null;
   research_tag: string | null;
+  hook_tags_json: string | string[] | null;
+  hook_strength: number | null;
+  hook_tagged_by: string | null;
+  hook_tagged_at: string | null;
   evidence_role: string | null;
   sort_order: number;
   created_at: string;
@@ -1119,6 +1409,10 @@ function mapArticleEvidenceItem(row: {
     usageMode: row.usage_mode,
     rationale: row.rationale,
     researchTag: row.research_tag,
+    hookTags: parseJsonStringArray(row.hook_tags_json),
+    hookStrength: typeof row.hook_strength === "number" && Number.isFinite(row.hook_strength) ? row.hook_strength : null,
+    hookTaggedBy: row.hook_tagged_by,
+    hookTaggedAt: row.hook_tagged_at,
     evidenceRole: row.evidence_role || "supportingEvidence",
     sortOrder: row.sort_order,
     createdAt: row.created_at,
@@ -2053,6 +2347,7 @@ export async function getArticleOutcome(articleId: number, userId: number) {
     user_id: number;
     target_package: string | null;
     scorecard_json: string | Record<string, unknown> | null;
+    attribution_json: string | Record<string, unknown> | null;
     hit_status: string;
     review_summary: string | null;
     next_action: string | null;
@@ -2060,13 +2355,98 @@ export async function getArticleOutcome(articleId: number, userId: number) {
     created_at: string;
     updated_at: string;
   }>(
-    `SELECT id, article_id AS article_id, user_id, target_package, scorecard_json, hit_status, review_summary, next_action, playbook_tags_json, created_at, updated_at
+    `SELECT id, article_id AS article_id, user_id, target_package, scorecard_json, attribution_json, hit_status, review_summary, next_action, playbook_tags_json, created_at, updated_at
      FROM article_outcomes
      WHERE article_id = ? AND user_id = ?
      LIMIT 1`,
     [articleId, userId],
   );
   return row ? mapArticleOutcome(row) : null;
+}
+
+export async function getArticleTopicAttribution(articleId: number, userId: number): Promise<ArticleTopicAttribution | null> {
+  await ensureExtendedProductSchema();
+  const db = getDatabase();
+  const backlogLinked = await db.queryOne<{
+    topic_lead_id: number | null;
+    source: string | null;
+    fission_mode: string | null;
+    source_track_label: string | null;
+    predicted_flip_strength: number | null;
+    backlog_id: number | null;
+    backlog_name: string | null;
+    backlog_item_id: number | null;
+    batch_id: string | null;
+  }>(
+    `SELECT
+       tbi.topic_lead_id,
+       tl.source,
+       tl.fission_mode,
+       tl.source_track_label,
+       tl.predicted_flip_strength,
+       tbi.backlog_id,
+       tb.name AS backlog_name,
+       tbi.id AS backlog_item_id,
+       tbi.generated_batch_id AS batch_id
+     FROM topic_backlog_items tbi
+     LEFT JOIN topic_backlogs tb
+       ON tb.id = tbi.backlog_id
+      AND tb.user_id = tbi.user_id
+     LEFT JOIN topic_leads tl
+       ON tl.id = tbi.topic_lead_id
+      AND tl.user_id = tbi.user_id
+     WHERE tbi.generated_article_id = ? AND tbi.user_id = ?
+     ORDER BY tbi.updated_at DESC, tbi.id DESC
+     LIMIT 1`,
+    [articleId, userId],
+  );
+  if (backlogLinked) {
+    return {
+      topicLeadId: backlogLinked.topic_lead_id,
+      source: backlogLinked.source,
+      fissionMode: backlogLinked.fission_mode,
+      sourceTrackLabel: backlogLinked.source_track_label,
+      predictedFlipStrength:
+        typeof backlogLinked.predicted_flip_strength === "number" && Number.isFinite(backlogLinked.predicted_flip_strength)
+          ? Number(backlogLinked.predicted_flip_strength)
+          : null,
+      backlogId: backlogLinked.backlog_id,
+      backlogName: backlogLinked.backlog_name,
+      backlogItemId: backlogLinked.backlog_item_id,
+      batchId: backlogLinked.batch_id,
+    };
+  }
+  const directLead = await db.queryOne<{
+    id: number;
+    source: string | null;
+    fission_mode: string | null;
+    source_track_label: string | null;
+    predicted_flip_strength: number | null;
+  }>(
+    `SELECT id, source, fission_mode, source_track_label, predicted_flip_strength
+     FROM topic_leads
+     WHERE adopted_article_id = ? AND user_id = ?
+     ORDER BY updated_at DESC, id DESC
+     LIMIT 1`,
+    [articleId, userId],
+  );
+  if (!directLead) {
+    return null;
+  }
+  return {
+    topicLeadId: directLead.id,
+    source: directLead.source,
+    fissionMode: directLead.fission_mode,
+    sourceTrackLabel: directLead.source_track_label,
+    predictedFlipStrength:
+      typeof directLead.predicted_flip_strength === "number" && Number.isFinite(directLead.predicted_flip_strength)
+        ? Number(directLead.predicted_flip_strength)
+        : null,
+    backlogId: null,
+    backlogName: null,
+    backlogItemId: null,
+    batchId: null,
+  };
 }
 
 export async function getArticleStrategyCard(articleId: number, userId: number) {
@@ -2076,6 +2456,8 @@ export async function getArticleStrategyCard(articleId: number, userId: number) 
     id: number;
     article_id: number;
     user_id: number;
+    archetype: string | null;
+    mainstream_belief: string | null;
     target_reader: string | null;
     core_assertion: string | null;
     why_now: string | null;
@@ -2091,11 +2473,15 @@ export async function getArticleStrategyCard(articleId: number, userId: number) 
     real_scene_or_dialogue: string | null;
     want_to_complain: string | null;
     non_delegable_truth: string | null;
+    four_point_audit_json: string | Record<string, unknown> | null;
+    strategy_locked_at: string | null;
+    strategy_override: boolean | number | string | null;
     created_at: string;
     updated_at: string;
   }>(
-    `SELECT id, article_id AS article_id, user_id, target_reader, core_assertion, why_now, research_hypothesis, market_position_insight, historical_turning_point, target_package, publish_window, ending_action,
+    `SELECT id, article_id AS article_id, user_id, archetype, mainstream_belief, target_reader, core_assertion, why_now, research_hypothesis, market_position_insight, historical_turning_point, target_package, publish_window, ending_action,
             first_hand_observation, felt_moment, why_this_hit_me, real_scene_or_dialogue, want_to_complain, non_delegable_truth,
+            four_point_audit_json, strategy_locked_at, strategy_override,
             created_at, updated_at
      FROM article_strategy_cards
      WHERE article_id = ? AND user_id = ?`,
@@ -2122,12 +2508,16 @@ export async function getArticleEvidenceItems(articleId: number, userId: number)
     usage_mode: string | null;
     rationale: string | null;
     research_tag: string | null;
+    hook_tags_json: string | string[] | null;
+    hook_strength: number | null;
+    hook_tagged_by: string | null;
+    hook_tagged_at: string | null;
     evidence_role: string | null;
     sort_order: number;
     created_at: string;
     updated_at: string;
   }>(
-    `SELECT id, article_id AS article_id, user_id, fragment_id, node_id, claim, title, excerpt, source_type, source_url, screenshot_path, usage_mode, rationale, research_tag, evidence_role, sort_order, created_at, updated_at
+    `SELECT id, article_id AS article_id, user_id, fragment_id, node_id, claim, title, excerpt, source_type, source_url, screenshot_path, usage_mode, rationale, research_tag, hook_tags_json, hook_strength, hook_tagged_by, hook_tagged_at, evidence_role, sort_order, created_at, updated_at
      FROM article_evidence_items
      WHERE article_id = ? AND user_id = ?
      ORDER BY sort_order ASC, id ASC`,
@@ -2214,6 +2604,8 @@ async function ensureArticleStrategyCardId(input: {
 export async function upsertArticleStrategyCard(input: {
   articleId: number;
   userId: number;
+  archetype?: "opinion" | "case" | "howto" | "hotTake" | "phenomenon" | null;
+  mainstreamBelief?: string | null;
   targetReader?: string | null;
   coreAssertion?: string | null;
   whyNow?: string | null;
@@ -2229,6 +2621,9 @@ export async function upsertArticleStrategyCard(input: {
   realSceneOrDialogue?: string | null;
   wantToComplain?: string | null;
   nonDelegableTruth?: string | null;
+  fourPointAudit?: Record<string, unknown> | null;
+  strategyLockedAt?: string | null;
+  strategyOverride?: boolean;
 }) {
   await ensureExtendedProductSchema();
   const strategyCardId = await ensureArticleStrategyCardId({
@@ -2240,12 +2635,15 @@ export async function upsertArticleStrategyCard(input: {
   const now = new Date().toISOString();
   await db.exec(
     `UPDATE article_strategy_cards
-     SET target_reader = ?, core_assertion = ?, why_now = ?, research_hypothesis = ?, market_position_insight = ?, historical_turning_point = ?,
+     SET archetype = ?, mainstream_belief = ?, target_reader = ?, core_assertion = ?, why_now = ?, research_hypothesis = ?, market_position_insight = ?, historical_turning_point = ?,
          target_package = ?, publish_window = ?, ending_action = ?,
          first_hand_observation = ?, felt_moment = ?, why_this_hit_me = ?, real_scene_or_dialogue = ?, want_to_complain = ?, non_delegable_truth = ?,
+         four_point_audit_json = ?, strategy_locked_at = ?, strategy_override = ?,
          updated_at = ?
      WHERE id = ? AND article_id = ? AND user_id = ?`,
     [
+      input.archetype !== undefined ? input.archetype : current?.archetype ?? null,
+      input.mainstreamBelief !== undefined ? input.mainstreamBelief : current?.mainstreamBelief ?? null,
       input.targetReader !== undefined ? input.targetReader : current?.targetReader ?? null,
       input.coreAssertion !== undefined ? input.coreAssertion : current?.coreAssertion ?? null,
       input.whyNow !== undefined ? input.whyNow : current?.whyNow ?? null,
@@ -2261,6 +2659,9 @@ export async function upsertArticleStrategyCard(input: {
       input.realSceneOrDialogue !== undefined ? input.realSceneOrDialogue : current?.realSceneOrDialogue ?? null,
       input.wantToComplain !== undefined ? input.wantToComplain : current?.wantToComplain ?? null,
       input.nonDelegableTruth !== undefined ? input.nonDelegableTruth : current?.nonDelegableTruth ?? null,
+      JSON.stringify(input.fourPointAudit !== undefined ? (input.fourPointAudit ?? null) : current?.fourPointAudit ?? null),
+      input.strategyLockedAt !== undefined ? input.strategyLockedAt : current?.strategyLockedAt ?? null,
+      input.strategyOverride !== undefined ? (input.strategyOverride ? 1 : 0) : current?.strategyOverride ? 1 : 0,
       now,
       strategyCardId,
       input.articleId,
@@ -2285,6 +2686,10 @@ export async function replaceArticleEvidenceItems(input: {
     usageMode?: string | null;
     rationale?: string | null;
     researchTag?: string | null;
+    hookTags?: string[];
+    hookStrength?: number | null;
+    hookTaggedBy?: string | null;
+    hookTaggedAt?: string | null;
     evidenceRole?: string | null;
   }>;
 }) {
@@ -2293,10 +2698,41 @@ export async function replaceArticleEvidenceItems(input: {
   const now = new Date().toISOString();
   await db.exec("DELETE FROM article_evidence_items WHERE article_id = ? AND user_id = ?", [input.articleId, input.userId]);
   for (const [index, item] of input.items.entries()) {
+    const normalizedHookTags = Array.isArray(item.hookTags)
+      ? item.hookTags
+          .map((tag) => normalizeEvidenceHookTag(tag))
+          .filter((tag): tag is NonNullable<typeof tag> => Boolean(tag))
+          .slice(0, 4)
+      : [];
+    const hasExplicitHookMetadata = normalizedHookTags.length > 0 || (typeof item.hookStrength === "number" && Number.isFinite(item.hookStrength));
+    const taggedItem = hasExplicitHookMetadata
+      ? {
+          hookTags: normalizedHookTags,
+          hookStrength:
+            typeof item.hookStrength === "number" && Number.isFinite(item.hookStrength)
+              ? item.hookStrength
+              : inferEvidenceHookStrength({
+                  title: item.title,
+                  excerpt: item.excerpt,
+                  claim: item.claim,
+                  rationale: item.rationale,
+                  sourceUrl: item.sourceUrl,
+                  hookTags: normalizedHookTags,
+                }),
+          hookTaggedBy: item.hookTaggedBy ?? (normalizedHookTags.length > 0 ? "author" : "ai"),
+          hookTaggedAt: item.hookTaggedAt ?? now,
+        }
+      : tagEvidenceItemHooks({
+          title: item.title,
+          excerpt: item.excerpt,
+          claim: item.claim ?? null,
+          rationale: item.rationale ?? null,
+          sourceUrl: item.sourceUrl ?? null,
+        }, "ai");
     await db.exec(
       `INSERT INTO article_evidence_items (
-        article_id, user_id, fragment_id, node_id, claim, title, excerpt, source_type, source_url, screenshot_path, usage_mode, rationale, research_tag, evidence_role, sort_order, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        article_id, user_id, fragment_id, node_id, claim, title, excerpt, source_type, source_url, screenshot_path, usage_mode, rationale, research_tag, hook_tags_json, hook_strength, hook_tagged_by, hook_tagged_at, evidence_role, sort_order, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         input.articleId,
         input.userId,
@@ -2311,6 +2747,10 @@ export async function replaceArticleEvidenceItems(input: {
         item.usageMode ?? null,
         item.rationale ?? null,
         item.researchTag ?? null,
+        JSON.stringify(taggedItem.hookTags),
+        taggedItem.hookStrength,
+        taggedItem.hookTaggedBy,
+        taggedItem.hookTaggedAt,
         item.evidenceRole ?? "supportingEvidence",
         index + 1,
         now,
@@ -2460,10 +2900,10 @@ async function ensureArticleOutcomeId(input: {
   const db = getDatabase();
   const now = new Date().toISOString();
   await db.exec(
-    `INSERT INTO article_outcomes (article_id, user_id, scorecard_json, hit_status, playbook_tags_json, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO article_outcomes (article_id, user_id, scorecard_json, attribution_json, hit_status, playbook_tags_json, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(article_id) DO NOTHING`,
-    [input.articleId, input.userId, JSON.stringify({}), "pending", JSON.stringify([]), now, now],
+    [input.articleId, input.userId, JSON.stringify({}), null, "pending", JSON.stringify([]), now, now],
   );
   const outcome = await db.queryOne<{ id: number }>(
     "SELECT id FROM article_outcomes WHERE article_id = ? AND user_id = ?",
@@ -2480,6 +2920,7 @@ export async function upsertArticleOutcome(input: {
   userId: number;
   targetPackage?: string | null;
   scorecard?: Record<string, unknown>;
+  attribution?: Record<string, unknown> | null;
   hitStatus?: "pending" | "hit" | "near_miss" | "miss";
   reviewSummary?: string | null;
   nextAction?: string | null;
@@ -2490,14 +2931,16 @@ export async function upsertArticleOutcome(input: {
   const current = await getArticleOutcome(input.articleId, input.userId);
   const now = new Date().toISOString();
   const nextScorecard = input.scorecard !== undefined ? input.scorecard : current?.scorecard ?? {};
+  const nextAttribution = input.attribution !== undefined ? input.attribution : current?.attribution ?? null;
   const nextPlaybookTags = input.playbookTags !== undefined ? input.playbookTags : current?.playbookTags ?? [];
   await db.exec(
     `UPDATE article_outcomes
-     SET target_package = ?, scorecard_json = ?, hit_status = ?, review_summary = ?, next_action = ?, playbook_tags_json = ?, updated_at = ?
+     SET target_package = ?, scorecard_json = ?, attribution_json = ?, hit_status = ?, review_summary = ?, next_action = ?, playbook_tags_json = ?, updated_at = ?
      WHERE id = ? AND user_id = ?`,
     [
       input.targetPackage !== undefined ? input.targetPackage : current?.targetPackage ?? null,
       JSON.stringify(nextScorecard),
+      nextAttribution ? JSON.stringify(nextAttribution) : null,
       input.hitStatus ?? current?.hitStatus ?? "pending",
       input.reviewSummary !== undefined ? input.reviewSummary : current?.reviewSummary ?? null,
       input.nextAction !== undefined ? input.nextAction : current?.nextAction ?? null,
@@ -2589,6 +3032,7 @@ export async function getArticleOutcomeBundlesByUser(userId: number) {
     user_id: number;
     target_package: string | null;
     scorecard_json: string | Record<string, unknown> | null;
+    attribution_json: string | Record<string, unknown> | null;
     hit_status: string;
     review_summary: string | null;
     next_action: string | null;
@@ -2596,7 +3040,7 @@ export async function getArticleOutcomeBundlesByUser(userId: number) {
     created_at: string;
     updated_at: string;
   }>(
-    `SELECT id, article_id AS article_id, user_id, target_package, scorecard_json, hit_status, review_summary, next_action, playbook_tags_json, created_at, updated_at
+    `SELECT id, article_id AS article_id, user_id, target_package, scorecard_json, attribution_json, hit_status, review_summary, next_action, playbook_tags_json, created_at, updated_at
      FROM article_outcomes
      WHERE user_id = ?
      ORDER BY updated_at DESC, id DESC`,

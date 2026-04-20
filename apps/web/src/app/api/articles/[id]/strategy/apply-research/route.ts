@@ -1,7 +1,9 @@
+import { buildFourPointAudit, hasStrategyLockInputsChanged } from "@/lib/article-strategy";
 import { ensureUserSession } from "@/lib/auth";
 import { getArticleStageArtifact } from "@/lib/article-stage-artifacts";
 import { fail, ok } from "@/lib/http";
 import { getArticleById, getArticleStrategyCard, upsertArticleStrategyCard } from "@/lib/repositories";
+import { mergeStrategyCardPatch } from "../shared";
 
 function getRecord(value: unknown) {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
@@ -38,9 +40,7 @@ export async function POST(_: Request, { params }: { params: { id: string } }) {
     return fail("当前研究简报还没有可直接写回策略卡的字段。", 400);
   }
 
-  const saved = await upsertArticleStrategyCard({
-    articleId: article.id,
-    userId: session.userId,
+  const patch = {
     targetReader: nextTargetReader || strategyCard?.targetReader || null,
     coreAssertion: nextCoreAssertion || strategyCard?.coreAssertion || null,
     whyNow: nextWhyNow || strategyCard?.whyNow || null,
@@ -56,6 +56,17 @@ export async function POST(_: Request, { params }: { params: { id: string } }) {
     realSceneOrDialogue: strategyCard?.realSceneOrDialogue ?? null,
     wantToComplain: strategyCard?.wantToComplain ?? null,
     nonDelegableTruth: strategyCard?.nonDelegableTruth ?? null,
+  };
+  const nextStrategyCard = mergeStrategyCardPatch(strategyCard, patch);
+  const fourPointAudit = buildFourPointAudit(nextStrategyCard);
+  const shouldClearLock = hasStrategyLockInputsChanged(strategyCard, nextStrategyCard);
+  const saved = await upsertArticleStrategyCard({
+    articleId: article.id,
+    userId: session.userId,
+    ...patch,
+    fourPointAudit,
+    strategyLockedAt: shouldClearLock ? null : strategyCard?.strategyLockedAt ?? null,
+    strategyOverride: shouldClearLock ? false : strategyCard?.strategyOverride ?? false,
   });
 
   return ok({

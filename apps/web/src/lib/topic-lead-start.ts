@@ -6,7 +6,9 @@ import { getKnowledgeCards } from "./knowledge";
 import { matchTopicToKnowledgeCards } from "./knowledge-match";
 import { assertFragmentQuota, assertTopicSignalStartAllowed } from "./plan-access";
 import { assertPersonaReady } from "./personas";
-import { createArticle, createFragment } from "./repositories";
+import { createArticle, createFragment, upsertArticleStrategyCard } from "./repositories";
+import type { TopicFissionCandidate } from "./topic-fission";
+import { adoptTopicLeadToArticle, createTopicLead } from "./topic-leads";
 import { getVisibleTopicRecommendationsForUser } from "./topic-recommendations";
 
 function buildTopicNodeBlueprints(input: {
@@ -41,32 +43,35 @@ function buildTopicNodeBlueprints(input: {
   ];
 }
 
-export async function startTopicLeadForUser(input: {
+type TopicSeedStrategyCardInput = {
+  archetype?: TopicFissionCandidate["suggestedArchetype"] | null;
+  mainstreamBelief?: string | null;
+  targetReader?: string | null;
+  coreAssertion?: string | null;
+  whyNow?: string | null;
+};
+
+async function startDraftFromTopicSeedForUser(input: {
   userId: number;
-  topicId: number;
-  angleIndex?: number;
-  chosenAngle?: string | null;
+  title: string;
+  sourceName: string;
+  summary: string;
+  recommendationReason: string;
+  chosenAngle: string;
+  emotionLabels: string[];
+  sourceUrl?: string | null;
   seriesId?: number | null;
+  matchedPersonaName?: string | null;
+  strategyCard?: TopicSeedStrategyCardInput | null;
+  topicLeadId?: number | null;
 }) {
   await assertPersonaReady(input.userId);
   await assertTopicSignalStartAllowed(input.userId);
   await assertFragmentQuota(input.userId);
 
-  const topics = await getVisibleTopicRecommendationsForUser(input.userId);
-  const topic = topics.find((item) => item.id === input.topicId);
-  if (!topic) {
-    throw new Error("热点不存在");
-  }
-  const angleOptions = topic.angleOptions;
-  const emotionLabels = topic.emotionLabels;
-  const chosenAngle =
-    String(input.chosenAngle || "").trim()
-    || angleOptions[input.angleIndex ?? 0]
-    || angleOptions[0]
-    || `围绕“${topic.title}”写这条热点真正值得下笔的切口。`;
   const knowledgeCards = await getKnowledgeCards(input.userId);
   const matchedCards = matchTopicToKnowledgeCards(
-    topic.title,
+    input.title,
     knowledgeCards.map((card) => ({
       id: card.id,
       title: card.title,
@@ -79,16 +84,43 @@ export async function startTopicLeadForUser(input: {
   );
   const matchedCardLookup = new Map(knowledgeCards.map((card) => [card.id, card] as const));
 
-  const article = await createArticle(input.userId, topic.title, input.seriesId);
+  const article = await createArticle(input.userId, input.title, input.seriesId);
+  if (!article?.id) {
+    throw new Error("创建稿件失败");
+  }
+  if (input.topicLeadId) {
+    await adoptTopicLeadToArticle({
+      userId: input.userId,
+      topicLeadId: input.topicLeadId,
+      articleId: Number(article.id),
+    });
+  }
   await setArticleWorkflowCurrentStage({
-    articleId: Number(article!.id),
+    articleId: Number(article.id),
     userId: input.userId,
     stageCode: "researchBrief",
   });
+  if (input.strategyCard) {
+    await upsertArticleStrategyCard({
+      articleId: Number(article.id),
+      userId: input.userId,
+      archetype: input.strategyCard.archetype,
+      mainstreamBelief: input.strategyCard.mainstreamBelief,
+      targetReader: input.strategyCard.targetReader,
+      coreAssertion: input.strategyCard.coreAssertion,
+      whyNow: input.strategyCard.whyNow,
+    });
+  }
   const distilled = await distillCaptureInput({
     sourceType: "manual",
-    title: topic.title,
-    content: `${topic.title}\n${topic.summary || ""}\n${topic.recommendationReason}\n${chosenAngle}\n${topic.sourceUrl || ""}`,
+    title: input.title,
+    content: [
+      input.title,
+      input.summary || "",
+      input.recommendationReason || "",
+      input.chosenAngle,
+      input.sourceUrl || "",
+    ].filter(Boolean).join("\n"),
   });
   const fragment = await createFragment({
     userId: input.userId,
@@ -96,16 +128,16 @@ export async function startTopicLeadForUser(input: {
     title: distilled.title,
     rawContent: distilled.rawContent,
     distilledContent: distilled.distilledContent,
-    sourceUrl: topic.sourceUrl,
+    sourceUrl: input.sourceUrl,
   });
 
-  const nodes = await getArticleNodes(article!.id);
+  const nodes = await getArticleNodes(article.id);
   const nodeBlueprints = buildTopicNodeBlueprints({
-    topicTitle: topic.title,
-    sourceName: topic.sourceName,
-    summary: topic.summary || "",
-    chosenAngle,
-    emotionLabels,
+    topicTitle: input.title,
+    sourceName: input.sourceName,
+    summary: input.summary || "",
+    chosenAngle: input.chosenAngle,
+    emotionLabels: input.emotionLabels,
     knowledgeHints: matchedCards
       .map((matchedCard) => matchedCardLookup.get(matchedCard.id))
       .filter((card): card is NonNullable<typeof card> => Boolean(card))
@@ -118,7 +150,7 @@ export async function startTopicLeadForUser(input: {
       continue;
     }
     await updateArticleNode({
-      articleId: article!.id,
+      articleId: article.id,
       nodeId: node.id,
       title: blueprint.title,
       description: blueprint.description,
@@ -128,7 +160,7 @@ export async function startTopicLeadForUser(input: {
   if (fragment) {
     for (const node of nodes.slice(0, nodeBlueprints.length)) {
       await attachFragmentToArticleNode({
-        articleId: article!.id,
+        articleId: article.id,
         nodeId: node.id,
         fragmentId: Number(fragment.id),
       });
@@ -147,22 +179,111 @@ export async function startTopicLeadForUser(input: {
     }
     usedFragmentIds.add(nextFragmentId);
     await attachFragmentToArticleNode({
-      articleId: article!.id,
+      articleId: article.id,
       nodeId: node.id,
       fragmentId: nextFragmentId,
     });
   }
 
   await generateArticleStageArtifact({
-    articleId: article!.id,
+    articleId: article.id,
     userId: input.userId,
     stageCode: "researchBrief",
   });
 
   return {
-    articleId: article?.id,
-    title: article?.title,
-    chosenAngle,
-    matchedPersonaName: topic.matchedPersonaName,
+    articleId: article.id,
+    title: article.title,
+    chosenAngle: input.chosenAngle,
+    matchedPersonaName: input.matchedPersonaName ?? null,
   };
+}
+
+export async function startTopicLeadForUser(input: {
+  userId: number;
+  topicId: number;
+  angleIndex?: number;
+  chosenAngle?: string | null;
+  seriesId?: number | null;
+}) {
+  const topics = await getVisibleTopicRecommendationsForUser(input.userId);
+  const topic = topics.find((item) => item.id === input.topicId);
+  if (!topic) {
+    throw new Error("热点不存在");
+  }
+  const angleOptions = topic.angleOptions;
+  const emotionLabels = topic.emotionLabels;
+  const chosenAngle =
+    String(input.chosenAngle || "").trim()
+    || angleOptions[input.angleIndex ?? 0]
+    || angleOptions[0]
+    || `围绕“${topic.title}”写这条热点真正值得下笔的切口。`;
+  const topicLead = await createTopicLead({
+    userId: input.userId,
+    source: "radar",
+    topic: topic.title,
+    description: topic.summary || topic.recommendationReason,
+  });
+  return startDraftFromTopicSeedForUser({
+    userId: input.userId,
+    title: topic.title,
+    sourceName: topic.sourceName,
+    summary: topic.summary || "",
+    recommendationReason: topic.recommendationReason,
+    chosenAngle,
+    emotionLabels,
+    sourceUrl: topic.sourceUrl,
+    seriesId: input.seriesId,
+    matchedPersonaName: topic.matchedPersonaName,
+    topicLeadId: topicLead?.id ?? null,
+  });
+}
+
+export async function startTopicFissionCandidateForUser(input: {
+  userId: number;
+  topicId: number;
+  candidate: TopicFissionCandidate;
+  seriesId?: number | null;
+}) {
+  const topics = await getVisibleTopicRecommendationsForUser(input.userId);
+  const topic = topics.find((item) => item.id === input.topicId);
+  if (!topic) {
+    throw new Error("原始选题不存在");
+  }
+  const topicLead = await createTopicLead({
+    userId: input.userId,
+    source: "topicFission",
+    fissionMode: input.candidate.fissionMode,
+    sourceTrackLabel: input.candidate.sourceTrackLabel,
+    topic: input.candidate.title,
+    targetAudience: input.candidate.targetReader,
+    description: input.candidate.description,
+    predictedFlipStrength: input.candidate.predictedFlipStrength,
+    archetypeSuggestion: input.candidate.suggestedArchetype,
+  });
+
+  return startDraftFromTopicSeedForUser({
+    userId: input.userId,
+    title: input.candidate.title,
+    sourceName: `${topic.sourceName} · ${input.candidate.modeLabel}`,
+    summary: input.candidate.description,
+    recommendationReason: `由《${topic.title}》执行${input.candidate.modeLabel}得到，原赛道：${input.candidate.sourceTrackLabel}${input.candidate.targetTrackLabel ? `，目标赛道：${input.candidate.targetTrackLabel}` : ""}。`,
+    chosenAngle: input.candidate.suggestedAngle,
+    emotionLabels: dedupeEmotionLabels(topic.emotionLabels, input.candidate.modeLabel),
+    sourceUrl: topic.sourceUrl,
+    seriesId: input.seriesId,
+    matchedPersonaName: topic.matchedPersonaName,
+    strategyCard: {
+      archetype: input.candidate.suggestedArchetype,
+      mainstreamBelief: input.candidate.suggestedMainstreamBelief,
+      targetReader: input.candidate.targetReader,
+      coreAssertion: input.candidate.suggestedCoreAssertion,
+      whyNow: input.candidate.suggestedWhyNow,
+    },
+    topicLeadId: topicLead?.id ?? null,
+  });
+}
+
+function dedupeEmotionLabels(emotions: string[], modeLabel: string) {
+  return Array.from(new Set([modeLabel, ...emotions].map((item) => String(item || "").trim()).filter(Boolean))).slice(0, 4);
 }

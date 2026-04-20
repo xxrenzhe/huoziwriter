@@ -48,6 +48,8 @@ type ResearchBriefLike = {
 } | null;
 
 type StrategyCardLike = {
+  archetype?: "opinion" | "case" | "howto" | "hotTake" | "phenomenon" | null;
+  mainstreamBelief?: string | null;
   targetReader?: string | null;
   coreAssertion?: string | null;
   whyNow?: string | null;
@@ -95,6 +97,7 @@ export type WritingStateKernel = {
   articlePrototype: ArticlePrototypeCode;
   articlePrototypeLabel: string;
   articlePrototypeReason: string;
+  archetypeRhythmHint: string;
   stateVariantCode: WritingStateVariantCode;
   stateVariantLabel: string;
   stateVariantReason: string;
@@ -126,6 +129,14 @@ export type WritingStateKernel = {
   prototypeOptions: ArticlePrototypeOption[];
   stateOptions: WritingStateOption[];
 };
+
+function mapStrategyArchetypeToPrototype(archetype: NonNullable<StrategyCardLike>["archetype"]): ArticlePrototypeCode | null {
+  if (archetype === "case") return "personal_narrative";
+  if (archetype === "howto") return "methodology";
+  if (archetype === "hotTake" || archetype === "phenomenon") return "phenomenon_analysis";
+  if (archetype === "opinion") return "general";
+  return null;
+}
 
 function includesAny(text: string, patterns: RegExp[]) {
   return patterns.some((pattern) => pattern.test(text));
@@ -491,9 +502,11 @@ export function buildWritingStateKernel(input: {
   seriesInsight?: SeriesInsightLike;
   researchBrief?: ResearchBriefLike;
   strategyCard?: StrategyCardLike;
+  archetypeRhythmHints?: ArchetypeRhythmHints | null;
   preferredPrototypeCode?: ArticlePrototypeCode | null;
   preferredVariantCode?: WritingStateVariantCode | null;
 }): WritingStateKernel {
+  const strategyMappedPrototype = mapStrategyArchetypeToPrototype(input.strategyCard?.archetype);
   const prototypeOptions = buildPrototypeScoredOptions({
     title: input.title,
     markdownContent: input.markdownContent,
@@ -502,15 +515,21 @@ export function buildWritingStateKernel(input: {
     strategyCard: input.strategyCard,
   });
   const recommendedPrototype = prototypeOptions[0];
-  const preferredPrototype = input.preferredPrototypeCode
-    ? prototypeOptions.find((item) => item.code === input.preferredPrototypeCode) ?? null
+  const resolvedPreferredPrototypeCode = input.preferredPrototypeCode ?? strategyMappedPrototype;
+  const preferredPrototype = resolvedPreferredPrototypeCode
+    ? prototypeOptions.find((item) => item.code === resolvedPreferredPrototypeCode) ?? null
     : null;
   const selectedPrototype = preferredPrototype ?? recommendedPrototype;
   const prototype = selectedPrototype.code;
   const prototypeBlueprint = getPrototypeBlueprint(prototype);
+  const archetypeRhythmHint = input.archetypeRhythmHints ? buildArchetypeRhythmHintText(input.archetypeRhythmHints) : "";
   const articlePrototypeReason =
     preferredPrototype && recommendedPrototype && preferredPrototype.code !== recommendedPrototype.code
-      ? `已手动切换到「${preferredPrototype.label}」。系统默认推荐是「${recommendedPrototype.label}」；本次切换依据：${preferredPrototype.triggerReason}`
+      ? `${
+        input.preferredPrototypeCode
+          ? `已手动切换到「${preferredPrototype.label}」。`
+          : `策略卡原型已指定为「${String(input.strategyCard?.archetype || "").trim() || preferredPrototype.label}」，优先映射到「${preferredPrototype.label}」。`
+      }系统默认推荐是「${recommendedPrototype.label}」；本次切换依据：${preferredPrototype.triggerReason}`
       : selectedPrototype.triggerReason;
   const humanScore = Number(input.humanSignals?.score || 0);
   const hasRealScene = Boolean(String(input.humanSignals?.realSceneOrDialogue || "").trim() || String(input.humanSignals?.firstHandObservation || "").trim());
@@ -557,43 +576,58 @@ export function buildWritingStateKernel(input: {
 
   const narrativePosture =
     humanScore >= 3
-      ? `${selectedVariant.narrativePosture} 作者手里已经有足够体感和现场感，可以把“我为什么这么判断”说透。`
-      : `${selectedVariant.narrativePosture} 当前人类信号还不算厚，句子要更节制，别装成全知全能。`;
+      ? `${input.archetypeRhythmHints ? `默认叙事姿态是「${input.archetypeRhythmHints.narrativeStance}」。` : ""}${selectedVariant.narrativePosture} 作者手里已经有足够体感和现场感，可以把“我为什么这么判断”说透。`
+      : `${input.archetypeRhythmHints ? `默认叙事姿态是「${input.archetypeRhythmHints.narrativeStance}」。` : ""}${selectedVariant.narrativePosture} 当前人类信号还不算厚，句子要更节制，别装成全知全能。`;
   const readerDistance = preferredResearchSignals.targetReader
     ? `默认把读者当成「${preferredResearchSignals.targetReader}」，先解决他们为什么现在必须关心这件事。`
     : String(researchWriteback?.targetReader || "").trim()
       ? `默认把读者当成「${String(researchWriteback?.targetReader).trim()}」，先解决他们为什么现在必须关心这件事。`
       : "默认把读者当成懂一点背景、但不想听套话的熟人。";
-  const energyCurve = `${prototypeBlueprint.sectionRhythm} ${selectedVariant.energyCurve}`;
+  const energyCurve = input.archetypeRhythmHints
+    ? `${input.archetypeRhythmHints.energyCurve} ${selectedVariant.energyCurve}`
+    : `${prototypeBlueprint.sectionRhythm} ${selectedVariant.energyCurve}`;
+  const discoveryModePrefix = input.archetypeRhythmHints ? `默认发现模式是「${input.archetypeRhythmHints.discoveryMode}」。` : "";
   const discoveryMode = hasRealScene
-    ? "优先从亲历观察、真实场景或一句原话落笔，再带出判断。"
+    ? `${discoveryModePrefix}优先从亲历观察、真实场景或一句原话落笔，再带出判断。`
     : researchTimelineCount > 0 || researchComparisonCount > 0
-      ? "优先从研究层最关键的时间节点、横向反差或交汇洞察落笔，不要只平铺素材。"
-    : "优先从具体事实或当前现象落笔，不要先写背景介绍。";
+      ? `${discoveryModePrefix}优先从研究层最关键的时间节点、横向反差或交汇洞察落笔，不要只平铺素材。`
+    : `${discoveryModePrefix}优先从具体事实或当前现象落笔，不要先写背景介绍。`;
   const tangentAllowance = input.writingStyleProfile?.tangentPatterns?.length
     ? `允许短暂偏题，但必须按这些方式回到主线：${input.writingStyleProfile.tangentPatterns.slice(0, 2).join("；")}`
-    : "允许短暂偏题补类比或吐槽，但每次偏出去后都要用一句判断拉回主线。";
+    : input.archetypeRhythmHints?.offTopicTolerance === "low"
+      ? "默认低跑题容忍度：尽量不横向岔开，只允许极短类比，并且立刻回到主线判断。"
+      : input.archetypeRhythmHints?.offTopicTolerance === "high"
+        ? "默认高跑题容忍度：允许短暂绕到侧面样本或更大背景，但每次偏出后都要回收成同一条判断。"
+        : "默认中等跑题容忍度：允许短暂偏题补类比或吐槽，但每次偏出去后都要用一句判断拉回主线。";
   const breakPattern = input.writingStyleProfile?.paragraphBreathingPattern
     ? `段落呼吸优先遵守：${input.writingStyleProfile.paragraphBreathingPattern}`
     : "允许短段、断句和一句话独段，不要把每段写得一样长。";
   const callbackMode = input.writingStyleProfile?.callbackPatterns?.length
     ? `如有条件，优先使用这些回环方式：${input.writingStyleProfile.callbackPatterns.slice(0, 2).join("；")}`
     : "如果开头抛了一个具象现象，结尾尽量回扣，但不要硬凑升华。";
+  const rhythmJudgementStrength =
+    input.archetypeRhythmHints?.judgmentStrength === "high"
+      ? "原型默认判断强度较高，可以更早亮出立场，但必须让事实承重。"
+      : input.archetypeRhythmHints?.judgmentStrength === "low"
+        ? "原型默认判断强度较低，先把动作和事实讲清，再自然收成判断。"
+        : input.archetypeRhythmHints
+          ? "原型默认判断强度中等，判断清楚，但不要压过事实层。"
+          : "";
   const judgementStrength = preferredResearchSignals.coreAssertion
-    ? `核心判断是「${preferredResearchSignals.coreAssertion}」。${selectedVariant.judgementStrength}`
+    ? `核心判断是「${preferredResearchSignals.coreAssertion}」。${rhythmJudgementStrength}${rhythmJudgementStrength ? " " : ""}${selectedVariant.judgementStrength}`
     : preferredResearchSignals.researchHypothesis
-      ? `这次正文至少要围绕这条研究假设推进：「${preferredResearchSignals.researchHypothesis}」。${selectedVariant.judgementStrength}`
+      ? `这次正文至少要围绕这条研究假设推进：「${preferredResearchSignals.researchHypothesis}」。${rhythmJudgementStrength}${rhythmJudgementStrength ? " " : ""}${selectedVariant.judgementStrength}`
       : String(researchWriteback?.coreAssertion || "").trim()
-        ? `研究层已经推到这条主判断：「${String(researchWriteback?.coreAssertion).trim()}」。${selectedVariant.judgementStrength}`
-      : selectedVariant.judgementStrength;
+        ? `研究层已经推到这条主判断：「${String(researchWriteback?.coreAssertion).trim()}」。${rhythmJudgementStrength}${rhythmJudgementStrength ? " " : ""}${selectedVariant.judgementStrength}`
+        : `${rhythmJudgementStrength}${rhythmJudgementStrength ? " " : ""}${selectedVariant.judgementStrength}`;
   const humilityMode = prototype === "methodology"
     ? "方法类文章先卸掉教人姿态，允许承认不确定、学习曲线和失败点。"
     : selectedVariant.humilityMode;
   const stopMode = input.strategyCard?.endingAction
     ? `结尾优先停在这个动作或收束上：${input.strategyCard.endingAction}`
     : input.writingStyleProfile?.endingPatterns?.length
-      ? `结尾倾向：${input.writingStyleProfile.endingPatterns.slice(0, 2).join("；")}`
-      : selectedVariant.endingBias;
+      ? `默认收束方式是「${input.archetypeRhythmHints?.closureMode || "按题型收束"}」，同时参考这些结尾倾向：${input.writingStyleProfile.endingPatterns.slice(0, 2).join("；")}`
+      : `默认收束方式是「${input.archetypeRhythmHints?.closureMode || "按题型收束"}」。${selectedVariant.endingBias}`;
   const emotionalTemperature = String(input.humanSignals?.feltMoment || "").trim()
     ? `当前情绪线索来自作者体感：「${String(input.humanSignals?.feltMoment).trim()}」。`
     : researchWhyNow
@@ -656,6 +690,7 @@ export function buildWritingStateKernel(input: {
   const stateChecklist = [
     `先按「${prototypeBlueprint.label}」写，不要把所有题材都写成同一种三段论。`,
     `这次文章原型定为「${prototypeBlueprint.label}」，原因：${articlePrototypeReason}`,
+    archetypeRhythmHint ? `当前原型节奏模板：${archetypeRhythmHint}` : null,
     `这次优先用「${selectedVariant.label}」，原因：${stateVariantReason}`,
     progressiveReveal.enabled
       ? `当前启用「${progressiveReveal.label}」：${progressiveReveal.escalationRule}`
@@ -673,6 +708,7 @@ export function buildWritingStateKernel(input: {
     articlePrototype: prototype,
     articlePrototypeLabel: prototypeBlueprint.label,
     articlePrototypeReason,
+    archetypeRhythmHint,
     stateVariantCode: selectedVariant.code,
     stateVariantLabel: selectedVariant.label,
     stateVariantReason,
@@ -739,6 +775,7 @@ export function buildWritingStateGuide(kernel: WritingStateKernel) {
     "这次正文先按写作状态组织，不要按施工图死板展开：",
     `文章原型：${kernel.articlePrototypeLabel}（${kernel.articlePrototype}）`,
     `原型原因：${kernel.articlePrototypeReason}`,
+    kernel.archetypeRhythmHint ? `原型节奏模板：${kernel.archetypeRhythmHint}` : null,
     `状态变体：${kernel.stateVariantLabel}`,
     `切换原因：${kernel.stateVariantReason}`,
     `叙述姿态：${kernel.narrativePosture}`,
@@ -766,5 +803,6 @@ export function buildWritingStateGuide(kernel: WritingStateKernel) {
     `原型候选：${kernel.prototypeOptions.map((item) => `${item.label}（${item.suitableWhen}；触发：${item.triggerReason}）`).join("；")}`,
     `反结构规则：${kernel.antiOutlineRules.join("；")}`,
     `禁忌写法：${kernel.tabooPatterns.join("；")}`,
-  ].join("\n");
+  ].filter(Boolean).join("\n");
 }
+import { buildArchetypeRhythmHintText, type ArchetypeRhythmHints } from "./archetype-rhythm";

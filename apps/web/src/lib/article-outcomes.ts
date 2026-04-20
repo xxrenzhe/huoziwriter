@@ -1,4 +1,5 @@
 import { buildArticleScorecard, type ArticleScorecard } from "./article-scorecard";
+import { STRATEGY_ARCHETYPE_OPTIONS } from "./article-strategy";
 import { getArticleStageArtifacts } from "./article-stage-artifacts";
 import { getArticleWorkflow } from "./article-workflows";
 import { getArticleNodes } from "./article-outline";
@@ -39,6 +40,22 @@ export type ReviewSeriesPlaybook = {
   topLabels: ReviewSeriesPlaybookLabel[];
 };
 
+export type ReviewAttributionPlaybookItem = {
+  label: string;
+  detail: string;
+  hitCount: number;
+  nearMissCount: number;
+  articleCount: number;
+  latestArticleTitle: string | null;
+  updatedAt: string;
+};
+
+export type ReviewOutcomeAttributionViews = {
+  archetypes: ReviewAttributionPlaybookItem[];
+  strategyStrengths: ReviewAttributionPlaybookItem[];
+  hookCombos: ReviewAttributionPlaybookItem[];
+};
+
 type ReviewSeriesAggregation = ReviewSeriesPlaybook & {
   articleIds: Set<number>;
   labels: Map<string, ReviewSeriesPlaybookLabel & { articleIds: Set<number> }>;
@@ -74,6 +91,129 @@ function compareSeriesPlaybooks(left: ReviewSeriesPlaybook, right: ReviewSeriesP
     return right.updatedAt.localeCompare(left.updatedAt);
   }
   return left.seriesName.localeCompare(right.seriesName, "zh-CN");
+}
+
+function compareAttributionPlaybooks(left: ReviewAttributionPlaybookItem, right: ReviewAttributionPlaybookItem) {
+  if (right.hitCount !== left.hitCount) {
+    return right.hitCount - left.hitCount;
+  }
+  if (right.nearMissCount !== left.nearMissCount) {
+    return right.nearMissCount - left.nearMissCount;
+  }
+  if (right.articleCount !== left.articleCount) {
+    return right.articleCount - left.articleCount;
+  }
+  if (right.updatedAt !== left.updatedAt) {
+    return right.updatedAt.localeCompare(left.updatedAt);
+  }
+  return left.label.localeCompare(right.label, "zh-CN");
+}
+
+function getAttributionRecord(value: unknown) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
+function getAttributionNumber(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function getAttributionString(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function getStrengthBucketLabel(score: number | null) {
+  if (score == null) {
+    return "四元强度待补";
+  }
+  if (score >= 4.5) return "四元 4.5+";
+  if (score >= 4.0) return "四元 4.0-4.4";
+  if (score >= 3.5) return "四元 3.5-3.9";
+  if (score >= 3.0) return "四元 3.0-3.4";
+  return "四元 <3.0";
+}
+
+function buildOutcomeAttributionViews(input: {
+  articles: Awaited<ReturnType<typeof getArticlesByUser>>;
+  outcomeBundles: Awaited<ReturnType<typeof getArticleOutcomeBundlesByUser>>;
+}) {
+  const articleMap = new Map(input.articles.map((article) => [article.id, article] as const));
+  const archetypes = new Map<string, ReviewAttributionPlaybookItem & { articleIds: Set<number> }>();
+  const strategyStrengths = new Map<string, ReviewAttributionPlaybookItem & { articleIds: Set<number> }>();
+  const hookCombos = new Map<string, ReviewAttributionPlaybookItem & { articleIds: Set<number> }>();
+
+  function accumulate(
+    bucket: Map<string, ReviewAttributionPlaybookItem & { articleIds: Set<number> }>,
+    key: string,
+    label: string,
+    detail: string,
+    articleId: number,
+    articleTitle: string | null,
+    hitStatus: "pending" | "hit" | "near_miss" | "miss",
+    updatedAt: string,
+  ) {
+    const existing = bucket.get(key) ?? {
+      label,
+      detail,
+      hitCount: 0,
+      nearMissCount: 0,
+      articleCount: 0,
+      latestArticleTitle: null,
+      updatedAt,
+      articleIds: new Set<number>(),
+    };
+    if (!existing.articleIds.has(articleId)) {
+      existing.articleIds.add(articleId);
+      existing.articleCount += 1;
+      if (hitStatus === "hit") {
+        existing.hitCount += 1;
+      } else if (hitStatus === "near_miss") {
+        existing.nearMissCount += 1;
+      }
+    }
+    if (!existing.latestArticleTitle || updatedAt > existing.updatedAt) {
+      existing.latestArticleTitle = articleTitle;
+      existing.updatedAt = updatedAt;
+    }
+    bucket.set(key, existing);
+  }
+
+  for (const bundle of input.outcomeBundles) {
+    const outcome = bundle.outcome;
+    if (!outcome || (outcome.hitStatus !== "hit" && outcome.hitStatus !== "near_miss")) {
+      continue;
+    }
+    const attribution = getAttributionRecord(outcome.attribution);
+    if (!attribution) {
+      continue;
+    }
+    const article = articleMap.get(outcome.articleId);
+    const strategy = getAttributionRecord(attribution.strategy);
+    const evidence = getAttributionRecord(attribution.evidence);
+    const archetypeKey = getAttributionString(strategy?.archetype);
+    if (archetypeKey) {
+      const archetypeLabel =
+        STRATEGY_ARCHETYPE_OPTIONS.find((item) => item.key === archetypeKey)?.label
+        ?? archetypeKey;
+      accumulate(archetypes, archetypeKey, archetypeLabel, "高命中原型分布", outcome.articleId, article?.title ?? null, outcome.hitStatus, outcome.updatedAt);
+    }
+    const strengthBucketLabel = getStrengthBucketLabel(getAttributionNumber(strategy?.fourPointAverageScore));
+    accumulate(strategyStrengths, strengthBucketLabel, strengthBucketLabel, "四元强度分布", outcome.articleId, article?.title ?? null, outcome.hitStatus, outcome.updatedAt);
+    const hookComboLabel = getAttributionString(evidence?.primaryHookComboLabel);
+    if (hookComboLabel) {
+      accumulate(hookCombos, hookComboLabel, hookComboLabel, "高命中爆点标签组合", outcome.articleId, article?.title ?? null, outcome.hitStatus, outcome.updatedAt);
+    }
+  }
+
+  const stripInternal = (bucket: Map<string, ReviewAttributionPlaybookItem & { articleIds: Set<number> }>) =>
+    Array.from(bucket.values())
+      .map(({ articleIds: _articleIds, ...item }) => item)
+      .sort(compareAttributionPlaybooks);
+
+  return {
+    archetypes: stripInternal(archetypes),
+    strategyStrengths: stripInternal(strategyStrengths),
+    hookCombos: stripInternal(hookCombos),
+  } satisfies ReviewOutcomeAttributionViews;
 }
 
 function buildReviewSeriesPlaybooks(input: {
@@ -201,6 +341,7 @@ export function resolveArticleOutcomeBundle(input: {
             userId: input.userId,
             targetPackage: null,
             scorecard: input.scorecard,
+            attribution: null,
             hitStatus: "pending" as const,
             reviewSummary: null,
             nextAction: null,
@@ -290,6 +431,10 @@ export async function getReviewData(userId: number) {
     outcomeBundles,
     series,
   });
+  const attributionViews = buildOutcomeAttributionViews({
+    articles,
+    outcomeBundles,
+  });
 
   return {
     publishedArticles,
@@ -297,5 +442,6 @@ export async function getReviewData(userId: number) {
     nearMisses,
     seriesPlaybooks,
     playbooks,
+    attributionViews,
   };
 }

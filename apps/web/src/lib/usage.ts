@@ -3,6 +3,8 @@ import { getDatabase } from "./db";
 const DAILY_GENERATION_KEY = "daily_generation";
 const DAILY_COVER_IMAGE_KEY = "daily_cover_image";
 const DAILY_WRITING_STYLE_ANALYSIS_KEY = "daily_writing_style_analysis";
+const DAILY_IMA_FISSION_KEY = "daily_ima_fission";
+const DAILY_IMA_EVIDENCE_SEARCH_KEY = "daily_ima_evidence_search";
 const LEGACY_DAILY_WRITING_STYLE_ANALYSIS_KEY = "daily_style_extract";
 
 export async function ensureUsageCounterSchema() {
@@ -145,4 +147,20 @@ export async function getVisitorDailyWritingStyleAnalysisUsage(visitorKey: strin
 
 export async function incrementVisitorDailyWritingStyleAnalysisUsage(visitorKey: string) {
   return incrementVisitorDailyUsage(visitorKey, DAILY_WRITING_STYLE_ANALYSIS_KEY);
+}
+
+export async function getDailyImaFissionUsage(userId: number) {
+  return getDailyUsage(userId, DAILY_IMA_FISSION_KEY);
+}
+
+export async function incrementDailyImaFissionUsage(userId: number) {
+  return incrementDailyUsage(userId, DAILY_IMA_FISSION_KEY);
+}
+
+export async function getDailyImaEvidenceSearchUsage(userId: number) {
+  return getDailyUsage(userId, DAILY_IMA_EVIDENCE_SEARCH_KEY);
+}
+
+export async function incrementDailyImaEvidenceSearchUsage(userId: number) {
+  return incrementDailyUsage(userId, DAILY_IMA_EVIDENCE_SEARCH_KEY);
 }

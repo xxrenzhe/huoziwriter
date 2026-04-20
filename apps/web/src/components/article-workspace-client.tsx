@@ -15,12 +15,17 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { ChangeEvent, FormEvent, type ReactNode, startTransition, useEffect, useMemo, useRef, useState } from "react";
 import type { ReviewSeriesPlaybook } from "@/lib/article-outcomes";
 import { analyzeAiNoise } from "@/lib/ai-noise-scan";
-import { buildSuggestedEvidenceItems, formatEvidenceResearchTagLabel, formatEvidenceRoleLabel, getArticleEvidenceStats } from "@/lib/article-evidence";
+import { EVIDENCE_HOOK_TAG_OPTIONS, buildSuggestedEvidenceItems, formatEvidenceResearchTagLabel, formatEvidenceRoleLabel, getArticleEvidenceStats } from "@/lib/article-evidence";
 import { getResearchBriefGenerationGate } from "@/lib/article-research";
 import { formatArticleStatusLabel, normalizeArticleStatus } from "@/lib/article-status-label";
 import {
   ARTICLE_HUMAN_SIGNAL_FIELD_LABELS,
   ARTICLE_STRATEGY_FIELD_LABELS,
+  FOUR_POINT_AUDIT_DIMENSIONS,
+  STRATEGY_ARCHETYPE_OPTIONS,
+  buildFourPointAudit,
+  buildFourPointWritebackDrafts,
+  type FourPointAuditDimension,
   getHumanSignalCompletion,
   getHumanSignalScore,
   getStrategyCardCompletion,
@@ -41,8 +46,11 @@ import { buildWritingQualityPanel } from "@/lib/writing-quality";
 import type { ArticleStatus } from "@/lib/domain";
 import { ArticleOutlineClient } from "./article-outline-client";
 import { useCommandMenu } from "./command-menu";
+import { ImaEvidenceSearchDrawer, type ImaEvidenceSelection } from "./ima-evidence-search-drawer";
 import { WechatNativePreview } from "./wechat-native-preview";
 import { SentenceRhythmMap } from "./sentence-rhythm-map";
+
+const MAX_EVIDENCE_ITEMS = 20;
 
 function escapeHtml(text: string) {
   return text
@@ -264,6 +272,17 @@ function getRecordNumber(source: Record<string, unknown> | null | undefined, key
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
+function getRecordBoolean(source: Record<string, unknown> | null | undefined, key: string) {
+  const value = source?.[key];
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value !== 0;
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    return normalized === "true" || normalized === "1";
+  }
+  return false;
+}
+
 function getRecordString(source: Record<string, unknown> | null | undefined, key: string) {
   const value = source?.[key];
   return typeof value === "string" ? value.trim() : "";
@@ -281,6 +300,8 @@ function getStrategyDraftValue(value: string | null | undefined) {
 
 function buildStrategyCardItem(input: {
   base?: Partial<StrategyCardItem> | null;
+  archetype?: string | null;
+  mainstreamBelief?: string;
   targetReader: string;
   coreAssertion: string;
   whyNow: string;
@@ -301,6 +322,11 @@ function buildStrategyCardItem(input: {
   const targetReader = getStrategyDraftValue(input.targetReader);
   const coreAssertion = getStrategyDraftValue(input.coreAssertion);
   const whyNow = getStrategyDraftValue(input.whyNow);
+  const archetype =
+    input.archetype === "opinion" || input.archetype === "case" || input.archetype === "howto" || input.archetype === "hotTake" || input.archetype === "phenomenon"
+      ? input.archetype
+      : input.base?.archetype ?? null;
+  const mainstreamBelief = getStrategyDraftValue(input.mainstreamBelief ?? input.base?.mainstreamBelief ?? "");
   const researchHypothesis = getStrategyDraftValue(input.researchHypothesis);
   const marketPositionInsight = getStrategyDraftValue(input.marketPositionInsight);
   const historicalTurningPoint = getStrategyDraftValue(input.historicalTurningPoint);
@@ -314,6 +340,7 @@ function buildStrategyCardItem(input: {
   const wantToComplain = getStrategyDraftValue(input.wantToComplain);
   const nonDelegableTruth = getStrategyDraftValue(input.nonDelegableTruth);
   const completion = getStrategyCardCompletion({
+    archetype,
     targetReader,
     coreAssertion,
     whyNow,
@@ -337,6 +364,8 @@ function buildStrategyCardItem(input: {
     id: Number(input.base?.id || 0),
     articleId: Number(input.base?.articleId || 0),
     userId: Number(input.base?.userId || 0),
+    archetype,
+    mainstreamBelief,
     targetReader,
     coreAssertion,
     whyNow,
@@ -352,6 +381,29 @@ function buildStrategyCardItem(input: {
     realSceneOrDialogue,
     wantToComplain,
     nonDelegableTruth,
+    fourPointAudit:
+      input.base?.fourPointAudit
+      ?? buildFourPointAudit({
+        archetype,
+        mainstreamBelief,
+        targetReader,
+        coreAssertion,
+        whyNow,
+        researchHypothesis,
+        marketPositionInsight,
+        historicalTurningPoint,
+        targetPackage,
+        publishWindow,
+        endingAction,
+        firstHandObservation,
+        feltMoment,
+        whyThisHitMe,
+        realSceneOrDialogue,
+        wantToComplain,
+        nonDelegableTruth,
+      }),
+    strategyLockedAt: input.base?.strategyLockedAt || null,
+    strategyOverride: Boolean(input.base?.strategyOverride),
     createdAt: input.base?.createdAt || new Date().toISOString(),
     updatedAt: input.base?.updatedAt || new Date().toISOString(),
     completion,
@@ -381,6 +433,8 @@ function buildEvidenceItemSignature(item: Partial<EvidenceItem>) {
     usageMode: getStrategyDraftValue(item.usageMode),
     rationale: getStrategyDraftValue(item.rationale),
     researchTag: getStrategyDraftValue(item.researchTag),
+    hookTags: Array.isArray(item.hookTags) ? item.hookTags : [],
+    hookStrength: item.hookStrength ?? null,
     evidenceRole: getStrategyDraftValue(item.evidenceRole),
   });
 }
@@ -669,6 +723,7 @@ type ArticleOutcomeItem = {
   userId: number;
   targetPackage: string | null;
   scorecard: Record<string, unknown>;
+  attribution: Record<string, unknown> | null;
   hitStatus: "pending" | "hit" | "near_miss" | "miss";
   reviewSummary: string | null;
   nextAction: string | null;
@@ -726,6 +781,8 @@ type StrategyCardItem = {
   id: number;
   articleId: number;
   userId: number;
+  archetype: "opinion" | "case" | "howto" | "hotTake" | "phenomenon" | null;
+  mainstreamBelief: string | null;
   targetReader: string | null;
   coreAssertion: string | null;
   whyNow: string | null;
@@ -741,9 +798,13 @@ type StrategyCardItem = {
   realSceneOrDialogue: string | null;
   wantToComplain: string | null;
   nonDelegableTruth: string | null;
+  fourPointAudit: Record<string, unknown> | null;
+  strategyLockedAt: string | null;
+  strategyOverride: boolean;
   createdAt: string;
   updatedAt: string;
   completion: {
+    archetype: boolean;
     targetReader: boolean;
     coreAssertion: boolean;
     whyNow: boolean;
@@ -778,6 +839,10 @@ type EvidenceItem = {
   usageMode: string | null;
   rationale: string | null;
   researchTag: string | null;
+  hookTags: string[];
+  hookStrength: number | null;
+  hookTaggedBy: string | null;
+  hookTaggedAt: string | null;
   evidenceRole: string;
   sortOrder: number;
   createdAt: string;
@@ -791,6 +856,13 @@ type SeriesOptionItem = {
   thesis: string | null;
   targetAudience: string | null;
   activeStatus: string;
+  preHook?: string | null;
+  postHook?: string | null;
+  defaultLayoutTemplateId?: string | null;
+  platformPreference?: string | null;
+  targetPackHint?: string | null;
+  defaultArchetype?: string | null;
+  defaultDnaId?: number | null;
 };
 
 type SeriesInsightItem = {
@@ -1182,6 +1254,38 @@ function formatViewpointAction(action: string) {
   if (action === "deferred") return "暂缓采用";
   if (action === "conflicted") return "判定冲突";
   return action || "未说明";
+}
+
+function formatTitleAuditTimestamp(value: string) {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  const timestamp = Date.parse(text);
+  if (!Number.isFinite(timestamp)) return "";
+  return new Date(timestamp).toLocaleString("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function getTitleOptionElementsHit(option: Record<string, unknown>) {
+  const elements = getPayloadRecord(option, "elementsHit");
+  return {
+    specific: Boolean(elements?.specific),
+    curiosityGap: Boolean(elements?.curiosityGap),
+    readerView: Boolean(elements?.readerView),
+  };
+}
+
+function getTitleOptionScore(option: Record<string, unknown>) {
+  const value = typeof option.openRateScore === "number"
+    ? option.openRateScore
+    : typeof option.openRateScore === "string" && option.openRateScore.trim()
+      ? Number(option.openRateScore)
+      : 0;
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(0, Math.min(50, Math.round(value)));
 }
 
 function getAudienceSelectionDraft(payload: Record<string, unknown> | null | undefined): AudienceSelectionDraft {
@@ -1594,6 +1698,27 @@ function formatOutcomeHitStatus(status: "pending" | "hit" | "near_miss" | "miss"
   return "待判定";
 }
 
+function formatTopicAttributionSourceLabel(value: string | null | undefined) {
+  if (value === "radar") return "选题雷达";
+  if (value === "topicFission") return "选题裂变";
+  if (value === "manual") return "手动录入";
+  return value || "未记录";
+}
+
+function formatTopicFissionModeLabel(value: string | null | undefined) {
+  if (value === "regularity") return "规律裂变";
+  if (value === "contrast") return "差异化";
+  if (value === "cross-domain") return "跨赛道迁移";
+  return value || "未记录";
+}
+
+function formatOutcomeRhythmStatusLabel(value: string | null | undefined) {
+  if (value === "aligned") return "节奏贴合";
+  if (value === "needs_attention") return "节奏偏移";
+  if (value === "insufficient") return "样本不足";
+  return value || "未评估";
+}
+
 type ArticleMainStepStatus = "pending" | "current" | "completed" | "needs_attention";
 
 const ARTICLE_MAIN_STEPS = ARTICLE_MAIN_STEP_DEFINITIONS;
@@ -1683,6 +1808,7 @@ function isResearchGuardCheckKey(value: string) {
 function formatFragmentSourceType(type: string | null | undefined) {
   if (type === "url") return "链接";
   if (type === "screenshot") return "截图";
+  if (type === "ima_kb") return "IMA 爆款";
   return "文本";
 }
 
@@ -2091,10 +2217,12 @@ export function ArticleEditorClient({
     initialStrategyCard.id > 0
       ? initialStrategyCard
       : buildStrategyCardItem({
-          base: initialStrategyCard,
-          targetReader: "",
-          coreAssertion: "",
-          whyNow: "",
+        base: initialStrategyCard,
+        archetype: initialStrategyCard.archetype ?? "",
+        mainstreamBelief: initialStrategyCard.mainstreamBelief ?? "",
+        targetReader: "",
+        coreAssertion: "",
+        whyNow: "",
           researchHypothesis: "",
           marketPositionInsight: "",
           historicalTurningPoint: "",
@@ -2217,6 +2345,8 @@ export function ArticleEditorClient({
   const [strategyTargetReader, setStrategyTargetReader] = useState(initialStrategyCard.targetReader ?? "");
   const [strategyCoreAssertion, setStrategyCoreAssertion] = useState(initialStrategyCard.coreAssertion ?? "");
   const [strategyWhyNow, setStrategyWhyNow] = useState(initialStrategyCard.whyNow ?? "");
+  const [strategyArchetype, setStrategyArchetype] = useState<StrategyCardItem["archetype"]>(initialStrategyCard.archetype ?? null);
+  const [strategyMainstreamBelief, setStrategyMainstreamBelief] = useState(initialStrategyCard.mainstreamBelief ?? "");
   const [strategyResearchHypothesis, setStrategyResearchHypothesis] = useState(initialStrategyCard.researchHypothesis ?? "");
   const [strategyMarketPositionInsight, setStrategyMarketPositionInsight] = useState(initialStrategyCard.marketPositionInsight ?? "");
   const [strategyHistoricalTurningPoint, setStrategyHistoricalTurningPoint] = useState(initialStrategyCard.historicalTurningPoint ?? "");
@@ -2229,12 +2359,20 @@ export function ArticleEditorClient({
   const [strategyRealSceneOrDialogue, setStrategyRealSceneOrDialogue] = useState(initialStrategyCard.realSceneOrDialogue ?? "");
   const [strategyWantToComplain, setStrategyWantToComplain] = useState(initialStrategyCard.wantToComplain ?? "");
   const [strategyNonDelegableTruth, setStrategyNonDelegableTruth] = useState(initialStrategyCard.nonDelegableTruth ?? "");
+  const [strategyViewMode, setStrategyViewMode] = useState<"author" | "penjian">("author");
   const [savingStrategyCard, setSavingStrategyCard] = useState(false);
+  const [auditingStrategyCard, setAuditingStrategyCard] = useState(false);
+  const [lockingStrategyCard, setLockingStrategyCard] = useState(false);
+  const [reversingStrategyCardDimension, setReversingStrategyCardDimension] = useState<FourPointAuditDimension | null>(null);
   const [savingEvidenceItems, setSavingEvidenceItems] = useState(false);
+  const [taggingEvidenceItems, setTaggingEvidenceItems] = useState(false);
+  const [showImaEvidenceDrawer, setShowImaEvidenceDrawer] = useState(false);
   const strategyCardDraft = useMemo(
     () =>
       buildStrategyCardItem({
         base: strategyCard,
+        archetype: strategyArchetype,
+        mainstreamBelief: strategyMainstreamBelief,
         targetReader: strategyTargetReader,
         coreAssertion: strategyCoreAssertion,
         whyNow: strategyWhyNow,
@@ -2254,6 +2392,7 @@ export function ArticleEditorClient({
       }),
     [
       strategyCard,
+      strategyArchetype,
       strategyCoreAssertion,
       strategyEndingAction,
       strategyFeltMoment,
@@ -2261,6 +2400,7 @@ export function ArticleEditorClient({
       strategyNonDelegableTruth,
       strategyPublishWindow,
       strategyResearchHypothesis,
+      strategyMainstreamBelief,
       strategyTargetPackage,
       strategyTargetReader,
       strategyHistoricalTurningPoint,
@@ -2271,12 +2411,30 @@ export function ArticleEditorClient({
       strategyWhyThisHitMe,
     ],
   );
+  const [strategyFourPointDrafts, setStrategyFourPointDrafts] = useState<Record<FourPointAuditDimension, string>>(() =>
+    buildFourPointWritebackDrafts(initialStrategyCard),
+  );
+
+  useEffect(() => {
+    setStrategyFourPointDrafts(buildFourPointWritebackDrafts(strategyCardDraft));
+  }, [
+    strategyCardDraft.mainstreamBelief,
+    strategyCardDraft.coreAssertion,
+    strategyCardDraft.realSceneOrDialogue,
+    strategyCardDraft.feltMoment,
+    strategyCardDraft.firstHandObservation,
+    strategyCardDraft.wantToComplain,
+    strategyCardDraft.nonDelegableTruth,
+  ]);
   const strategyCardMissingFields = useMemo(() => getStrategyCardMissingFields(strategyCardDraft), [strategyCardDraft]);
   const savedStrategyCardMissingFields = useMemo(() => getStrategyCardMissingFields(strategyCard), [strategyCard]);
   const strategyCardIsComplete = strategyCardMissingFields.length === 0;
   const savedStrategyCardIsComplete = savedStrategyCardMissingFields.length === 0;
   const strategyCardHasUnsavedChanges = useMemo(
     () =>
+      getStrategyDraftValue(strategyCard.archetype) !== strategyCardDraft.archetype
+      || getStrategyDraftValue(strategyCard.mainstreamBelief) !== strategyCardDraft.mainstreamBelief
+      ||
       getStrategyDraftValue(strategyCard.targetReader) !== strategyCardDraft.targetReader
       || getStrategyDraftValue(strategyCard.coreAssertion) !== strategyCardDraft.coreAssertion
       || getStrategyDraftValue(strategyCard.whyNow) !== strategyCardDraft.whyNow
@@ -2435,6 +2593,44 @@ export function ArticleEditorClient({
       aiNoiseLevel: getRecordString(aiNoise, "level"),
     };
   }, [currentArticleOutcome?.scorecard]);
+  const articleOutcomeAttributionSummary = useMemo(() => {
+    const attribution = currentArticleOutcome?.attribution;
+    if (!attribution) {
+      return null;
+    }
+    const topic = getPayloadRecord(attribution, "topic");
+    const strategy = getPayloadRecord(attribution, "strategy");
+    const evidence = getPayloadRecord(attribution, "evidence");
+    const rhythm = getPayloadRecord(attribution, "rhythm");
+    const archetypeKey = getRecordString(strategy, "archetype");
+    const archetypeLabel = archetypeKey
+      ? (STRATEGY_ARCHETYPE_OPTIONS.find((item) => item.key === archetypeKey)?.label ?? archetypeKey)
+      : "未记录";
+    const fissionMode = getRecordString(topic, "fissionMode");
+    const primaryHookComboLabel = getRecordString(evidence, "primaryHookComboLabel");
+    const dominantHookTags = getRecordStringArray(evidence, "dominantHookTags");
+    return {
+      topicSummary: topic
+        ? [
+            formatTopicAttributionSourceLabel(getRecordString(topic, "source") || null),
+            getRecordString(topic, "sourceTrackLabel") || null,
+            getRecordString(topic, "backlogName") || null,
+            fissionMode ? formatTopicFissionModeLabel(fissionMode) : null,
+          ].filter(Boolean).join(" · ")
+        : "未记录",
+      predictedFlipStrength: getRecordNumber(topic, "predictedFlipStrength"),
+      archetypeLabel,
+      fourPointAverageScore: getRecordNumber(strategy, "fourPointAverageScore"),
+      humanSignalScore: getRecordNumber(strategy, "humanSignalScore"),
+      strategyOverride: getRecordBoolean(strategy, "strategyOverride"),
+      hookLabel: primaryHookComboLabel || dominantHookTags.join(" / ") || "未记录",
+      hookTagCoverageCount: getRecordNumber(evidence, "hookTagCoverageCount"),
+      hookStrengthAverage: getRecordNumber(evidence, "hookStrengthAverage"),
+      rhythmStatusLabel: formatOutcomeRhythmStatusLabel(getRecordString(rhythm, "status") || null),
+      rhythmScore: getRecordNumber(rhythm, "score"),
+      rhythmDetail: getRecordString(rhythm, "detail") || "当前还没有节奏归因说明。",
+    };
+  }, [currentArticleOutcome?.attribution]);
   const audienceArtifact = useMemo(
     () => stageArtifacts.find((item) => item.stageCode === "audienceAnalysis") ?? null,
     [stageArtifacts],
@@ -3066,6 +3262,10 @@ export function ArticleEditorClient({
     () => getPayloadRecordArray(currentStageArtifact?.payload, "titleOptions"),
     [currentStageArtifact],
   );
+  const outlineArtifactTitleOptions = useMemo(
+    () => getPayloadRecordArray(outlineArtifact?.payload, "titleOptions"),
+    [outlineArtifact],
+  );
   const outlineTitleStrategyNotes = useMemo(
     () => getPayloadStringArray(currentStageArtifact?.payload, "titleStrategyNotes"),
     [currentStageArtifact],
@@ -3650,6 +3850,8 @@ export function ArticleEditorClient({
 
   function buildStrategyCardSavePayload(nextDraft: StrategyCardItem) {
     return {
+      archetype: nextDraft.archetype,
+      mainstreamBelief: nextDraft.mainstreamBelief,
       targetReader: nextDraft.targetReader,
       coreAssertion: nextDraft.coreAssertion,
       whyNow: nextDraft.whyNow,
@@ -3668,7 +3870,48 @@ export function ArticleEditorClient({
     };
   }
 
+  function hydrateStrategyCardFromApi(savedStrategySource: Partial<StrategyCardItem>) {
+    return buildStrategyCardItem({
+      base: {
+        ...savedStrategySource,
+        whyNowHints: strategyCard.whyNowHints,
+      },
+      archetype: String(savedStrategySource.archetype || ""),
+      mainstreamBelief: String(savedStrategySource.mainstreamBelief || ""),
+      targetReader: String(savedStrategySource.targetReader || ""),
+      coreAssertion: String(savedStrategySource.coreAssertion || ""),
+      whyNow: String(savedStrategySource.whyNow || ""),
+      researchHypothesis: String(savedStrategySource.researchHypothesis || ""),
+      marketPositionInsight: String(savedStrategySource.marketPositionInsight || ""),
+      historicalTurningPoint: String(savedStrategySource.historicalTurningPoint || ""),
+      targetPackage: String(savedStrategySource.targetPackage || ""),
+      publishWindow: String(savedStrategySource.publishWindow || ""),
+      endingAction: String(savedStrategySource.endingAction || ""),
+      firstHandObservation: String(savedStrategySource.firstHandObservation || ""),
+      feltMoment: String(savedStrategySource.feltMoment || ""),
+      whyThisHitMe: String(savedStrategySource.whyThisHitMe || ""),
+      realSceneOrDialogue: String(savedStrategySource.realSceneOrDialogue || ""),
+      wantToComplain: String(savedStrategySource.wantToComplain || ""),
+      nonDelegableTruth: String(savedStrategySource.nonDelegableTruth || ""),
+      whyNowHints: strategyCard.whyNowHints,
+    });
+  }
+
+  function commitSavedStrategyCard(savedStrategySource: Partial<StrategyCardItem>) {
+    const savedStrategyCard = hydrateStrategyCardFromApi(savedStrategySource);
+    syncStrategyCardDraftFields(savedStrategyCard);
+    setStrategyCard(savedStrategyCard);
+    if (!outcomeTargetPackage.trim() && savedStrategyCard.targetPackage) {
+      setOutcomeTargetPackage(savedStrategyCard.targetPackage);
+    }
+    setPublishPreview(null);
+    refreshRouter(router);
+    return savedStrategyCard;
+  }
+
   function syncStrategyCardDraftFields(nextDraft: StrategyCardItem) {
+    setStrategyArchetype(nextDraft.archetype ?? null);
+    setStrategyMainstreamBelief(nextDraft.mainstreamBelief ?? "");
     setStrategyTargetReader(nextDraft.targetReader ?? "");
     setStrategyCoreAssertion(nextDraft.coreAssertion ?? "");
     setStrategyWhyNow(nextDraft.whyNow ?? "");
@@ -3708,41 +3951,13 @@ export function ArticleEditorClient({
       if (!json.success) {
         throw new Error(json.error || "策略卡保存失败");
       }
-      const savedStrategyCard = buildStrategyCardItem({
-        base: {
-          ...(json.data as Partial<StrategyCardItem>),
-          whyNowHints: strategyCard.whyNowHints,
-        },
-        targetReader: json.data?.targetReader ?? "",
-        coreAssertion: json.data?.coreAssertion ?? "",
-        whyNow: json.data?.whyNow ?? "",
-        researchHypothesis: json.data?.researchHypothesis ?? "",
-        marketPositionInsight: json.data?.marketPositionInsight ?? "",
-        historicalTurningPoint: json.data?.historicalTurningPoint ?? "",
-        targetPackage: json.data?.targetPackage ?? "",
-        publishWindow: json.data?.publishWindow ?? "",
-        endingAction: json.data?.endingAction ?? "",
-        firstHandObservation: json.data?.firstHandObservation ?? "",
-        feltMoment: json.data?.feltMoment ?? "",
-        whyThisHitMe: json.data?.whyThisHitMe ?? "",
-        realSceneOrDialogue: json.data?.realSceneOrDialogue ?? "",
-        wantToComplain: json.data?.wantToComplain ?? "",
-        nonDelegableTruth: json.data?.nonDelegableTruth ?? "",
-        whyNowHints: strategyCard.whyNowHints,
-      });
+      const savedStrategyCard = commitSavedStrategyCard((json.data as Partial<StrategyCardItem>) ?? {});
       const nextMissingFields = getStrategyCardMissingFields(savedStrategyCard);
-      syncStrategyCardDraftFields(savedStrategyCard);
-      setStrategyCard(savedStrategyCard);
-      if (!outcomeTargetPackage.trim() && savedStrategyCard.targetPackage) {
-        setOutcomeTargetPackage(savedStrategyCard.targetPackage);
-      }
-      setPublishPreview(null);
       setMessage(
         nextMissingFields.length === 0
           ? options?.successMessage || "策略卡已保存。"
           : options?.incompleteMessage || "策略卡已保存，仍可继续补齐剩余字段。",
       );
-      refreshRouter(router);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "策略卡保存失败");
     } finally {
@@ -3764,43 +3979,122 @@ export function ArticleEditorClient({
       if (!json.success) {
         throw new Error(json.error || "研究写回策略卡失败");
       }
-      const savedStrategySource = json.data?.strategyCard ?? {};
-      const savedStrategyCard = buildStrategyCardItem({
-        base: savedStrategySource,
-        targetReader: String(savedStrategySource.targetReader || ""),
-        coreAssertion: String(savedStrategySource.coreAssertion || ""),
-        whyNow: String(savedStrategySource.whyNow || ""),
-        researchHypothesis: String(savedStrategySource.researchHypothesis || ""),
-        marketPositionInsight: String(savedStrategySource.marketPositionInsight || ""),
-        historicalTurningPoint: String(savedStrategySource.historicalTurningPoint || ""),
-        targetPackage: String(savedStrategySource.targetPackage || ""),
-        publishWindow: String(savedStrategySource.publishWindow || ""),
-        endingAction: String(savedStrategySource.endingAction || ""),
-        firstHandObservation: String(savedStrategySource.firstHandObservation || ""),
-        feltMoment: String(savedStrategySource.feltMoment || ""),
-        whyThisHitMe: String(savedStrategySource.whyThisHitMe || ""),
-        realSceneOrDialogue: String(savedStrategySource.realSceneOrDialogue || ""),
-        wantToComplain: String(savedStrategySource.wantToComplain || ""),
-        nonDelegableTruth: String(savedStrategySource.nonDelegableTruth || ""),
-        whyNowHints: strategyCard.whyNowHints,
-      });
+      const savedStrategyCard = commitSavedStrategyCard((json.data?.strategyCard as Partial<StrategyCardItem>) ?? {});
       const nextMissingFields = getStrategyCardMissingFields(savedStrategyCard);
-      syncStrategyCardDraftFields(savedStrategyCard);
-      setStrategyCard(savedStrategyCard);
-      if (!outcomeTargetPackage.trim() && savedStrategyCard.targetPackage) {
-        setOutcomeTargetPackage(savedStrategyCard.targetPackage);
-      }
-      setPublishPreview(null);
       setMessage(
         nextMissingFields.length === 0
           ? "已把研究结论写回并保存到策略卡。"
           : "已把研究结论写回策略卡，但仍可继续补齐其余字段。",
       );
-      refreshRouter(router);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "研究写回策略卡失败");
     } finally {
       setSavingStrategyCard(false);
+    }
+  }
+
+  async function runStrategyAudit() {
+    setAuditingStrategyCard(true);
+    setMessage("");
+    try {
+      const response = await fetch(`/api/articles/${article.id}/strategy/audit`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(buildStrategyCardSavePayload(strategyCardDraft)),
+      });
+      if (!response.ok) {
+        throw new Error(await parseResponseMessage(response));
+      }
+      const json = await response.json();
+      if (!json.success) {
+        throw new Error(json.error || "策略卡四元自检失败");
+      }
+      commitSavedStrategyCard((json.data?.strategyCard as Partial<StrategyCardItem>) ?? {});
+      setMessage("已重跑四元自检。");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "策略卡四元自检失败");
+    } finally {
+      setAuditingStrategyCard(false);
+    }
+  }
+
+  async function lockStrategyCard(override = false) {
+    setLockingStrategyCard(true);
+    setMessage("");
+    try {
+      const auditResponse = await fetch(`/api/articles/${article.id}/strategy/audit`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(buildStrategyCardSavePayload(strategyCardDraft)),
+      });
+      if (!auditResponse.ok) {
+        throw new Error(await parseResponseMessage(auditResponse));
+      }
+      const auditJson = await auditResponse.json();
+      if (!auditJson.success) {
+        throw new Error(auditJson.error || "策略卡四元自检失败");
+      }
+      const auditedStrategyCard = commitSavedStrategyCard((auditJson.data?.strategyCard as Partial<StrategyCardItem>) ?? {});
+      if (!Boolean(auditedStrategyCard.fourPointAudit?.overallLockable) && !override) {
+        setMessage("四元强度还没达标，可先补强后再锁定，或使用强行锁定。");
+        return;
+      }
+      if (override && !window.confirm("当前四元强度未达锁定线，仍要强行锁定吗？")) {
+        return;
+      }
+
+      const lockResponse = await fetch(`/api/articles/${article.id}/strategy/lock`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ override }),
+      });
+      if (!lockResponse.ok) {
+        throw new Error(await parseResponseMessage(lockResponse));
+      }
+      const lockJson = await lockResponse.json();
+      if (!lockJson.success) {
+        throw new Error(lockJson.error || "策略卡锁定失败");
+      }
+      commitSavedStrategyCard((lockJson.data?.strategyCard as Partial<StrategyCardItem>) ?? {});
+      setMessage(override ? "策略卡已强行锁定。" : "策略卡已锁定。");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "策略卡锁定失败");
+    } finally {
+      setLockingStrategyCard(false);
+    }
+  }
+
+  async function applyStrategyFourPointReverseWriteback(dimension: FourPointAuditDimension) {
+    const text = strategyFourPointDrafts[dimension]?.trim() || "";
+    if (!text) {
+      setMessage("先写入要反写的笔尖视角内容。");
+      return;
+    }
+
+    setReversingStrategyCardDimension(dimension);
+    setMessage("");
+    try {
+      const response = await fetch(`/api/articles/${article.id}/strategy/reverse-writeback`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          dimension,
+          text,
+        }),
+      });
+      if (!response.ok) {
+        throw new Error(await parseResponseMessage(response));
+      }
+      const json = await response.json();
+      if (!json.success) {
+        throw new Error(json.error || "笔尖视角反写失败");
+      }
+      commitSavedStrategyCard((json.data?.strategyCard as Partial<StrategyCardItem>) ?? {});
+      setMessage("已把笔尖视角反写到底层策略字段。");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "笔尖视角反写失败");
+    } finally {
+      setReversingStrategyCardDimension(null);
     }
   }
 
@@ -3822,6 +4116,106 @@ export function ArticleEditorClient({
     });
   }
 
+  function appendImaEvidenceItems(items: ImaEvidenceSelection[]) {
+    let importedCount = 0;
+    let skippedByLimit = 0;
+    setEvidenceDraftItems((current) => {
+      const knownSignatures = new Set(current.map(buildEvidenceItemSignature));
+      const nextItems = [...current];
+      const timestamp = new Date().toISOString();
+      for (const item of items) {
+        if (nextItems.length >= MAX_EVIDENCE_ITEMS) {
+          skippedByLimit += 1;
+          continue;
+        }
+        const draftItem: EvidenceItem = {
+          id: 0,
+          articleId: article.id,
+          userId: 0,
+          fragmentId: null,
+          nodeId: null,
+          claim: null,
+          title: String(item.title || "").trim(),
+          excerpt: String(item.excerpt || "").trim(),
+          sourceType: "ima_kb",
+          sourceUrl: item.sourceUrl ? String(item.sourceUrl).trim() : null,
+          screenshotPath: null,
+          usageMode: "reference",
+          rationale: "IMA 知识库同赛道爆款",
+          researchTag: null,
+          hookTags: [],
+          hookStrength: null,
+          hookTaggedBy: null,
+          hookTaggedAt: null,
+          evidenceRole: "supportingEvidence",
+          sortOrder: nextItems.length + 1,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        };
+        if (!draftItem.title || !draftItem.excerpt) {
+          continue;
+        }
+        const signature = buildEvidenceItemSignature(draftItem);
+        if (knownSignatures.has(signature)) {
+          continue;
+        }
+        knownSignatures.add(signature);
+        nextItems.push({
+          ...draftItem,
+          sortOrder: nextItems.length + 1,
+        });
+        importedCount += 1;
+      }
+      return nextItems;
+    });
+    if (importedCount > 0 && skippedByLimit > 0) {
+      setMessage(`已从 IMA 导入 ${importedCount} 条证据草稿；证据包最多保留 ${MAX_EVIDENCE_ITEMS} 条，其余 ${skippedByLimit} 条未加入。`);
+      return;
+    }
+    if (importedCount > 0) {
+      setMessage(`已从 IMA 导入 ${importedCount} 条证据草稿。`);
+      return;
+    }
+    setMessage(skippedByLimit > 0 ? `证据包最多保留 ${MAX_EVIDENCE_ITEMS} 条，请先清理后再继续导入。` : "选中的 IMA 结果已存在于当前证据草稿中。");
+  }
+
+  function updateEvidenceDraftItem(
+    signature: string,
+    updater: (item: EvidenceItem) => EvidenceItem,
+  ) {
+    setEvidenceDraftItems((current) =>
+      current.map((item) =>
+        buildEvidenceItemSignature(item) === signature
+          ? updater(item)
+          : item,
+      ),
+    );
+  }
+
+  function toggleEvidenceDraftHookTag(signature: string, tag: string) {
+    updateEvidenceDraftItem(signature, (item) => {
+      const currentTags = Array.isArray(item.hookTags) ? item.hookTags : [];
+      const nextTags = currentTags.includes(tag)
+        ? currentTags.filter((currentTag) => currentTag !== tag)
+        : [...currentTags, tag].slice(0, 4);
+      return {
+        ...item,
+        hookTags: nextTags,
+        hookTaggedBy: "author",
+        hookTaggedAt: new Date().toISOString(),
+      };
+    });
+  }
+
+  function updateEvidenceDraftHookStrength(signature: string, value: string) {
+    updateEvidenceDraftItem(signature, (item) => ({
+      ...item,
+      hookStrength: value.trim() ? Math.max(0, Math.min(5, Number(value) || 0)) : null,
+      hookTaggedBy: "author",
+      hookTaggedAt: new Date().toISOString(),
+    }));
+  }
+
   function buildEvidenceSavePayload(nextItems: EvidenceItem[]) {
     return {
       items: nextItems.map((item) => ({
@@ -3836,6 +4230,10 @@ export function ArticleEditorClient({
         usageMode: item.usageMode,
         rationale: item.rationale,
         researchTag: item.researchTag,
+        hookTags: item.hookTags,
+        hookStrength: item.hookStrength,
+        hookTaggedBy: item.hookTaggedBy,
+        hookTaggedAt: item.hookTaggedAt,
         evidenceRole: item.evidenceRole,
       })),
     };
@@ -3851,10 +4249,12 @@ export function ArticleEditorClient({
     setSavingEvidenceItems(true);
     setMessage("");
     try {
+      const cappedItems = nextItems.slice(0, MAX_EVIDENCE_ITEMS);
+      const truncatedCount = Math.max(nextItems.length - cappedItems.length, 0);
       const response = await fetch(`/api/articles/${article.id}/evidence`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(buildEvidenceSavePayload(nextItems)),
+        body: JSON.stringify(buildEvidenceSavePayload(cappedItems)),
       });
       if (!response.ok) {
         throw new Error(await parseResponseMessage(response));
@@ -3868,10 +4268,13 @@ export function ArticleEditorClient({
       setEvidenceDraftItems(savedItems);
       setPublishPreview(null);
       const nextStats = getArticleEvidenceStats(savedItems);
+      const baseMessage = nextStats.ready
+        ? options?.successMessage || "证据包已保存。"
+        : options?.incompleteMessage || "证据包已保存，但还没达到发布标准。";
       setMessage(
-        nextStats.ready
-          ? options?.successMessage || "证据包已保存。"
-          : options?.incompleteMessage || "证据包已保存，但还没达到发布标准。",
+        truncatedCount > 0
+          ? `${baseMessage} 当前证据包最多保存 ${MAX_EVIDENCE_ITEMS} 条，已自动忽略末尾 ${truncatedCount} 条。`
+          : baseMessage,
       );
       refreshRouter(router);
     } catch (error) {
@@ -3920,6 +4323,44 @@ export function ArticleEditorClient({
       setMessage(error instanceof Error ? error.message : "研究导向证据写回失败");
     } finally {
       setSavingEvidenceItems(false);
+    }
+  }
+
+  async function autoTagEvidenceItems() {
+    setTaggingEvidenceItems(true);
+    setMessage("");
+    try {
+      if (evidenceDraftItems.length === 0) {
+        throw new Error("当前还没有证据可标注。");
+      }
+      if (evidenceHasUnsavedChanges || !savedEvidenceStats.ready) {
+        await persistEvidenceItems(evidenceDraftItems, {
+          successMessage: "证据包已保存，开始自动标注爆点。",
+          incompleteMessage: "证据包已保存，开始自动标注爆点。",
+        });
+      }
+
+      const response = await fetch(`/api/articles/${article.id}/evidence/tag`, {
+        method: "POST",
+      });
+      if (!response.ok) {
+        throw new Error(await parseResponseMessage(response));
+      }
+      const json = await response.json();
+      if (!json.success) {
+        throw new Error(json.error || "证据爆点自动标注失败");
+      }
+      const savedItems = Array.isArray(json.data?.items) ? (json.data.items as EvidenceItem[]) : [];
+      const taggedCount = Number(json.data?.taggedCount || 0);
+      setEvidenceItems(savedItems);
+      setEvidenceDraftItems(savedItems);
+      setPublishPreview(null);
+      setMessage(taggedCount > 0 ? `已自动标注 ${taggedCount} 条证据的爆点标签。` : "已完成证据爆点自动标注。");
+      refreshRouter(router);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "证据爆点自动标注失败");
+    } finally {
+      setTaggingEvidenceItems(false);
     }
   }
 
@@ -4809,6 +5250,7 @@ export function ArticleEditorClient({
     articlePrototypeLabel?: string | null;
     stateVariantCode?: string | null;
     stateVariantLabel?: string | null;
+    titleOptionsOnly?: boolean;
   }) {
     if (!GENERATABLE_STAGE_ACTIONS[stageCode]) {
       setMessage("当前步骤暂不支持生成结构化洞察卡。");
@@ -4822,10 +5264,11 @@ export function ArticleEditorClient({
     setMessage("");
     try {
       const requestBody =
-        options?.articlePrototypeCode || options?.stateVariantCode
+        options?.articlePrototypeCode || options?.stateVariantCode || options?.titleOptionsOnly
           ? {
               ...(options?.articlePrototypeCode ? { articlePrototypeCode: options.articlePrototypeCode } : {}),
               ...(options?.stateVariantCode ? { stateVariantCode: options.stateVariantCode } : {}),
+              ...(options?.titleOptionsOnly ? { titleOptionsOnly: true } : {}),
             }
           : null;
       const response = await fetch(`/api/articles/${article.id}/stages/${stageCode}`, {
@@ -4842,12 +5285,14 @@ export function ArticleEditorClient({
         await updateWorkflow(stageCode, "complete", true);
       }
       setMessage(
-        stageCode === "deepWriting" && (options?.articlePrototypeCode || options?.stateVariantCode)
-          ? `${GENERATABLE_STAGE_ACTIONS[stageCode].label}已完成，当前按「${[
-              options.articlePrototypeLabel || options.articlePrototypeCode || "",
-              options.stateVariantLabel || options.stateVariantCode || "",
-            ].filter(Boolean).join(" / ")}」生成。`
-          : `${GENERATABLE_STAGE_ACTIONS[stageCode].label}已完成`,
+        stageCode === "outlinePlanning" && options?.titleOptionsOnly
+          ? "标题候选已重新优化，当前只刷新标题体检结果，不会改动大纲结构。"
+          : stageCode === "deepWriting" && (options?.articlePrototypeCode || options?.stateVariantCode)
+            ? `${GENERATABLE_STAGE_ACTIONS[stageCode].label}已完成，当前按「${[
+                options.articlePrototypeLabel || options.articlePrototypeCode || "",
+                options.stateVariantLabel || options.stateVariantCode || "",
+              ].filter(Boolean).join(" / ")}」生成。`
+            : `${GENERATABLE_STAGE_ACTIONS[stageCode].label}已完成`,
       );
       return true;
     } catch (error) {
@@ -5736,6 +6181,13 @@ export function ArticleEditorClient({
       multiline?: boolean;
     }> = [
       {
+        key: "archetype",
+        value: strategyArchetype || "",
+        setValue: (value) => setStrategyArchetype((value as StrategyCardItem["archetype"]) || null),
+        placeholder: "先确定文章原型。",
+        suggestion: "",
+      },
+      {
         key: "targetReader",
         value: strategyTargetReader,
         setValue: setStrategyTargetReader,
@@ -5881,169 +6333,359 @@ export function ArticleEditorClient({
               : "策略卡已经保存，后续可以围绕它继续补证据、写执行卡和发布。"}
         </div>
 
-        <div className="grid gap-3 md:grid-cols-2">
-          {strategyFields.map((field) => {
-            const suggestion = field.suggestion.trim();
-            const isConfirmed = strategyCardDraft.completion[field.key];
-            return (
-              <label key={field.key} className="block border border-lineStrong bg-surface px-4 py-4 text-sm text-inkSoft">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div className="text-xs uppercase tracking-[0.16em] text-inkMuted">{ARTICLE_STRATEGY_FIELD_LABELS[field.key]}</div>
-                  <div className={`text-xs ${isConfirmed ? "text-emerald-700" : "text-danger"}`}>
-                    {isConfirmed ? "已填写" : "必填"}
-                  </div>
-                </div>
-                {field.multiline ? (
-                  <Textarea
-                    aria-label={ARTICLE_STRATEGY_FIELD_LABELS[field.key]}
-                    value={field.value}
-                    onChange={(event) => field.setValue(event.target.value)}
-                    placeholder={field.placeholder}
-                    className="mt-3 min-h-[104px] px-3 py-2"
-                  />
-                ) : (
-                  <Input
-                    aria-label={ARTICLE_STRATEGY_FIELD_LABELS[field.key]}
-                    value={field.value}
-                    onChange={(event) => field.setValue(event.target.value)}
-                    placeholder={field.placeholder}
-                    className="mt-3 px-3 py-2"
-                  />
-                )}
-                {suggestion ? (
-                  <div className="mt-3 space-y-2">
-                    <div className="text-xs leading-6 text-inkMuted">建议来源：{suggestion}</div>
-                    {field.value.trim() !== suggestion ? (
-                      <Button
-                        type="button"
-                        onClick={() => field.setValue(suggestion)}
-                        variant="secondary"
-                        size="sm"
-                        className="text-xs"
-                      >
-                        用建议填入
-                      </Button>
-                    ) : null}
-                  </div>
-                ) : null}
-              </label>
-            );
-          })}
-        </div>
-
         <div className="border border-lineStrong/60 bg-surface px-4 py-4">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <div className="text-xs uppercase tracking-[0.16em] text-inkMuted">研究写回字段</div>
+              <div className="text-xs uppercase tracking-[0.16em] text-inkMuted">策略视角</div>
               <div className="mt-2 text-sm leading-7 text-inkSoft">
-                这三项不参与发布必填，但会把 research brief 的判断链正式沉到策略卡里，后续深写、事实核查和复盘都能继续引用。
+                作者视角负责补底层真话与判断，笔尖视角负责把这些底层字段聚合成四元方法论并做强度自检。
               </div>
             </div>
-            <div className="text-xs text-inkMuted">
-              {strategyResearchFields.filter((field) => field.value.trim()).length} / {strategyResearchFields.length} 已补
-            </div>
-          </div>
-          <div className="mt-3 grid gap-3 md:grid-cols-3">
-            {strategyResearchFields.map((field) => (
-              <label key={field.key} className="block border border-lineStrong bg-surfaceWarm px-4 py-4 text-sm text-inkSoft">
-                <div className="text-xs uppercase tracking-[0.16em] text-inkMuted">{field.label}</div>
-                <Textarea
-                  aria-label={field.label}
-                  value={field.value}
-                  onChange={(event) => field.setValue(event.target.value)}
-                  placeholder={field.placeholder}
-                  className="mt-3 min-h-[120px] px-3 py-2"
-                />
-              </label>
-            ))}
-          </div>
-        </div>
-
-        {strategyCardDraft.whyNowHints.length > 0 ? (
-          <div className="border border-lineStrong/60 bg-surface px-4 py-4">
-              <div className="text-xs uppercase tracking-[0.16em] text-inkMuted">系列给出的 Why Now 线索</div>
-              <div className="mt-3 flex flex-wrap gap-2 text-sm text-inkSoft">
-                {strategyCardDraft.whyNowHints.map((item) => (
-                <Button
-                  key={item}
-                  type="button"
-                  onClick={() =>
-                    setStrategyWhyNow((current) => {
-                      const currentValue = current.trim();
-                      return currentValue ? `${currentValue}；${item}` : item;
-                    })
-                  }
-                  variant="secondary"
-                  size="sm"
-                  className="bg-paperStrong text-left text-sm"
-                >
-                  {item}
-                </Button>
-              ))}
-            </div>
-          </div>
-        ) : null}
-
-        <div className="border border-lineStrong/60 bg-surface px-4 py-4">
-          <div className="text-xs uppercase tracking-[0.16em] text-inkMuted">完成度</div>
-          <div className="mt-3 flex flex-wrap gap-2 text-xs text-inkSoft">
-            {(Object.entries(ARTICLE_STRATEGY_FIELD_LABELS) as Array<[keyof typeof ARTICLE_STRATEGY_FIELD_LABELS, string]>).map(([key, label]) => (
-              <span
-                key={key}
-                className={`border px-3 py-2 ${
-                  strategyCardDraft.completion[key]
-                    ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                    : "border-danger/30 bg-surface text-danger"
-                }`}
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                onClick={() => setStrategyViewMode("author")}
+                variant={strategyViewMode === "author" ? "primary" : "secondary"}
+                size="sm"
+                className="text-xs"
               >
-                {label}
-              </span>
-            ))}
+                作者视角
+              </Button>
+              <Button
+                type="button"
+                onClick={() => setStrategyViewMode("penjian")}
+                variant={strategyViewMode === "penjian" ? "primary" : "secondary"}
+                size="sm"
+                className="text-xs"
+              >
+                笔尖视角
+              </Button>
+            </div>
           </div>
         </div>
 
-        <div className="space-y-3 border border-lineStrong/60 bg-surface px-4 py-4">
+        {strategyViewMode === "author" ? (
+          <>
+            <div className="grid gap-3 md:grid-cols-2">
+              {strategyFields.map((field) => {
+                const suggestion = field.suggestion.trim();
+                const isConfirmed = strategyCardDraft.completion[field.key];
+                return (
+                  <label key={String(field.key)} className="block border border-lineStrong bg-surface px-4 py-4 text-sm text-inkSoft">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="text-xs uppercase tracking-[0.16em] text-inkMuted">{ARTICLE_STRATEGY_FIELD_LABELS[field.key]}</div>
+                      <div className={`text-xs ${isConfirmed ? "text-emerald-700" : "text-danger"}`}>
+                        {isConfirmed ? "已填写" : "必填"}
+                      </div>
+                    </div>
+                    {field.key === "archetype" ? (
+                      <Select
+                        aria-label={ARTICLE_STRATEGY_FIELD_LABELS[field.key]}
+                        value={field.value}
+                        onChange={(event) => field.setValue(event.target.value)}
+                        className="mt-3 px-3 py-2"
+                      >
+                        <option value="">选择主题原型</option>
+                        {STRATEGY_ARCHETYPE_OPTIONS.map((option) => (
+                          <option key={option.key} value={option.key}>{option.label}</option>
+                        ))}
+                      </Select>
+                    ) : field.multiline ? (
+                      <Textarea
+                        aria-label={ARTICLE_STRATEGY_FIELD_LABELS[field.key]}
+                        value={field.value}
+                        onChange={(event) => field.setValue(event.target.value)}
+                        placeholder={field.placeholder}
+                        className="mt-3 min-h-[104px] px-3 py-2"
+                      />
+                    ) : (
+                      <Input
+                        aria-label={ARTICLE_STRATEGY_FIELD_LABELS[field.key]}
+                        value={field.value}
+                        onChange={(event) => field.setValue(event.target.value)}
+                        placeholder={field.placeholder}
+                        className="mt-3 px-3 py-2"
+                      />
+                    )}
+                    {suggestion ? (
+                      <div className="mt-3 space-y-2">
+                        <div className="text-xs leading-6 text-inkMuted">建议来源：{suggestion}</div>
+                        {field.value.trim() !== suggestion ? (
+                          <Button
+                            type="button"
+                            onClick={() => field.setValue(suggestion)}
+                            variant="secondary"
+                            size="sm"
+                            className="text-xs"
+                          >
+                            用建议填入
+                          </Button>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </label>
+                );
+              })}
+            </div>
+
+            <label className="block border border-lineStrong bg-surface px-4 py-4 text-sm text-inkSoft">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="text-xs uppercase tracking-[0.16em] text-inkMuted">主流认知</div>
+                <div className={`text-xs ${strategyMainstreamBelief.trim() ? "text-emerald-700" : "text-inkMuted"}`}>
+                  {strategyMainstreamBelief.trim() ? "已填写" : "建议填写"}
+                </div>
+              </div>
+              <Textarea
+                aria-label="主流认知"
+                value={strategyMainstreamBelief}
+                onChange={(event) => setStrategyMainstreamBelief(event.target.value)}
+                placeholder="大众通常怎么理解这件事？先把那一面说清楚，认知翻转才成立。"
+                className="mt-3 min-h-[92px] px-3 py-2"
+              />
+            </label>
+          </>
+        ) : (
+          <div className="border border-lineStrong/60 bg-surface px-4 py-4 text-sm leading-7 text-inkSoft">
+            当前切到笔尖视角。这里不新增独立持久化字段，只把作者视角里的底层字段聚合成四元方法论，并允许你把聚合后的文字反写回底层策略卡。
+          </div>
+        )}
+
+        <div className="border border-lineStrong/60 bg-surface px-4 py-4">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <div className="text-xs uppercase tracking-[0.16em] text-inkMuted">Human Only Signals</div>
+              <div className="text-xs uppercase tracking-[0.16em] text-inkMuted">笔尖四元审计</div>
               <div className="mt-2 text-sm leading-7 text-inkSoft">
-                这里填的是 AI 不该替你编的东西。没有这些信号，系统最多只能给你一篇结构正确的稿，给不了真正像人的稿。
+                这部分不新增你的输入负担，只把现有策略字段聚合成方法论视角，检查认知翻转、读者快照、核心张力和发力方向是否够硬。
               </div>
             </div>
-            <div className={`border px-3 py-2 text-xs ${humanSignalTone}`}>
-              已补 {strategyCardDraft.humanSignalScore} / 6
+            <div className="flex flex-wrap items-center gap-2">
+              {strategyCardDraft.strategyLockedAt ? (
+                <div className={`border px-3 py-2 text-xs ${strategyCardDraft.strategyOverride ? "border-warning/40 bg-surfaceWarning text-warning" : "border-emerald-200 bg-emerald-50 text-emerald-700"}`}>
+                  {strategyCardDraft.strategyOverride ? "已强行锁定" : "已锁定"}
+                </div>
+              ) : null}
+              <div className={`border px-3 py-2 text-xs ${Boolean(strategyCardDraft.fourPointAudit?.overallLockable) ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-warning/40 bg-surfaceWarning text-warning"}`}>
+                {Boolean(strategyCardDraft.fourPointAudit?.overallLockable) ? "可锁定" : "仍需补强"}
+              </div>
             </div>
           </div>
-          <div className={`border px-4 py-3 text-sm leading-7 ${humanSignalTone}`}>
-            {strategyCardDraft.humanSignalScore >= 3
-              ? "人类信号充足，生成时会优先按你的观察、体感和真实场景落笔。"
-              : strategyCardDraft.humanSignalScore >= 2
-                ? "人类信号达到最低建议线，但还可以继续补，让正文更像你自己。"
-                : "当前人类信号偏少。系统仍能生成，但更容易写成结构正确、呼吸感不足的稿子。"}
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              onClick={() => void runStrategyAudit()}
+              disabled={savingStrategyCard || auditingStrategyCard || lockingStrategyCard}
+              variant="secondary"
+              size="sm"
+              className="text-xs"
+            >
+              {auditingStrategyCard ? "自检中…" : "重跑自检"}
+            </Button>
+            <Button
+              type="button"
+              onClick={() => void lockStrategyCard(false)}
+              disabled={savingStrategyCard || auditingStrategyCard || lockingStrategyCard}
+              variant="secondary"
+              size="sm"
+              className="text-xs"
+            >
+              {lockingStrategyCard ? "锁定中…" : "锁定策略"}
+            </Button>
+            {!Boolean(strategyCardDraft.fourPointAudit?.overallLockable) ? (
+              <Button
+                type="button"
+                onClick={() => void lockStrategyCard(true)}
+                disabled={savingStrategyCard || auditingStrategyCard || lockingStrategyCard}
+                variant="secondary"
+                size="sm"
+                className="border-warning text-warning hover:border-warning hover:bg-surface hover:text-warning"
+              >
+                强行锁定
+              </Button>
+            ) : null}
+            {strategyCardDraft.strategyLockedAt ? (
+              <div className="text-xs leading-6 text-inkMuted">
+                最近锁定：{new Date(strategyCardDraft.strategyLockedAt).toLocaleString("zh-CN")}
+              </div>
+            ) : null}
           </div>
-          <div className="grid gap-3 md:grid-cols-2">
-            {humanSignalFields.map((field) => {
-              const isConfirmed = strategyCardDraft.humanSignalCompletion[field.key];
+          <div className="mt-3 grid gap-3 md:grid-cols-2">
+            {FOUR_POINT_AUDIT_DIMENSIONS.map((item) => {
+              const detail = (strategyCardDraft.fourPointAudit?.[item.key] as Record<string, unknown> | undefined) ?? {};
+              const score = typeof detail.score === "number" ? detail.score : 0;
               return (
-                <label key={field.key} className="block border border-lineStrong bg-surfaceWarm px-4 py-4 text-sm text-inkSoft">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div className="text-xs uppercase tracking-[0.16em] text-inkMuted">{ARTICLE_HUMAN_SIGNAL_FIELD_LABELS[field.key]}</div>
-                    <div className={`text-xs ${isConfirmed ? "text-emerald-700" : "text-inkMuted"}`}>
-                      {isConfirmed ? "已填写" : "建议填写"}
+                <div key={item.key} className="border border-lineStrong bg-surfaceWarm px-4 py-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="text-xs uppercase tracking-[0.16em] text-inkMuted">{item.label}</div>
+                    <div className={`text-xs ${score >= 3 ? "text-emerald-700" : "text-warning"}`}>评分 {score}/5</div>
+                  </div>
+                  <div className="mt-2 text-sm leading-7 text-inkSoft">{String(detail.notes || "等待聚合")}</div>
+                  {item.key === "readerSnapshot" && String(detail.cinematizedText || "").trim() ? (
+                    <div className="mt-2 text-xs leading-6 text-inkMuted">镜头稿：{String(detail.cinematizedText)}</div>
+                  ) : null}
+                  {item.key === "coreTension" && (String(detail.forceA || "").trim() || String(detail.forceB || "").trim()) ? (
+                    <div className="mt-2 text-xs leading-6 text-inkMuted">对抗面：{String(detail.forceA || "")} / {String(detail.forceB || "")}</div>
+                  ) : null}
+                  {item.key === "impactVector" && String(detail.pinnedMoment || "").trim() ? (
+                    <div className="mt-2 text-xs leading-6 text-inkMuted">核弹头：{String(detail.pinnedMoment)}</div>
+                  ) : null}
+                  <Textarea
+                    aria-label={`${item.label}反写内容`}
+                    value={strategyFourPointDrafts[item.key] || ""}
+                    onChange={(event) =>
+                      setStrategyFourPointDrafts((current) => ({
+                        ...current,
+                        [item.key]: event.target.value,
+                      }))
+                    }
+                    placeholder={
+                      item.key === "cognitiveFlip"
+                        ? "主流认知：...\n作者判断：..."
+                        : item.key === "readerSnapshot"
+                          ? "场景：...\n体感：...\n观察：..."
+                          : item.key === "coreTension"
+                            ? "张力A：...\n张力B：..."
+                            : "核弹头：...\n真话：..."
+                    }
+                    className="mt-3 min-h-[112px] px-3 py-2 text-sm"
+                  />
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <Button
+                      type="button"
+                      onClick={() => void applyStrategyFourPointReverseWriteback(item.key)}
+                      disabled={Boolean(reversingStrategyCardDimension) || !strategyFourPointDrafts[item.key]?.trim()}
+                      variant="secondary"
+                      size="sm"
+                      className="text-xs"
+                    >
+                      {reversingStrategyCardDimension === item.key ? "反写中…" : "反写到底层字段"}
+                    </Button>
+                    <div className="text-xs leading-6 text-inkMuted">
+                      改这里会拆回策略卡底层字段，并重跑四元自检。
                     </div>
                   </div>
-                  <Textarea
-                    aria-label={ARTICLE_HUMAN_SIGNAL_FIELD_LABELS[field.key]}
-                    value={field.value}
-                    onChange={(event) => field.setValue(event.target.value)}
-                    placeholder={field.placeholder}
-                    className="mt-3 min-h-[104px] px-3 py-2"
-                  />
-                </label>
+                </div>
               );
             })}
           </div>
         </div>
+
+        {strategyViewMode === "author" ? (
+          <>
+            <div className="border border-lineStrong/60 bg-surface px-4 py-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <div className="text-xs uppercase tracking-[0.16em] text-inkMuted">研究写回字段</div>
+                  <div className="mt-2 text-sm leading-7 text-inkSoft">
+                    这三项不参与发布必填，但会把 research brief 的判断链正式沉到策略卡里，后续深写、事实核查和复盘都能继续引用。
+                  </div>
+                </div>
+                <div className="text-xs text-inkMuted">
+                  {strategyResearchFields.filter((field) => field.value.trim()).length} / {strategyResearchFields.length} 已补
+                </div>
+              </div>
+              <div className="mt-3 grid gap-3 md:grid-cols-3">
+                {strategyResearchFields.map((field) => (
+                  <label key={field.key} className="block border border-lineStrong bg-surfaceWarm px-4 py-4 text-sm text-inkSoft">
+                    <div className="text-xs uppercase tracking-[0.16em] text-inkMuted">{field.label}</div>
+                    <Textarea
+                      aria-label={field.label}
+                      value={field.value}
+                      onChange={(event) => field.setValue(event.target.value)}
+                      placeholder={field.placeholder}
+                      className="mt-3 min-h-[120px] px-3 py-2"
+                    />
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {strategyCardDraft.whyNowHints.length > 0 ? (
+              <div className="border border-lineStrong/60 bg-surface px-4 py-4">
+                <div className="text-xs uppercase tracking-[0.16em] text-inkMuted">系列给出的 Why Now 线索</div>
+                <div className="mt-3 flex flex-wrap gap-2 text-sm text-inkSoft">
+                  {strategyCardDraft.whyNowHints.map((item) => (
+                    <Button
+                      key={item}
+                      type="button"
+                      onClick={() =>
+                        setStrategyWhyNow((current) => {
+                          const currentValue = current.trim();
+                          return currentValue ? `${currentValue}；${item}` : item;
+                        })
+                      }
+                      variant="secondary"
+                      size="sm"
+                      className="bg-paperStrong text-left text-sm"
+                    >
+                      {item}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            <div className="border border-lineStrong/60 bg-surface px-4 py-4">
+              <div className="text-xs uppercase tracking-[0.16em] text-inkMuted">完成度</div>
+              <div className="mt-3 flex flex-wrap gap-2 text-xs text-inkSoft">
+                {(Object.entries(ARTICLE_STRATEGY_FIELD_LABELS) as Array<[keyof typeof ARTICLE_STRATEGY_FIELD_LABELS, string]>).map(([key, label]) => (
+                  <span
+                    key={String(key)}
+                    className={`border px-3 py-2 ${
+                      strategyCardDraft.completion[key]
+                        ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                        : "border-danger/30 bg-surface text-danger"
+                    }`}
+                  >
+                    {label}
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-3 border border-lineStrong/60 bg-surface px-4 py-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <div className="text-xs uppercase tracking-[0.16em] text-inkMuted">Human Only Signals</div>
+                  <div className="mt-2 text-sm leading-7 text-inkSoft">
+                    这里填的是 AI 不该替你编的东西。没有这些信号，系统最多只能给你一篇结构正确的稿，给不了真正像人的稿。
+                  </div>
+                </div>
+                <div className={`border px-3 py-2 text-xs ${humanSignalTone}`}>
+                  已补 {strategyCardDraft.humanSignalScore} / 6
+                </div>
+              </div>
+              <div className={`border px-4 py-3 text-sm leading-7 ${humanSignalTone}`}>
+                {strategyCardDraft.humanSignalScore >= 3
+                  ? "人类信号充足，生成时会优先按你的观察、体感和真实场景落笔。"
+                  : strategyCardDraft.humanSignalScore >= 2
+                    ? "人类信号达到最低建议线，但还可以继续补，让正文更像你自己。"
+                    : "当前人类信号偏少。系统仍能生成，但更容易写成结构正确、呼吸感不足的稿子。"}
+              </div>
+              <div className="grid gap-3 md:grid-cols-2">
+                {humanSignalFields.map((field) => {
+                  const isConfirmed = strategyCardDraft.humanSignalCompletion[field.key];
+                  return (
+                    <label key={String(field.key)} className="block border border-lineStrong bg-surfaceWarm px-4 py-4 text-sm text-inkSoft">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div className="text-xs uppercase tracking-[0.16em] text-inkMuted">{ARTICLE_HUMAN_SIGNAL_FIELD_LABELS[field.key]}</div>
+                        <div className={`text-xs ${isConfirmed ? "text-emerald-700" : "text-inkMuted"}`}>
+                          {isConfirmed ? "已填写" : "建议填写"}
+                        </div>
+                      </div>
+                      <Textarea
+                        aria-label={ARTICLE_HUMAN_SIGNAL_FIELD_LABELS[field.key]}
+                        value={field.value}
+                        onChange={(event) => field.setValue(event.target.value)}
+                        placeholder={field.placeholder}
+                        className="mt-3 min-h-[104px] px-3 py-2"
+                      />
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          </>
+        ) : null}
 
         <div className="flex flex-wrap items-center gap-3">
           <Button
@@ -6068,6 +6710,7 @@ export function ArticleEditorClient({
       : !savedEvidenceStats.ready || evidenceHasUnsavedChanges
         ? "border-warning/40 bg-surfaceWarning text-warning"
         : "border-emerald-200 bg-emerald-50 text-emerald-700";
+    const missingHookTags = EVIDENCE_HOOK_TAG_OPTIONS.filter((tag) => !evidenceDraftStats.hookTagCoverage.includes(tag));
     const selectedKeys = new Set(evidenceDraftItems.map(buildEvidenceItemSignature));
     const availableSuggestedItems = suggestedEvidenceItems.filter((item) => !selectedKeys.has(buildEvidenceItemSignature(item)));
 
@@ -6098,6 +6741,54 @@ export function ArticleEditorClient({
               : "证据包已经保存，后续可继续处理事实核查和发布准备。"}
         </div>
 
+        <div className="border border-lineStrong/60 bg-surface px-4 py-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <div className="text-xs uppercase tracking-[0.16em] text-inkMuted">爆点覆盖度</div>
+              <div className="mt-2 text-sm leading-7 text-inkSoft">
+                发布前建议至少覆盖 2 类爆点标签，让正文既有传播钩子，也有情绪密度和读者代入。
+              </div>
+            </div>
+            <div className={`border px-3 py-2 text-xs ${evidenceDraftStats.hookTagCoverageCount >= 2 ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-warning/40 bg-surfaceWarning text-warning"}`}>
+              已覆盖 {evidenceDraftStats.hookTagCoverageCount} / {EVIDENCE_HOOK_TAG_OPTIONS.length}
+            </div>
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {EVIDENCE_HOOK_TAG_OPTIONS.map((tag) => {
+              const covered = evidenceDraftStats.hookTagCoverage.includes(tag);
+              return (
+                <span
+                  key={tag}
+                  className={`border px-3 py-2 text-xs ${
+                    covered
+                      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                      : "border-lineStrong bg-paperStrong text-inkMuted"
+                  }`}
+                >
+                  {tag}
+                </span>
+              );
+            })}
+          </div>
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            <Button
+              type="button"
+              onClick={() => void autoTagEvidenceItems()}
+              disabled={savingEvidenceItems || taggingEvidenceItems || evidenceDraftItems.length === 0}
+              variant="secondary"
+              size="sm"
+              className="text-xs"
+            >
+              {taggingEvidenceItems ? "标注中…" : "自动标注爆点"}
+            </Button>
+            <div className="text-xs leading-6 text-inkMuted">
+              {missingHookTags.length > 0
+                ? `当前还缺：${missingHookTags.join("、")}。`
+                : "四类爆点标签都已覆盖。"}
+            </div>
+          </div>
+        </div>
+
         <div className="grid gap-3 md:grid-cols-4">
           <div className="border border-lineStrong bg-surface px-4 py-3">
             <div className="text-xs uppercase tracking-[0.16em] text-inkMuted">已选证据</div>
@@ -6123,6 +6814,15 @@ export function ArticleEditorClient({
             <div className="flex flex-wrap gap-2">
               <Button
                 type="button"
+                onClick={() => setShowImaEvidenceDrawer(true)}
+                variant="secondary"
+                size="sm"
+                className="text-xs"
+              >
+                从 IMA 导入
+              </Button>
+              <Button
+                type="button"
                 onClick={() => setEvidenceDraftItems(suggestedEvidenceItems.map((item, index) => ({ ...item, sortOrder: index + 1 })))}
                 variant="secondary"
                 size="sm"
@@ -6145,6 +6845,10 @@ export function ArticleEditorClient({
             <div className="space-y-3">
               {evidenceDraftItems.map((item, index) => (
                 <div key={`${buildEvidenceItemSignature(item)}-${index}`} className="border border-lineStrong bg-surface px-4 py-4">
+                  {(() => {
+                    const signature = buildEvidenceItemSignature(item);
+                    return (
+                      <>
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
                       <div className="font-medium text-ink">{item.title || `证据 ${index + 1}`}</div>
@@ -6153,6 +6857,12 @@ export function ArticleEditorClient({
                         <span className="border border-lineStrong px-2 py-1 normal-case tracking-normal">{formatEvidenceRoleLabel(item.evidenceRole)}</span>
                         {formatEvidenceResearchTagLabel(item.researchTag) ? (
                           <span className="border border-lineStrong px-2 py-1 normal-case tracking-normal">{formatEvidenceResearchTagLabel(item.researchTag)}</span>
+                        ) : null}
+                        {Array.isArray(item.hookTags) && item.hookTags.length > 0 ? (
+                          <span className="border border-lineStrong px-2 py-1 normal-case tracking-normal">爆点：{item.hookTags.join(" / ")}</span>
+                        ) : null}
+                        {typeof item.hookStrength === "number" ? (
+                          <span className="border border-lineStrong px-2 py-1 normal-case tracking-normal">强度 {item.hookStrength}/5</span>
                         ) : null}
                         {item.claim ? <span className="border border-lineStrong px-2 py-1 normal-case tracking-normal">支撑判断：{item.claim}</span> : null}
                       </div>
@@ -6169,6 +6879,48 @@ export function ArticleEditorClient({
                   </div>
                   <div className="mt-2 text-sm leading-7 text-inkSoft">{item.excerpt}</div>
                   {item.rationale ? <div className="mt-2 text-xs leading-6 text-inkMuted">{item.rationale}</div> : null}
+                  <div className="mt-3 border border-lineStrong/60 bg-surfaceWarm px-3 py-3">
+                    <div className="text-xs uppercase tracking-[0.16em] text-inkMuted">爆点标签</div>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {EVIDENCE_HOOK_TAG_OPTIONS.map((tag) => {
+                        const active = Array.isArray(item.hookTags) && item.hookTags.includes(tag);
+                        return (
+                          <Button
+                            key={tag}
+                            type="button"
+                            onClick={() => toggleEvidenceDraftHookTag(signature, tag)}
+                            variant="secondary"
+                            size="sm"
+                            className={`text-xs ${active ? "border-cinnabar text-cinnabar hover:border-cinnabar hover:text-cinnabar" : ""}`}
+                          >
+                            {tag}
+                          </Button>
+                        );
+                      })}
+                    </div>
+                    <div className="mt-3 flex flex-wrap items-center gap-3">
+                      <label className="text-xs leading-6 text-inkMuted">
+                        强度
+                        <Input
+                          aria-label={`证据 ${index + 1} 爆点强度`}
+                          type="number"
+                          min="0"
+                          max="5"
+                          step="1"
+                          value={item.hookStrength ?? ""}
+                          onChange={(event) => updateEvidenceDraftHookStrength(signature, event.target.value)}
+                          className="mt-1 w-20 px-3 py-2 text-sm"
+                        />
+                      </label>
+                      <div className="text-xs leading-6 text-inkMuted">
+                        {item.hookTaggedBy === "author"
+                          ? "当前为作者手动覆盖"
+                          : item.hookTaggedBy === "ai"
+                            ? "当前为自动标注结果"
+                            : "尚未标注"}
+                      </div>
+                    </div>
+                  </div>
                   <div className="mt-3 flex flex-wrap gap-2 text-xs text-inkMuted">
                     {item.fragmentId ? <span className="border border-lineStrong bg-paperStrong px-3 py-2">素材 #{item.fragmentId}</span> : null}
                     {item.nodeId ? <span className="border border-lineStrong bg-paperStrong px-3 py-2">节点 #{item.nodeId}</span> : null}
@@ -6183,6 +6935,9 @@ export function ArticleEditorClient({
                       打开原始链接
                     </a>
                   ) : null}
+                      </>
+                    );
+                  })()}
                 </div>
               ))}
             </div>
@@ -6207,6 +6962,9 @@ export function ArticleEditorClient({
                         <span className="border border-lineStrong px-2 py-1 normal-case tracking-normal">{formatEvidenceRoleLabel(item.evidenceRole)}</span>
                         {formatEvidenceResearchTagLabel(item.researchTag) ? (
                           <span className="border border-lineStrong px-2 py-1 normal-case tracking-normal">{formatEvidenceResearchTagLabel(item.researchTag)}</span>
+                        ) : null}
+                        {Array.isArray(item.hookTags) && item.hookTags.length > 0 ? (
+                          <span className="border border-lineStrong px-2 py-1 normal-case tracking-normal">爆点：{item.hookTags.join(" / ")}</span>
                         ) : null}
                       </div>
                     </div>
@@ -6431,6 +7189,45 @@ export function ArticleEditorClient({
                   {articleScorecardSummary.aiNoiseLevel || "unknown"}
                 </div>
               ) : null}
+            </div>
+          ) : null}
+          {articleOutcomeAttributionSummary ? (
+            <div className="mt-4 border border-lineStrong/60 bg-surface px-4 py-4">
+              <div className="text-xs uppercase tracking-[0.18em] text-inkMuted">结构归因</div>
+              <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                <div className="border border-lineStrong/60 bg-paperStrong px-4 py-3">
+                  <div className="text-xs uppercase tracking-[0.16em] text-inkMuted">选题来源</div>
+                  <div className="mt-2 text-sm leading-7 text-ink">{articleOutcomeAttributionSummary.topicSummary}</div>
+                  <div className="mt-2 text-xs leading-6 text-inkMuted">
+                    预估反差强度 {articleOutcomeAttributionSummary.predictedFlipStrength != null ? articleOutcomeAttributionSummary.predictedFlipStrength.toFixed(1) : "--"}
+                  </div>
+                </div>
+                <div className="border border-lineStrong/60 bg-paperStrong px-4 py-3">
+                  <div className="text-xs uppercase tracking-[0.16em] text-inkMuted">策略强度</div>
+                  <div className="mt-2 text-sm leading-7 text-ink">{articleOutcomeAttributionSummary.archetypeLabel}</div>
+                  <div className="mt-2 text-xs leading-6 text-inkMuted">
+                    四元 {articleOutcomeAttributionSummary.fourPointAverageScore != null ? articleOutcomeAttributionSummary.fourPointAverageScore.toFixed(2) : "--"} ·
+                    人味 {articleOutcomeAttributionSummary.humanSignalScore != null ? articleOutcomeAttributionSummary.humanSignalScore.toFixed(1) : "--"}
+                    {articleOutcomeAttributionSummary.strategyOverride ? " · 有人工覆盖" : ""}
+                  </div>
+                </div>
+                <div className="border border-lineStrong/60 bg-paperStrong px-4 py-3">
+                  <div className="text-xs uppercase tracking-[0.16em] text-inkMuted">爆点组合</div>
+                  <div className="mt-2 text-sm leading-7 text-ink">{articleOutcomeAttributionSummary.hookLabel}</div>
+                  <div className="mt-2 text-xs leading-6 text-inkMuted">
+                    标签覆盖 {articleOutcomeAttributionSummary.hookTagCoverageCount != null ? articleOutcomeAttributionSummary.hookTagCoverageCount : "--"} 类 ·
+                    强度均值 {articleOutcomeAttributionSummary.hookStrengthAverage != null ? articleOutcomeAttributionSummary.hookStrengthAverage.toFixed(2) : "--"}
+                  </div>
+                </div>
+                <div className="border border-lineStrong/60 bg-paperStrong px-4 py-3">
+                  <div className="text-xs uppercase tracking-[0.16em] text-inkMuted">节奏贴合</div>
+                  <div className="mt-2 text-sm leading-7 text-ink">{articleOutcomeAttributionSummary.rhythmStatusLabel}</div>
+                  <div className="mt-2 text-xs leading-6 text-inkMuted">
+                    节奏分 {articleOutcomeAttributionSummary.rhythmScore != null ? articleOutcomeAttributionSummary.rhythmScore.toFixed(2) : "--"}
+                  </div>
+                  <div className="mt-2 text-xs leading-6 text-inkMuted">{articleOutcomeAttributionSummary.rhythmDetail}</div>
+                </div>
+              </div>
             </div>
           ) : null}
           {latestSyncLog ? (
@@ -8053,18 +8850,46 @@ export function ArticleEditorClient({
                 </div>
                 {outlineTitleOptions.length > 0 ? (
                   <div className="space-y-3">
-                    <div>
-                      <div className="text-xs uppercase tracking-[0.2em] text-inkMuted">标题三选一</div>
-                      <div className="mt-2 text-sm leading-7 text-inkSoft">确认后会同步稿件标题，深度写作默认沿用这个标题。</div>
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <div className="text-xs uppercase tracking-[0.2em] text-inkMuted">标题六选一</div>
+                        <div className="mt-2 text-sm leading-7 text-inkSoft">确认后会同步稿件标题，深度写作默认沿用这个标题。</div>
+                        {formatTitleAuditTimestamp(String(currentStageArtifact.payload?.titleAuditedAt || "")) ? (
+                          <div className="mt-2 text-xs leading-6 text-inkMuted">
+                            最近体检：{formatTitleAuditTimestamp(String(currentStageArtifact.payload?.titleAuditedAt || ""))}
+                          </div>
+                        ) : null}
+                      </div>
+                      <Button
+                        type="button"
+                        onClick={() => generateStageArtifact("outlinePlanning", { titleOptionsOnly: true })}
+                        disabled={Boolean(generatingStageArtifactCode) || Boolean(updatingWorkflowCode) || savingAudienceSelection}
+                        variant="secondary"
+                        size="sm"
+                        className="text-xs"
+                      >
+                        {generatingStageArtifactCode === "outlinePlanning" ? "优化中…" : "重新优化标题"}
+                      </Button>
                     </div>
-                    <div className="grid gap-3">
+                    <div className="grid gap-3 md:grid-cols-2">
                       {outlineTitleOptions.map((item, index) => {
                         const optionTitle = String(item.title || "").trim();
                         const optionStyle = String(item.styleLabel || "").trim();
                         const optionAngle = String(item.angle || "").trim();
                         const optionReason = String(item.reason || "").trim();
                         const optionRiskHint = String(item.riskHint || "").trim();
+                        const optionRecommendReason = String(item.recommendReason || "").trim();
+                        const optionForbiddenHits = getPayloadStringArray(item, "forbiddenHits");
+                        const optionScore = getTitleOptionScore(item);
+                        const scoreWidth = `${Math.max(8, Math.round((optionScore / 50) * 100))}%`;
+                        const optionElementsHit = getTitleOptionElementsHit(item);
+                        const optionElements = [
+                          { label: "具体元素", active: optionElementsHit.specific },
+                          { label: "好奇缺口", active: optionElementsHit.curiosityGap },
+                          { label: "读者视角", active: optionElementsHit.readerView },
+                        ];
                         const isSelected = outlineSelectionDraft.selectedTitle === optionTitle;
+                        const isRecommended = Boolean(item.isRecommended);
                         return (
                           <Button
                             key={`${optionTitle || index}`}
@@ -8088,13 +8913,47 @@ export function ArticleEditorClient({
                               <span className={`px-2 py-1 text-xs ${isSelected ? "bg-cinnabar text-white" : "bg-paperStrong text-inkMuted"}`}>
                                 {optionStyle || `标题方案 ${index + 1}`}
                               </span>
+                              {isRecommended ? <span className="border border-warning/30 bg-surfaceWarning px-2 py-1 text-xs text-warning">⭐ 推荐</span> : null}
                               {optionAngle ? <span className="text-xs text-inkMuted">{optionAngle}</span> : null}
                             </span>
                             <span className="mt-3 text-base font-medium leading-7 text-ink">{optionTitle || `标题方案 ${index + 1}`}</span>
+                            <span className="mt-3 block w-full">
+                              <span className="flex items-center justify-between text-[11px] uppercase tracking-[0.16em] text-inkMuted">
+                                <span>打开率分</span>
+                                <span>{optionScore}/50</span>
+                              </span>
+                              <span className="mt-2 block h-2 w-full overflow-hidden rounded-full bg-paperStrong">
+                                <span className="block h-full rounded-full bg-warning" style={{ width: scoreWidth }} />
+                              </span>
+                            </span>
+                            <span className="mt-3 flex flex-wrap gap-2">
+                              {optionElements.map((element) => (
+                                <span
+                                  key={`${optionTitle || index}-${element.label}`}
+                                  className={`border px-2 py-1 text-[11px] ${
+                                    element.active
+                                      ? "border-emerald-300 bg-emerald-50 text-emerald-800"
+                                      : "border-lineStrong bg-paperStrong text-inkMuted"
+                                  }`}
+                                >
+                                  {element.label}
+                                </span>
+                              ))}
+                            </span>
                             {optionReason ? <span className="mt-2 text-sm leading-7 text-inkSoft">{optionReason}</span> : null}
+                            {isRecommended && optionRecommendReason ? (
+                              <span className="mt-3 block border border-warning/30 bg-surfaceWarning px-3 py-2 text-xs leading-6 text-warning">
+                                推荐理由：{optionRecommendReason}
+                              </span>
+                            ) : null}
                             {optionRiskHint ? (
                               <span className="mt-3 block border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-6 text-amber-900">
                                 风险提示：{optionRiskHint}
+                              </span>
+                            ) : null}
+                            {optionForbiddenHits.length > 0 ? (
+                              <span className="mt-3 block border border-danger/30 bg-red-50 px-3 py-2 text-xs leading-6 text-danger">
+                                禁止清单：{optionForbiddenHits.join("、")}
                               </span>
                             ) : null}
                           </Button>
@@ -8654,6 +9513,39 @@ export function ArticleEditorClient({
                     诊断：{String(currentStageArtifact.payload?.overallDiagnosis)}
                   </div>
                 ) : null}
+                <div className="space-y-3 border border-lineStrong/60 bg-surface px-4 py-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <div className="text-xs uppercase tracking-[0.2em] text-inkMuted">标题复检</div>
+                      <div className="mt-2 text-sm leading-7 text-inkSoft">
+                        润色前后如果判断标题不够稳，可以直接在这里重生成 6 个标题候选，不改大纲和正文。
+                      </div>
+                      <div className="mt-2 text-xs leading-6 text-inkMuted">
+                        已确认标题：{outlineSelectionState.selectedTitle || String(outlineArtifact?.payload?.workingTitle || article.title).trim() || "未确认"}
+                      </div>
+                      {formatTitleAuditTimestamp(String(outlineArtifact?.payload?.titleAuditedAt || "")) ? (
+                        <div className="mt-1 text-xs leading-6 text-inkMuted">
+                          最近体检：{formatTitleAuditTimestamp(String(outlineArtifact?.payload?.titleAuditedAt || ""))}
+                        </div>
+                      ) : null}
+                    </div>
+                    <Button
+                      type="button"
+                      onClick={() => generateStageArtifact("outlinePlanning", { titleOptionsOnly: true })}
+                      disabled={Boolean(generatingStageArtifactCode) || Boolean(updatingWorkflowCode) || Boolean(applyingStageArtifactCode)}
+                      variant="secondary"
+                      size="sm"
+                      className="text-xs"
+                    >
+                      {generatingStageArtifactCode === "outlinePlanning" ? "重生成中…" : "重生成 6 标题"}
+                    </Button>
+                  </div>
+                  {outlineArtifactTitleOptions.length > 0 ? (
+                    <div className="text-xs leading-6 text-inkMuted">
+                      当前可选 {outlineArtifactTitleOptions.length} 个标题候选；标题刷新后，回到大纲阶段可继续切换已确认标题。
+                    </div>
+                  ) : null}
+                </div>
                 <div className="space-y-3 border border-lineStrong/60 bg-surfaceWarm px-4 py-4">
                   {(() => {
                     const weakestLayer = getWeakestWritingQualityLayerSummary(editorQualityPanel);
@@ -10852,6 +11744,12 @@ export function ArticleEditorClient({
           </div>
         </div>
         ) : null}
+      <ImaEvidenceSearchDrawer
+        articleId={article.id}
+        open={showImaEvidenceDrawer}
+        onClose={() => setShowImaEvidenceDrawer(false)}
+        onImport={appendImaEvidenceItems}
+      />
     </div>
   );
 }

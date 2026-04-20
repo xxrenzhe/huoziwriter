@@ -1,9 +1,10 @@
-import { buildSuggestedStrategyCard } from "@/lib/article-strategy";
+import { buildFourPointAudit, buildSuggestedStrategyCard, hasStrategyLockInputsChanged } from "@/lib/article-strategy";
 import { ensureUserSession } from "@/lib/auth";
 import { getArticleStageArtifacts } from "@/lib/article-stage-artifacts";
 import { getArticleWritingContext } from "@/lib/article-writing-context";
 import { fail, ok } from "@/lib/http";
 import { getArticleById, getArticleOutcomeBundle, getArticleStrategyCard, upsertArticleStrategyCard } from "@/lib/repositories";
+import { mergeStrategyCardPatch, parseStrategyCardPatch } from "./shared";
 
 export async function GET(_: Request, { params }: { params: { id: string } }) {
   const session = await ensureUserSession();
@@ -51,24 +52,18 @@ export async function PUT(request: Request, { params }: { params: { id: string }
 
   try {
     const body = await request.json();
+    const currentStrategyCard = await getArticleStrategyCard(article.id, session.userId);
+    const patch = parseStrategyCardPatch(body);
+    const nextStrategyCard = mergeStrategyCardPatch(currentStrategyCard, patch);
+    const fourPointAudit = buildFourPointAudit(nextStrategyCard);
+    const shouldClearLock = hasStrategyLockInputsChanged(currentStrategyCard, nextStrategyCard);
     const strategyCard = await upsertArticleStrategyCard({
       articleId: article.id,
       userId: session.userId,
-      targetReader: body.targetReader === undefined ? undefined : String(body.targetReader || "").trim() || null,
-      coreAssertion: body.coreAssertion === undefined ? undefined : String(body.coreAssertion || "").trim() || null,
-      whyNow: body.whyNow === undefined ? undefined : String(body.whyNow || "").trim() || null,
-      researchHypothesis: body.researchHypothesis === undefined ? undefined : String(body.researchHypothesis || "").trim() || null,
-      marketPositionInsight: body.marketPositionInsight === undefined ? undefined : String(body.marketPositionInsight || "").trim() || null,
-      historicalTurningPoint: body.historicalTurningPoint === undefined ? undefined : String(body.historicalTurningPoint || "").trim() || null,
-      targetPackage: body.targetPackage === undefined ? undefined : String(body.targetPackage || "").trim() || null,
-      publishWindow: body.publishWindow === undefined ? undefined : String(body.publishWindow || "").trim() || null,
-      endingAction: body.endingAction === undefined ? undefined : String(body.endingAction || "").trim() || null,
-      firstHandObservation: body.firstHandObservation === undefined ? undefined : String(body.firstHandObservation || "").trim() || null,
-      feltMoment: body.feltMoment === undefined ? undefined : String(body.feltMoment || "").trim() || null,
-      whyThisHitMe: body.whyThisHitMe === undefined ? undefined : String(body.whyThisHitMe || "").trim() || null,
-      realSceneOrDialogue: body.realSceneOrDialogue === undefined ? undefined : String(body.realSceneOrDialogue || "").trim() || null,
-      wantToComplain: body.wantToComplain === undefined ? undefined : String(body.wantToComplain || "").trim() || null,
-      nonDelegableTruth: body.nonDelegableTruth === undefined ? undefined : String(body.nonDelegableTruth || "").trim() || null,
+      ...patch,
+      fourPointAudit,
+      strategyLockedAt: shouldClearLock ? null : currentStrategyCard?.strategyLockedAt ?? null,
+      strategyOverride: shouldClearLock ? false : currentStrategyCard?.strategyOverride ?? false,
     });
     return ok(strategyCard);
   } catch (error) {

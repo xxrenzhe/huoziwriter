@@ -1,6 +1,7 @@
 import { buttonStyles, cn, surfaceCardStyles } from "@huoziwriter/ui";
 import Link from "next/link";
 import { CreateArticleForm, WriterPaperEmptyState } from "@/components/dashboard-client";
+import { WarroomTopicFissionPanel } from "@/components/warroom-topic-fission-panel";
 import type { WarroomData } from "@/lib/warroom";
 
 const heroSectionBackgroundClassName = "bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(243,241,236,0.96))]";
@@ -272,6 +273,9 @@ export function WarroomDashboard({
             <Link href="/articles" className={warmSecondaryActionLinkClassName}>
               进入稿件区
             </Link>
+            <Link href="/settings/author?panel=backlogs#topic-backlogs" className={secondaryActionLinkClassName}>
+              去选题库
+            </Link>
             <Link href="/settings/sources" className={secondaryActionLinkClassName}>
               补信源
             </Link>
@@ -297,6 +301,7 @@ export function WarroomDashboard({
                 <div className={detailEyebrowClassName}>为什么现在写</div>
                 <p className={cn("mt-2", bodyCopyClassName)}>{topic.recommendationReason}</p>
               </div>
+              <WarroomTopicFissionPanel topic={topic} seriesOptions={warroom.series} backlogOptions={warroom.topicBacklogs} />
             </article>
           ))}
           {warroom.topics.length === 0 ? (

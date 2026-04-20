@@ -1,6 +1,7 @@
 import { getDatabase } from "./db";
 import { ensureExtendedProductSchema } from "./schema-bootstrap";
 import { getUserAccessScope } from "./access-scope";
+import { buildKnowledgeIndexSignals } from "./knowledge-indexing";
 
 type KnowledgeCardStatus = "draft" | "active" | "conflicted" | "stale" | "archived";
 
@@ -20,6 +21,9 @@ type KnowledgeCardListItem = {
   title: string;
   slug: string;
   summary: string | null;
+  track_label: string | null;
+  hook_tags_json: string | string[] | null;
+  sample_paragraph: string | null;
   conflict_flags_json: string | string[] | null;
   latest_change_summary: string | null;
   overturned_judgements_json: string | string[] | null;
@@ -102,6 +106,10 @@ function parseList(value: string | string[] | null) {
   } catch {
     return [];
   }
+}
+
+function parseHookTags(value: string | string[] | null) {
+  return parseList(value);
 }
 
 function buildKnowledgeTokens(...values: Array<string | null | undefined>) {
@@ -363,6 +371,9 @@ async function getKnowledgeCardRecord(userId: number, cardId: number) {
     title: string;
     slug: string;
     summary: string | null;
+    track_label: string | null;
+    hook_tags_json: string | string[] | null;
+    sample_paragraph: string | null;
     key_facts_json: string | string[] | null;
     open_questions_json: string | string[] | null;
     conflict_flags_json: string | string[] | null;
@@ -404,6 +415,11 @@ export async function compileKnowledgeCardFromFragments(
   const slug = existingCard?.slug || `${slugify(title)}-${userId}`;
   const now = new Date().toISOString();
   const summary = fragments.map((fragment) => fragment.distilled_content).join("；").slice(0, 300);
+  const indexSignals = buildKnowledgeIndexSignals({
+    title,
+    summary,
+    fragments,
+  });
   const keyFacts = fragments.slice(0, 4).map((fragment) => fragment.distilled_content);
   const consensus = analyzeKnowledgeConsensus(fragments);
   const previousKeyFacts = existingCard ? parseList(existingCard.key_facts_json) : [];
@@ -433,14 +449,17 @@ export async function compileKnowledgeCardFromFragments(
   if (!cardId) {
     await db.exec(
       `INSERT INTO knowledge_cards (
-        user_id, card_type, title, slug, summary, key_facts_json, open_questions_json, conflict_flags_json, latest_change_summary, overturned_judgements_json, confidence_score, status, last_compiled_at, last_verified_at, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        user_id, card_type, title, slug, summary, track_label, hook_tags_json, sample_paragraph, key_facts_json, open_questions_json, conflict_flags_json, latest_change_summary, overturned_judgements_json, confidence_score, status, last_compiled_at, last_verified_at, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         userId,
         pickCardType(primary),
         title,
         slug,
         summary,
+        indexSignals.trackLabel,
+        indexSignals.hookTags,
+        indexSignals.sampleParagraph,
         keyFacts,
         consensus.openQuestions,
         consensus.conflictFlags,
@@ -459,12 +478,15 @@ export async function compileKnowledgeCardFromFragments(
   } else {
     await db.exec(
       `UPDATE knowledge_cards
-       SET card_type = ?, title = ?, summary = ?, key_facts_json = ?, open_questions_json = ?, conflict_flags_json = ?, latest_change_summary = ?, overturned_judgements_json = ?, confidence_score = ?, status = ?, last_compiled_at = ?, updated_at = ?
+       SET card_type = ?, title = ?, summary = ?, track_label = ?, hook_tags_json = ?, sample_paragraph = ?, key_facts_json = ?, open_questions_json = ?, conflict_flags_json = ?, latest_change_summary = ?, overturned_judgements_json = ?, confidence_score = ?, status = ?, last_compiled_at = ?, updated_at = ?
        WHERE id = ?`,
       [
         pickCardType(primary),
         title,
         summary,
+        indexSignals.trackLabel,
+        indexSignals.hookTags,
+        indexSignals.sampleParagraph,
         keyFacts,
         consensus.openQuestions,
         consensus.conflictFlags,
@@ -631,6 +653,9 @@ export async function getKnowledgeCardDetail(userId: number, cardId: number) {
     title: card.title,
     slug: card.slug,
     summary: card.summary,
+    trackLabel: card.track_label,
+    hookTags: parseHookTags(card.hook_tags_json),
+    sampleParagraph: card.sample_paragraph,
     keyFacts: parseList(card.key_facts_json),
     openQuestions: parseList(card.open_questions_json),
     conflictFlags: parseList(card.conflict_flags_json),
@@ -741,6 +766,55 @@ export async function getAdminKnowledgeCards() {
   return cards.map((card) => ({
     ...card,
     source_fragment_ids: fragmentMap.get(card.id) ?? [],
+  }));
+}
+
+export async function getKnowledgeCardsByTrack(input: {
+  trackLabel?: string | null;
+  hookTag?: string | null;
+  limit?: number;
+}) {
+  await ensureExtendedProductSchema();
+  const db = getDatabase();
+  const trackLabel = String(input.trackLabel || "").trim();
+  const hookTag = String(input.hookTag || "").trim();
+  const limit = Math.max(1, Math.min(24, Number(input.limit ?? 8) || 8));
+  const clauses = ["status <> 'archived'"];
+  const params: unknown[] = [];
+  if (trackLabel) {
+    clauses.push("track_label = ?");
+    params.push(trackLabel);
+  }
+  if (hookTag) {
+    clauses.push("hook_tags_json LIKE ?");
+    params.push(`%${hookTag}%`);
+  }
+  const rows = await db.query<{
+    id: number;
+    title: string;
+    summary: string | null;
+    track_label: string | null;
+    hook_tags_json: string | string[] | null;
+    sample_paragraph: string | null;
+    confidence_score: number;
+    status: string;
+  }>(
+    `SELECT id, title, summary, track_label, hook_tags_json, sample_paragraph, confidence_score, status
+     FROM knowledge_cards
+     WHERE ${clauses.join(" AND ")}
+     ORDER BY confidence_score DESC, updated_at DESC, id DESC
+     LIMIT ?`,
+    [...params, limit],
+  );
+  return rows.map((row) => ({
+    id: row.id,
+    title: row.title,
+    summary: row.summary,
+    trackLabel: row.track_label,
+    hookTags: parseHookTags(row.hook_tags_json),
+    sampleParagraph: row.sample_paragraph,
+    confidenceScore: row.confidence_score,
+    status: row.status,
   }));
 }
 

@@ -10,6 +10,9 @@ type GovernanceCard = {
   title: string;
   cardType: string;
   summary: string | null;
+  trackLabel: string | null;
+  hookTags: string[];
+  sampleParagraph: string | null;
   conflictFlags: string[];
   confidenceScore: number;
   status: string;
@@ -47,6 +50,7 @@ const mobileCardClassName = cn(
 const tableHeadCellClassName = "px-6 py-4 font-medium";
 const tableBodyCellClassName = "px-6 py-4";
 const conflictFlagClassName = "border border-danger/30 bg-surface px-2 py-1 text-[11px] text-danger";
+const hookTagClassName = "border border-adminLineStrong bg-adminSurface px-2 py-1 text-[11px] text-adminInkSoft";
 const statusSelectClassName = cn(
   "min-h-10 w-full min-w-[132px] px-3 py-2",
   "border-adminLineStrong bg-adminBg text-adminInk",
@@ -90,6 +94,9 @@ export function KnowledgeGovernanceClient({
   const [selectedId, setSelectedId] = useState<number | null>(cards[0]?.id ?? null);
   const [revisions, setRevisions] = useState<RevisionItem[]>([]);
   const [loading, setLoading] = useState(false);
+  const [trackFilter, setTrackFilter] = useState("all");
+  const [hookTagFilter, setHookTagFilter] = useState("all");
+  const [query, setQuery] = useState("");
 
   useEffect(() => {
     if (!selectedId) {
@@ -131,6 +138,28 @@ export function KnowledgeGovernanceClient({
   const conflictedCount = cards.filter((card) => card.status === "conflicted").length;
   const staleCount = cards.filter((card) => card.status === "stale").length;
   const lowConfidenceCount = cards.filter((card) => card.confidenceScore < 0.65).length;
+  const trackOptions = Array.from(new Set(cards.map((card) => card.trackLabel).filter(Boolean) as string[])).sort((a, b) => a.localeCompare(b, "zh-CN"));
+  const hookTagOptions = Array.from(new Set(cards.flatMap((card) => card.hookTags))).sort((a, b) => a.localeCompare(b, "zh-CN"));
+  const filteredCards = cards.filter((card) => {
+    if (trackFilter !== "all" && card.trackLabel !== trackFilter) return false;
+    if (hookTagFilter !== "all" && !card.hookTags.includes(hookTagFilter)) return false;
+    if (query.trim()) {
+      const haystack = `${card.title} ${card.summary || ""} ${card.sampleParagraph || ""}`.toLowerCase();
+      if (!haystack.includes(query.trim().toLowerCase())) return false;
+    }
+    return true;
+  });
+  const selectedCard = filteredCards.find((card) => card.id === selectedId) ?? filteredCards[0] ?? null;
+
+  useEffect(() => {
+    if (!selectedCard) {
+      setSelectedId(null);
+      return;
+    }
+    if (selectedId !== selectedCard.id) {
+      setSelectedId(selectedCard.id);
+    }
+  }, [selectedCard?.id]);
 
   return (
     <div className="space-y-6">
@@ -148,11 +177,34 @@ export function KnowledgeGovernanceClient({
         ))}
       </section>
 
+      <section className={adminPanelClassName + " p-4"}>
+        <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_180px_180px]">
+          <input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="搜索标题、摘要或典型段落"
+            className="min-h-10 border border-adminLineStrong bg-adminBg px-3 py-2 text-sm text-adminInk outline-none focus-visible:ring-2 focus-visible:ring-adminAccent"
+          />
+          <Select value={trackFilter} onChange={(event) => setTrackFilter(event.target.value)} className={statusSelectClassName}>
+            <option value="all">全部赛道</option>
+            {trackOptions.map((track) => (
+              <option key={track} value={track}>{track}</option>
+            ))}
+          </Select>
+          <Select value={hookTagFilter} onChange={(event) => setHookTagFilter(event.target.value)} className={statusSelectClassName}>
+            <option value="all">全部爆点标签</option>
+            {hookTagOptions.map((tag) => (
+              <option key={tag} value={tag}>{tag}</option>
+            ))}
+          </Select>
+        </div>
+      </section>
+
       <section className="grid gap-4 xl:grid-cols-[minmax(0,1.4fr)_360px]">
         <div className={tableWrapperClassName}>
           <div className={tableMobileListClassName}>
-            {cards.map((card) => {
-              const selected = selectedId === card.id;
+            {filteredCards.map((card) => {
+              const selected = selectedCard?.id === card.id;
               return (
                 <article
                   key={card.id}
@@ -187,7 +239,16 @@ export function KnowledgeGovernanceClient({
                       <div className="mt-1">{card.revisionCount}</div>
                     </div>
                   </div>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {card.trackLabel ? <span className={hookTagClassName}>赛道 {card.trackLabel}</span> : null}
+                    {card.hookTags.map((tag) => (
+                      <span key={`${card.id}-${tag}`} className={hookTagClassName}>{tag}</span>
+                    ))}
+                  </div>
                   <p className="mt-4 text-sm leading-7 text-adminInkSoft">{card.summary || "暂无摘要"}</p>
+                  {card.sampleParagraph ? (
+                    <p className="mt-3 text-xs leading-6 text-adminInkMuted">典型段落：{card.sampleParagraph}</p>
+                  ) : null}
                   {card.conflictFlags.length ? (
                     <div className="mt-4 flex flex-wrap gap-2">
                       {card.conflictFlags.map((flag) => (
@@ -227,22 +288,23 @@ export function KnowledgeGovernanceClient({
                 </article>
               );
             })}
+            {filteredCards.length === 0 ? <div className="text-sm text-adminInkMuted">当前筛选条件下没有命中的背景卡。</div> : null}
           </div>
           <div className={tableDesktopShellClassName}>
-            <table className="w-full min-w-[960px] text-left text-sm">
+            <table className="w-full min-w-[1120px] text-left text-sm">
               <thead className="bg-adminBg text-adminInkMuted">
                 <tr>
-                  {["档案", "归属用户", "状态", "置信度", "证据", "Revision", "治理动作"].map((head) => (
+                  {["档案", "索引", "归属用户", "状态", "置信度", "证据", "Revision", "治理动作"].map((head) => (
                     <th key={head} className={tableHeadCellClassName}>{head}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {cards.map((card) => (
+                {filteredCards.map((card) => (
                   <tr
                     key={card.id}
                     onClick={() => setSelectedId(card.id)}
-                    className={getCardRowClassName(selectedId === card.id)}
+                    className={getCardRowClassName(selectedCard?.id === card.id)}
                   >
                     <td className={cn(tableBodyCellClassName, "align-top")}>
                       <div className="font-serifCn text-xl text-adminInk">{card.title}</div>
@@ -257,6 +319,17 @@ export function KnowledgeGovernanceClient({
                             </span>
                           ))}
                         </div>
+                      ) : null}
+                    </td>
+                    <td className={cn(tableBodyCellClassName, "align-top text-adminInkSoft")}>
+                      <div>{card.trackLabel || "未归类"}</div>
+                      <div className="mt-2 flex max-w-[220px] flex-wrap gap-2">
+                        {card.hookTags.length > 0 ? card.hookTags.map((tag) => (
+                          <span key={`${card.id}-desktop-${tag}`} className={hookTagClassName}>{tag}</span>
+                        )) : <span className="text-xs text-adminInkMuted">无爆点标签</span>}
+                      </div>
+                      {card.sampleParagraph ? (
+                        <p className="mt-3 max-w-[220px] text-xs leading-6 text-adminInkMuted">{card.sampleParagraph}</p>
                       ) : null}
                     </td>
                     <td className={cn(tableBodyCellClassName, "text-adminInkSoft")}>{card.username || `user#${card.id}`}</td>
@@ -284,6 +357,13 @@ export function KnowledgeGovernanceClient({
                     </td>
                   </tr>
                 ))}
+                {filteredCards.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className={tableBodyCellClassName + " text-adminInkMuted"}>
+                      当前筛选条件下没有命中的背景卡。
+                    </td>
+                  </tr>
+                ) : null}
               </tbody>
             </table>
           </div>
@@ -295,6 +375,18 @@ export function KnowledgeGovernanceClient({
           <p className="mt-4 text-sm leading-7 text-adminInkSoft">
             这里优先处理冲突、过期和低置信度档案。每次重编译都保留 revision，确保结论可以回链。
           </p>
+          {selectedCard ? (
+            <div className="mt-6 space-y-3 border border-adminLineStrong bg-adminSurfaceAlt p-4">
+              <div className="text-xs uppercase tracking-[0.18em] text-adminInkMuted">索引摘要</div>
+              <div className="text-sm text-adminInk">赛道：{selectedCard.trackLabel || "未归类"}</div>
+              <div className="flex flex-wrap gap-2">
+                {selectedCard.hookTags.length > 0 ? selectedCard.hookTags.map((tag) => (
+                  <span key={`aside-${selectedCard.id}-${tag}`} className={hookTagClassName}>{tag}</span>
+                )) : <span className="text-xs text-adminInkMuted">当前还没有爆点标签</span>}
+              </div>
+              <div className="text-xs leading-6 text-adminInkMuted">{selectedCard.sampleParagraph || "当前还没有典型段落。"}</div>
+            </div>
+          ) : null}
           <div className="mt-6 space-y-3">
             {loading ? <div className="text-sm text-adminInkMuted">正在加载 revision…</div> : null}
             {!loading && revisions.length === 0 ? <div className="text-sm text-adminInkMuted">当前档案还没有 revision 记录。</div> : null}

@@ -283,8 +283,34 @@ async function normalizeBootstrapData(runtime, mode) {
   );
 }
 
+async function ensureRuntimeSchemaCompat(runtime, mode) {
+  if (mode === "postgres") {
+    const referralCodeColumn = await runtime.get(
+      `SELECT column_name
+       FROM information_schema.columns
+       WHERE table_schema = current_schema()
+         AND table_name = 'users'
+         AND column_name = 'referral_code'
+       LIMIT 1`,
+    );
+    if (!referralCodeColumn) {
+      await runtime.exec("ALTER TABLE users ADD COLUMN referral_code TEXT");
+    }
+    return;
+  }
+
+  const referralCodeColumn = await runtime.get(
+    "SELECT name FROM pragma_table_info('users') WHERE name = ? LIMIT 1",
+    ["referral_code"],
+  );
+  if (!referralCodeColumn) {
+    await runtime.exec("ALTER TABLE users ADD COLUMN referral_code TEXT");
+  }
+}
+
 async function ensureDefaultAdmin(runtime, mode) {
   const bcrypt = getPackage("bcryptjs");
+  const adminPlanCode = "ultra";
   const password = String(process.env.DEFAULT_ADMIN_PASSWORD || "").trim();
   if (!password) {
     throw new Error("runtime-db-init: DEFAULT_ADMIN_PASSWORD is required to bootstrap the default admin user");
@@ -305,7 +331,7 @@ async function ensureDefaultAdmin(runtime, mode) {
           username, email, password_hash, display_name, referral_code, role, plan_code, must_change_password, is_active, created_at, updated_at
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())
         RETURNING id`,
-        ["huozi", "admin@huoziwriter.local", passwordHash, "Huozi Admin", null, "admin", "ultra", false, true],
+        ["huozi", "admin@huoziwriter.local", passwordHash, "Huozi Admin", null, "admin", adminPlanCode, false, true],
       );
       userId = inserted?.id;
     } else {
@@ -313,7 +339,7 @@ async function ensureDefaultAdmin(runtime, mode) {
         `INSERT INTO users (
           username, email, password_hash, display_name, referral_code, role, plan_code, must_change_password, is_active, created_at, updated_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        ["huozi", "admin@huoziwriter.local", passwordHash, "Huozi Admin", null, "admin", "ultra", 0, 1, new Date().toISOString(), new Date().toISOString()],
+        ["huozi", "admin@huoziwriter.local", passwordHash, "Huozi Admin", null, "admin", adminPlanCode, 0, 1, new Date().toISOString(), new Date().toISOString()],
       );
       userId = Number(inserted.lastInsertRowid);
     }
@@ -324,14 +350,14 @@ async function ensureDefaultAdmin(runtime, mode) {
         `UPDATE users
          SET role = $1, plan_code = $2, must_change_password = $3, is_active = $4, updated_at = NOW()
          WHERE id = $5`,
-        ["admin", "ultra", false, true, userId],
+        ["admin", adminPlanCode, false, true, userId],
       );
     } else {
       await runtime.run(
         `UPDATE users
          SET role = ?, plan_code = ?, must_change_password = ?, is_active = ?, updated_at = ?
          WHERE id = ?`,
-        ["admin", "ultra", 0, 1, new Date().toISOString(), userId],
+        ["admin", adminPlanCode, 0, 1, new Date().toISOString(), userId],
       );
     }
     console.log("runtime-db-init: default admin user already exists");
@@ -339,16 +365,16 @@ async function ensureDefaultAdmin(runtime, mode) {
 
   const referralCode = buildReferralCode(Number(userId), "huozi");
   if (mode === "postgres") {
-    await runtime.run("UPDATE users SET referral_code = $1, updated_at = NOW() WHERE id = $2", [referralCode, userId]);
-    const activeSubscription = await runtime.get(
-      "SELECT id FROM subscriptions WHERE user_id = $1 AND plan_code = $2 AND status = $3 ORDER BY id DESC LIMIT 1",
-      [userId, adminConfig.planCode, "active"],
-    );
-    if (!activeSubscription) {
-      await runtime.run(
-        `INSERT INTO subscriptions (user_id, plan_code, status, start_at, source, created_at, updated_at)
+      await runtime.run("UPDATE users SET referral_code = $1, updated_at = NOW() WHERE id = $2", [referralCode, userId]);
+      const activeSubscription = await runtime.get(
+        "SELECT id FROM subscriptions WHERE user_id = $1 AND plan_code = $2 AND status = $3 ORDER BY id DESC LIMIT 1",
+      [userId, adminPlanCode, "active"],
+      );
+      if (!activeSubscription) {
+        await runtime.run(
+          `INSERT INTO subscriptions (user_id, plan_code, status, start_at, source, created_at, updated_at)
          VALUES ($1, $2, $3, NOW(), $4, NOW(), NOW())`,
-        [userId, adminConfig.planCode, "active", "manual"],
+        [userId, adminPlanCode, "active", "manual"],
       );
     }
     return;
@@ -357,13 +383,13 @@ async function ensureDefaultAdmin(runtime, mode) {
   await runtime.run("UPDATE users SET referral_code = ?, updated_at = ? WHERE id = ?", [referralCode, new Date().toISOString(), userId]);
   const activeSubscription = await runtime.get(
     "SELECT id FROM subscriptions WHERE user_id = ? AND plan_code = ? AND status = ? ORDER BY id DESC LIMIT 1",
-    [userId, adminConfig.planCode, "active"],
+    [userId, adminPlanCode, "active"],
   );
   if (!activeSubscription) {
     await runtime.run(
       `INSERT INTO subscriptions (user_id, plan_code, status, start_at, source, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [userId, adminConfig.planCode, "active", new Date().toISOString(), "manual", new Date().toISOString(), new Date().toISOString()],
+      [userId, adminPlanCode, "active", new Date().toISOString(), "manual", new Date().toISOString(), new Date().toISOString()],
     );
   }
 }
@@ -380,6 +406,7 @@ async function main() {
     if (migrationResult.executed.length > 0) {
       console.log(`runtime-db-init: applied migrations ${migrationResult.executed.join(", ")}`);
     }
+    await ensureRuntimeSchemaCompat(runtime, mode);
     await normalizeBootstrapData(runtime, mode);
     await ensureDefaultAdmin(runtime, mode);
     console.log(`runtime-db-init: completed for ${mode}`);

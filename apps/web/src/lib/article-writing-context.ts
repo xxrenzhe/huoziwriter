@@ -40,6 +40,13 @@ type SeriesInsightContext = {
   driftRisks: string[];
   backgroundChecklist: string[];
   whyNow: string[];
+  preHook: string | null;
+  postHook: string | null;
+  platformPreference: string | null;
+  targetPackHint: string | null;
+  defaultArchetype: string | null;
+  defaultLayoutTemplateId: string | null;
+  rhythmOverride: Record<string, unknown> | null;
   relatedArticleCount: number;
 };
 
@@ -68,6 +75,13 @@ function buildSeriesInsight(input: {
     name: string;
     thesis: string | null;
     targetAudience: string | null;
+    preHook: string | null;
+    postHook: string | null;
+    platformPreference: string | null;
+    targetPackHint: string | null;
+    defaultArchetype: string | null;
+    defaultLayoutTemplateId: string | null;
+    rhythmOverride: Record<string, unknown> | null;
   } | null;
   knowledgeCards: KnowledgeCardContext[];
   historySuggestions: Array<{
@@ -157,6 +171,13 @@ function buildSeriesInsight(input: {
     driftRisks,
     backgroundChecklist,
     whyNow,
+    preHook: input.boundSeries?.preHook ?? null,
+    postHook: input.boundSeries?.postHook ?? null,
+    platformPreference: input.boundSeries?.platformPreference ?? null,
+    targetPackHint: input.boundSeries?.targetPackHint ?? null,
+    defaultArchetype: input.boundSeries?.defaultArchetype ?? null,
+    defaultLayoutTemplateId: input.boundSeries?.defaultLayoutTemplateId ?? null,
+    rhythmOverride: input.boundSeries?.rhythmOverride ?? null,
     relatedArticleCount: input.historySuggestions.length,
   };
 }
@@ -268,12 +289,21 @@ export async function getArticleWritingContext(input: {
             name: boundSeries.name,
             thesis: boundSeries.thesis,
             targetAudience: boundSeries.targetAudience,
+            preHook: boundSeries.preHook ?? null,
+            postHook: boundSeries.postHook ?? null,
+            platformPreference: boundSeries.platformPreference ?? null,
+            targetPackHint: boundSeries.targetPackHint ?? null,
+            defaultArchetype: boundSeries.defaultArchetype ?? null,
+            defaultLayoutTemplateId: boundSeries.defaultLayoutTemplateId ?? null,
+            rhythmOverride: boundSeries.rhythmOverride ?? null,
           }
         : null,
       knowledgeCards: normalizedKnowledgeCards,
       historySuggestions,
     }),
     strategyCard: {
+      archetype: strategyCard?.archetype ?? null,
+      mainstreamBelief: strategyCard?.mainstreamBelief ?? null,
       targetReader: strategyCard?.targetReader ?? null,
       coreAssertion: strategyCard?.coreAssertion ?? null,
       whyNow: strategyCard?.whyNow ?? null,

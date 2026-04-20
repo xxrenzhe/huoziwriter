@@ -34,6 +34,20 @@ function parseJsonObject(value: string | Record<string, unknown> | null) {
   }
 }
 
+function parseSampleSources(value: unknown) {
+  if (!Array.isArray(value)) return [] as Array<{ url: string; title: string; summary: string; degradedReason: string | null }>;
+  return value
+    .map((item) => item && typeof item === "object" && !Array.isArray(item) ? item as Record<string, unknown> : null)
+    .filter(Boolean)
+    .map((item) => ({
+      url: String(item?.url || "").trim(),
+      title: String(item?.title || "").trim(),
+      summary: String(item?.summary || "").trim(),
+      degradedReason: String(item?.degradedReason || "").trim() || null,
+    }))
+    .filter((item) => item.url || item.title || item.summary);
+}
+
 function mapWritingStyleProfile(row: WritingStyleProfileRow) {
   const analysis = parseJsonObject(row.analysis_payload_json);
   return {
@@ -72,6 +86,14 @@ function mapWritingStyleProfile(row: WritingStyleProfileRow) {
     doNotWrite: parseJsonArray(row.do_not_write_json),
     imitationPrompt: row.imitation_prompt,
     sourceExcerpt: row.source_excerpt,
+    sampleCount: Number(analysis?.sampleCount || 1) || 1,
+    sampleUrls: parseJsonArray(analysis?.sampleUrls as string[] | string | null),
+    sampleTitles: parseJsonArray(analysis?.sampleTitles as string[] | string | null),
+    sampleSources: parseSampleSources(analysis?.sampleSources),
+    confidenceProfile:
+      analysis?.confidenceProfile && typeof analysis.confidenceProfile === "object" && !Array.isArray(analysis.confidenceProfile)
+        ? analysis.confidenceProfile as Record<string, number>
+        : null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

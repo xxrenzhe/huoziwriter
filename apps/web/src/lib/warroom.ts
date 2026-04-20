@@ -3,6 +3,7 @@ import { buildArticlePublicWorkflow, getArticleWorkflow } from "./article-workfl
 import { getUserPlanContext } from "./plan-access";
 import { getArticleOutcomeBundlesByUser, getArticleStrategyCard, getArticlesByUser, getAuthorPlaybooks, getFragmentsByUser } from "./repositories";
 import { getSeries } from "./series";
+import { getTopicBacklogs } from "./topic-backlogs";
 import { getVisibleTopicRecommendationsForUser } from "./topic-recommendations";
 
 const ACTIVE_SERIES_STATUSES = new Set(["active", "running"]);
@@ -54,7 +55,7 @@ function buildDraftNextFocus(currentStepCode: string) {
 }
 
 export async function getWarroomData(userId: number) {
-  const [articles, fragments, outcomeBundles, playbooks, topics, planContext, series] = await Promise.all([
+  const [articles, fragments, outcomeBundles, playbooks, topics, planContext, series, topicBacklogs] = await Promise.all([
     getArticlesByUser(userId),
     getFragmentsByUser(userId),
     getArticleOutcomeBundlesByUser(userId),
@@ -62,6 +63,7 @@ export async function getWarroomData(userId: number) {
     getVisibleTopicRecommendationsForUser(userId),
     getUserPlanContext(userId),
     getSeries(userId),
+    getTopicBacklogs(userId),
   ]);
   const seriesMap = new Map(series.map((item) => [item.id, item] as const));
   const canStartRadar = planContext.planSnapshot.canStartTopicSignal;
@@ -252,6 +254,12 @@ export async function getWarroomData(userId: number) {
       name: item.name,
       personaName: item.personaName,
       activeStatus: item.activeStatus,
+    })),
+    topicBacklogs: topicBacklogs.map((item) => ({
+      id: item.id,
+      name: item.name,
+      seriesId: item.seriesId,
+      itemCount: item.itemCount,
     })),
   };
 }

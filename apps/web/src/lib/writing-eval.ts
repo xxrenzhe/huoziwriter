@@ -7,6 +7,11 @@ import { buildTopicAngleOptions, buildTopicJudgementShift, matchTopicToKnowledge
 import { ensureExtendedProductSchema } from "./schema-bootstrap";
 import { WRITING_EVAL_APPLY_COMMAND_TEMPLATES } from "./writing-eval-assets";
 import { WRITING_EVAL_AGENT_STRATEGY_PRESETS, normalizeWritingEvalAgentStrategyCode } from "./writing-eval-config";
+import {
+  getWritingEvalImportFocusBoost,
+  inferWritingEvalDatasetFocus,
+  resolveWritingEvalTaskTypeForDatasetFocus,
+} from "./writing-eval-plan17";
 import { activateWritingActiveAsset, getActiveWritingAssetRef } from "./writing-rollout";
 
 type WritingEvalDatasetRow = {
@@ -716,6 +721,21 @@ function buildWritingEvalArticleCaseDraft(input: {
   const timelineCards = getRecordArray(researchBrief.timelineCards);
   const comparisonCards = getRecordArray(researchBrief.comparisonCards);
   const intersectionInsights = getRecordArray(researchBrief.intersectionInsights);
+  const outlineSelection = getRecord(outlinePlanning.selection);
+  const selectedTitle = String(outlineSelection?.selectedTitle || outlinePlanning.workingTitle || input.article.title).trim() || input.article.title;
+  const selectedTitleOption = getRecordArray(outlinePlanning.titleOptions).find(
+    (item) => String(item.title || "").trim() === selectedTitle,
+  ) ?? null;
+  const selectedTitleElementsHit = getRecord(selectedTitleOption?.elementsHit);
+  const selectedTitleElementsHitCount = ["specific", "curiosityGap", "readerView"].filter(
+    (key) => Boolean(selectedTitleElementsHit?.[key]),
+  ).length;
+  const selectedTitleForbiddenHits = getStringArray(selectedTitleOption?.forbiddenHits, 6);
+  const selectedTitleOpenRateScore = typeof selectedTitleOption?.openRateScore === "number"
+    ? selectedTitleOption.openRateScore
+    : typeof selectedTitleOption?.openRateScore === "string" && String(selectedTitleOption.openRateScore).trim()
+      ? Number(selectedTitleOption.openRateScore)
+      : null;
   const historyReferencePlan = getRecordArray(deepWriting.historyReferencePlan);
   const historyReferences = uniqueStrings(
     [
@@ -823,6 +843,14 @@ function buildWritingEvalArticleCaseDraft(input: {
       writingStyleTarget:
         String(deepWriting.articlePrototypeLabel || outlinePlanning.writingAngle || "").trim()
         || (input.article.series_name ? `延续 ${input.article.series_name} 的连载观察写法。` : "强调判断、证据和行动意义。"),
+      titleSignalSnapshot: {
+        selectedTitle,
+        openRateScore: Number.isFinite(selectedTitleOpenRateScore ?? NaN) ? Math.max(0, Math.min(50, Math.round(selectedTitleOpenRateScore ?? 0))) : null,
+        elementsHitCount: selectedTitleElementsHitCount,
+        forbiddenHits: selectedTitleForbiddenHits,
+        isRecommended: Boolean(selectedTitleOption?.isRecommended),
+        recommendReason: String(selectedTitleOption?.recommendReason || "").trim() || null,
+      },
       sourceFacts,
       knowledgeCards,
       historyReferences,
@@ -841,6 +869,9 @@ function buildWritingEvalArticleCaseDraft(input: {
         seriesName: input.article.series_name,
         artifactStages: stageCodes,
         importedFromUpdatedAt: input.article.updated_at,
+        titleOpenRateScore: Number.isFinite(selectedTitleOpenRateScore ?? NaN) ? Math.max(0, Math.min(50, Math.round(selectedTitleOpenRateScore ?? 0))) : null,
+        titleElementsHitCount: selectedTitleElementsHitCount,
+        titleForbiddenHitsCount: selectedTitleForbiddenHits.length,
       },
     },
     viralTargets: {
@@ -1277,8 +1308,13 @@ function buildWritingEvalFragmentCaseDraft(input: {
   };
 }
 
-function getWritingEvalDatasetReadiness(cases: WritingEvalCaseRow[], datasetStatusInput?: string | null): WritingEvalDatasetReadiness {
+function getWritingEvalDatasetReadiness(
+  cases: WritingEvalCaseRow[],
+  datasetStatusInput?: string | null,
+  datasetDescriptor?: { code?: string | null; name?: string | null; description?: string | null },
+): WritingEvalDatasetReadiness {
   const datasetStatus = normalizeWritingEvalDatasetStatus(datasetStatusInput);
+  const datasetFocus = inferWritingEvalDatasetFocus(datasetDescriptor ?? {});
   const enabledCases = cases.filter((item) => Boolean(item.is_enabled));
   const coverage = {
     readerProfile: 0,
@@ -1358,7 +1394,11 @@ function getWritingEvalDatasetReadiness(cases: WritingEvalCaseRow[], datasetStat
     if (coverageRatio(coverage.sourceFacts) < 0.7) warnings.push("sourceFacts 覆盖不足 70%");
     if (coverageRatio(coverage.knowledgeCards) < 0.4) warnings.push("knowledgeCards 覆盖偏低");
     if (coverageRatio(coverage.historyReferences) < 0.3) warnings.push("historyReferences 覆盖偏低");
-    if (qualityTargets.distinctTaskTypeCount < 4) warnings.push(`样本题型仅覆盖 ${qualityTargets.distinctTaskTypeCount}/4 类`);
+    if (datasetFocus.key === "general") {
+      if (qualityTargets.distinctTaskTypeCount < 4) warnings.push(`样本题型仅覆盖 ${qualityTargets.distinctTaskTypeCount}/4 类`);
+    } else if (!datasetFocus.targetTaskTypes.some((taskType) => taskTypes.has(taskType))) {
+      warnings.push(`当前还没有命中 ${datasetFocus.label} 的专用样本类型`);
+    }
     if (qualityTargets.lightCount === 0 || qualityTargets.mediumCount === 0 || qualityTargets.hardCount === 0) {
       warnings.push("难度分布未覆盖 light / medium / hard 全层级");
     }
@@ -1385,6 +1425,10 @@ async function getWritingEvalDatasetReadinessById(datasetId: number, datasetStat
     const dataset = await db.queryOne<{ status: string }>("SELECT status FROM writing_eval_datasets WHERE id = ?", [datasetId]);
     datasetStatus = dataset?.status ?? "active";
   }
+  const datasetDescriptor = await db.queryOne<{ code: string | null; name: string | null; description: string | null }>(
+    "SELECT code, name, description FROM writing_eval_datasets WHERE id = ?",
+    [datasetId],
+  );
   const rows = await db.query<WritingEvalCaseRow>(
     `SELECT id, dataset_id, task_code, task_type, topic_title, input_payload_json, expected_constraints_json,
             viral_targets_json, stage_artifact_payloads_json, reference_good_output, reference_bad_patterns_json, difficulty_level, is_enabled,
@@ -1393,10 +1437,16 @@ async function getWritingEvalDatasetReadinessById(datasetId: number, datasetStat
      WHERE dataset_id = ?`,
     [datasetId],
   );
-  return getWritingEvalDatasetReadiness(rows, datasetStatus);
+  return getWritingEvalDatasetReadiness(rows, datasetStatus, datasetDescriptor ?? undefined);
 }
 
-async function getWritingEvalDatasetReadinessMap(datasets: Array<{ id: number; status?: string | null }>) {
+async function getWritingEvalDatasetReadinessMap(datasets: Array<{
+  id: number;
+  status?: string | null;
+  code?: string | null;
+  name?: string | null;
+  description?: string | null;
+}>) {
   const safeDatasets = datasets.filter((item) => Number.isInteger(item.id) && item.id > 0);
   const safeDatasetIds = [...new Set(safeDatasets.map((item) => item.id))];
   const map = new Map<number, WritingEvalDatasetReadiness>();
@@ -1404,8 +1454,14 @@ async function getWritingEvalDatasetReadinessMap(datasets: Array<{ id: number; s
     return map;
   }
   const statusMap = new Map<number, string>();
+  const descriptorMap = new Map<number, { code?: string | null; name?: string | null; description?: string | null }>();
   for (const item of safeDatasets) {
     statusMap.set(item.id, normalizeWritingEvalDatasetStatus(item.status));
+    descriptorMap.set(item.id, {
+      code: item.code,
+      name: item.name,
+      description: item.description,
+    });
   }
   const db = getDatabase();
   const placeholders = safeDatasetIds.map(() => "?").join(", ");
@@ -1424,7 +1480,10 @@ async function getWritingEvalDatasetReadinessMap(datasets: Array<{ id: number; s
     grouped.set(row.dataset_id, current);
   }
   for (const datasetId of safeDatasetIds) {
-    map.set(datasetId, getWritingEvalDatasetReadiness(grouped.get(datasetId) ?? [], statusMap.get(datasetId)));
+    map.set(
+      datasetId,
+      getWritingEvalDatasetReadiness(grouped.get(datasetId) ?? [], statusMap.get(datasetId), descriptorMap.get(datasetId)),
+    );
   }
   return map;
 }
@@ -1547,7 +1606,7 @@ function parsePromptVersionRef(value: string) {
   return { promptId, version };
 }
 
-const TITLE_TEMPLATE_PROMPT_ID = "outline_planning" as const;
+const TITLE_TEMPLATE_PROMPT_ID = "title_optimizer" as const;
 const LEAD_TEMPLATE_PROMPT_ID = "prose_polish" as const;
 
 const PROMPT_BACKED_WRITING_EVAL_VERSION_TYPES = [
@@ -1582,7 +1641,7 @@ function resolvePromptBackedWritingEvalVersionRef(versionType: string, versionRe
       throw new Error("fact_check 实验必须使用 fact_check Prompt 版本");
     }
     if (versionType === "title_template") {
-      throw new Error("title_template 实验必须使用 outline_planning Prompt 版本");
+      throw new Error("title_template 实验必须使用 title_optimizer Prompt 版本");
     }
     if (versionType === "lead_template") {
       throw new Error("lead_template 实验必须使用 prose_polish Prompt 版本");
@@ -1769,6 +1828,7 @@ function buildPromotionDecision(scoreSummary: Record<string, unknown>) {
 }
 
 function mapDataset(row: WritingEvalDatasetRow, readiness: WritingEvalDatasetReadiness) {
+  const focus = inferWritingEvalDatasetFocus(row);
   return {
     id: row.id,
     code: row.code,
@@ -1779,6 +1839,7 @@ function mapDataset(row: WritingEvalDatasetRow, readiness: WritingEvalDatasetRea
     createdBy: row.created_by,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    focus,
     readiness,
   };
 }
@@ -2842,7 +2903,7 @@ async function resolveWritingEvalRunDefinition(input: {
     if (requiredPromptTargetId && (basePromptRef.promptId !== requiredPromptTargetId || candidatePromptRef.promptId !== requiredPromptTargetId)) {
       throw new Error(
         experimentMode === "title_only"
-          ? "标题专项实验只能比较 outline_planning / title_template 版本"
+          ? "标题专项实验只能比较 title_optimizer / title_template 版本"
           : "开头专项实验只能比较 prose_polish / lead_template 版本",
       );
     }
@@ -2908,7 +2969,7 @@ export async function getWritingEvalDatasets() {
      ORDER BY updated_at DESC, id DESC`,
   );
   const readinessMap = await getWritingEvalDatasetReadinessMap(rows.map((row) => ({ id: row.id, status: row.status })));
-  return rows.map((row) => mapDataset(row, readinessMap.get(row.id) ?? getWritingEvalDatasetReadiness([], row.status)));
+  return rows.map((row) => mapDataset(row, readinessMap.get(row.id) ?? getWritingEvalDatasetReadiness([], row.status, row)));
 }
 
 export async function getWritingEvalRunSchedules() {
@@ -3301,7 +3362,7 @@ export async function createWritingEvalDataset(input: {
   if (!created) {
     throw new Error("创建评测集失败");
   }
-  return mapDataset(created, getWritingEvalDatasetReadiness([]));
+  return mapDataset(created, getWritingEvalDatasetReadiness([], created.status, created));
 }
 
 export async function updateWritingEvalDataset(input: {
@@ -4160,9 +4221,11 @@ export async function getWritingEvalFragmentImportOptions(limit = 24) {
 function buildWritingEvalDatasetRecommendationTargets(input: {
   readiness: WritingEvalDatasetReadiness;
   cases: WritingEvalCaseRow[];
+  dataset: Pick<WritingEvalDatasetRow, "code" | "name" | "description">;
 }) {
   const enabledCases = input.cases.filter((item) => Boolean(item.is_enabled));
   const enabledCaseCount = input.readiness.enabledCaseCount;
+  const datasetFocus = inferWritingEvalDatasetFocus(input.dataset);
   const taskTypes = new Set(enabledCases.map((item) => String(item.task_type || "").trim()).filter(Boolean));
   const difficultyLevels = {
     light: enabledCases.filter((item) => String(item.difficulty_level || "").trim() === "light").length,
@@ -4170,7 +4233,7 @@ function buildWritingEvalDatasetRecommendationTargets(input: {
     hard: enabledCases.filter((item) => String(item.difficulty_level || "").trim() === "hard").length,
   };
   const coverageRatio = (value: number) => (enabledCaseCount > 0 ? value / enabledCaseCount : 0);
-  const targetTaskTypes = ["tech_commentary", "business_breakdown", "experience_recap", "series_observation"];
+  const targetTaskTypes = datasetFocus.targetTaskTypes;
   const missingTaskTypes = targetTaskTypes.filter((item) => !taskTypes.has(item));
   const missingDifficultyLevels = (Object.entries(difficultyLevels) as Array<["light" | "medium" | "hard", number]>)
     .filter(([, count]) => count === 0)
@@ -4190,6 +4253,7 @@ function buildWritingEvalDatasetRecommendationTargets(input: {
   };
   const targetSummary = uniqueStrings(
     [
+      datasetFocus.key !== "general" ? `当前聚焦：${datasetFocus.label}` : "",
       enabledCaseCount < 20 ? `样本总量仍偏低（当前 ${enabledCaseCount}/20）` : "",
       missingTaskTypes.length > 0 ? `缺少题型：${missingTaskTypes.join(" / ")}` : "",
       missingDifficultyLevels.length > 0 ? `缺少难度层级：${missingDifficultyLevels.join(" / ")}` : "",
@@ -4202,6 +4266,7 @@ function buildWritingEvalDatasetRecommendationTargets(input: {
     8,
   );
   return {
+    datasetFocus,
     enabledCaseCount,
     taskTypes,
     missingTaskTypes,
@@ -4225,7 +4290,10 @@ function scoreWritingEvalImportRecommendationCandidate(input: {
   if (targetState.missingTaskTypes.includes(candidate.suggestedTaskType)) {
     score += 36;
     reasons.add(`补题型 ${candidate.suggestedTaskType}`);
-  } else if (!targetState.taskTypes.has(candidate.suggestedTaskType) && targetState.taskTypes.size < 4) {
+  } else if (
+    !targetState.taskTypes.has(candidate.suggestedTaskType)
+    && targetState.taskTypes.size < Math.max(targetState.datasetFocus.targetTaskTypes.length, 4)
+  ) {
     score += 18;
     reasons.add(`扩题型覆盖 ${candidate.suggestedTaskType}`);
   }
@@ -4256,6 +4324,17 @@ function scoreWritingEvalImportRecommendationCandidate(input: {
   if (targetState.gapFlags.referenceBadPatterns) {
     score += 4;
     reasons.add("补反例模式覆盖");
+  }
+  const focusBoost = getWritingEvalImportFocusBoost({
+    datasetFocusKey: targetState.datasetFocus.key,
+    candidateSourceType: candidate.sourceType,
+    candidateTaskType: candidate.suggestedTaskType,
+  });
+  if (focusBoost.score > 0) {
+    score += focusBoost.score;
+    for (const reason of focusBoost.reasons) {
+      reasons.add(reason);
+    }
   }
   if (targetState.gapFlags.titleGoal) score += 3;
   if (targetState.gapFlags.hookGoal) score += 3;
@@ -4297,10 +4376,11 @@ export async function getWritingEvalDatasetImportRecommendations(input: {
      WHERE dataset_id = ?`,
     [input.datasetId],
   );
-  const readiness = getWritingEvalDatasetReadiness(cases, dataset.status);
+  const readiness = getWritingEvalDatasetReadiness(cases, dataset.status, dataset);
   const targetState = buildWritingEvalDatasetRecommendationTargets({
     readiness,
     cases,
+    dataset,
   });
   const candidatePoolLimit = Math.max(Number(input.candidatePoolLimit ?? 24) || 24, 12);
   const [articleOptions, knowledgeCardOptions, topicOptions, fragmentOptions] = await Promise.all([
@@ -4315,7 +4395,11 @@ export async function getWritingEvalDatasetImportRecommendations(input: {
       sourceId: item.id,
       title: item.title,
       subtitle: uniqueStrings([item.status, item.seriesName], 2).join(" · ") || null,
-      suggestedTaskType: item.suggestedTaskType,
+      suggestedTaskType: resolveWritingEvalTaskTypeForDatasetFocus({
+        datasetFocusKey: targetState.datasetFocus.key,
+        baseTaskType: item.suggestedTaskType,
+        sourceType: "article",
+      }),
       suggestedDifficultyLevel: item.suggestedDifficultyLevel,
       sourceFactCount: item.sourceFactCount,
       knowledgeCardCount: item.knowledgeCardCount,
@@ -4329,7 +4413,11 @@ export async function getWritingEvalDatasetImportRecommendations(input: {
       sourceId: item.id,
       title: item.title,
       subtitle: uniqueStrings([item.cardType, item.status, item.ownerUsername], 3).join(" · ") || null,
-      suggestedTaskType: item.suggestedTaskType,
+      suggestedTaskType: resolveWritingEvalTaskTypeForDatasetFocus({
+        datasetFocusKey: targetState.datasetFocus.key,
+        baseTaskType: item.suggestedTaskType,
+        sourceType: "knowledge_card",
+      }),
       suggestedDifficultyLevel: item.suggestedDifficultyLevel,
       sourceFactCount: item.sourceFactCount,
       knowledgeCardCount: item.knowledgeCardCount,
@@ -4343,7 +4431,11 @@ export async function getWritingEvalDatasetImportRecommendations(input: {
       sourceId: item.id,
       title: item.title,
       subtitle: uniqueStrings([item.sourceName, item.sourceType, item.publishedAt], 3).join(" · ") || null,
-      suggestedTaskType: item.suggestedTaskType,
+      suggestedTaskType: resolveWritingEvalTaskTypeForDatasetFocus({
+        datasetFocusKey: targetState.datasetFocus.key,
+        baseTaskType: item.suggestedTaskType,
+        sourceType: "topic_item",
+      }),
       suggestedDifficultyLevel: item.suggestedDifficultyLevel,
       sourceFactCount: item.sourceFactCount,
       knowledgeCardCount: item.knowledgeCardCount,
@@ -4357,7 +4449,11 @@ export async function getWritingEvalDatasetImportRecommendations(input: {
       sourceId: item.id,
       title: item.title,
       subtitle: uniqueStrings([item.sourceType, item.sourceUrl, item.hasScreenshot ? "screenshot" : ""], 3).join(" · ") || null,
-      suggestedTaskType: item.suggestedTaskType,
+      suggestedTaskType: resolveWritingEvalTaskTypeForDatasetFocus({
+        datasetFocusKey: targetState.datasetFocus.key,
+        baseTaskType: item.suggestedTaskType,
+        sourceType: "fragment",
+      }),
       suggestedDifficultyLevel: item.suggestedDifficultyLevel,
       sourceFactCount: item.sourceFactCount,
       knowledgeCardCount: item.knowledgeCardCount,
@@ -4534,7 +4630,7 @@ export async function autoFillWritingEvalDatasets(input: {
 
   for (const row of rows) {
     if (items.length >= limit) break;
-    const readiness = readinessMap.get(row.id) ?? getWritingEvalDatasetReadiness([], row.status);
+    const readiness = readinessMap.get(row.id) ?? getWritingEvalDatasetReadiness([], row.status, row);
     if (readiness.status === "ready") {
       skipped.push({
         datasetId: row.id,
@@ -4648,7 +4744,10 @@ export async function importWritingEvalCaseFromArticle(input: {
   if (!Number.isInteger(input.articleId) || input.articleId <= 0) throw new Error("历史稿件无效");
   const db = getDatabase();
   const [dataset, article] = await Promise.all([
-    db.queryOne<{ id: number }>("SELECT id FROM writing_eval_datasets WHERE id = ?", [input.datasetId]),
+    db.queryOne<Pick<WritingEvalDatasetRow, "id" | "code" | "name" | "description">>(
+      "SELECT id, code, name, description FROM writing_eval_datasets WHERE id = ?",
+      [input.datasetId],
+    ),
     db.queryOne<WritingEvalArticleImportRow>(
       `SELECT a.id, a.user_id, a.title, a.status, a.markdown_content, a.series_id, a.updated_at, s.name AS series_name
        FROM articles a
@@ -4706,10 +4805,15 @@ export async function importWritingEvalCaseFromArticle(input: {
     artifactPayloads,
     historyReferences: [...referencedRows.map((item) => item.title), ...seriesRows.map((item) => item.title)],
   });
+  const resolvedTaskType = resolveWritingEvalTaskTypeForDatasetFocus({
+    datasetFocusKey: inferWritingEvalDatasetFocus(dataset).key,
+    baseTaskType: draft.taskType,
+    sourceType: "article",
+  });
   const created = await createWritingEvalCase({
     datasetId: input.datasetId,
     taskCode: draft.taskCode,
-    taskType: draft.taskType,
+    taskType: resolvedTaskType,
     topicTitle: draft.topicTitle,
     sourceType: "article",
     sourceRef: `article:${article.id}`,
@@ -4797,7 +4901,10 @@ export async function importWritingEvalCaseFromKnowledgeCard(input: {
   if (!Number.isInteger(input.knowledgeCardId) || input.knowledgeCardId <= 0) throw new Error("知识卡无效");
   const db = getDatabase();
   const [dataset, card] = await Promise.all([
-    db.queryOne<{ id: number }>("SELECT id FROM writing_eval_datasets WHERE id = ?", [input.datasetId]),
+    db.queryOne<Pick<WritingEvalDatasetRow, "id" | "code" | "name" | "description">>(
+      "SELECT id, code, name, description FROM writing_eval_datasets WHERE id = ?",
+      [input.datasetId],
+    ),
     db.queryOne<WritingEvalKnowledgeCardImportRow>(
       `SELECT kc.id, kc.user_id, kc.card_type, kc.title, kc.summary, kc.key_facts_json, kc.open_questions_json,
               kc.conflict_flags_json, kc.latest_change_summary, kc.confidence_score, kc.status,
@@ -4862,10 +4969,15 @@ export async function importWritingEvalCaseFromKnowledgeCard(input: {
       };
     }).filter((item): item is { id: number; title: string; summary: string | null; cardType: string; status: string; linkType: string } => Boolean(item)),
   });
+  const resolvedTaskType = resolveWritingEvalTaskTypeForDatasetFocus({
+    datasetFocusKey: inferWritingEvalDatasetFocus(dataset).key,
+    baseTaskType: draft.taskType,
+    sourceType: "knowledge_card",
+  });
   const created = await createWritingEvalCase({
     datasetId: input.datasetId,
     taskCode: draft.taskCode,
-    taskType: draft.taskType,
+    taskType: resolvedTaskType,
     topicTitle: draft.topicTitle,
     sourceType: "knowledge_card",
     sourceRef: `knowledge_card:${card.id}`,
@@ -4953,7 +5065,10 @@ export async function importWritingEvalCaseFromTopicItem(input: {
   if (!Number.isInteger(input.topicItemId) || input.topicItemId <= 0) throw new Error("主题档案无效");
   const db = getDatabase();
   const [dataset, topic, knowledgeCandidates] = await Promise.all([
-    db.queryOne<{ id: number }>("SELECT id FROM writing_eval_datasets WHERE id = ?", [input.datasetId]),
+    db.queryOne<Pick<WritingEvalDatasetRow, "id" | "code" | "name" | "description">>(
+      "SELECT id, code, name, description FROM writing_eval_datasets WHERE id = ?",
+      [input.datasetId],
+    ),
     db.queryOne<WritingEvalTopicImportRow>(
       `SELECT ti.id, ti.owner_user_id, ti.source_name, ti.title, ti.summary, ti.emotion_labels_json,
               ti.angle_options_json, ti.source_url, ti.published_at, ts.source_type, ts.priority AS source_priority
@@ -4984,10 +5099,15 @@ export async function importWritingEvalCaseFromTopicItem(input: {
     topic,
     matchedCards,
   });
+  const resolvedTaskType = resolveWritingEvalTaskTypeForDatasetFocus({
+    datasetFocusKey: inferWritingEvalDatasetFocus(dataset).key,
+    baseTaskType: draft.taskType,
+    sourceType: "topic_item",
+  });
   const created = await createWritingEvalCase({
     datasetId: input.datasetId,
     taskCode: draft.taskCode,
-    taskType: draft.taskType,
+    taskType: resolvedTaskType,
     topicTitle: draft.topicTitle,
     sourceType: "topic_item",
     sourceRef: `topic_item:${topic.id}`,
@@ -5078,7 +5198,10 @@ export async function importWritingEvalCaseFromFragment(input: {
   if (!Number.isInteger(input.fragmentId) || input.fragmentId <= 0) throw new Error("素材无效");
   const db = getDatabase();
   const [dataset, fragment] = await Promise.all([
-    db.queryOne<{ id: number }>("SELECT id FROM writing_eval_datasets WHERE id = ?", [input.datasetId]),
+    db.queryOne<Pick<WritingEvalDatasetRow, "id" | "code" | "name" | "description">>(
+      "SELECT id, code, name, description FROM writing_eval_datasets WHERE id = ?",
+      [input.datasetId],
+    ),
     db.queryOne<WritingEvalFragmentImportRow>(
       `SELECT id, user_id, source_type, title, raw_content, distilled_content, source_url, screenshot_path, created_at
        FROM fragments
@@ -5115,10 +5238,15 @@ export async function importWritingEvalCaseFromFragment(input: {
       confidenceScore: item.confidence_score,
     })),
   });
+  const resolvedTaskType = resolveWritingEvalTaskTypeForDatasetFocus({
+    datasetFocusKey: inferWritingEvalDatasetFocus(dataset).key,
+    baseTaskType: draft.taskType,
+    sourceType: "fragment",
+  });
   const created = await createWritingEvalCase({
     datasetId: input.datasetId,
     taskCode: draft.taskCode,
-    taskType: draft.taskType,
+    taskType: resolvedTaskType,
     topicTitle: draft.topicTitle,
     sourceType: "fragment",
     sourceRef: `fragment:${fragment.id}`,

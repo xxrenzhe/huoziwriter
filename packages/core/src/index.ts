@@ -59,6 +59,18 @@ export const DEFAULT_MODEL_ROUTES: readonly ModelRouteDefinition[] = [
     description: "选题补证信源补充与查询建议生成",
   },
   {
+    sceneCode: "topicBacklogIdeation",
+    primaryModel: "gemini-3.0-flash",
+    fallbackModel: "gpt-5.4-mini",
+    description: "从种子主题批量生成选题库条目",
+  },
+  {
+    sceneCode: "imaHookPatternDistill",
+    primaryModel: "gemini-3.0-flash",
+    fallbackModel: "gpt-5.4-mini",
+    description: "IMA 知识库爆款规律提炼与裂变候选生成",
+  },
+  {
     sceneCode: "audienceProfile",
     primaryModel: "claude-sonnet-4-6",
     fallbackModel: "claude-haiku-4-5",
@@ -69,6 +81,12 @@ export const DEFAULT_MODEL_ROUTES: readonly ModelRouteDefinition[] = [
     primaryModel: "claude-sonnet-4-6",
     fallbackModel: "claude-haiku-4-5",
     description: "结构化大纲规划与标题策略生成",
+  },
+  {
+    sceneCode: "titleOptimizer",
+    primaryModel: "claude-sonnet-4-6",
+    fallbackModel: "claude-haiku-4-5",
+    description: "公众号标题 6 候选生成与体检",
   },
   {
     sceneCode: "deepWrite",

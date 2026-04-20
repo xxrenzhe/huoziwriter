@@ -7,9 +7,13 @@ import { getCurrentSubscriptionForUser, getImageAssetStorageSummary, getPlanByCo
 import {
   getDailyCoverImageUsage,
   getDailyGenerationUsage,
+  getDailyImaEvidenceSearchUsage,
+  getDailyImaFissionUsage,
   getDailyWritingStyleAnalysisUsage,
   incrementDailyCoverImageUsage,
   incrementDailyGenerationUsage,
+  incrementDailyImaEvidenceSearchUsage,
+  incrementDailyImaFissionUsage,
 } from "./usage";
 
 export function getCoverImageDailyLimit(planCode: UserPlanCode) {
@@ -64,6 +68,18 @@ export function canStartTopicSignal(planCode: UserPlanCode) {
 
 export function canManageTopicSources(planCode: UserPlanCode) {
   return getPlanEntitlementDefinition(planCode)?.canManageTopicSources ?? false;
+}
+
+export function getImaFissionDailyLimit(planCode: UserPlanCode) {
+  if (planCode === "free") return 5;
+  if (planCode === "pro") return 30;
+  return null;
+}
+
+export function getImaEvidenceSearchDailyLimit(planCode: UserPlanCode) {
+  if (planCode === "free") return 10;
+  if (planCode === "pro") return 50;
+  return null;
 }
 
 export function canAnalyzePersonaFromSources(planCode: UserPlanCode) {
@@ -374,6 +390,56 @@ export async function consumeDailyGenerationQuota(userId: number) {
   }
 
   await incrementDailyGenerationUsage(userId);
+}
+
+export async function consumeImaFissionQuota(userId: number) {
+  const { plan } = await getUserPlanContext(userId);
+  const limit = getImaFissionDailyLimit(plan.code);
+  if (limit == null) {
+    await incrementDailyImaFissionUsage(userId);
+    return {
+      used: await getDailyImaFissionUsage(userId),
+      limit: null,
+      remaining: null,
+    };
+  }
+
+  const current = await getDailyImaFissionUsage(userId);
+  if (current >= limit) {
+    throw new Error(`${PLAN_LABELS[plan.code]}套餐已达 IMA 裂变调用上限（${limit} 次/天）`);
+  }
+
+  const used = await incrementDailyImaFissionUsage(userId);
+  return {
+    used,
+    limit,
+    remaining: Math.max(limit - used, 0),
+  };
+}
+
+export async function consumeImaEvidenceSearchQuota(userId: number) {
+  const { plan } = await getUserPlanContext(userId);
+  const limit = getImaEvidenceSearchDailyLimit(plan.code);
+  if (limit == null) {
+    await incrementDailyImaEvidenceSearchUsage(userId);
+    return {
+      used: await getDailyImaEvidenceSearchUsage(userId),
+      limit: null,
+      remaining: null,
+    };
+  }
+
+  const current = await getDailyImaEvidenceSearchUsage(userId);
+  if (current >= limit) {
+    throw new Error(`${PLAN_LABELS[plan.code]}套餐已达 IMA 证据检索上限（${limit} 次/天）`);
+  }
+
+  const used = await incrementDailyImaEvidenceSearchUsage(userId);
+  return {
+    used,
+    limit,
+    remaining: Math.max(limit - used, 0),
+  };
 }
 
 export async function getWritingStyleAnalysisQuotaStatus(userId: number) {

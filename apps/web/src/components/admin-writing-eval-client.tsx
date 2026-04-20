@@ -739,7 +739,7 @@ function normalizePlanCodes(value: string) {
 }
 
 const ACTIVE_RUN_STATUSES = new Set(["queued", "running", "scoring", "promoting"]);
-const TITLE_TEMPLATE_PROMPT_ID = "outline_planning";
+const TITLE_TEMPLATE_PROMPT_ID = "title_optimizer";
 const LEAD_TEMPLATE_PROMPT_ID = "prose_polish";
 
 function isRunActive(status: unknown) {
@@ -988,7 +988,7 @@ function getVersionOptionsByType(
 }
 
 function getPreferredPromptTargetId(promptOptions: Array<{ promptId: string }>) {
-  return ["article_write", "outline_planning", "prose_polish", "deep_write"].find((promptId) =>
+  return ["article_write", "title_optimizer", "outline_planning", "prose_polish", "deep_write"].find((promptId) =>
     promptOptions.some((item) => item.promptId === promptId),
   ) ?? promptOptions[0]?.promptId ?? "";
 }
@@ -3236,7 +3236,7 @@ export function AdminWritingEvalClient({
           </select>
           <div className="text-xs leading-6 text-adminInkMuted">
             {runForm.experimentMode === "title_only"
-              ? "标题专项实验会固定到 title_template（底层绑定 outline_planning），仅比较标题候选对点击力的影响。"
+              ? "标题专项实验会固定到 title_template（底层绑定 title_optimizer），仅比较标题候选对点击力的影响。"
               : runForm.experimentMode === "lead_only"
                 ? "开头专项实验会固定到 lead_template（底层绑定 prose_polish），仅比较首段改写对留存力的影响。"
                 : hasLayoutStrategyOptions

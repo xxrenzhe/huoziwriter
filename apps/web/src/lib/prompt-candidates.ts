@@ -48,7 +48,7 @@ function isPromptBackedVersionType(versionType: string) {
 
 function getExpectedPromptIdForVersionType(versionType: string) {
   if (versionType === "fact_check") return "fact_check";
-  if (versionType === "title_template") return "outline_planning";
+  if (versionType === "title_template") return "title_optimizer";
   if (versionType === "lead_template") return "prose_polish";
   return null;
 }

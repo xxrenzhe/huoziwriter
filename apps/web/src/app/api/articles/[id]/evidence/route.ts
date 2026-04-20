@@ -65,6 +65,10 @@ export async function PUT(request: Request, { params }: { params: { id: string }
             usageMode: sanitizeString(item?.usageMode) || null,
             rationale: sanitizeString(item?.rationale) || null,
             researchTag: sanitizeString(item?.researchTag) || null,
+            hookTags: Array.isArray(item?.hookTags) ? item.hookTags.map((tag) => sanitizeString(tag)).filter(Boolean).slice(0, 4) : [],
+            hookStrength: typeof item?.hookStrength === "number" && Number.isFinite(item.hookStrength) ? item.hookStrength : null,
+            hookTaggedBy: sanitizeString(item?.hookTaggedBy) || null,
+            hookTaggedAt: sanitizeString(item?.hookTaggedAt) || null,
             evidenceRole: sanitizeString(item?.evidenceRole) || "supportingEvidence",
           }))
           .filter((item: { title: string; excerpt: string }) => item.title && item.excerpt)

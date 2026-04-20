@@ -8,6 +8,7 @@ import {
   getUserPlanContext,
 } from "@/lib/plan-access";
 import { getPersonaCatalog, getPersonas } from "@/lib/personas";
+import { listImaConnections } from "@/lib/ima-connections";
 import {
   getAssetFilesByUser,
   getArticlesByUser,
@@ -18,6 +19,7 @@ import {
   getWechatSyncLogs,
 } from "@/lib/repositories";
 import { getSeries } from "@/lib/series";
+import { getTopicBacklogs } from "@/lib/topic-backlogs";
 import { getVisibleTopicSources } from "@/lib/topic-signals";
 import { getDailyGenerationUsage } from "@/lib/usage";
 import { getWritingStyleProfiles } from "@/lib/writing-style-profiles";
@@ -162,6 +164,7 @@ export async function getSettingsHubData() {
     dailyGenerationUsage,
     workspaceAssets,
     connections,
+    imaConnections,
     topicSources,
     languageGuardRules,
     fragments,
@@ -175,6 +178,7 @@ export async function getSettingsHubData() {
       getDailyGenerationUsage(session.userId),
       getUserWorkspaceAssetSummary(session.userId),
       getWechatConnections(session.userId),
+      listImaConnections(session.userId),
       getVisibleTopicSources(session.userId),
       getLanguageGuardRules(session.userId),
       getFragmentsByUser(session.userId),
@@ -191,6 +195,7 @@ export async function getSettingsHubData() {
     dailyGenerationUsage,
     workspaceAssets,
     connections,
+    imaConnections,
     topicSources,
     languageGuardRules,
     fragments,
@@ -205,12 +210,13 @@ export async function getAuthorSettingsData() {
   const auth = await requireSettingsAccess();
   if (!auth) return null;
   const { session } = auth;
-  const [planContext, personas, personaCatalog, series, writingStyleProfiles] = await Promise.all([
+  const [planContext, personas, personaCatalog, series, writingStyleProfiles, topicBacklogs] = await Promise.all([
     getUserPlanContext(session.userId),
     getPersonas(session.userId),
     getPersonaCatalog(),
     getSeries(session.userId),
     getWritingStyleProfiles(session.userId),
+    getTopicBacklogs(session.userId),
   ]);
 
   return {
@@ -220,6 +226,7 @@ export async function getAuthorSettingsData() {
     personaCatalog,
     series,
     writingStyleProfiles,
+    topicBacklogs,
   };
 }
 
@@ -281,6 +288,21 @@ export async function getPublishSettingsData() {
     connections,
     syncLogs,
     articles,
+  };
+}
+
+export async function getIntelligenceSettingsData() {
+  const auth = await requireSettingsAccess();
+  if (!auth) return null;
+  const { session } = auth;
+  const [planContext, connections] = await Promise.all([
+    getUserPlanContext(session.userId),
+    listImaConnections(session.userId),
+  ]);
+
+  return {
+    planContext,
+    connections,
   };
 }
 
