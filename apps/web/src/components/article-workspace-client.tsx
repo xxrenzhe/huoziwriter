@@ -35,6 +35,7 @@ import type { ImageAuthoringStyleContext } from "@/lib/image-authoring-context";
 import { buildNodeVisualSuggestion, buildVisualSuggestion } from "@/lib/image-prompting";
 import { collectLanguageGuardHits, type LanguageGuardHit, type LanguageGuardRule } from "@/lib/language-guard-core";
 import { formatPlanDisplayName } from "@/lib/plan-labels";
+import { buildPublishMethodologyGates } from "@/lib/publish-methodology-gates";
 import { summarizeTemplateRenderConfig } from "@/lib/template-rendering";
 import {
   ARTICLE_MAIN_STEP_DEFINITIONS,
@@ -1201,6 +1202,12 @@ function formatStageChecklistStatus(status: "ready" | "needs_attention" | "block
 function formatWritingQualityStatus(status: "ready" | "needs_attention" | "blocked") {
   if (status === "ready") return "通过";
   if (status === "blocked") return "阻断";
+  return "需关注";
+}
+
+function formatPublishGuardStatus(status: "passed" | "warning" | "blocked") {
+  if (status === "passed") return "通过";
+  if (status === "blocked") return "拦截";
   return "需关注";
 }
 
@@ -10998,6 +11005,9 @@ export function ArticleEditorClient({
                 {publishPreview ? (() => {
                   const researchGuardChecks = publishPreview.publishGuard.checks.filter((check) => isResearchGuardCheckKey(check.key));
                   const otherGuardChecks = publishPreview.publishGuard.checks.filter((check) => !isResearchGuardCheckKey(check.key));
+                  const methodologyGates = buildPublishMethodologyGates(publishPreview.publishGuard.checks);
+                  const methodologyBlockedCount = methodologyGates.filter((gate) => gate.status === "blocked").length;
+                  const methodologyWarningCount = methodologyGates.filter((gate) => gate.status === "warning").length;
                   const researchBlockedCount = researchGuardChecks.filter((check) => check.status === "blocked").length;
                   const researchWarningCount = researchGuardChecks.filter((check) => check.status === "warning").length;
                   const otherBlockedCount = otherGuardChecks.filter((check) => check.status === "blocked").length;
@@ -11069,6 +11079,69 @@ export function ArticleEditorClient({
                       {publishPreview.publishGuard.canPublish
                         ? "发布守门检查已通过。"
                         : `发布守门检查未通过：${publishPreview.publishGuard.blockers.join("；")}`}
+                    </div>
+                    <div className="border border-lineStrong bg-surfaceWarm px-4 py-4">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <div className="text-xs uppercase tracking-[0.18em] text-inkMuted">发布前六道闸门</div>
+                          <div className="mt-2 text-sm leading-7 text-inkSoft">
+                            按方案 17 的总控口径，把研究、证据、爆点、四元强度、语言守卫和原型节奏收成一列，方便一屏决策。
+                          </div>
+                        </div>
+                        <div className="grid min-w-[220px] gap-2 sm:grid-cols-3">
+                          <div className="border border-lineStrong bg-surface px-3 py-3 text-xs text-inkSoft">
+                            <div className="uppercase tracking-[0.14em] text-inkMuted">总项</div>
+                            <div className="mt-2 font-serifCn text-2xl text-ink text-balance">{methodologyGates.length}</div>
+                          </div>
+                          <div className="border border-lineStrong bg-surface px-3 py-3 text-xs text-inkSoft">
+                            <div className="uppercase tracking-[0.14em] text-inkMuted">拦截</div>
+                            <div className="mt-2 font-serifCn text-2xl text-danger text-balance">{methodologyBlockedCount}</div>
+                          </div>
+                          <div className="border border-lineStrong bg-surface px-3 py-3 text-xs text-inkSoft">
+                            <div className="uppercase tracking-[0.14em] text-inkMuted">待补</div>
+                            <div className="mt-2 font-serifCn text-2xl text-warning text-balance">{methodologyWarningCount}</div>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="mt-3 grid gap-2">
+                        {methodologyGates.map((gate, index) => (
+                          <div key={gate.code} className="border border-lineStrong bg-surface px-3 py-3 text-sm">
+                            <div className="flex flex-wrap items-start justify-between gap-3">
+                              <div>
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className="border border-lineStrong bg-paperStrong px-2 py-1 text-[11px] uppercase tracking-[0.18em] text-inkMuted">
+                                    {String(index + 1).padStart(2, "0")}
+                                  </span>
+                                  <div className="font-medium text-ink">{gate.label}</div>
+                                </div>
+                                <div className="mt-2 leading-6 text-inkSoft">{gate.detail}</div>
+                                {gate.actionLabel && gate.targetStageCode ? (
+                                  <Button
+                                    type="button"
+                                    onClick={() => {
+                                      void updateWorkflow(gate.targetStageCode as typeof workflow.currentStageCode, "set");
+                                    }}
+                                    variant="secondary"
+                                    size="sm"
+                                    className="mt-3"
+                                  >
+                                    {gate.actionLabel}
+                                  </Button>
+                                ) : null}
+                              </div>
+                              <div className={`shrink-0 text-xs ${
+                                gate.status === "passed"
+                                  ? "text-emerald-700"
+                                  : gate.status === "warning"
+                                    ? "text-warning"
+                                    : "text-danger"
+                              }`}>
+                                {formatPublishGuardStatus(gate.status)}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                     <div className="border border-lineStrong bg-surfaceWarm px-4 py-4">
                       <div className="text-xs uppercase tracking-[0.18em] text-inkMuted">阶段完成定义</div>

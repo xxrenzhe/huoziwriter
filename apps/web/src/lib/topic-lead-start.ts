@@ -1,3 +1,4 @@
+import { buildFourPointAudit } from "./article-strategy";
 import { generateArticleStageArtifact } from "./article-stage-artifacts";
 import { setArticleWorkflowCurrentStage } from "./article-workflows";
 import { attachFragmentToArticleNode, getArticleNodes, updateArticleNode } from "./article-outline";
@@ -7,6 +8,7 @@ import { matchTopicToKnowledgeCards } from "./knowledge-match";
 import { assertFragmentQuota, assertTopicSignalStartAllowed } from "./plan-access";
 import { assertPersonaReady } from "./personas";
 import { createArticle, createFragment, upsertArticleStrategyCard } from "./repositories";
+import { buildFallbackStrategyCardAutoDraft, generateStrategyCardAutoDraft, type StrategyCardAutoDraft } from "./strategy-card-auto-draft";
 import type { TopicFissionCandidate } from "./topic-fission";
 import { adoptTopicLeadToArticle, createTopicLead } from "./topic-leads";
 import { getVisibleTopicRecommendationsForUser } from "./topic-recommendations";
@@ -100,15 +102,35 @@ async function startDraftFromTopicSeedForUser(input: {
     userId: input.userId,
     stageCode: "researchBrief",
   });
-  if (input.strategyCard) {
+  const autoDraft: StrategyCardAutoDraft = await generateStrategyCardAutoDraft({
+    title: input.title,
+    summary: input.summary,
+    sourceName: input.sourceName,
+    chosenAngle: input.chosenAngle,
+    recommendationReason: input.recommendationReason,
+    sourceUrl: input.sourceUrl,
+    readerSnapshotHint: input.summary,
+    strategyCard: input.strategyCard ?? null,
+  }).catch(() => ({} as StrategyCardAutoDraft));
+  const fallbackDraft = buildFallbackStrategyCardAutoDraft({
+    title: input.title,
+    strategyCard: input.strategyCard ?? null,
+  });
+  const mergedStrategyCard = {
+    ...fallbackDraft,
+    ...autoDraft,
+    archetype: input.strategyCard?.archetype ?? autoDraft.archetype ?? fallbackDraft.archetype,
+    mainstreamBelief: input.strategyCard?.mainstreamBelief ?? autoDraft.mainstreamBelief ?? fallbackDraft.mainstreamBelief,
+    targetReader: input.strategyCard?.targetReader ?? autoDraft.targetReader ?? fallbackDraft.targetReader,
+    coreAssertion: input.strategyCard?.coreAssertion ?? autoDraft.coreAssertion ?? fallbackDraft.coreAssertion,
+    whyNow: input.strategyCard?.whyNow ?? autoDraft.whyNow ?? fallbackDraft.whyNow,
+  };
+  if (Object.keys(mergedStrategyCard).length > 0) {
     await upsertArticleStrategyCard({
       articleId: Number(article.id),
       userId: input.userId,
-      archetype: input.strategyCard.archetype,
-      mainstreamBelief: input.strategyCard.mainstreamBelief,
-      targetReader: input.strategyCard.targetReader,
-      coreAssertion: input.strategyCard.coreAssertion,
-      whyNow: input.strategyCard.whyNow,
+      ...mergedStrategyCard,
+      fourPointAudit: buildFourPointAudit(mergedStrategyCard),
     });
   }
   const distilled = await distillCaptureInput({

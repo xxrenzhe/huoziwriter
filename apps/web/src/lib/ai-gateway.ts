@@ -17,7 +17,17 @@ type SupportedSceneCode =
   | "prosePolish"
   | "languageGuardAudit"
   | "layoutExtract"
-  | "publishGuard";
+  | "publishGuard"
+  | "topicFission.regularity"
+  | "topicFission.contrast"
+  | "topicFission.crossDomain"
+  | "strategyCard.autoDraft"
+  | "strategyCard.fourPointAggregate"
+  | "strategyCard.strengthAudit"
+  | "strategyCard.reverseWriteback"
+  | "evidenceHookTagging"
+  | "styleDna.crossCheck"
+  | "publishGate.rhythmConsistency";
 type Provider = "openai" | "anthropic" | "gemini";
 
 type SceneRoute = {

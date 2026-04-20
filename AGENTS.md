@@ -44,3 +44,9 @@ bd close <id> "result"
 
 - `bd dolt push` 当前不是必需步骤，不要执行
 - 原因：本仓库当前未配置 Dolt remote，执行会稳定失败
+
+## Git Push Policy
+
+- 推送代码到远端时，**只允许使用 HTTP/HTTPS 方式**
+- 禁止使用 SSH 方式推送，例如 `git@github.com:...`
+- 如需执行 `git push`，优先确认远端为 `https://...`

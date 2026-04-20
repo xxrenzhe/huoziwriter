@@ -6,6 +6,7 @@ import { FormEvent, useState } from "react";
 import { Button, uiPrimitives } from "@huoziwriter/ui";
 import type { ResolvedPlanFeatureSnapshot } from "@/lib/plan-entitlements";
 import { MANAGED_PLAN_OPTIONS } from "@/lib/plan-labels";
+import { PLAN17_PROMPT_SCENE_DEFINITIONS, getPlan17PromptSceneMeta } from "@/lib/writing-eval-plan17";
 
 const adminMobileListClassName = "grid gap-3 md:hidden";
 const adminMobileCardClassName = `${uiPrimitives.adminPanel} p-4`;
@@ -336,6 +337,21 @@ export function PromptManagerClient({
   } | null;
 }) {
   const router = useRouter();
+  const plan17PromptSnapshots = PLAN17_PROMPT_SCENE_DEFINITIONS.map((scene) => {
+    const versions = prompts.filter((prompt) => prompt.promptId === scene.promptId);
+    const activeCount = versions.filter((prompt) => prompt.isActive).length;
+    const latestUpdatedAt = versions
+      .map((prompt) => prompt.updatedAt)
+      .sort((left, right) => new Date(right).getTime() - new Date(left).getTime())[0] ?? null;
+    return {
+      ...scene,
+      versionCount: versions.length,
+      activeCount,
+      latestUpdatedAt,
+      focusHref: `/admin/prompts?promptId=${encodeURIComponent(scene.promptId)}`,
+    };
+  });
+  const surfacedPlan17PromptCount = plan17PromptSnapshots.filter((item) => item.versionCount > 0).length;
   const [form, setForm] = useState({
     promptId: "",
     version: "",
@@ -444,12 +460,39 @@ export function PromptManagerClient({
           </div>
         </div>
       ) : null}
+      <div className={`space-y-4 p-5 ${uiPrimitives.adminPanel}`}>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <div className="text-xs uppercase tracking-[0.18em] text-cinnabar">Plan 17 Prompt Scenes</div>
+            <div className="mt-2 text-sm leading-7 text-adminInkSoft">
+              按 `§7.1` 清单集中查看三层分离与爆点结构化相关场景。当前已入库 {surfacedPlan17PromptCount}/{PLAN17_PROMPT_SCENE_DEFINITIONS.length} 个 scene。
+            </div>
+          </div>
+        </div>
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {plan17PromptSnapshots.map((scene) => (
+            <Link key={scene.promptId} href={scene.focusHref} className={`border p-4 transition hover:border-adminAccent hover:bg-adminSurfaceAlt ${uiPrimitives.adminPanel}`}>
+              <div className="text-xs uppercase tracking-[0.16em] text-adminInkSoft">{scene.groupLabel}</div>
+              <div className="mt-2 text-base text-adminInk">{scene.label}</div>
+              <div className="mt-1 font-mono text-xs text-adminInkSoft">{scene.promptId}</div>
+              <div className="mt-3 flex flex-wrap gap-2 text-[11px] uppercase tracking-[0.12em] text-adminInkSoft">
+                <span className="rounded-full border border-adminLineStrong px-2 py-1">版本 {scene.versionCount}</span>
+                <span className="rounded-full border border-adminLineStrong px-2 py-1">active {scene.activeCount}</span>
+              </div>
+              <div className="mt-3 text-xs leading-6 text-adminInkSoft">
+                {scene.latestUpdatedAt ? `最近更新 ${new Date(scene.latestUpdatedAt).toLocaleString("zh-CN")}` : "尚未创建版本"}
+              </div>
+            </Link>
+          ))}
+        </div>
+      </div>
       <div className="space-y-3">
         {prompts.map((prompt) => (
           <div key={prompt.id} className={`${uiPrimitives.adminPanel} p-5`}>
             {(() => {
               const promptRef = `${prompt.promptId}@${prompt.version}`;
               const versionsHref = `/admin/writing-eval/versions?assetType=prompt_version&assetRef=${encodeURIComponent(promptRef)}`;
+              const plan17Scene = getPlan17PromptSceneMeta(prompt.promptId);
               return (
                 <>
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -457,6 +500,11 @@ export function PromptManagerClient({
                 <div className="font-serifCn text-2xl text-adminInk text-balance">{prompt.name}</div>
                 <div className="mt-2 text-sm text-adminInkSoft">{prompt.promptId} · {prompt.version} · {prompt.category}</div>
                 <div className="mt-2 flex flex-wrap gap-2 text-[11px] uppercase tracking-[0.12em] text-adminInkSoft">
+                  {plan17Scene ? (
+                    <span className="rounded-full border border-cinnabar/40 px-2 py-1 text-cinnabar">
+                      Plan 17 · {plan17Scene.groupLabel}
+                    </span>
+                  ) : null}
                   <span className="rounded-full border border-adminLineStrong px-2 py-1">
                     自动治理 {prompt.autoMode === "recommendation" ? "recommendation" : "manual"}
                   </span>

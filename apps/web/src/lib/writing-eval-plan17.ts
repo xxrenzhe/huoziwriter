@@ -11,6 +11,71 @@ export const WRITING_EVAL_TASK_TYPE_OPTIONS = [
 
 export type WritingEvalTaskType = (typeof WRITING_EVAL_TASK_TYPE_OPTIONS)[number];
 
+export const PLAN17_PROMPT_SCENE_DEFINITIONS = [
+  {
+    promptId: "topicFission.regularity",
+    label: "规律裂变",
+    groupLabel: "选题裂变",
+    datasetFocusKey: "topic_fission" as const,
+  },
+  {
+    promptId: "topicFission.contrast",
+    label: "差异化角度",
+    groupLabel: "选题裂变",
+    datasetFocusKey: "topic_fission" as const,
+  },
+  {
+    promptId: "topicFission.crossDomain",
+    label: "跨赛道迁移",
+    groupLabel: "选题裂变",
+    datasetFocusKey: "topic_fission" as const,
+  },
+  {
+    promptId: "strategyCard.autoDraft",
+    label: "策略卡自动初稿",
+    groupLabel: "策略卡",
+    datasetFocusKey: "strategy_strength" as const,
+  },
+  {
+    promptId: "strategyCard.fourPointAggregate",
+    label: "四元聚合",
+    groupLabel: "策略卡",
+    datasetFocusKey: "strategy_strength" as const,
+  },
+  {
+    promptId: "strategyCard.strengthAudit",
+    label: "四元强度自检",
+    groupLabel: "策略卡",
+    datasetFocusKey: "strategy_strength" as const,
+  },
+  {
+    promptId: "strategyCard.reverseWriteback",
+    label: "反写回底层字段",
+    groupLabel: "策略卡",
+    datasetFocusKey: "strategy_strength" as const,
+  },
+  {
+    promptId: "evidenceHookTagging",
+    label: "证据爆点自动标注",
+    groupLabel: "证据爆点",
+    datasetFocusKey: "evidence_hook" as const,
+  },
+  {
+    promptId: "styleDna.crossCheck",
+    label: "多篇风格交叉比对",
+    groupLabel: "风格 DNA",
+    datasetFocusKey: null,
+  },
+  {
+    promptId: "publishGate.rhythmConsistency",
+    label: "原型节奏一致性",
+    groupLabel: "发布前总控",
+    datasetFocusKey: "rhythm_consistency" as const,
+  },
+] as const;
+
+export type Plan17PromptSceneDefinition = (typeof PLAN17_PROMPT_SCENE_DEFINITIONS)[number];
+
 const WRITING_EVAL_TASK_TYPE_LABELS: Record<string, string> = {
   tech_commentary: "技术评论",
   business_breakdown: "商业拆解",
@@ -108,6 +173,10 @@ const DATASET_FOCUS_DEFINITIONS: DatasetFocusDefinition[] = [
   },
 ];
 
+const DATASET_FOCUS_DEFINITION_MAP = new Map(
+  DATASET_FOCUS_DEFINITIONS.map((definition) => [definition.key, definition]),
+);
+
 function buildDatasetSearchText(input: {
   code?: string | null;
   name?: string | null;
@@ -165,6 +234,17 @@ export function getWritingEvalDatasetCreatePresets() {
       recommendedSourceTypes: definition.recommendedSourceTypes,
       targetTaskTypes: definition.targetTaskTypes,
     }));
+}
+
+export function getWritingEvalDatasetFocusMeta(
+  key: WritingEvalDatasetFocusKey | null | undefined,
+) {
+  return DATASET_FOCUS_DEFINITION_MAP.get(key ?? "general") ?? null;
+}
+
+export function getPlan17PromptSceneMeta(promptId: string | null | undefined) {
+  const normalized = String(promptId || "").trim();
+  return PLAN17_PROMPT_SCENE_DEFINITIONS.find((definition) => definition.promptId === normalized) ?? null;
 }
 
 export function resolveWritingEvalTaskTypeForDatasetFocus(input: {

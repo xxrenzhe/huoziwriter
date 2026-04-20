@@ -1,9 +1,11 @@
+import { buildFourPointAudit } from "./article-strategy";
 import { appendAuditLog } from "./audit";
 import { getDatabase } from "./db";
 import { getUserPlanContext, consumeDailyGenerationQuota } from "./plan-access";
 import { createArticle, upsertArticleStrategyCard } from "./repositories";
 import { ensureExtendedProductSchema } from "./schema-bootstrap";
 import { getSeries, getSeriesById, resolveArticleSeriesId } from "./series";
+import { buildFallbackStrategyCardAutoDraft, generateStrategyCardAutoDraft, type StrategyCardAutoDraft } from "./strategy-card-auto-draft";
 import { adoptTopicLeadToBacklogItem, getTopicLeadById } from "./topic-leads";
 
 export type TopicBacklogSourceType = "manual" | "excel" | "ai-generated" | "from-radar" | "from-fission";
@@ -947,14 +949,44 @@ export async function executeTopicBacklogGenerationJob(input: {
     if (!article?.id) {
       throw new Error(`条目《${row.theme}》生成失败`);
     }
+    const autoDraft: StrategyCardAutoDraft = await generateStrategyCardAutoDraft({
+      title: row.theme,
+      summary: row.reader_snapshot_hint,
+      sourceName: backlog.name,
+      chosenAngle: getStrategyDraftString(strategyDraft, "coreAssertion"),
+      readerSnapshotHint: row.reader_snapshot_hint,
+      strategyCard: {
+        archetype: normalizeArchetype(row.archetype) ?? undefined,
+        targetReader: row.target_audience || getStrategyDraftString(strategyDraft, "targetReader") || undefined,
+        coreAssertion: getStrategyDraftString(strategyDraft, "coreAssertion") || undefined,
+        whyNow: getStrategyDraftString(strategyDraft, "whyNow") || row.reader_snapshot_hint || undefined,
+        mainstreamBelief: getStrategyDraftString(strategyDraft, "mainstreamBelief") || undefined,
+      },
+    }).catch(() => ({} as StrategyCardAutoDraft));
+    const fallbackDraft = buildFallbackStrategyCardAutoDraft({
+      title: row.theme,
+      strategyCard: {
+        archetype: normalizeArchetype(row.archetype) ?? undefined,
+        targetReader: row.target_audience || getStrategyDraftString(strategyDraft, "targetReader") || undefined,
+        coreAssertion: getStrategyDraftString(strategyDraft, "coreAssertion") || undefined,
+        whyNow: getStrategyDraftString(strategyDraft, "whyNow") || row.reader_snapshot_hint || undefined,
+        mainstreamBelief: getStrategyDraftString(strategyDraft, "mainstreamBelief") || undefined,
+      },
+    });
+    const mergedStrategyCard = {
+      ...fallbackDraft,
+      ...autoDraft,
+      archetype: normalizeArchetype(row.archetype) ?? autoDraft.archetype ?? fallbackDraft.archetype,
+      targetReader: row.target_audience || getStrategyDraftString(strategyDraft, "targetReader") || autoDraft.targetReader || fallbackDraft.targetReader,
+      coreAssertion: getStrategyDraftString(strategyDraft, "coreAssertion") || autoDraft.coreAssertion || fallbackDraft.coreAssertion,
+      whyNow: getStrategyDraftString(strategyDraft, "whyNow") || row.reader_snapshot_hint || autoDraft.whyNow || fallbackDraft.whyNow,
+      mainstreamBelief: getStrategyDraftString(strategyDraft, "mainstreamBelief") || autoDraft.mainstreamBelief || fallbackDraft.mainstreamBelief,
+    };
     await upsertArticleStrategyCard({
       articleId: Number(article.id),
       userId: input.userId,
-      archetype: normalizeArchetype(row.archetype),
-      targetReader: row.target_audience || getStrategyDraftString(strategyDraft, "targetReader"),
-      coreAssertion: getStrategyDraftString(strategyDraft, "coreAssertion"),
-      whyNow: getStrategyDraftString(strategyDraft, "whyNow") || row.reader_snapshot_hint,
-      mainstreamBelief: getStrategyDraftString(strategyDraft, "mainstreamBelief"),
+      ...mergedStrategyCard,
+      fourPointAudit: buildFourPointAudit(mergedStrategyCard),
     });
     const now = new Date().toISOString();
     const db = getDatabase();

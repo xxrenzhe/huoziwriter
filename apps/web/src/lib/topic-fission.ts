@@ -1,5 +1,6 @@
 import type { StrategyArchetype } from "./article-strategy";
 import { safeRunImaFissionEngine } from "./ima-fission-engine";
+import { getKnowledgeCardsByTrack } from "./knowledge";
 import type { RankedTopicRecommendation } from "./topic-recommendations";
 
 export type TopicFissionMode = "regularity" | "contrast" | "cross-domain";
@@ -175,6 +176,16 @@ function getCrossDomainTargetTrack(trackLabel: string) {
   return CROSS_DOMAIN_TARGETS[trackLabel] ?? "内容增长";
 }
 
+function mapTopicTrackToKnowledgeTrack(trackLabel: string) {
+  if (trackLabel === "AI 提效") return "AI";
+  if (trackLabel === "内容增长") return "内容创作";
+  if (trackLabel === "创业与 SaaS") return "创业投资";
+  if (trackLabel === "组织管理") return "职场组织";
+  if (trackLabel === "电商经营") return "电商消费";
+  if (trackLabel === "教育认知") return "教育学习";
+  return "综合观察";
+}
+
 function buildCandidate(input: {
   index: number;
   topic: RankedTopicRecommendation;
@@ -224,7 +235,11 @@ function buildCandidate(input: {
   } satisfies TopicFissionCandidate;
 }
 
-function buildRegularityResult(topic: RankedTopicRecommendation, sourceTrackLabel: string) {
+function buildRegularityResult(
+  topic: RankedTopicRecommendation,
+  sourceTrackLabel: string,
+  knowledgeSamples: Awaited<ReturnType<typeof getKnowledgeCardsByTrack>> = [],
+) {
   const targetReader = deriveTargetReader(topic, sourceTrackLabel);
   const emotion = deriveEmotion(topic);
   const topicTitle = topic.title.replace(/[《》]/g, "");
@@ -233,6 +248,10 @@ function buildRegularityResult(topic: RankedTopicRecommendation, sourceTrackLabe
     `读者真正会转发的点，不是工具或新闻本身，而是它如何重排自己的处境、身份和收益。`,
     `把“${emotion}”写成具体场景，通常比继续堆宏大判断更容易形成认知翻转。`,
   ];
+  const corpusEvidence = knowledgeSamples.map((sample) => ({
+    title: sample.sampleParagraph ? `${sample.title}：${sample.sampleParagraph.slice(0, 40)}` : sample.title,
+    sourceUrl: null,
+  }));
   const candidates = [
     `大家都在追 ${topicTitle}，真正危险的是还按旧流程做决定的人`,
     `${topicTitle} 之后，最先掉队的不是慢的人，而是判断框架没更新的人`,
@@ -249,6 +268,7 @@ function buildRegularityResult(topic: RankedTopicRecommendation, sourceTrackLabe
       description: `把 ${topicTitle} 从热点层往下压一层，写清 ${targetReader} 在这个节点最容易犯的旧判断，以及为什么现在必须重写动作顺序。`,
       targetReader,
       sourceTrackLabel,
+      corpusEvidence,
     }),
   );
 
@@ -262,6 +282,9 @@ function buildRegularityResult(topic: RankedTopicRecommendation, sourceTrackLabe
     signalGroups: [
       { label: "赛道规律", items: regularities },
       { label: "参考信号", items: deriveReferenceSignals(topic, sourceTrackLabel) },
+      ...(knowledgeSamples.length > 0
+        ? [{ label: "知识库样本", items: knowledgeSamples.map((sample) => `《${sample.title}》${sample.sampleParagraph ? `：${sample.sampleParagraph.slice(0, 48)}` : ""}`) }]
+        : []),
     ],
     candidates,
     engine: "local",
@@ -269,7 +292,11 @@ function buildRegularityResult(topic: RankedTopicRecommendation, sourceTrackLabe
   } satisfies TopicFissionResult;
 }
 
-function buildContrastResult(topic: RankedTopicRecommendation, sourceTrackLabel: string) {
+function buildContrastResult(
+  topic: RankedTopicRecommendation,
+  sourceTrackLabel: string,
+  knowledgeSamples: Awaited<ReturnType<typeof getKnowledgeCardsByTrack>> = [],
+) {
   const targetReader = deriveTargetReader(topic, sourceTrackLabel);
   const topicTitle = topic.title.replace(/[《》]/g, "");
   const staleAngles = [
@@ -282,6 +309,10 @@ function buildContrastResult(topic: RankedTopicRecommendation, sourceTrackLabel:
     `把读者最想逃避但已经躲不过去的代价写具体。`,
     `不要比较谁做得快，改写成“谁还在用旧框架理解这件事”。`,
   ];
+  const corpusEvidence = knowledgeSamples.map((sample) => ({
+    title: sample.sampleParagraph ? `${sample.title}：${sample.sampleParagraph.slice(0, 40)}` : sample.title,
+    sourceUrl: null,
+  }));
   const candidates = [
     `围绕 ${topicTitle}，最值得写的不是新机会，而是谁还在假装旧规则有效`,
     `大家都在夸 ${topicTitle} 的增量，真正该写的是哪类人开始失去安全感`,
@@ -295,6 +326,7 @@ function buildContrastResult(topic: RankedTopicRecommendation, sourceTrackLabel:
       description: `避开“热点复述”和“表层教程”，直接给 ${targetReader} 一个反常识切角：为什么真正值得警惕的，不是机会本身，而是旧判断还在惯性运行。`,
       targetReader,
       sourceTrackLabel,
+      corpusEvidence,
     }),
   );
 
@@ -308,6 +340,9 @@ function buildContrastResult(topic: RankedTopicRecommendation, sourceTrackLabel:
     signalGroups: [
       { label: "被写烂的角度", items: staleAngles },
       { label: "值得深挖的新角度", items: freshAngles },
+      ...(knowledgeSamples.length > 0
+        ? [{ label: "知识库样本", items: knowledgeSamples.map((sample) => `《${sample.title}》${sample.sampleParagraph ? `：${sample.sampleParagraph.slice(0, 48)}` : ""}`) }]
+        : []),
     ],
     candidates,
     engine: "local",
@@ -315,7 +350,11 @@ function buildContrastResult(topic: RankedTopicRecommendation, sourceTrackLabel:
   } satisfies TopicFissionResult;
 }
 
-function buildCrossDomainResult(topic: RankedTopicRecommendation, sourceTrackLabel: string) {
+function buildCrossDomainResult(
+  topic: RankedTopicRecommendation,
+  sourceTrackLabel: string,
+  knowledgeSamples: Awaited<ReturnType<typeof getKnowledgeCardsByTrack>> = [],
+) {
   const targetTrackLabel = getCrossDomainTargetTrack(sourceTrackLabel);
   const targetReader = `${deriveTargetReader(topic, targetTrackLabel)}，尤其是正在把 ${sourceTrackLabel} 的方法借用到 ${targetTrackLabel} 的人`;
   const topicTitle = topic.title.replace(/[《》]/g, "");
@@ -324,6 +363,10 @@ function buildCrossDomainResult(topic: RankedTopicRecommendation, sourceTrackLab
     `情绪机制：把焦虑从抽象趋势改写成岗位、身份或收益的具体挤压感。`,
     `转发心理：读者愿意转发的不是结论，而是“这句话能替我解释当前处境”。`,
   ];
+  const corpusEvidence = knowledgeSamples.map((sample) => ({
+    title: sample.sampleParagraph ? `${sample.title}：${sample.sampleParagraph.slice(0, 40)}` : sample.title,
+    sourceUrl: null,
+  }));
   const candidates = [
     `把 ${sourceTrackLabel} 里的“旧判断失效”基因，迁移到 ${targetTrackLabel} 会发生什么`,
     `${topicTitle} 给了 ${sourceTrackLabel} 一个强信号，但它真正能改写的是 ${targetTrackLabel} 的决策方式`,
@@ -339,6 +382,7 @@ function buildCrossDomainResult(topic: RankedTopicRecommendation, sourceTrackLab
       targetReader,
       sourceTrackLabel,
       targetTrackLabel,
+      corpusEvidence,
     }),
   );
 
@@ -352,6 +396,9 @@ function buildCrossDomainResult(topic: RankedTopicRecommendation, sourceTrackLab
     signalGroups: [
       { label: "可迁移的传播基因", items: transferGenes },
       { label: "参考信号", items: deriveReferenceSignals(topic, sourceTrackLabel) },
+      ...(knowledgeSamples.length > 0
+        ? [{ label: "知识库样本", items: knowledgeSamples.map((sample) => `《${sample.title}》${sample.sampleParagraph ? `：${sample.sampleParagraph.slice(0, 48)}` : ""}`) }]
+        : []),
     ],
     candidates,
     engine: "local",
@@ -359,18 +406,37 @@ function buildCrossDomainResult(topic: RankedTopicRecommendation, sourceTrackLab
   } satisfies TopicFissionResult;
 }
 
-function generateLocalTopicFission(input: {
+export function buildLocalTopicFissionResult(input: {
   topic: RankedTopicRecommendation;
   mode: TopicFissionMode;
+  knowledgeSamples?: Awaited<ReturnType<typeof getKnowledgeCardsByTrack>>;
 }) {
   const sourceTrackLabel = detectTrackLabel(input.topic);
+  const knowledgeSamples = input.knowledgeSamples ?? [];
   if (input.mode === "regularity") {
-    return buildRegularityResult(input.topic, sourceTrackLabel);
+    return buildRegularityResult(input.topic, sourceTrackLabel, knowledgeSamples);
   }
   if (input.mode === "contrast") {
-    return buildContrastResult(input.topic, sourceTrackLabel);
+    return buildContrastResult(input.topic, sourceTrackLabel, knowledgeSamples);
   }
-  return buildCrossDomainResult(input.topic, sourceTrackLabel);
+  return buildCrossDomainResult(input.topic, sourceTrackLabel, knowledgeSamples);
+}
+
+async function generateLocalTopicFission(input: {
+  topic: RankedTopicRecommendation;
+  mode: TopicFissionMode;
+  userId: number;
+}) {
+  const sourceTrackLabel = detectTrackLabel(input.topic);
+  const knowledgeSamples = await getKnowledgeCardsByTrack({
+    trackLabel: mapTopicTrackToKnowledgeTrack(sourceTrackLabel),
+    limit: 3,
+  });
+  return buildLocalTopicFissionResult({
+    topic: input.topic,
+    mode: input.mode,
+    knowledgeSamples,
+  });
 }
 
 export async function generateTopicFission(input: {
@@ -392,16 +458,18 @@ export async function generateTopicFission(input: {
       });
     } catch (error) {
       const degraded = generateLocalTopicFission({
+        userId: input.userId,
         topic: input.topic,
         mode: input.mode,
       });
       return {
-        ...degraded,
+        ...(await degraded),
         degradedReason: error instanceof Error ? error.message : "IMA 裂变失败，已降级到本地裂变",
       };
     }
   }
   return generateLocalTopicFission({
+    userId: input.userId,
     topic: input.topic,
     mode: input.mode,
   });

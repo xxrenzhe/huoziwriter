@@ -21,6 +21,7 @@ import {
   getWritingEvalAgentStrategyLabel,
   getWritingEvalAgentStrategyPreset,
 } from "@/lib/writing-eval-config";
+import { getWritingEvalDatasetFocusMeta, getWritingEvalTaskTypeLabel } from "@/lib/writing-eval-plan17";
 
 type DatasetItem = {
   id: number;
@@ -31,6 +32,14 @@ type DatasetItem = {
   sampleCount: number;
   createdAt: string;
   updatedAt: string;
+  focus?: {
+    key: string;
+    label: string;
+    description: string;
+    promptIds: readonly string[];
+    recommendedSourceTypes: readonly string[];
+    targetTaskTypes: readonly string[];
+  };
   readiness: {
     status: "ready" | "warning" | "blocked";
     enabledCaseCount: number;
@@ -698,6 +707,23 @@ function truncateText(value: string | null | undefined, limit: number) {
   if (!text) return "暂无内容";
   return text.length > limit ? `${text.slice(0, limit)}…` : text;
 }
+
+function getDatasetFocusPromptSummary(dataset: DatasetItem | null | undefined) {
+  const promptIds = dataset?.focus?.promptIds ?? [];
+  return promptIds.length > 0 ? promptIds.join(" / ") : "未绑定场景 Prompt";
+}
+
+function getDatasetFocusTaskTypeSummary(dataset: DatasetItem | null | undefined) {
+  const taskTypes = dataset?.focus?.targetTaskTypes ?? [];
+  return taskTypes.length > 0 ? taskTypes.map((item) => getWritingEvalTaskTypeLabel(item)).join(" / ") : "通用全文评测";
+}
+
+const PLAN17_WRITING_EVAL_FOCUS_KEYS = [
+  "topic_fission",
+  "strategy_strength",
+  "evidence_hook",
+  "rhythm_consistency",
+] as const;
 
 function getRunCreationBlockedMessage(input: {
   dataset: DatasetItem | null;
@@ -1537,6 +1563,29 @@ export function AdminWritingEvalClient({
   const selectedRunFormDataset = datasets.find((item) => String(item.id) === runForm.datasetId) ?? null;
   const selectedRunFormDatasetReadiness = selectedRunFormDataset?.readiness ?? null;
   const selectedRunFormDatasetReadinessMeta = getDatasetReadinessMeta(selectedRunFormDatasetReadiness);
+  const selectedRunFormDatasetFocus = selectedRunFormDataset?.focus ?? null;
+  const plan17FocusCards = PLAN17_WRITING_EVAL_FOCUS_KEYS.map((focusKey) => {
+    const meta = getWritingEvalDatasetFocusMeta(focusKey);
+    const matchedDatasets = datasets.filter((item) => item.focus?.key === focusKey);
+    const readyCount = matchedDatasets.filter((item) => item.readiness.status === "ready").length;
+    const matchedDatasetIds = new Set(matchedDatasets.map((item) => item.id));
+    const matchedRuns = runs.filter((item) => matchedDatasetIds.has(item.datasetId));
+    const matchedSchedules = schedules.filter((item) => matchedDatasetIds.has(item.datasetId));
+    const recommendedDataset =
+      matchedDatasets.find((item) => item.status === "active" && item.readiness.status === "ready")
+      ?? matchedDatasets.find((item) => item.status === "active")
+      ?? matchedDatasets[0]
+      ?? null;
+    return {
+      key: focusKey,
+      meta,
+      datasets: matchedDatasets,
+      readyCount,
+      runCount: matchedRuns.length,
+      scheduleCount: matchedSchedules.length,
+      recommendedDataset,
+    };
+  });
   const canCreateRun = canCreateRunFromSelection({
     dataset: selectedRunFormDataset,
     readiness: selectedRunFormDatasetReadiness,
@@ -2318,6 +2367,53 @@ export function AdminWritingEvalClient({
     setMessage(`已将 ${selectedRunDetail.runCode} 的配置回填到发起实验表单`);
   }
 
+  function handleApplyPlan17FocusPreset(focusKey: (typeof PLAN17_WRITING_EVAL_FOCUS_KEYS)[number]) {
+    const meta = getWritingEvalDatasetFocusMeta(focusKey);
+    const matchedDatasets = datasets.filter((item) => item.focus?.key === focusKey);
+    const preferredDataset =
+      matchedDatasets.find((item) => item.status === "active" && item.readiness.status === "ready")
+      ?? matchedDatasets.find((item) => item.status === "active")
+      ?? matchedDatasets[0]
+      ?? null;
+    if (!meta || !preferredDataset) {
+      setMessage(`当前还没有可用的${meta?.label || "Plan 17"}评测集，请先去 Datasets 建桶。`);
+      return;
+    }
+    const nextPromptTargetId =
+      meta.promptIds.find((promptId) => promptOptions.some((item) => item.promptId === promptId))
+      ?? promptTargetId;
+    const nextPromptVersions = getVersionOptionsByType(
+      "prompt_version",
+      promptOptions,
+      scoringProfileOptions,
+      layoutStrategyOptions,
+      applyCommandTemplateOptions,
+      nextPromptTargetId,
+    );
+    const nextPromptRef = nextPromptVersions[0]?.value ?? "";
+    setSelectedDatasetId(preferredDataset.id);
+    setPromptTargetId(nextPromptTargetId);
+    setRunForm((prev) => ({
+      ...prev,
+      datasetId: String(preferredDataset.id),
+      baseVersionType: "prompt_version",
+      candidateVersionType: "prompt_version",
+      baseVersionRef: nextPromptRef || prev.baseVersionRef,
+      candidateVersionRef: nextPromptRef || prev.candidateVersionRef,
+      experimentMode: "full_article",
+      triggerMode: "manual",
+      decisionMode: "manual_review",
+      summary: `${meta.label} · ${preferredDataset.name}`,
+    }));
+    replaceRunsUrl(selectedRunId, selectedResultId, preferredDataset.id);
+    if (typeof window !== "undefined") {
+      window.requestAnimationFrame(() => {
+        document.getElementById("run-create-form")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+    }
+    setMessage(`已按 ${meta.label} 预填实验表单`);
+  }
+
   function handleSwapRunVersions() {
     setRunForm((prev) => ({
       ...prev,
@@ -3053,6 +3149,11 @@ export function AdminWritingEvalClient({
                       </div>
                     </div>
                     <div className="mt-3 text-sm leading-6 text-adminInkSoft">{dataset.description || "暂无说明"}</div>
+                    {dataset.focus ? (
+                      <div className="mt-2 text-xs leading-6 text-adminInkMuted">
+                        {dataset.focus.label} · Prompt {dataset.focus.promptIds.join(" / ") || "未绑定"}
+                      </div>
+                    ) : null}
                     <div className="mt-3 text-xs text-adminInkMuted">样本数 {dataset.sampleCount} · 更新于 {formatWritingEvalDateTime(dataset.updatedAt)}</div>
                     <div className="mt-2 text-xs leading-6 text-adminInkMuted">{readinessMeta.summary}</div>
                   </button>
@@ -3089,6 +3190,58 @@ export function AdminWritingEvalClient({
           <Link href={selectedDatasetHref} className={uiPrimitives.primaryButton + " mt-5 inline-flex"}>
             去 Datasets 管理评测集与样本
           </Link>
+        </div>
+      </section>
+
+      <section className={uiPrimitives.adminPanel + " p-5"}>
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <div className="text-xs uppercase tracking-[0.24em] text-adminInkMuted">Plan 17 场景实验</div>
+            <h2 className="mt-3 font-serifCn text-2xl text-adminInk text-balance">按场景快速进入评测与实验</h2>
+          </div>
+          <div className="text-sm text-adminInkMuted">聚焦 topicFission / strategyStrength / evidenceHook / rhythmConsistency</div>
+        </div>
+        <div className="mt-5 grid gap-3 xl:grid-cols-4 md:grid-cols-2">
+          {plan17FocusCards.map((item) => (
+            <article key={item.key} className="border border-adminLineStrong bg-adminBg px-4 py-4">
+              <div className="text-xs uppercase tracking-[0.18em] text-cinnabar">{item.meta?.label || item.key}</div>
+              <div className="mt-2 text-sm leading-7 text-adminInkSoft">{item.meta?.description || "暂无说明"}</div>
+              <div className="mt-3 flex flex-wrap gap-2 text-[11px] uppercase tracking-[0.12em] text-adminInkSoft">
+                <span className="rounded-full border border-adminLineStrong px-2 py-1">datasets {item.datasets.length}</span>
+                <span className="rounded-full border border-adminLineStrong px-2 py-1">ready {item.readyCount}</span>
+                <span className="rounded-full border border-adminLineStrong px-2 py-1">runs {item.runCount}</span>
+                <span className="rounded-full border border-adminLineStrong px-2 py-1">schedules {item.scheduleCount}</span>
+              </div>
+              <div className="mt-3 text-xs leading-6 text-adminInkMuted">
+                Prompt：{item.meta?.promptIds.join(" / ") || "未绑定"}
+              </div>
+              <div className="mt-2 text-xs leading-6 text-adminInkMuted">
+                题型：{item.meta?.targetTaskTypes.map((taskType) => getWritingEvalTaskTypeLabel(taskType)).join(" / ") || "通用"}
+              </div>
+              <div className="mt-2 text-xs leading-6 text-adminInkMuted">
+                推荐数据集：{item.recommendedDataset?.name || "还没有匹配评测集"}
+              </div>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  className={uiPrimitives.primaryButton}
+                  onClick={() => handleApplyPlan17FocusPreset(item.key)}
+                  disabled={!item.recommendedDataset}
+                >
+                  一键预填实验
+                </button>
+                {item.recommendedDataset ? (
+                  <Link href={buildAdminWritingEvalDatasetsHref({ datasetId: item.recommendedDataset.id })} className={uiPrimitives.adminSecondaryButton}>
+                    打开评测集
+                  </Link>
+                ) : (
+                  <Link href={buildAdminWritingEvalDatasetsHref()} className={uiPrimitives.adminSecondaryButton}>
+                    去建评测集
+                  </Link>
+                )}
+              </div>
+            </article>
+          ))}
         </div>
       </section>
 
@@ -3167,11 +3320,16 @@ export function AdminWritingEvalClient({
               readiness={selectedRunFormDatasetReadiness}
             >
               <>
+                {selectedRunFormDatasetFocus ? (
+                  <div className="mb-2 text-xs leading-6 text-adminInkMuted">
+                    场景：{selectedRunFormDatasetFocus.label} · Prompt {getDatasetFocusPromptSummary(selectedRunFormDataset)} · 题型 {getDatasetFocusTaskTypeSummary(selectedRunFormDataset)}
+                  </div>
+                ) : null}
                 启用样本 {selectedRunFormDatasetReadiness.enabledCaseCount}/{selectedRunFormDatasetReadiness.totalCaseCount} ·
                 标题目标 {selectedRunFormDatasetReadiness.coverage.titleGoal} · 开头目标 {selectedRunFormDatasetReadiness.coverage.hookGoal} ·
                 传播目标 {selectedRunFormDatasetReadiness.coverage.shareTriggerGoal} · 事实素材 {selectedRunFormDatasetReadiness.coverage.sourceFacts}
                 <div className="mt-2 text-xs leading-6 text-adminInkMuted">
-                题型 {selectedRunFormDatasetReadiness.qualityTargets.distinctTaskTypeCount}/4 ·
+                题型 {selectedRunFormDatasetReadiness.qualityTargets.distinctTaskTypeCount}/{selectedRunFormDatasetFocus?.targetTaskTypes.length || 4} ·
                 light {selectedRunFormDatasetReadiness.qualityTargets.lightCount} ·
                 medium {selectedRunFormDatasetReadiness.qualityTargets.mediumCount} ·
                 hard {selectedRunFormDatasetReadiness.qualityTargets.hardCount} ·
@@ -3437,6 +3595,11 @@ export function AdminWritingEvalClient({
                   {pendingDecisionRuns.length > 0 ? (
                     pendingDecisionRuns.map((run) => (
                       <div key={`pending-run-${run.id}`} className="border border-adminLineStrong bg-adminSurfaceAlt px-3 py-3 text-xs">
+                        {(() => {
+                          const runDataset = datasets.find((item) => item.id === run.datasetId) ?? null;
+                          const runDatasetFocus = runDataset?.focus ?? null;
+                          return (
+                            <>
                         <div className="flex flex-wrap items-center justify-between gap-3">
                           <button
                             type="button"
@@ -3450,9 +3613,15 @@ export function AdminWritingEvalClient({
                         <div className="mt-2 flex flex-wrap gap-3 text-adminInkMuted">
                           <span>{getDecisionModeLabel(run.decisionMode)}</span>
                           <span>{run.datasetName || `#${run.datasetId}`}</span>
+                          {runDatasetFocus ? <span>{runDatasetFocus.label}</span> : null}
                           <span>{formatWritingEvalDateTime(run.createdAt)}</span>
                         </div>
                         <div className="mt-2 leading-6 text-amber-200">{getWritingEvalRunOpsIssueSummary(run)}</div>
+                        {runDatasetFocus ? (
+                          <div className="mt-2 text-[11px] leading-6 text-adminInkMuted">
+                            Prompt {getDatasetFocusPromptSummary(runDataset)}
+                          </div>
+                        ) : null}
                         <div className="mt-3 flex flex-wrap gap-2">
                           <button
                             type="button"
@@ -3462,6 +3631,9 @@ export function AdminWritingEvalClient({
                             打开详情
                           </button>
                         </div>
+                            </>
+                          );
+                        })()}
                       </div>
                     ))
                   ) : (
@@ -3507,6 +3679,8 @@ export function AdminWritingEvalClient({
                 const runCandidatePromptHref = isPromptBackedVersionType(run.candidateVersionType)
                   ? buildPromptFocusHref(run.candidateVersionRef)
                   : null;
+                const runDataset = datasets.find((item) => item.id === run.datasetId) ?? null;
+                const runDatasetFocus = runDataset?.focus ?? null;
                 const runCasesProcessed = getNumber(run.scoreSummary.casesProcessed);
                 const runTotalCaseCount = getNumber(run.scoreSummary.totalCaseCount);
                 const runCurrentTaskCode = getString(run.scoreSummary.currentTaskCode);
@@ -3571,6 +3745,7 @@ export function AdminWritingEvalClient({
                             {run.datasetName || `#${run.datasetId}`}
                           </Link>
                         </div>
+                        {runDatasetFocus ? <div className="mt-1 text-xs text-adminInkMuted">{runDatasetFocus.label}</div> : null}
                         {runSourceScheduleHref ? (
                           <Link
                             href={runSourceScheduleHref}
@@ -3582,6 +3757,11 @@ export function AdminWritingEvalClient({
                         ) : null}
                       </div>
                     </div>
+                    {runDatasetFocus ? (
+                      <div className="mt-3 text-xs leading-6 text-adminInkMuted">
+                        Prompt {getDatasetFocusPromptSummary(runDataset)} · 题型 {getDatasetFocusTaskTypeSummary(runDataset)}
+                      </div>
+                    ) : null}
                     <div className="mt-4 grid gap-3 sm:grid-cols-3">
                       <div>
                         <div className="text-[11px] uppercase tracking-[0.18em] text-adminInkMuted">基线</div>
@@ -3712,6 +3892,8 @@ export function AdminWritingEvalClient({
                     const runCandidatePromptHref = isPromptBackedVersionType(run.candidateVersionType)
                       ? buildPromptFocusHref(run.candidateVersionRef)
                       : null;
+                    const runDataset = datasets.find((item) => item.id === run.datasetId) ?? null;
+                    const runDatasetFocus = runDataset?.focus ?? null;
                     const runCasesProcessed = getNumber(run.scoreSummary.casesProcessed);
                     const runTotalCaseCount = getNumber(run.scoreSummary.totalCaseCount);
                     const runCurrentTaskCode = getString(run.scoreSummary.currentTaskCode);
@@ -3770,6 +3952,7 @@ export function AdminWritingEvalClient({
                           <Link href={runDatasetHref} onClick={(event) => event.stopPropagation()} className="transition hover:text-cinnabar">
                             {run.datasetName || `#${run.datasetId}`}
                           </Link>
+                          {runDatasetFocus ? <div className="mt-1 text-[11px] text-adminInkMuted">{runDatasetFocus.label}</div> : null}
                         </td>
                         <td className="py-4 text-adminInkSoft">
                           {runBasePromptHref ? (
@@ -3903,6 +4086,16 @@ export function AdminWritingEvalClient({
             ) : (
               <span className="ml-1">{datasets.find((item) => String(item.id) === runForm.datasetId)?.name || "未选择"}</span>
             )}
+            {selectedRunFormDatasetFocus ? (
+              <>
+                <br />
+                场景：{selectedRunFormDatasetFocus.label}
+                <br />
+                Prompt：{getDatasetFocusPromptSummary(selectedRunFormDataset)}
+                <br />
+                题型：{getDatasetFocusTaskTypeSummary(selectedRunFormDataset)}
+              </>
+            ) : null}
             <br />
             模式：{getExperimentModeLabel(runForm.experimentMode)}
             <br />
@@ -4129,6 +4322,8 @@ export function AdminWritingEvalClient({
               >
                 {(() => {
                   const isEditing = editingScheduleId === schedule.id;
+                  const scheduleDataset = datasets.find((item) => item.id === schedule.datasetId) ?? null;
+                  const scheduleDatasetFocus = scheduleDataset?.focus ?? null;
                   const scheduleDatasetHref = buildAdminWritingEvalDatasetsHref({ datasetId: schedule.datasetId });
                   const scheduleReadinessMeta = getDatasetReadinessMeta(schedule.readiness);
                   const scheduleDispatchBlocked =
@@ -4202,6 +4397,16 @@ export function AdminWritingEvalClient({
                   <Link href={scheduleDatasetHref} className="ml-1 transition hover:text-cinnabar">
                     {schedule.datasetName || `#${schedule.datasetId}`}
                   </Link>
+                  {scheduleDatasetFocus ? (
+                    <>
+                      <br />
+                      场景：{scheduleDatasetFocus.label}
+                      <br />
+                      Prompt：{getDatasetFocusPromptSummary(scheduleDataset)}
+                      <br />
+                      题型：{getDatasetFocusTaskTypeSummary(scheduleDataset)}
+                    </>
+                  ) : null}
                   <br />
                   模式：{getExperimentModeLabel(schedule.experimentMode)}
                   <br />
