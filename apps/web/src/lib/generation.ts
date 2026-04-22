@@ -1,6 +1,8 @@
 import { generateSceneText } from "./ai-gateway";
-import { getMergedArchetypeRhythmHints } from "./archetype-rhythm";
+import { buildGatewaySystemSegments } from "./ai-gateway-system-segments";
+import { getMergedActiveArchetypeRhythmHints, normalizeStrategyArchetypeKey } from "./archetype-rhythm";
 import { loadPromptWithMeta } from "./prompt-loader";
+import { formatPromptTemplate } from "./prompt-template";
 import {
   ARTICLE_PROTOTYPE_CODES,
   WRITING_STATE_VARIANT_CODES,
@@ -202,6 +204,14 @@ function sanitizeBannedWords(content: string, bannedWords: string[]) {
   return sanitized;
 }
 
+function promptLine(prefix: string, value: unknown) {
+  return formatPromptTemplate(prefix + "{{value}}", { value });
+}
+
+function promptBlock(prefix: string, value: unknown) {
+  return formatPromptTemplate(prefix + "\n{{value}}", { value });
+}
+
 function buildTagText(tags: string[] = []) {
   return tags.map((item) => String(item || "").trim()).filter(Boolean).join("、");
 }
@@ -210,20 +220,14 @@ function dedupeText(values: Array<string | null | undefined>, limit: number) {
   return Array.from(new Set(values.map((item) => String(item || "").trim()).filter(Boolean))).slice(0, limit);
 }
 
-function resolveGenerationRhythmHints(input: {
+async function resolveGenerationRhythmHints(input: {
   strategyCard?: StrategyCardContext | null;
   seriesInsight?: SeriesInsightContext | null;
 }) {
   const archetype =
-    input.strategyCard?.archetype
-    ?? (input.seriesInsight?.defaultArchetype === "opinion"
-      || input.seriesInsight?.defaultArchetype === "case"
-      || input.seriesInsight?.defaultArchetype === "howto"
-      || input.seriesInsight?.defaultArchetype === "hotTake"
-      || input.seriesInsight?.defaultArchetype === "phenomenon"
-        ? input.seriesInsight.defaultArchetype
-        : null);
-  return getMergedArchetypeRhythmHints({
+    normalizeStrategyArchetypeKey(input.strategyCard?.archetype)
+    ?? normalizeStrategyArchetypeKey(input.seriesInsight?.defaultArchetype);
+  return getMergedActiveArchetypeRhythmHints({
     archetype,
     override: input.seriesInsight?.rhythmOverride ?? null,
   });
@@ -253,19 +257,19 @@ function buildFactCheckFallbackReplacement(input: {
     return "";
   }
   if (input.decision === "remove") {
-    return evidenceTitle ? `至少按${evidenceTitle}这条材料看，这句判断先收住。` : "按现有材料看，这句判断先收住。";
+    return evidenceTitle ? "至少按" + evidenceTitle + "这条材料看，这句判断先收住。" : "按现有材料看，这句判断先收住。";
   }
   if (input.decision === "source") {
-    return evidenceTitle ? `按${evidenceTitle}等现有材料，${claim}` : `按现有材料看，${claim}`;
+    return evidenceTitle ? "按" + evidenceTitle + "等现有材料，" + claim : "按现有材料看，" + claim;
   }
   if (input.decision === "mark_opinion") {
-    return evidenceTitle ? `如果只按${evidenceTitle}这条材料看，${claim}` : `这更像当前阶段的判断：${claim}`;
+    return evidenceTitle ? "如果只按" + evidenceTitle + "这条材料看，" + claim : "这更像当前阶段的判断：" + claim;
   }
   if (input.decision === "soften") {
     if (evidenceTitle) {
-      return `至少从${evidenceTitle}等现有材料看，${claim}`;
+      return "至少从" + evidenceTitle + "等现有材料看，" + claim;
     }
-    return input.supportLevel === "missing" ? `按现有材料看，${claim}` : `${claim}，但这里先不把话说满。`;
+    return input.supportLevel === "missing" ? "按现有材料看，" + claim : claim + "，但这里先不把话说满。";
   }
   return claim;
 }
@@ -290,11 +294,11 @@ function buildProseFallbackReplacement(input: {
   }
   const punchline = (input.punchlines ?? []).map((item) => item.trim()).find(Boolean) || "";
   if (punchline && /力度|判断|太虚|太软|不够硬|结论/.test(suggestion) && !example.includes(punchline)) {
-    return `${example.replace(/[。！？!?]+$/, "")}。\n\n${punchline}`;
+    return example.replace(/[。！？!?]+$/, "") + "。\n\n" + punchline;
   }
   const rhythmAdvice = (input.rhythmAdvice ?? []).map((item) => item.trim()).find(Boolean) || "";
   if (rhythmAdvice && /节奏|转场|重复/.test(suggestion) && !example.includes(rhythmAdvice)) {
-    return `${splitParagraphForFallback(example)}\n\n${rhythmAdvice}`;
+    return splitParagraphForFallback(example) + "\n\n" + rhythmAdvice;
   }
   return example;
 }
@@ -344,8 +348,29 @@ function buildLocalDraft(input: {
   deepWritingGuide?: string;
 }) {
   const fragmentText = input.fragments.length > 0 ? input.fragments.join("；") : "当前没有素材，先根据标题生成一版骨架正文。";
+  const optionalGuides = [
+    input.personaGuide,
+    input.writingStyleGuide,
+    input.humanSignalGuide,
+    input.writingStateGuide,
+    input.deepWritingBehaviorGuide,
+    input.styleGuide,
+    input.outlineGuide,
+    input.knowledgeGuide,
+    input.imageGuide,
+    input.historyGuide,
+    input.researchGuide,
+    input.deepWritingGuide,
+  ].map((item) => String(item || "").trim()).filter(Boolean).join("\n\n");
   return sanitizeBannedWords(
-    `# ${input.title}\n\n${input.prompt}\n\n${input.personaGuide ? `${input.personaGuide}\n\n` : ""}${input.writingStyleGuide ? `${input.writingStyleGuide}\n\n` : ""}${input.humanSignalGuide ? `${input.humanSignalGuide}\n\n` : ""}${input.writingStateGuide ? `${input.writingStateGuide}\n\n` : ""}${input.deepWritingBehaviorGuide ? `${input.deepWritingBehaviorGuide}\n\n` : ""}${input.styleGuide ? `${input.styleGuide}\n\n` : ""}${input.outlineGuide ? `${input.outlineGuide}\n\n` : ""}${input.knowledgeGuide ? `${input.knowledgeGuide}\n\n` : ""}${input.imageGuide ? `${input.imageGuide}\n\n` : ""}${input.historyGuide ? `${input.historyGuide}\n\n` : ""}${input.researchGuide ? `${input.researchGuide}\n\n` : ""}${input.deepWritingGuide ? `${input.deepWritingGuide}\n\n` : ""}先把现实摊开。\n\n${fragmentText}\n\n你不是在补空话，而是在把事实重新排成能击中人的结构。\n`,
+    [
+      "# " + input.title,
+      input.prompt,
+      optionalGuides || null,
+      "先把现实摊开。",
+      fragmentText,
+      "你不是在补空话，而是在把事实重新排成能击中人的结构。",
+    ].filter(Boolean).join("\n\n"),
     input.bannedWords,
   );
 }
@@ -360,13 +385,13 @@ function buildLocalOpeningPreview(input: {
   const openingMove = getString(input.deepWritingPayload?.openingMove);
   const stateVariantLabel = getString(input.deepWritingPayload?.stateVariantLabel);
   const articlePrototypeLabel = getString(input.deepWritingPayload?.articlePrototypeLabel) || getString(input.deepWritingPayload?.articlePrototype);
-  const leadFact = input.fragments.find((item) => getString(item)) || `围绕“${input.title}”直接进入核心判断。`;
+  const leadFact = input.fragments.find((item) => getString(item)) || "围绕“" + input.title + "”直接进入核心判断。";
   return sanitizeBannedWords(
     [
-      `先说结论，这篇更适合按「${[articlePrototypeLabel, stateVariantLabel].filter(Boolean).join(" / ") || "当前推荐写法"}」开。`,
+      "先说结论，这篇更适合按「" + ([articlePrototypeLabel, stateVariantLabel].filter(Boolean).join(" / ") || "当前推荐写法") + "」开。",
       openingStrategy,
       openingMove,
-      `我先抓住一个最具体的点：${leadFact}`,
+      "我先抓住一个最具体的点：" + leadFact,
     ].filter(Boolean).join("\n\n"),
     input.bannedWords,
   );
@@ -378,12 +403,12 @@ function buildStyleGuide(layoutStrategy?: LayoutStrategyConfig | null) {
   }
 
   const lines = [
-    layoutStrategy.name ? `当前启用写作风格资产：${layoutStrategy.name}` : null,
-    layoutStrategy.tone ? `语气偏好：${layoutStrategy.tone}` : null,
-    layoutStrategy.paragraphLength ? `段落呼吸：${layoutStrategy.paragraphLength}` : null,
-    layoutStrategy.titleStyle ? `标题倾向：${layoutStrategy.titleStyle}` : null,
-    layoutStrategy.bannedWords?.length ? `附加禁词：${layoutStrategy.bannedWords.join("、")}` : null,
-    layoutStrategy.bannedPunctuation?.length ? `禁用标点：${layoutStrategy.bannedPunctuation.join(" ")}` : null,
+    layoutStrategy.name ? promptLine("当前启用写作风格资产：", layoutStrategy.name) : null,
+    layoutStrategy.tone ? promptLine("语气偏好：", layoutStrategy.tone) : null,
+    layoutStrategy.paragraphLength ? promptLine("段落呼吸：", layoutStrategy.paragraphLength) : null,
+    layoutStrategy.titleStyle ? promptLine("标题倾向：", layoutStrategy.titleStyle) : null,
+    layoutStrategy.bannedWords?.length ? promptLine("附加禁词：", layoutStrategy.bannedWords.join("、")) : null,
+    layoutStrategy.bannedPunctuation?.length ? promptLine("禁用标点：", layoutStrategy.bannedPunctuation.join(" ")) : null,
   ].filter(Boolean);
 
   if (!lines.length) {
@@ -401,16 +426,16 @@ function buildPersonaGuide(persona?: PersonaContext | null) {
   const identityText = buildTagText(persona.identityTags);
   const writingStyleText = buildTagText(persona.writingStyleTags);
   const lines = [
-    `当前默认作者人设：${persona.name}`,
-    persona.summary ? `人设摘要：${persona.summary}` : null,
-    identityText ? `身份维度：${identityText}` : null,
-    writingStyleText ? `标签风格：${writingStyleText}` : null,
-    persona.domainKeywords?.length ? `领域关键词：${persona.domainKeywords.join("、")}` : null,
-    persona.argumentPreferences?.length ? `常用论证：${persona.argumentPreferences.join("；")}` : null,
-    persona.toneConstraints?.length ? `语气约束：${persona.toneConstraints.join("；")}` : null,
-    persona.audienceHints?.length ? `默认受众：${persona.audienceHints.join("；")}` : null,
+    promptLine("当前默认作者人设：", persona.name),
+    persona.summary ? promptLine("人设摘要：", persona.summary) : null,
+    identityText ? promptLine("身份维度：", identityText) : null,
+    writingStyleText ? promptLine("标签风格：", writingStyleText) : null,
+    persona.domainKeywords?.length ? promptLine("领域关键词：", persona.domainKeywords.join("、")) : null,
+    persona.argumentPreferences?.length ? promptLine("常用论证：", persona.argumentPreferences.join("；")) : null,
+    persona.toneConstraints?.length ? promptLine("语气约束：", persona.toneConstraints.join("；")) : null,
+    persona.audienceHints?.length ? promptLine("默认受众：", persona.audienceHints.join("；")) : null,
     persona.sourceMode === "analyzed" ? "这个人设由用户资料分析得到，优先贴近其真实表达习惯。" : null,
-    persona.boundWritingStyleProfileName ? `已绑定文风资产：${persona.boundWritingStyleProfileName}` : null,
+    persona.boundWritingStyleProfileName ? promptLine("已绑定文风资产：", persona.boundWritingStyleProfileName) : null,
     "写作时保持人设视角稳定，不要突然切换成通用 AI 口吻或旁观者口吻。",
   ].filter(Boolean);
 
@@ -423,47 +448,67 @@ function buildWritingStyleGuide(writingStyleProfile?: WritingStyleProfileContext
   }
 
   const lines = [
-    `当前绑定写作风格资产：${writingStyleProfile.name}`,
-    writingStyleProfile.summary ? `风格摘要：${writingStyleProfile.summary}` : null,
-    writingStyleProfile.toneKeywords.length ? `语气关键词：${writingStyleProfile.toneKeywords.join("、")}` : null,
-    writingStyleProfile.sentenceLengthProfile ? `句长分布：${writingStyleProfile.sentenceLengthProfile}` : null,
-    writingStyleProfile.paragraphBreathingPattern ? `段落呼吸：${writingStyleProfile.paragraphBreathingPattern}` : null,
-    writingStyleProfile.structurePatterns.length ? `结构习惯：${writingStyleProfile.structurePatterns.join("；")}` : null,
-    writingStyleProfile.transitionPatterns?.length ? `过渡习惯：${writingStyleProfile.transitionPatterns.join("；")}` : null,
-    writingStyleProfile.languageHabits.length ? `语言习惯：${writingStyleProfile.languageHabits.join("；")}` : null,
-    writingStyleProfile.openingPatterns.length ? `开头习惯：${writingStyleProfile.openingPatterns.join("；")}` : null,
-    writingStyleProfile.endingPatterns.length ? `结尾习惯：${writingStyleProfile.endingPatterns.join("；")}` : null,
-    writingStyleProfile.punctuationHabits?.length ? `标点习惯：${writingStyleProfile.punctuationHabits.join("；")}` : null,
-    writingStyleProfile.tangentPatterns?.length ? `跑题方式：${writingStyleProfile.tangentPatterns.join("；")}` : null,
-    writingStyleProfile.callbackPatterns?.length ? `回环方式：${writingStyleProfile.callbackPatterns.join("；")}` : null,
-    writingStyleProfile.factDensity ? `事实密度：${writingStyleProfile.factDensity}` : null,
-    writingStyleProfile.emotionalIntensity ? `情绪幅度：${writingStyleProfile.emotionalIntensity}` : null,
-    writingStyleProfile.suitableTopics?.length ? `适配题材：${writingStyleProfile.suitableTopics.join("；")}` : null,
-    writingStyleProfile.reusablePromptFragments?.length ? `可复用写法片段：${writingStyleProfile.reusablePromptFragments.join("；")}` : null,
+    promptLine("当前绑定写作风格资产：", writingStyleProfile.name),
+    writingStyleProfile.summary ? promptLine("风格摘要：", writingStyleProfile.summary) : null,
+    writingStyleProfile.toneKeywords.length ? promptLine("语气关键词：", writingStyleProfile.toneKeywords.join("、")) : null,
+    writingStyleProfile.sentenceLengthProfile ? promptLine("句长分布：", writingStyleProfile.sentenceLengthProfile) : null,
+    writingStyleProfile.paragraphBreathingPattern ? promptLine("段落呼吸：", writingStyleProfile.paragraphBreathingPattern) : null,
+    writingStyleProfile.structurePatterns.length ? promptLine("结构习惯：", writingStyleProfile.structurePatterns.join("；")) : null,
+    writingStyleProfile.transitionPatterns?.length ? promptLine("过渡习惯：", writingStyleProfile.transitionPatterns.join("；")) : null,
+    writingStyleProfile.languageHabits.length ? promptLine("语言习惯：", writingStyleProfile.languageHabits.join("；")) : null,
+    writingStyleProfile.openingPatterns.length ? promptLine("开头习惯：", writingStyleProfile.openingPatterns.join("；")) : null,
+    writingStyleProfile.endingPatterns.length ? promptLine("结尾习惯：", writingStyleProfile.endingPatterns.join("；")) : null,
+    writingStyleProfile.punctuationHabits?.length ? promptLine("标点习惯：", writingStyleProfile.punctuationHabits.join("；")) : null,
+    writingStyleProfile.tangentPatterns?.length ? promptLine("跑题方式：", writingStyleProfile.tangentPatterns.join("；")) : null,
+    writingStyleProfile.callbackPatterns?.length ? promptLine("回环方式：", writingStyleProfile.callbackPatterns.join("；")) : null,
+    writingStyleProfile.factDensity ? promptLine("事实密度：", writingStyleProfile.factDensity) : null,
+    writingStyleProfile.emotionalIntensity ? promptLine("情绪幅度：", writingStyleProfile.emotionalIntensity) : null,
+    writingStyleProfile.suitableTopics?.length ? promptLine("适配题材：", writingStyleProfile.suitableTopics.join("；")) : null,
+    writingStyleProfile.reusablePromptFragments?.length ? promptLine("可复用写法片段：", writingStyleProfile.reusablePromptFragments.join("；")) : null,
     writingStyleProfile.verbatimPhraseBanks?.transitionPhrases?.length
-      ? `逐字转场短语：${writingStyleProfile.verbatimPhraseBanks.transitionPhrases.join(" / ")}`
+      ? promptLine("逐字转场短语：", writingStyleProfile.verbatimPhraseBanks.transitionPhrases.join(" / "))
       : null,
     writingStyleProfile.verbatimPhraseBanks?.judgementPhrases?.length
-      ? `逐字判断短语：${writingStyleProfile.verbatimPhraseBanks.judgementPhrases.join(" / ")}`
+      ? promptLine("逐字判断短语：", writingStyleProfile.verbatimPhraseBanks.judgementPhrases.join(" / "))
       : null,
     writingStyleProfile.verbatimPhraseBanks?.selfDisclosurePhrases?.length
-      ? `逐字自我暴露短语：${writingStyleProfile.verbatimPhraseBanks.selfDisclosurePhrases.join(" / ")}`
+      ? promptLine("逐字自我暴露短语：", writingStyleProfile.verbatimPhraseBanks.selfDisclosurePhrases.join(" / "))
       : null,
     writingStyleProfile.verbatimPhraseBanks?.emotionPhrases?.length
-      ? `逐字情绪短语：${writingStyleProfile.verbatimPhraseBanks.emotionPhrases.join(" / ")}`
+      ? promptLine("逐字情绪短语：", writingStyleProfile.verbatimPhraseBanks.emotionPhrases.join(" / "))
       : null,
     writingStyleProfile.verbatimPhraseBanks?.readerBridgePhrases?.length
-      ? `逐字读者桥接短语：${writingStyleProfile.verbatimPhraseBanks.readerBridgePhrases.join(" / ")}`
+      ? promptLine("逐字读者桥接短语：", writingStyleProfile.verbatimPhraseBanks.readerBridgePhrases.join(" / "))
       : null,
-    writingStyleProfile.statePresets?.length ? `状态预设：${writingStyleProfile.statePresets.join("；")}` : null,
-    writingStyleProfile.antiOutlineRules?.length ? `反结构规则：${writingStyleProfile.antiOutlineRules.join("；")}` : null,
-    writingStyleProfile.tabooPatterns?.length ? `禁忌写法：${writingStyleProfile.tabooPatterns.join("；")}` : null,
-    writingStyleProfile.doNotWrite.length ? `明确规避：${writingStyleProfile.doNotWrite.join("；")}` : null,
-    writingStyleProfile.imitationPrompt ? `模仿提示：${writingStyleProfile.imitationPrompt}` : null,
+    writingStyleProfile.statePresets?.length ? promptLine("状态预设：", writingStyleProfile.statePresets.join("；")) : null,
+    writingStyleProfile.antiOutlineRules?.length ? promptLine("反结构规则：", writingStyleProfile.antiOutlineRules.join("；")) : null,
+    writingStyleProfile.tabooPatterns?.length ? promptLine("禁忌写法：", writingStyleProfile.tabooPatterns.join("；")) : null,
+    writingStyleProfile.doNotWrite.length ? promptLine("明确规避：", writingStyleProfile.doNotWrite.join("；")) : null,
+    writingStyleProfile.imitationPrompt ? promptLine("模仿提示：", writingStyleProfile.imitationPrompt) : null,
     "要求：吸收节奏、结构和语气，不要照抄源文句子；逐字短语库只能借口头连接和判断手势，不能机械拼贴成模板。",
   ].filter(Boolean);
 
   return ["请额外遵守以下文风资产约束：", ...lines].join("\n");
+}
+
+export function buildGenerationSystemSegments(input: {
+  basePrompt: string;
+  personaGuide?: string;
+  writingStyleGuide?: string;
+  styleGuide?: string | null;
+  cacheableBlocks?: Array<string | null | undefined>;
+  contextualBlocks?: Array<string | null | undefined>;
+}) {
+  const cacheableBlocks = input.cacheableBlocks ?? [
+    input.personaGuide,
+    input.writingStyleGuide,
+    input.styleGuide,
+  ];
+  return buildGatewaySystemSegments([
+    { text: input.basePrompt, cacheable: true },
+    ...cacheableBlocks.map((text) => ({ text, cacheable: true })),
+    ...(input.contextualBlocks ?? []).map((text) => ({ text, cacheable: false })),
+  ]);
 }
 
 function buildOutlineGuide(outlineNodes: OutlineNodeContext[] = []) {
@@ -473,7 +518,14 @@ function buildOutlineGuide(outlineNodes: OutlineNodeContext[] = []) {
 
   return [
     "当前稿件大纲锚点：",
-    ...outlineNodes.map((node, index) => `${index + 1}. ${node.title}${node.description ? `：${node.description}` : ""}`),
+    ...outlineNodes.map((node, index) =>
+      promptLine(
+        String(index + 1) + ". ",
+        formatPromptTemplate("{{title}}{{descriptionPart}}", {
+          title: node.title,
+          descriptionPart: node.description ? "：" + node.description : "",
+        }),
+      )),
   ].join("\n");
 }
 
@@ -486,12 +538,20 @@ function buildKnowledgeGuide(knowledgeCards: KnowledgeCardContext[] = []) {
     "相关背景卡：",
     ...knowledgeCards.map((card, index) =>
       [
-        `${index + 1}. ${card.title}（状态：${card.status}，置信度：${Math.round(card.confidenceScore * 100)}%${card.matchedFragmentCount ? `，命中挂载素材 ${card.matchedFragmentCount} 条` : ""}）`,
-        card.summary ? `摘要：${card.summary}` : null,
-        card.latestChangeSummary ? `最近变化：${card.latestChangeSummary}` : null,
-        card.keyFacts.length ? `关键事实：${card.keyFacts.slice(0, 3).join("；")}` : null,
-        card.overturnedJudgements?.length ? `待重验旧判断：${card.overturnedJudgements.slice(0, 2).join("；")}` : null,
-        card.openQuestions?.length ? `待确认：${card.openQuestions.slice(0, 2).join("；")}` : null,
+        promptLine(
+          String(index + 1) + ". ",
+          formatPromptTemplate("{{title}}（状态：{{status}}，置信度：{{confidence}}%{{matchedPart}}）", {
+            title: card.title,
+            status: card.status,
+            confidence: Math.round(card.confidenceScore * 100),
+            matchedPart: card.matchedFragmentCount ? "，命中挂载素材 " + String(card.matchedFragmentCount) + " 条" : "",
+          }),
+        ),
+        card.summary ? promptLine("摘要：", card.summary) : null,
+        card.latestChangeSummary ? promptLine("最近变化：", card.latestChangeSummary) : null,
+        card.keyFacts.length ? promptLine("关键事实：", card.keyFacts.slice(0, 3).join("；")) : null,
+        card.overturnedJudgements?.length ? promptLine("待重验旧判断：", card.overturnedJudgements.slice(0, 2).join("；")) : null,
+        card.openQuestions?.length ? promptLine("待确认：", card.openQuestions.slice(0, 2).join("；")) : null,
       ]
         .filter(Boolean)
         .join("\n"),
@@ -505,7 +565,15 @@ function buildImageGuide(imageFragments: ImageFragmentContext[] = []) {
   }
   return [
     "截图素材必须自然插入正文，且原样使用，不要改写成伪引用：",
-    ...imageFragments.map((item, index) => `${index + 1}. ${item.title || `截图素材 ${index + 1}`}：请在合适段落使用 Markdown 图片语法 ![${item.title || `截图素材 ${index + 1}`}](${item.screenshotPath})`),
+    ...imageFragments.map((item, index) =>
+      promptLine(
+        String(index + 1) + ". ",
+        formatPromptTemplate("{{title}}：请在合适段落使用 Markdown 图片语法 ![{{alt}}]({{path}})", {
+          title: item.title || "截图素材 " + String(index + 1),
+          alt: item.title || "截图素材 " + String(index + 1),
+          path: item.screenshotPath,
+        }),
+      )),
   ].join("\n");
 }
 
@@ -515,7 +583,15 @@ function buildHistoryReferenceGuide(historyReferences: HistoryReferenceContext[]
   }
   return [
     "历史文章只能自然引用，不允许生成文末相关阅读区块，也不要生成链接列表：",
-    ...historyReferences.map((item, index) => `${index + 1}. 《${item.title}》${item.relationReason ? `：${item.relationReason}` : ""}${item.bridgeSentence ? `；可用桥接句：${item.bridgeSentence}` : ""}`),
+    ...historyReferences.map((item, index) =>
+      promptLine(
+        String(index + 1) + ". ",
+        formatPromptTemplate("《{{title}}》{{relationPart}}{{bridgePart}}", {
+          title: item.title,
+          relationPart: item.relationReason ? "：" + item.relationReason : "",
+          bridgePart: item.bridgeSentence ? "；可用桥接句：" + item.bridgeSentence : "",
+        }),
+      )),
   ].join("\n");
 }
 
@@ -543,7 +619,12 @@ function buildResearchPriorityFragments(
     .map((item) => {
       const insight = String(item.insight || "").trim();
       const whyNow = String(item.whyNow || "").trim();
-      return insight ? `${insight}${whyNow ? `（${whyNow}）` : ""}` : "";
+      return insight
+        ? formatPromptTemplate("{{insight}}{{whyNowPart}}", {
+            insight,
+            whyNowPart: whyNow ? "（" + whyNow + "）" : "",
+          })
+        : "";
     });
   const preferredResearchSignals = resolveResearchStrategySignals({
     researchBrief,
@@ -552,14 +633,14 @@ function buildResearchPriorityFragments(
 
   return dedupeText(
     [
-      researchBrief.coreQuestion ? `研究核心问题：${String(researchBrief.coreQuestion).trim()}` : null,
-      ...timelineLines.map((item) => `时间脉络：${item}`),
-      ...comparisonLines.map((item) => `横向比较：${item}`),
-      ...insightLines.map((item) => `交汇洞察：${item}`),
-      preferredResearchSignals.coreAssertion ? `主判断：${preferredResearchSignals.coreAssertion}` : null,
-      preferredResearchSignals.marketPositionInsight ? `市场位置判断：${preferredResearchSignals.marketPositionInsight}` : null,
-      preferredResearchSignals.historicalTurningPoint ? `历史转折点：${preferredResearchSignals.historicalTurningPoint}` : null,
-      preferredResearchSignals.researchHypothesis ? `研究假设：${preferredResearchSignals.researchHypothesis}` : null,
+      researchBrief.coreQuestion ? promptLine("研究核心问题：", String(researchBrief.coreQuestion).trim()) : null,
+      ...timelineLines.map((item) => promptLine("时间脉络：", item)),
+      ...comparisonLines.map((item) => promptLine("横向比较：", item)),
+      ...insightLines.map((item) => promptLine("交汇洞察：", item)),
+      preferredResearchSignals.coreAssertion ? promptLine("主判断：", preferredResearchSignals.coreAssertion) : null,
+      preferredResearchSignals.marketPositionInsight ? promptLine("市场位置判断：", preferredResearchSignals.marketPositionInsight) : null,
+      preferredResearchSignals.historicalTurningPoint ? promptLine("历史转折点：", preferredResearchSignals.historicalTurningPoint) : null,
+      preferredResearchSignals.researchHypothesis ? promptLine("研究假设：", preferredResearchSignals.researchHypothesis) : null,
     ],
     8,
   );
@@ -578,31 +659,36 @@ function buildResearchGuide(input: {
     strategyCard: input.strategyCard,
   });
   const lines = [
-    input.researchBrief?.summary ? `研究摘要：${String(input.researchBrief.summary).trim()}` : null,
-    input.researchBrief?.coreQuestion ? `研究核心问题：${String(input.researchBrief.coreQuestion).trim()}` : null,
-    input.researchBrief?.mustCoverAngles?.length ? `必查维度：${input.researchBrief.mustCoverAngles.map((item) => String(item || "").trim()).filter(Boolean).slice(0, 5).join("；")}` : null,
+    input.researchBrief?.summary ? promptLine("研究摘要：", String(input.researchBrief.summary).trim()) : null,
+    input.researchBrief?.coreQuestion ? promptLine("研究核心问题：", String(input.researchBrief.coreQuestion).trim()) : null,
+    input.researchBrief?.mustCoverAngles?.length ? promptLine("必查维度：", input.researchBrief.mustCoverAngles.map((item) => String(item || "").trim()).filter(Boolean).slice(0, 5).join("；")) : null,
     input.researchBrief?.timelineCards?.length
-      ? `时间脉络优先顺序：${input.researchBrief.timelineCards.slice(0, 3).map((item) => [String(item.phase || "").trim(), String(item.summary || "").trim()].filter(Boolean).join("：")).filter(Boolean).join("；")}`
+      ? promptLine("时间脉络优先顺序：", input.researchBrief.timelineCards.slice(0, 3).map((item) => [String(item.phase || "").trim(), String(item.summary || "").trim()].filter(Boolean).join("：")).filter(Boolean).join("；"))
       : null,
     input.researchBrief?.comparisonCards?.length
-      ? `横向比较优先顺序：${input.researchBrief.comparisonCards.slice(0, 3).map((item) => [String(item.subject || "").trim(), String(item.position || "").trim()].filter(Boolean).join("：")).filter(Boolean).join("；")}`
+      ? promptLine("横向比较优先顺序：", input.researchBrief.comparisonCards.slice(0, 3).map((item) => [String(item.subject || "").trim(), String(item.position || "").trim()].filter(Boolean).join("：")).filter(Boolean).join("；"))
       : null,
     input.researchBrief?.intersectionInsights?.length
-      ? `交汇洞察：${input.researchBrief.intersectionInsights.slice(0, 3).map((item) => {
+      ? promptLine("交汇洞察：", input.researchBrief.intersectionInsights.slice(0, 3).map((item) => {
           const insight = String(item.insight || "").trim();
           const whyNow = String(item.whyNow || "").trim();
-          return insight ? `${insight}${whyNow ? `（${whyNow}）` : ""}` : "";
-        }).filter(Boolean).join("；")}`
+          return insight
+            ? formatPromptTemplate("{{insight}}{{whyNowPart}}", {
+                insight,
+                whyNowPart: whyNow ? "（" + whyNow + "）" : "",
+              })
+            : "";
+        }).filter(Boolean).join("；"))
       : null,
-    preferredResearchSignals.coreAssertion ? `当前策略主判断：${preferredResearchSignals.coreAssertion}` : null,
-    preferredResearchSignals.whyNow ? `当前策略 why now：${preferredResearchSignals.whyNow}` : null,
-    preferredResearchSignals.marketPositionInsight ? `当前策略位置判断：${preferredResearchSignals.marketPositionInsight}` : null,
-    preferredResearchSignals.historicalTurningPoint ? `当前策略历史转折：${preferredResearchSignals.historicalTurningPoint}` : null,
-    preferredResearchSignals.researchHypothesis ? `当前策略研究假设：${preferredResearchSignals.researchHypothesis}` : null,
-    input.seriesInsight?.label ? `系列标签：${String(input.seriesInsight.label).trim()}` : null,
-    input.seriesInsight?.reason ? `系列主轴：${String(input.seriesInsight.reason).trim()}` : null,
-    input.seriesInsight?.coreStances?.length ? `系列核心立场：${input.seriesInsight.coreStances.map((item) => String(item || "").trim()).filter(Boolean).slice(0, 3).join("；")}` : null,
-    input.seriesInsight?.whyNow?.length ? `系列为什么现在值得写：${input.seriesInsight.whyNow.map((item) => String(item || "").trim()).filter(Boolean).slice(0, 3).join("；")}` : null,
+    preferredResearchSignals.coreAssertion ? promptLine("当前策略主判断：", preferredResearchSignals.coreAssertion) : null,
+    preferredResearchSignals.whyNow ? promptLine("当前策略 why now：", preferredResearchSignals.whyNow) : null,
+    preferredResearchSignals.marketPositionInsight ? promptLine("当前策略位置判断：", preferredResearchSignals.marketPositionInsight) : null,
+    preferredResearchSignals.historicalTurningPoint ? promptLine("当前策略历史转折：", preferredResearchSignals.historicalTurningPoint) : null,
+    preferredResearchSignals.researchHypothesis ? promptLine("当前策略研究假设：", preferredResearchSignals.researchHypothesis) : null,
+    input.seriesInsight?.label ? promptLine("系列标签：", String(input.seriesInsight.label).trim()) : null,
+    input.seriesInsight?.reason ? promptLine("系列主轴：", String(input.seriesInsight.reason).trim()) : null,
+    input.seriesInsight?.coreStances?.length ? promptLine("系列核心立场：", input.seriesInsight.coreStances.map((item) => String(item || "").trim()).filter(Boolean).slice(0, 3).join("；")) : null,
+    input.seriesInsight?.whyNow?.length ? promptLine("系列为什么现在值得写：", input.seriesInsight.whyNow.map((item) => String(item || "").trim()).filter(Boolean).slice(0, 3).join("；")) : null,
     "正文必须优先消化研究卡片里的时间节点、横向差异和交汇洞察，而不是把原始素材直接排成流水账。",
   ].filter(Boolean);
 
@@ -614,12 +700,12 @@ function buildSeriesRuntimeGuide(seriesInsight?: SeriesInsightContext | null) {
     return "";
   }
   const lines = [
-    seriesInsight.preHook ? `系列前钩子：${String(seriesInsight.preHook).trim()}` : null,
-    seriesInsight.postHook ? `系列后钩子：${String(seriesInsight.postHook).trim()}` : null,
-    seriesInsight.platformPreference ? `平台偏好：${String(seriesInsight.platformPreference).trim()}` : null,
-    seriesInsight.targetPackHint ? `系列默认目标包：${String(seriesInsight.targetPackHint).trim()}` : null,
-    seriesInsight.defaultArchetype ? `系列默认原型：${String(seriesInsight.defaultArchetype).trim()}` : null,
-    seriesInsight.defaultLayoutTemplateId ? `系列默认排版模板：${String(seriesInsight.defaultLayoutTemplateId).trim()}` : null,
+    seriesInsight.preHook ? promptLine("系列前钩子：", String(seriesInsight.preHook).trim()) : null,
+    seriesInsight.postHook ? promptLine("系列后钩子：", String(seriesInsight.postHook).trim()) : null,
+    seriesInsight.platformPreference ? promptLine("平台偏好：", String(seriesInsight.platformPreference).trim()) : null,
+    seriesInsight.targetPackHint ? promptLine("系列默认目标包：", String(seriesInsight.targetPackHint).trim()) : null,
+    seriesInsight.defaultArchetype ? promptLine("系列默认原型：", String(seriesInsight.defaultArchetype).trim()) : null,
+    seriesInsight.defaultLayoutTemplateId ? promptLine("系列默认排版模板：", String(seriesInsight.defaultLayoutTemplateId).trim()) : null,
   ].filter(Boolean);
   return lines.length ? ["如果不与当前正文冲突，请优先沿用以下系列运行时默认值：", ...lines].join("\n") : "";
 }
@@ -630,18 +716,26 @@ function buildDeepWritingBehaviorGuide(deepWritingPayload?: Record<string, unkno
     return "";
   }
   const lines = [
-    getString(payload.articlePrototypeLabel) ? `当前执行卡原型：${getString(payload.articlePrototypeLabel)}${getString(payload.articlePrototype) ? `（${getString(payload.articlePrototype)}）` : ""}` : null,
-    getString(payload.articlePrototypeReason) ? `原型切换原因：${getString(payload.articlePrototypeReason)}` : null,
-    getString(payload.stateVariantLabel) ? `当前执行卡状态：${getString(payload.stateVariantLabel)}` : null,
-    getString(payload.stateVariantReason) ? `状态切换原因：${getString(payload.stateVariantReason)}` : null,
-    getString(payload.progressiveRevealLabel) ? `节奏插件：${getString(payload.progressiveRevealLabel)}` : null,
-    getString(payload.progressiveRevealReason) ? `节奏插件原因：${getString(payload.progressiveRevealReason)}` : null,
-    getString(payload.climaxPlacement) ? `高潮位置：${getString(payload.climaxPlacement)}` : null,
-    getString(payload.escalationRule) ? `升级规则：${getString(payload.escalationRule)}` : null,
-    getStringArray(payload.stateChecklist, 5).length ? `状态自检：${getStringArray(payload.stateChecklist, 5).join("；")}` : null,
-    getStringArray(payload.voiceChecklist, 5).length ? `表达约束：${getStringArray(payload.voiceChecklist, 5).join("；")}` : null,
-    getStringArray(payload.diversitySuggestions, 3).length ? `去重动作：${getStringArray(payload.diversitySuggestions, 3).join("；")}` : null,
-    getStringArray(payload.mustUseFacts, 5).length ? `必须吃透的事实：${getStringArray(payload.mustUseFacts, 5).join("；")}` : null,
+    getString(payload.articlePrototypeLabel)
+      ? promptLine(
+          "当前执行卡原型：",
+          formatPromptTemplate("{{label}}{{prototypePart}}", {
+            label: getString(payload.articlePrototypeLabel),
+            prototypePart: getString(payload.articlePrototype) ? "（" + getString(payload.articlePrototype) + "）" : "",
+          }),
+        )
+      : null,
+    getString(payload.articlePrototypeReason) ? promptLine("原型切换原因：", getString(payload.articlePrototypeReason)) : null,
+    getString(payload.stateVariantLabel) ? promptLine("当前执行卡状态：", getString(payload.stateVariantLabel)) : null,
+    getString(payload.stateVariantReason) ? promptLine("状态切换原因：", getString(payload.stateVariantReason)) : null,
+    getString(payload.progressiveRevealLabel) ? promptLine("节奏插件：", getString(payload.progressiveRevealLabel)) : null,
+    getString(payload.progressiveRevealReason) ? promptLine("节奏插件原因：", getString(payload.progressiveRevealReason)) : null,
+    getString(payload.climaxPlacement) ? promptLine("高潮位置：", getString(payload.climaxPlacement)) : null,
+    getString(payload.escalationRule) ? promptLine("升级规则：", getString(payload.escalationRule)) : null,
+    getStringArray(payload.stateChecklist, 5).length ? promptLine("状态自检：", getStringArray(payload.stateChecklist, 5).join("；")) : null,
+    getStringArray(payload.voiceChecklist, 5).length ? promptLine("表达约束：", getStringArray(payload.voiceChecklist, 5).join("；")) : null,
+    getStringArray(payload.diversitySuggestions, 3).length ? promptLine("去重动作：", getStringArray(payload.diversitySuggestions, 3).join("；")) : null,
+    getStringArray(payload.mustUseFacts, 5).length ? promptLine("必须吃透的事实：", getStringArray(payload.mustUseFacts, 5).join("；")) : null,
     "优先执行上面的原型、状态、节奏和约束，再把结构当作主线提醒，不要逐节翻译执行卡。",
   ].filter(Boolean);
   return lines.length ? ["请优先遵守以下 deepWriting 行为约束：", ...lines].join("\n") : "";
@@ -690,7 +784,7 @@ export async function buildGeneratedArticleDraft(input: {
     const value = getString(input.deepWritingPayload?.stateVariantCode);
     return WRITING_STATE_VARIANT_CODES.includes(value as WritingStateVariantCode) ? value as WritingStateVariantCode : null;
   })();
-  const archetypeRhythmHints = resolveGenerationRhythmHints({
+  const archetypeRhythmHints = await resolveGenerationRhythmHints({
     strategyCard: input.strategyCard,
     seriesInsight: input.seriesInsight,
   });
@@ -720,60 +814,59 @@ export async function buildGeneratedArticleDraft(input: {
   });
   const seriesRuntimeGuide = buildSeriesRuntimeGuide(input.seriesInsight);
   const deepWritingGuide = input.deepWritingGuide?.trim() ? input.deepWritingGuide.trim() : "";
+  const writerSystemSegments = buildGenerationSystemSegments({
+    basePrompt: writePrompt.content,
+    cacheableBlocks: [personaGuide, writingStyleGuide, styleGuide],
+    contextualBlocks: [humanSignalGuide, writingStateGuide, deepWritingBehaviorGuide, researchGuide, seriesRuntimeGuide, deepWritingGuide],
+  });
+  const auditSystemSegments = buildGenerationSystemSegments({
+    basePrompt: auditPrompt.content,
+    cacheableBlocks: [personaGuide, writingStyleGuide, styleGuide],
+    contextualBlocks: [humanSignalGuide, writingStateGuide, deepWritingBehaviorGuide],
+  });
 
   const writerUserPrompt = [
-    `标题：${input.title}`,
-    `禁用词：${bannedWordsText}`,
-    personaGuide,
-    writingStyleGuide,
-    humanSignalGuide,
-    writingStateGuide,
-    deepWritingBehaviorGuide,
-    styleGuide,
-    outlineGuide ? `松散大纲骨架（只作为主线提醒，不要写成编号施工图）：\n${outlineGuide}` : "",
+    promptLine("标题：", input.title),
+    promptLine("禁用词：", bannedWordsText),
+    outlineGuide ? promptBlock("松散大纲骨架（只作为主线提醒，不要写成编号施工图）：", outlineGuide) : "",
     knowledgeGuide,
     imageGuide,
     historyGuide,
-    researchGuide,
-    seriesRuntimeGuide,
-    deepWritingGuide ? `执行卡主线提醒（不要机械照抄、不要逐节翻译）：\n${deepWritingGuide}` : "",
     "请基于以下事实素材输出一篇中文 Markdown 正文。",
     "正文优先调用研究卡片里的时间节点、对比关系和交汇洞察，再决定怎么组织普通素材。",
     "优先遵守人类信号、写作状态和 deepWriting 行为约束，再参考大纲与执行卡主线。",
     "如果需要引用历史已发布文章，只能自然写进相关段落，不要生成“相关文章”或“延伸阅读”区块。",
     "要求：先像作者本人在写，再像编辑在收束。不要写成结构模板、讲义或总结稿；不要解释你的过程；只返回正文 Markdown。",
     "",
-    `素材：\n- ${fragmentText}`,
+    promptBlock("素材：", formatPromptTemplate("- {{fragmentText}}", { fragmentText })),
   ].join("\n");
 
   try {
     const drafted = await generateSceneText({
       sceneCode: "articleWrite",
-      systemPrompt: writePrompt.content,
+      systemPrompt: "",
+      systemSegments: writerSystemSegments,
       userPrompt: writerUserPrompt,
       temperature: 0.5,
+      rolloutUserId: input.promptContext?.userId ?? null,
     });
 
     const auditUserPrompt = [
-      `原始事实：\n- ${fragmentText}`,
+      promptBlock("原始事实：", formatPromptTemplate("- {{fragmentText}}", { fragmentText })),
       "",
-      `待审校正文：\n${drafted.text}`,
+      promptBlock("待审校正文：", drafted.text),
       "",
-      `禁用词：${bannedWordsText}`,
-      personaGuide,
-      writingStyleGuide,
-      humanSignalGuide,
-      writingStateGuide,
-      deepWritingBehaviorGuide,
-      styleGuide,
+      promptLine("禁用词：", bannedWordsText),
       "请输出净化后的最终 Markdown 正文，不要解释。",
     ].join("\n");
 
     const audited = await generateSceneText({
       sceneCode: "languageGuardAudit",
-      systemPrompt: auditPrompt.content,
+      systemPrompt: "",
+      systemSegments: auditSystemSegments,
       userPrompt: auditUserPrompt,
       temperature: 0.2,
+      rolloutUserId: input.promptContext?.userId ?? null,
     });
 
     return {
@@ -848,7 +941,7 @@ export async function buildGeneratedOpeningPreview(input: {
     const value = getString(input.deepWritingPayload?.stateVariantCode);
     return WRITING_STATE_VARIANT_CODES.includes(value as WritingStateVariantCode) ? value as WritingStateVariantCode : null;
   })();
-  const archetypeRhythmHints = resolveGenerationRhythmHints({
+  const archetypeRhythmHints = await resolveGenerationRhythmHints({
     strategyCard: input.strategyCard,
     seriesInsight: input.seriesInsight,
   });
@@ -878,58 +971,57 @@ export async function buildGeneratedOpeningPreview(input: {
   });
   const seriesRuntimeGuide = buildSeriesRuntimeGuide(input.seriesInsight);
   const deepWritingGuide = input.deepWritingGuide?.trim() ? input.deepWritingGuide.trim() : "";
+  const writerSystemSegments = buildGenerationSystemSegments({
+    basePrompt: writePrompt.content,
+    cacheableBlocks: [personaGuide, writingStyleGuide, styleGuide],
+    contextualBlocks: [humanSignalGuide, writingStateGuide, deepWritingBehaviorGuide, researchGuide, seriesRuntimeGuide, deepWritingGuide],
+  });
+  const auditSystemSegments = buildGenerationSystemSegments({
+    basePrompt: auditPrompt.content,
+    cacheableBlocks: [personaGuide, writingStyleGuide, styleGuide],
+    contextualBlocks: [humanSignalGuide, writingStateGuide, deepWritingBehaviorGuide],
+  });
 
   const writerUserPrompt = [
-    `标题：${input.title}`,
-    `禁用词：${bannedWordsText}`,
-    personaGuide,
-    writingStyleGuide,
-    humanSignalGuide,
-    writingStateGuide,
-    deepWritingBehaviorGuide,
-    styleGuide,
-    outlineGuide ? `主线提醒（只作为主线提醒，不要写成编号施工图）：\n${outlineGuide}` : "",
+    promptLine("标题：", input.title),
+    promptLine("禁用词：", bannedWordsText),
+    outlineGuide ? promptBlock("主线提醒（只作为主线提醒，不要写成编号施工图）：", outlineGuide) : "",
     knowledgeGuide,
     imageGuide,
     historyGuide,
-    researchGuide,
-    seriesRuntimeGuide,
-    deepWritingGuide ? `执行卡提醒：\n${deepWritingGuide}` : "",
     "请只输出这篇文章的开头预览，不要写完整正文。",
     "长度控制在 1-2 段、120-220 字。",
     "要求：第一句就进入具体现象、冲突、判断或场景；能明显看出当前原型 / 状态的差异；不要编号、不要总结、不要解释你的过程。",
     "",
-    `可用素材：\n- ${fragmentText}`,
+    promptBlock("可用素材：", formatPromptTemplate("- {{fragmentText}}", { fragmentText })),
   ].join("\n");
 
   try {
     const drafted = await generateSceneText({
       sceneCode: "articleWrite",
-      systemPrompt: writePrompt.content,
+      systemPrompt: "",
+      systemSegments: writerSystemSegments,
       userPrompt: writerUserPrompt,
       temperature: 0.6,
+      rolloutUserId: input.promptContext?.userId ?? null,
     });
 
     const auditUserPrompt = [
-      `原始事实：\n- ${fragmentText}`,
+      promptBlock("原始事实：", formatPromptTemplate("- {{fragmentText}}", { fragmentText })),
       "",
-      `待审校开头预览：\n${drafted.text}`,
+      promptBlock("待审校开头预览：", drafted.text),
       "",
-      `禁用词：${bannedWordsText}`,
-      personaGuide,
-      writingStyleGuide,
-      humanSignalGuide,
-      writingStateGuide,
-      deepWritingBehaviorGuide,
-      styleGuide,
+      promptLine("禁用词：", bannedWordsText),
       "请输出净化后的最终开头预览，不要解释，不要补完整文。",
     ].join("\n");
 
     const audited = await generateSceneText({
       sceneCode: "languageGuardAudit",
-      systemPrompt: auditPrompt.content,
+      systemPrompt: "",
+      systemSegments: auditSystemSegments,
       userPrompt: auditUserPrompt,
       temperature: 0.2,
+      rolloutUserId: input.promptContext?.userId ?? null,
     });
 
     return {
@@ -983,14 +1075,14 @@ function buildLocalRewrite(input: {
 
   if (/小标题/.test(input.command)) {
     return sanitizeBannedWords(
-      `${base}\n\n## 小标题一\n围绕当前主题先把结论写硬。\n\n## 小标题二\n把事实和利益变化拆开。\n\n## 小标题三\n最后落回读者当下处境。`,
+      base + "\n\n## 小标题一\n围绕当前主题先把结论写硬。\n\n## 小标题二\n把事实和利益变化拆开。\n\n## 小标题三\n最后落回读者当下处境。",
       input.bannedWords,
     );
   }
 
   if (/扩写|补/.test(input.command)) {
     const extra = input.fragments.slice(0, 2).join("；") || "补一段更具体的事实锚点和判断转折。";
-    return sanitizeBannedWords(`${base}\n\n${extra}`, input.bannedWords);
+    return sanitizeBannedWords(base + "\n\n" + extra, input.bannedWords);
   }
 
   if (/语言守卫|禁用表达|替换|净化/.test(input.command)) {
@@ -1040,7 +1132,7 @@ export async function buildCommandRewrite(input: {
     const value = getString(input.deepWritingPayload?.stateVariantCode);
     return WRITING_STATE_VARIANT_CODES.includes(value as WritingStateVariantCode) ? value as WritingStateVariantCode : null;
   })();
-  const archetypeRhythmHints = resolveGenerationRhythmHints({
+  const archetypeRhythmHints = await resolveGenerationRhythmHints({
     strategyCard: input.strategyCard,
     seriesInsight: input.seriesInsight,
   });
@@ -1068,62 +1160,61 @@ export async function buildCommandRewrite(input: {
     seriesInsight: input.seriesInsight,
   });
   const seriesRuntimeGuide = buildSeriesRuntimeGuide(input.seriesInsight);
+  const writerSystemSegments = buildGenerationSystemSegments({
+    basePrompt: writePrompt.content,
+    cacheableBlocks: [personaGuide, writingStyleGuide, styleGuide],
+    contextualBlocks: [humanSignalGuide, writingStateGuide, deepWritingBehaviorGuide, researchGuide, seriesRuntimeGuide],
+  });
+  const auditSystemSegments = buildGenerationSystemSegments({
+    basePrompt: auditPrompt.content,
+    cacheableBlocks: [personaGuide, writingStyleGuide, styleGuide],
+    contextualBlocks: [humanSignalGuide, writingStateGuide, deepWritingBehaviorGuide, researchGuide],
+  });
 
   const writerUserPrompt = [
-    `标题：${input.title}`,
-    `编辑命令：${input.command}`,
-    `禁用词：${bannedWordsText}`,
-    personaGuide,
-    writingStyleGuide,
-    humanSignalGuide,
-    writingStateGuide,
-    deepWritingBehaviorGuide,
-    styleGuide,
-    outlineGuide ? `主线提醒（只作为主线提醒，不要写成编号施工图）：\n${outlineGuide}` : "",
+    promptLine("标题：", input.title),
+    promptLine("编辑命令：", input.command),
+    promptLine("禁用词：", bannedWordsText),
+    outlineGuide ? promptBlock("主线提醒（只作为主线提醒，不要写成编号施工图）：", outlineGuide) : "",
     knowledgeGuide,
-    researchGuide,
-    seriesRuntimeGuide,
     "",
     "请基于当前正文执行改写命令，输出完整 Markdown 正文。",
     "优先遵守人类信号、写作状态和 deepWriting 行为约束，再参考大纲与知识卡。",
     "要求：不要解释，不要列步骤，直接返回改写后的整篇正文。不要把文章改写回模板腔、总结腔或施工图腔。",
     "",
-    `当前正文：\n${input.markdownContent || "(当前为空，请先生成骨架正文)"}`,
+    promptBlock("当前正文：", input.markdownContent || "(当前为空，请先生成骨架正文)"),
     "",
-    `可用素材：\n- ${fragmentText}`,
+    promptBlock("可用素材：", formatPromptTemplate("- {{fragmentText}}", { fragmentText })),
   ].join("\n");
 
   try {
     const drafted = await generateSceneText({
       sceneCode: "articleWrite",
-      systemPrompt: writePrompt.content,
+      systemPrompt: "",
+      systemSegments: writerSystemSegments,
       userPrompt: writerUserPrompt,
       temperature: 0.4,
+      rolloutUserId: input.promptContext?.userId ?? null,
     });
 
     const auditUserPrompt = [
-      `原始事实：\n- ${fragmentText}`,
+      promptBlock("原始事实：", formatPromptTemplate("- {{fragmentText}}", { fragmentText })),
       "",
-      `编辑命令：${input.command}`,
+      promptLine("编辑命令：", input.command),
       "",
-      `待审校正文：\n${drafted.text}`,
+      promptBlock("待审校正文：", drafted.text),
       "",
-      `禁用词：${bannedWordsText}`,
-      personaGuide,
-      writingStyleGuide,
-      humanSignalGuide,
-      writingStateGuide,
-      deepWritingBehaviorGuide,
-      styleGuide,
-      researchGuide,
+      promptLine("禁用词：", bannedWordsText),
       "请输出净化后的最终 Markdown 正文，不要解释。",
     ].join("\n");
 
     const audited = await generateSceneText({
       sceneCode: "languageGuardAudit",
-      systemPrompt: auditPrompt.content,
+      systemPrompt: "",
+      systemSegments: auditSystemSegments,
       userPrompt: auditUserPrompt,
       temperature: 0.2,
+      rolloutUserId: input.promptContext?.userId ?? null,
     });
 
     return {
@@ -1337,7 +1428,7 @@ export async function buildFactCheckTargetedRewrite(input: {
     const value = getString(input.deepWritingPayload?.stateVariantCode);
     return WRITING_STATE_VARIANT_CODES.includes(value as WritingStateVariantCode) ? value as WritingStateVariantCode : null;
   })();
-  const archetypeRhythmHints = resolveGenerationRhythmHints({
+  const archetypeRhythmHints = await resolveGenerationRhythmHints({
     strategyCard: input.strategyCard,
     seriesInsight: input.seriesInsight,
   });
@@ -1364,6 +1455,16 @@ export async function buildFactCheckTargetedRewrite(input: {
     seriesInsight: input.seriesInsight,
   });
   const seriesRuntimeGuide = buildSeriesRuntimeGuide(input.seriesInsight);
+  const writerSystemSegments = buildGenerationSystemSegments({
+    basePrompt: writePrompt.content,
+    cacheableBlocks: [personaGuide, writingStyleGuide, styleGuide],
+    contextualBlocks: [humanSignalGuide, writingStateGuide, deepWritingBehaviorGuide, researchGuide, seriesRuntimeGuide],
+  });
+  const auditSystemSegments = buildGenerationSystemSegments({
+    basePrompt: auditPrompt.content,
+    cacheableBlocks: [personaGuide, writingStyleGuide, styleGuide],
+    contextualBlocks: [humanSignalGuide, writingStateGuide, deepWritingBehaviorGuide, researchGuide],
+  });
   const evidenceGuide = riskyChecks
     .map((check, index) => {
       const evidenceCard = input.evidenceCards?.find((item) => String(item.claim || "").trim() === String(check.claim || "").trim());
@@ -1382,31 +1483,30 @@ export async function buildFactCheckTargetedRewrite(input: {
             .slice(0, 3)
             .map((item) =>
               [
-                `标题：${String(item.title || "").trim() || "未命名证据"}`,
-                String(item.excerpt || "").trim() ? `摘要：${String(item.excerpt || "").trim()}` : null,
-                String(item.rationale || "").trim() ? `用途：${String(item.rationale || "").trim()}` : null,
-                String(item.sourceUrl || "").trim() ? `链接：${String(item.sourceUrl || "").trim()}` : null,
-              ].filter(Boolean).join("；"),
+                promptLine("标题：", String(item.title || "").trim() || "未命名证据"),
+                String(item.excerpt || "").trim() ? promptLine("摘要：", String(item.excerpt || "").trim()) : null,
+                String(item.rationale || "").trim() ? promptLine("用途：", String(item.rationale || "").trim()) : null,
+                String(item.sourceUrl || "").trim() ? promptLine("链接：", String(item.sourceUrl || "").trim()) : null,
+              ].filter(Boolean).join("\n"),
             )
-            .join(" | ")
+            .join("\n\n")
         : "暂无命中证据，请保守弱化表达。";
-      return `${index + 1}. 对应表述：${check.claim}\n当前状态：${check.status}\n处理策略：${check.action}\n补充备注：${check.note || "无"}\n证据强度：${String(evidenceCard?.supportLevel || "missing")}\n可用证据：${evidenceText}`;
+      return [
+        promptLine(String(index + 1) + ". 对应表述：", check.claim),
+        promptLine("当前状态：", check.status),
+        promptLine("处理策略：", check.action),
+        promptLine("补充备注：", check.note || "无"),
+        promptLine("证据强度：", String(evidenceCard?.supportLevel || "missing")),
+        promptBlock("可用证据：", evidenceText),
+      ].join("\n");
     })
     .join("\n\n");
 
   const writerUserPrompt = [
-    `标题：${input.title}`,
-    `禁用词：${bannedWordsText}`,
-    personaGuide,
-    writingStyleGuide,
-    humanSignalGuide,
-    writingStateGuide,
-    deepWritingBehaviorGuide,
-    styleGuide,
-    outlineGuide ? `主线提醒（只作为主线提醒，不要写成编号施工图）：\n${outlineGuide}` : "",
+    promptLine("标题：", input.title),
+    promptLine("禁用词：", bannedWordsText),
+    outlineGuide ? promptBlock("主线提醒（只作为主线提醒，不要写成编号施工图）：", outlineGuide) : "",
     knowledgeGuide,
-    researchGuide,
-    seriesRuntimeGuide,
     "请只针对下列高风险表述做最小必要修订，返回 JSON，不要返回全文，不要解释。",
     '字段：{"rewrites":[{"original":"原句或原表述","revised":"修订后的句子"}]}',
     "要求：",
@@ -1416,21 +1516,34 @@ export async function buildFactCheckTargetedRewrite(input: {
     "4. 如果已有命中证据，优先吸收证据摘要里的来源锚点；如果证据不足，只做保守弱化，不要编造来源。",
     "5. 改写时保持当前作者状态、语气温度和段落呼吸，不要为了求稳改回模板腔。",
     "",
-    `当前正文：\n${input.markdownContent || "(当前为空)"}`,
+    promptBlock("当前正文：", input.markdownContent || "(当前为空)"),
     "",
-    `待处理表述：\n${riskyChecks.map((check, index) => `${index + 1}. 原表述：${check.claim}\n状态：${check.status}\n建议：${check.suggestion}\n处理策略：${check.action}\n补充备注：${check.note || "无"}`).join("\n\n")}`,
+    promptBlock(
+      "待处理表述：",
+      riskyChecks.map((check, index) =>
+        [
+          promptLine(String(index + 1) + ". 原表述：", check.claim),
+          promptLine("状态：", check.status),
+          promptLine("建议：", check.suggestion),
+          promptLine("处理策略：", check.action),
+          promptLine("补充备注：", check.note || "无"),
+        ].join("\n"),
+      ).join("\n\n"),
+    ),
     "",
-    evidenceGuide ? `对应证据摘要卡：\n${evidenceGuide}` : null,
+    evidenceGuide ? promptBlock("对应证据摘要卡：", evidenceGuide) : null,
     "",
-    `可用事实：\n- ${fragmentText}`,
+    promptBlock("可用事实：", formatPromptTemplate("- {{fragmentText}}", { fragmentText })),
   ].filter(Boolean).join("\n");
 
   try {
     const drafted = await generateSceneText({
       sceneCode: "articleWrite",
-      systemPrompt: writePrompt.content,
+      systemPrompt: "",
+      systemSegments: writerSystemSegments,
       userPrompt: writerUserPrompt,
       temperature: 0.2,
+      rolloutUserId: input.promptContext?.userId ?? null,
     });
 
     const parsed = JSON.parse(
@@ -1461,26 +1574,21 @@ export async function buildFactCheckTargetedRewrite(input: {
 
     const patched = applyTargetedRewrites(input.markdownContent, rewrites);
     const auditUserPrompt = [
-      `原始事实：\n- ${fragmentText}`,
+      promptBlock("原始事实：", formatPromptTemplate("- {{fragmentText}}", { fragmentText })),
       "",
-      `待审校正文：\n${patched}`,
+      promptBlock("待审校正文：", patched),
       "",
-      `禁用词：${bannedWordsText}`,
-      personaGuide,
-      writingStyleGuide,
-      humanSignalGuide,
-      writingStateGuide,
-      deepWritingBehaviorGuide,
-      styleGuide,
-      researchGuide,
+      promptLine("禁用词：", bannedWordsText),
       "请输出净化后的最终 Markdown 正文，不要解释。",
     ].join("\n");
 
     const audited = await generateSceneText({
       sceneCode: "languageGuardAudit",
-      systemPrompt: auditPrompt.content,
+      systemPrompt: "",
+      systemSegments: auditSystemSegments,
       userPrompt: auditUserPrompt,
       temperature: 0.2,
+      rolloutUserId: input.promptContext?.userId ?? null,
     });
 
     return {
@@ -1555,7 +1663,7 @@ export async function buildProsePolishTargetedRewrite(input: {
     const value = getString(input.deepWritingPayload?.stateVariantCode);
     return WRITING_STATE_VARIANT_CODES.includes(value as WritingStateVariantCode) ? value as WritingStateVariantCode : null;
   })();
-  const archetypeRhythmHints = resolveGenerationRhythmHints({
+  const archetypeRhythmHints = await resolveGenerationRhythmHints({
     strategyCard: input.strategyCard,
     seriesInsight: input.seriesInsight,
   });
@@ -1582,22 +1690,24 @@ export async function buildProsePolishTargetedRewrite(input: {
     seriesInsight: input.seriesInsight,
   });
   const seriesRuntimeGuide = buildSeriesRuntimeGuide(input.seriesInsight);
+  const writerSystemSegments = buildGenerationSystemSegments({
+    basePrompt: writePrompt.content,
+    cacheableBlocks: [personaGuide, writingStyleGuide, styleGuide],
+    contextualBlocks: [humanSignalGuide, writingStateGuide, deepWritingBehaviorGuide, researchGuide, seriesRuntimeGuide],
+  });
+  const auditSystemSegments = buildGenerationSystemSegments({
+    basePrompt: auditPrompt.content,
+    cacheableBlocks: [personaGuide, writingStyleGuide, styleGuide],
+    contextualBlocks: [humanSignalGuide, writingStateGuide, deepWritingBehaviorGuide, researchGuide],
+  });
   const punchlineText = (input.punchlines || []).map((item) => String(item || "").trim()).filter(Boolean).slice(0, 4);
   const rhythmAdviceText = (input.rhythmAdvice || []).map((item) => String(item || "").trim()).filter(Boolean).slice(0, 4);
 
   const writerUserPrompt = [
-    `标题：${input.title}`,
-    `禁用词：${bannedWordsText}`,
-    personaGuide,
-    writingStyleGuide,
-    humanSignalGuide,
-    writingStateGuide,
-    deepWritingBehaviorGuide,
-    styleGuide,
-    outlineGuide ? `主线提醒（只作为主线提醒，不要写成编号施工图）：\n${outlineGuide}` : "",
+    promptLine("标题：", input.title),
+    promptLine("禁用词：", bannedWordsText),
+    outlineGuide ? promptBlock("主线提醒（只作为主线提醒，不要写成编号施工图）：", outlineGuide) : "",
     knowledgeGuide,
-    researchGuide,
-    seriesRuntimeGuide,
     "请只针对下列文笔问题做局部修订，返回 JSON，不要返回全文，不要解释。",
     '字段：{"rewrites":[{"original":"原句或原段","revised":"修订后的句子或段落"}]}',
     "要求：",
@@ -1607,24 +1717,35 @@ export async function buildProsePolishTargetedRewrite(input: {
     "4. revised 必须能直接替换 original。",
     "5. 润色时保留当前原型、状态和情绪温度，不要把文章磨平到通用 AI 口吻。",
     "",
-    `当前正文：\n${input.markdownContent || "(当前为空)"}`,
+    promptBlock("当前正文：", input.markdownContent || "(当前为空)"),
     "",
-    String(input.rewrittenLead || "").trim() ? `首段改写建议：${String(input.rewrittenLead).trim()}` : null,
-    punchlineText.length ? `金句候选：${punchlineText.join("；")}` : null,
-    rhythmAdviceText.length ? `节奏建议：${rhythmAdviceText.join("；")}` : null,
+    String(input.rewrittenLead || "").trim() ? promptLine("首段改写建议：", String(input.rewrittenLead).trim()) : null,
+    punchlineText.length ? promptLine("金句候选：", punchlineText.join("；")) : null,
+    rhythmAdviceText.length ? promptLine("节奏建议：", rhythmAdviceText.join("；")) : null,
     targetedIssues.length
-      ? `重点问题：\n${targetedIssues.map((issue, index) => `${index + 1}. 类型：${String(issue.type || "").trim() || "未命名问题"}\n原文示例：${issue.example}\n建议：${issue.suggestion}`).join("\n\n")}`
+      ? promptBlock(
+          "重点问题：",
+          targetedIssues.map((issue, index) =>
+            [
+              promptLine(String(index + 1) + ". 类型：", String(issue.type || "").trim() || "未命名问题"),
+              promptLine("原文示例：", issue.example),
+              promptLine("建议：", issue.suggestion),
+            ].join("\n"),
+          ).join("\n\n"),
+        )
       : null,
     "",
-    `可用事实：\n- ${fragmentText}`,
+    promptBlock("可用事实：", formatPromptTemplate("- {{fragmentText}}", { fragmentText })),
   ].filter(Boolean).join("\n");
 
   try {
     const drafted = await generateSceneText({
       sceneCode: "articleWrite",
-      systemPrompt: writePrompt.content,
+      systemPrompt: "",
+      systemSegments: writerSystemSegments,
       userPrompt: writerUserPrompt,
       temperature: 0.25,
+      rolloutUserId: input.promptContext?.userId ?? null,
     });
 
     const parsed = JSON.parse(
@@ -1656,26 +1777,21 @@ export async function buildProsePolishTargetedRewrite(input: {
 
     const patched = applyTargetedRewrites(input.markdownContent, rewrites);
     const auditUserPrompt = [
-      `原始事实：\n- ${fragmentText}`,
+      promptBlock("原始事实：", formatPromptTemplate("- {{fragmentText}}", { fragmentText })),
       "",
-      `待审校正文：\n${patched}`,
+      promptBlock("待审校正文：", patched),
       "",
-      `禁用词：${bannedWordsText}`,
-      personaGuide,
-      writingStyleGuide,
-      humanSignalGuide,
-      writingStateGuide,
-      deepWritingBehaviorGuide,
-      styleGuide,
-      researchGuide,
+      promptLine("禁用词：", bannedWordsText),
       "请输出净化后的最终 Markdown 正文，不要解释。",
     ].join("\n");
 
     const audited = await generateSceneText({
       sceneCode: "languageGuardAudit",
-      systemPrompt: auditPrompt.content,
+      systemPrompt: "",
+      systemSegments: auditSystemSegments,
       userPrompt: auditUserPrompt,
       temperature: 0.2,
+      rolloutUserId: input.promptContext?.userId ?? null,
     });
 
     return {

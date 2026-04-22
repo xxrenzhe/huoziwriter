@@ -1,4 +1,5 @@
 import { ensureUserSession } from "@/lib/auth";
+import { recomputeAndPersistArticleOutcome } from "@/lib/article-outcome-runtime";
 import {
   generateArticleStageArtifact,
   getArticleStageArtifact,
@@ -45,11 +46,12 @@ export async function POST(request: Request, { params }: { params: { id: string;
     const requestedPrototypeCode = typeof body?.articlePrototypeCode === "string" ? body.articlePrototypeCode.trim() : "";
     const requestedStateVariantCode = typeof body?.stateVariantCode === "string" ? body.stateVariantCode.trim() : "";
     const titleOptionsOnly = body?.titleOptionsOnly === true;
+    const openingOptionsOnly = body?.openingOptionsOnly === true;
     if ((requestedPrototypeCode || requestedStateVariantCode) && params.stageCode !== "deepWriting") {
       return fail("只有深度写作阶段支持手动切换文章原型或写作状态", 400);
     }
-    if (titleOptionsOnly && params.stageCode !== "outlinePlanning") {
-      return fail("只有大纲规划阶段支持单独重优化标题候选", 400);
+    if ((titleOptionsOnly || openingOptionsOnly) && params.stageCode !== "outlinePlanning") {
+      return fail("只有大纲规划阶段支持单独重优化标题或开头候选", 400);
     }
     if (requestedPrototypeCode && !ARTICLE_PROTOTYPE_CODES.includes(requestedPrototypeCode as ArticlePrototypeCode)) {
       return fail("不支持的文章原型", 400);
@@ -68,7 +70,14 @@ export async function POST(request: Request, { params }: { params: { id: string;
         ? requestedStateVariantCode as WritingStateVariantCode
         : null,
       outlineTitleOptionsOnly: titleOptionsOnly,
+      outlineOpeningOptionsOnly: openingOptionsOnly,
     });
+    if (params.stageCode === "deepWriting") {
+      await recomputeAndPersistArticleOutcome({
+        articleId: Number(params.id),
+        userId: session.userId,
+      });
+    }
     return ok(artifact);
   } catch (error) {
     return fail(error instanceof Error ? error.message : "生成阶段产物失败", 400);
@@ -98,6 +107,12 @@ export async function PATCH(request: Request, { params }: { params: { id: string
       stageCode: params.stageCode,
       payloadPatch,
     });
+    if (params.stageCode === "deepWriting") {
+      await recomputeAndPersistArticleOutcome({
+        articleId: Number(params.id),
+        userId: session.userId,
+      });
+    }
     return ok(artifact);
   } catch (error) {
     return fail(error instanceof Error ? error.message : "更新阶段产物失败", 400);

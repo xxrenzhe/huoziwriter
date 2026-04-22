@@ -1,4 +1,5 @@
 import { buildSuggestedEvidenceItems } from "@/lib/article-evidence";
+import { recomputeAndPersistArticleOutcome } from "@/lib/article-outcome-runtime";
 import { ensureUserSession } from "@/lib/auth";
 import { getArticleStageArtifact } from "@/lib/article-stage-artifacts";
 import { getArticleNodes } from "@/lib/article-outline";
@@ -79,6 +80,10 @@ export async function PUT(request: Request, { params }: { params: { id: string }
       articleId: article.id,
       userId: session.userId,
       items,
+    });
+    await recomputeAndPersistArticleOutcome({
+      articleId: article.id,
+      userId: session.userId,
     });
     return ok(evidenceItems);
   } catch (error) {

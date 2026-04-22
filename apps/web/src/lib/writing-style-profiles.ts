@@ -1,3 +1,4 @@
+import { appendAuditLog } from "./audit";
 import { getDatabase } from "./db";
 import { getUserPlanContext } from "./plan-access";
 import { ensureExtendedProductSchema } from "./schema-bootstrap";
@@ -194,4 +195,123 @@ export async function deleteWritingStyleProfile(userId: number, profileId: numbe
   await ensureExtendedProductSchema();
   const db = getDatabase();
   await db.exec("DELETE FROM writing_style_profiles WHERE id = ? AND user_id = ?", [profileId, userId]);
+}
+
+export async function appendWritingStyleProfileUsageEvent(input: {
+  userId: number;
+  profileId: number;
+  articleId?: number | null;
+  usageSource: string;
+  profileName?: string | null;
+  sampleCount?: number | null;
+  usageToken?: string | null;
+}) {
+  await appendAuditLog({
+    userId: input.userId,
+    action: "writing_style_profile_used_in_authoring",
+    targetType: "writing_style_profile",
+    targetId: input.profileId,
+    payload: {
+      articleId: input.articleId ?? null,
+      usageSource: input.usageSource,
+      profileName: input.profileName ?? null,
+      sampleCount: input.sampleCount ?? null,
+      usageToken: input.usageToken ?? null,
+      usedAt: new Date().toISOString(),
+    },
+  });
+}
+
+export async function createPendingWritingStyleProfileStreamUsage(input: {
+  userId: number;
+  profileId: number;
+  articleId: number;
+  usageToken: string;
+  profileName?: string | null;
+  sampleCount?: number | null;
+}) {
+  await appendAuditLog({
+    userId: input.userId,
+    action: "writing_style_profile_stream_usage_pending",
+    targetType: "writing_style_profile",
+    targetId: input.profileId,
+    payload: {
+      articleId: input.articleId,
+      usageSource: "article.generate.stream",
+      usageToken: input.usageToken,
+      profileName: input.profileName ?? null,
+      sampleCount: input.sampleCount ?? null,
+      generatedAt: new Date().toISOString(),
+    },
+  });
+}
+
+export async function resolvePendingWritingStyleProfileStreamUsage(input: {
+  userId: number;
+  articleId: number;
+  usageToken: string;
+}) {
+  const normalizedToken = String(input.usageToken || "").trim();
+  if (!normalizedToken) {
+    return null;
+  }
+
+  const db = getDatabase();
+  const [pendingRows, usedRows] = await Promise.all([
+    db.query<{
+      target_id: string | null;
+      payload_json: string | Record<string, unknown> | null;
+      created_at: string;
+    }>(
+      `SELECT target_id, payload_json, created_at
+       FROM audit_logs
+       WHERE user_id = ? AND action = ? AND target_type = ?
+       ORDER BY id DESC
+       LIMIT 120`,
+      [input.userId, "writing_style_profile_stream_usage_pending", "writing_style_profile"],
+    ),
+    db.query<{
+      payload_json: string | Record<string, unknown> | null;
+    }>(
+      `SELECT payload_json
+       FROM audit_logs
+       WHERE user_id = ? AND action = ? AND target_type = ?
+       ORDER BY id DESC
+       LIMIT 240`,
+      [input.userId, "writing_style_profile_used_in_authoring", "writing_style_profile"],
+    ),
+  ]);
+
+  const alreadyUsed = usedRows.some((row) => {
+    const payload = parseJsonObject(row.payload_json);
+    return String(payload?.usageToken || "").trim() === normalizedToken;
+  });
+  if (alreadyUsed) {
+    return null;
+  }
+
+  for (const row of pendingRows) {
+    const payload = parseJsonObject(row.payload_json);
+    if (String(payload?.usageToken || "").trim() !== normalizedToken) {
+      continue;
+    }
+    if (Number(payload?.articleId || 0) !== input.articleId) {
+      continue;
+    }
+    const profileId = Number(row.target_id ?? 0);
+    if (!Number.isInteger(profileId) || profileId <= 0) {
+      continue;
+    }
+    return {
+      profileId,
+      articleId: input.articleId,
+      usageSource: "article.generate.stream",
+      profileName: typeof payload?.profileName === "string" ? payload.profileName : null,
+      sampleCount: Number(payload?.sampleCount ?? 0) || 0,
+      usageToken: normalizedToken,
+      generatedAt: typeof payload?.generatedAt === "string" ? payload.generatedAt : row.created_at,
+    };
+  }
+
+  return null;
 }

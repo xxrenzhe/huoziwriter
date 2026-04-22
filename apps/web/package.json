@@ -11,6 +11,7 @@
     "db:migrate": "tsx ../../scripts/db-migrate.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.90.0",
     "@huoziwriter/core": "workspace:*",
     "@huoziwriter/db": "workspace:*",
     "@huoziwriter/rendering": "workspace:*",

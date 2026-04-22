@@ -17,7 +17,11 @@ import {
   getWritingEvalScheduleStats,
   isWritingEvalScheduleExecutable,
 } from "@/lib/writing-eval-view";
+import { getPlan17BusinessReport } from "@/lib/plan17-business";
+import { getPlan17AcceptanceReport } from "@/lib/plan17-acceptance";
 import { getWritingEvalDatasets, getWritingEvalInsights, getWritingEvalRunSchedules, getWritingEvalScoringProfiles, getWritingEvalRuns, getWritingEvalVersions } from "@/lib/writing-eval";
+import { getPlan17QualityReport } from "@/lib/writing-eval";
+import { getModelRoutes, getPromptVersions } from "@/lib/repositories";
 import { buttonStyles, cn, surfaceCardStyles } from "@huoziwriter/ui";
 
 const adminOverviewPanelClassName = cn(surfaceCardStyles(), "border-adminLineStrong bg-adminSurface shadow-none");
@@ -54,9 +58,13 @@ function getStrategyActionLabel(item: { executionState: string | null | undefine
   return "打开对应调度";
 }
 
+function formatPlan17Percent(value: number | null | undefined) {
+  return typeof value === "number" && Number.isFinite(value) ? `${value.toFixed(2)}%` : "--";
+}
+
 export default async function AdminWritingEvalPage() {
   await requireAdminSession();
-  const [datasets, runs, versions, insights, scoringProfiles, schedules, automationOverview] = await Promise.all([
+  const [datasets, runs, versions, insights, scoringProfiles, schedules, automationOverview, plan17Quality, plan17Business, plan17Acceptance, promptVersions, modelRoutes] = await Promise.all([
     getWritingEvalDatasets(),
     getWritingEvalRuns(),
     getWritingEvalVersions(),
@@ -64,6 +72,11 @@ export default async function AdminWritingEvalPage() {
     getWritingEvalScoringProfiles(),
     getWritingEvalRunSchedules(),
     getWritingEvalAutomationOverview(48),
+    getPlan17QualityReport(),
+    getPlan17BusinessReport(),
+    getPlan17AcceptanceReport(),
+    getPromptVersions(),
+    getModelRoutes(),
   ]);
   const { combinedRolloutAuditLogs, rolloutActions, counts24h: automationCounts24h } = automationOverview;
 
@@ -128,6 +141,52 @@ export default async function AdminWritingEvalPage() {
     latestAutoRolloutAction?.assetType === "prompt_version"
       ? buildAdminPromptVersionHref(latestAutoRolloutAction.assetRef)
       : null;
+  const optimizerOverviewItems = [
+    {
+      promptId: "title_optimizer",
+      sceneCode: "titleOptimizer",
+      label: "标题优化器",
+      detail: "6 个标题候选、推荐项和禁词体检已进入写作主链路。",
+      workspaceSummary: "标题候选与标题体检已接入大纲和发布守门。",
+      focusKey: null,
+    },
+    {
+      promptId: "opening_optimizer",
+      sceneCode: "openingOptimizer",
+      label: "开头优化器",
+      detail: "3 个开头候选、推荐项和前三秒留存体检已经进入工作区主链路。",
+      workspaceSummary: "outline openingOptions、deepWriting runtimeMeta 与发布守门都已接线。",
+      focusKey: "opening_optimizer" as const,
+    },
+  ].map((item) => {
+    const scenePromptVersions = promptVersions.filter((version) => version.prompt_id === item.promptId);
+    const activePrompt = scenePromptVersions.find((version) => Boolean(version.is_active)) ?? scenePromptVersions[0] ?? null;
+    const route = modelRoutes.find((routeItem) => routeItem.scene_code === item.sceneCode) ?? null;
+    const focusDatasets = item.focusKey ? datasets.filter((dataset) => dataset.focus.key === item.focusKey) : [];
+    const focusDatasetIds = new Set(focusDatasets.map((dataset) => dataset.id));
+    const focusRuns = focusDatasetIds.size > 0 ? runs.filter((run) => focusDatasetIds.has(run.datasetId)) : [];
+    const recommendedDataset =
+      focusDatasets.find((dataset) => dataset.status === "active" && dataset.readiness.status === "ready")
+      ?? focusDatasets.find((dataset) => dataset.status === "active")
+      ?? focusDatasets[0]
+      ?? null;
+    return {
+      ...item,
+      versionCount: scenePromptVersions.length,
+      activePrompt,
+      route,
+      promptHref: activePrompt ? buildAdminPromptVersionHref(`${activePrompt.prompt_id}@${activePrompt.version}`) : null,
+      focusSummary: item.focusKey
+        ? {
+            datasetCount: focusDatasets.length,
+            readyDatasetCount: focusDatasets.filter((dataset) => dataset.readiness.status === "ready").length,
+            sampleCount: focusDatasets.reduce((sum, dataset) => sum + Number(dataset.sampleCount || 0), 0),
+            runCount: focusRuns.length,
+            recommendedDataset,
+          }
+        : null,
+    };
+  });
 
   return (
     <div className="space-y-6">
@@ -175,6 +234,209 @@ export default async function AdminWritingEvalPage() {
             <div className="mt-3 text-sm text-adminInkMuted">{item.detail}</div>
           </div>
         ))}
+      </section>
+
+      <section className={adminSectionCardClassName}>
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <div className="text-xs uppercase tracking-[0.24em] text-adminInkMuted">Headline Optimizers</div>
+            <h2 className="mt-3 font-serifCn text-2xl text-adminInk text-balance">标题 / 开头专项优化器</h2>
+          </div>
+          <div className="flex flex-wrap items-center gap-3 text-sm text-adminInkMuted">
+            <span>Prompt {optimizerOverviewItems.reduce((sum, item) => sum + item.versionCount, 0)} 个版本</span>
+            <Link href="/admin/ai-routing" className={adminActionLinkClassName}>
+              打开模型路由
+            </Link>
+          </div>
+        </div>
+        <div className="mt-5 grid gap-3 xl:grid-cols-2">
+          {optimizerOverviewItems.map((item) => (
+            <div key={item.sceneCode} className={adminInsetCardClassName}>
+              <div className="text-xs uppercase tracking-[0.16em] text-adminInkMuted">{item.label}</div>
+              <div className="mt-3 text-2xl text-adminInk">
+                {item.activePrompt ? `${item.activePrompt.version} · ${item.activePrompt.name}` : "未发现激活 Prompt"}
+              </div>
+              <div className="mt-2 text-sm text-adminInkMuted">{item.detail}</div>
+              <div className="mt-3 text-xs leading-6 text-adminInkMuted">
+                Prompt 版本 {item.versionCount} · 当前路由 {item.route ? `${item.route.primary_model} / ${item.route.fallback_model || "无 fallback"}` : "未配置"}
+              </div>
+              <div className="mt-2 text-xs leading-6 text-adminInkMuted">
+                {item.route?.description || item.workspaceSummary}
+              </div>
+              <div className="mt-2 text-xs leading-6 text-adminInkMuted">
+                {item.focusSummary
+                  ? `专项评测集 ${item.focusSummary.datasetCount} · ready ${item.focusSummary.readyDatasetCount} · 样本 ${item.focusSummary.sampleCount} · run ${item.focusSummary.runCount}`
+                  : "当前仍复用通用全文评测集，尚未拆出独立专项评测桶。"}
+              </div>
+              <div className="mt-2 text-xs leading-6 text-adminInkMuted">
+                工作区接线：{item.workspaceSummary}
+              </div>
+              {item.promptHref || item.route || item.focusSummary ? (
+                <div className="mt-3 flex flex-wrap gap-3">
+                  {item.promptHref ? (
+                    <Link href={item.promptHref} className={adminActionLinkClassName}>
+                      打开 Prompt
+                    </Link>
+                  ) : null}
+                  {item.route ? (
+                    <Link href="/admin/ai-routing" className={adminActionLinkClassName}>
+                      查看路由
+                    </Link>
+                  ) : null}
+                  {item.focusSummary ? (
+                    <Link
+                      href={item.focusSummary.recommendedDataset ? buildAdminWritingEvalDatasetsHref({ datasetId: item.focusSummary.recommendedDataset.id }) : buildAdminWritingEvalDatasetsHref()}
+                      className={adminActionLinkClassName}
+                    >
+                      {item.focusSummary.recommendedDataset ? "打开专项评测集" : "去建专项评测集"}
+                    </Link>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className={adminSectionCardClassName}>
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <div className="text-xs uppercase tracking-[0.24em] text-adminInkMuted">Plan17 Acceptance</div>
+            <h2 className="mt-3 font-serifCn text-2xl text-adminInk text-balance">Plan17 自动验收总览</h2>
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="text-sm text-adminInkMuted">
+              overall {plan17Acceptance.overallStatus} · passed {plan17Acceptance.summary.passedCount}/{plan17Acceptance.summary.totalCount} · blocked {plan17Acceptance.summary.blockedCount}
+            </div>
+            <Link href="/admin/plan17/acceptance" className={adminActionLinkClassName}>
+              打开验收总览
+            </Link>
+          </div>
+        </div>
+        <div className="mt-5 grid gap-3 xl:grid-cols-4">
+          {plan17Acceptance.sections.map((section) => (
+            <div key={section.key} className={adminInsetCardClassName}>
+              <div className="text-xs uppercase tracking-[0.16em] text-adminInkMuted">{section.label}</div>
+              <div className="mt-3 text-2xl text-adminInk">{section.passedCount}/{section.totalCount}</div>
+              <div className="mt-2 text-sm text-adminInkMuted">
+                status {section.status} · blocked {section.items.filter((item) => item.status === "blocked").length}
+              </div>
+              <div className="mt-2 text-xs leading-6 text-adminInkMuted">
+                {section.items
+                  .filter((item) => item.status !== "passed")
+                  .slice(0, 2)
+                  .map((item) => item.label)
+                  .join(" · ") || "当前章节已全部通过"}
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className={adminSectionCardClassName}>
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <div className="text-xs uppercase tracking-[0.24em] text-adminInkMuted">Plan17 Quality</div>
+            <h2 className="mt-3 font-serifCn text-2xl text-adminInk text-balance">Plan17 质量验收桶</h2>
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="text-sm text-adminInkMuted">
+              数据集 {plan17Quality.totalDatasetCount} · 样本 {plan17Quality.totalSampleCount} · 本次自动 seed {plan17Quality.seededDatasetCodes.length}
+            </div>
+            <Link href="/admin/plan17/quality" className={adminActionLinkClassName}>
+              打开人工标注页
+            </Link>
+          </div>
+        </div>
+        <div className="mt-5 grid gap-3 xl:grid-cols-4">
+          {plan17Quality.focuses.map((focus) => (
+            <div key={focus.key} className={adminInsetCardClassName}>
+              <div className="text-xs uppercase tracking-[0.16em] text-adminInkMuted">{focus.label}</div>
+              <div className="mt-3 text-2xl text-adminInk">{focus.sampleCount}</div>
+              <div className="mt-2 text-sm text-adminInkMuted">
+                数据集 {focus.datasetCount} · active {focus.activeDatasetCount} · case {focus.enabledCaseCount}/{focus.enabledCaseCount + focus.disabledCaseCount}
+              </div>
+              <div className="mt-2 text-sm text-adminInkMuted">
+                run {focus.runCount} · linked {focus.linkedFeedbackCount}
+              </div>
+              <div className="mt-3 text-xs leading-6 text-adminInkMuted">
+                readiness: ready {focus.readiness.readyCount} / warning {focus.readiness.warningCount} / blocked {focus.readiness.blockedCount}
+              </div>
+              <div className="mt-2 text-xs leading-6 text-adminInkMuted">
+                {focus.key === "topic_fission"
+                  ? focus.reporting.topicFissionSceneBreakdown.length > 0
+                    ? focus.reporting.topicFissionSceneBreakdown
+                        .map((item) => `${item.sceneKey} ${item.evaluatedCaseCount}/${item.stableHitRate != null ? `${(item.stableHitRate * 100).toFixed(1)}%` : "--"}`)
+                        .join(" · ")
+                    : `Prompt ${focus.promptIds.length} 个 · 最近运行 ${focus.latestRunAt ? formatWritingEvalDateTime(focus.latestRunAt) : "--"}`
+                  : focus.key === "strategy_strength"
+                  ? `代理 Spearman：${focus.reporting.proxyScoreVsObservedSpearman != null ? focus.reporting.proxyScoreVsObservedSpearman.toFixed(3) : "--"}（样本 ${focus.reporting.proxyScoreVsObservedSampleCount}）`
+                  : focus.key === "rhythm_consistency"
+                    ? `rhythmDeviation vs readCompletion：${focus.reporting.rhythmDeviationVsReadCompletionCorrelation != null ? focus.reporting.rhythmDeviationVsReadCompletionCorrelation.toFixed(3) : "--"}（样本 ${focus.reporting.rhythmDeviationVsReadCompletionSampleCount}）`
+                    : `Prompt ${focus.promptIds.length} 个 · 最近运行 ${focus.latestRunAt ? formatWritingEvalDateTime(focus.latestRunAt) : "--"}`}
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className={adminSectionCardClassName}>
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <div className="text-xs uppercase tracking-[0.24em] text-adminInkMuted">Plan17 Business</div>
+            <h2 className="mt-3 font-serifCn text-2xl text-adminInk text-balance">Plan17 业务验收报表</h2>
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="text-sm text-adminInkMuted">
+              启用作者 {plan17Business.authorLiftVsBaseline.activatedAuthorCount} · 矩阵作者 {plan17Business.matrixWeeklyOutput.matrixAuthorCount} · 累计真实风格使用 {plan17Business.styleHeatmapUsage.totalUsageEventCount}
+            </div>
+            <Link href="/admin/plan17/business" className={adminActionLinkClassName}>
+              打开业务 drilldown
+            </Link>
+          </div>
+        </div>
+        <div className="mt-5 grid gap-3 xl:grid-cols-4">
+          <div className={adminInsetCardClassName}>
+            <div className="text-xs uppercase tracking-[0.16em] text-adminInkMuted">7 天命中率抬升</div>
+            <div className="mt-3 text-2xl text-adminInk">{formatPlan17Percent(plan17Business.authorLiftVsBaseline.averageLiftPp)}</div>
+            <div className="mt-2 text-sm text-adminInkMuted">
+              可比作者 {plan17Business.authorLiftVsBaseline.comparableAuthorCount}/{plan17Business.authorLiftVsBaseline.activatedAuthorCount}
+            </div>
+            <div className="mt-2 text-xs leading-6 text-adminInkMuted">
+              baseline {formatPlan17Percent(plan17Business.authorLiftVsBaseline.baselineMedianHitRate)} · after {formatPlan17Percent(plan17Business.authorLiftVsBaseline.currentMedianHitRate)}
+            </div>
+          </div>
+          <div className={adminInsetCardClassName}>
+            <div className="text-xs uppercase tracking-[0.16em] text-adminInkMuted">裂变 vs radar</div>
+            <div className="mt-3 text-2xl text-adminInk">{formatPlan17Percent(plan17Business.fissionVsRadar.hitRateDeltaPp)}</div>
+            <div className="mt-2 text-sm text-adminInkMuted">
+              裂变 {plan17Business.fissionVsRadar.fissionReviewedCount} 篇 · radar {plan17Business.fissionVsRadar.radarReviewedCount} 篇
+            </div>
+            <div className="mt-2 text-xs leading-6 text-adminInkMuted">
+              fission {formatPlan17Percent(plan17Business.fissionVsRadar.fissionHitRate)} · radar {formatPlan17Percent(plan17Business.fissionVsRadar.radarHitRate)}
+            </div>
+          </div>
+          <div className={adminInsetCardClassName}>
+            <div className="text-xs uppercase tracking-[0.16em] text-adminInkMuted">矩阵号周产出</div>
+            <div className="mt-3 text-2xl text-adminInk">{formatPlan17Percent(plan17Business.matrixWeeklyOutput.weeklyOutputGrowthPp)}</div>
+            <div className="mt-2 text-sm text-adminInkMuted">
+              周中位数 {plan17Business.matrixWeeklyOutput.weeklyOutputMedianBefore ?? "--"} → {plan17Business.matrixWeeklyOutput.weeklyOutputMedianAfter ?? "--"}
+            </div>
+            <div className="mt-2 text-xs leading-6 text-adminInkMuted">
+              批次 {plan17Business.matrixWeeklyOutput.batchCount} · 质量回流 {formatPlan17Percent(plan17Business.matrixWeeklyOutput.observedQualityDeltaPp)}
+            </div>
+          </div>
+          <div className={adminInsetCardClassName}>
+            <div className="text-xs uppercase tracking-[0.16em] text-adminInkMuted">3+ 样本画像真实使用占比</div>
+            <div className="mt-3 text-2xl text-adminInk">{formatPlan17Percent(plan17Business.styleHeatmapUsage.recent30dMultiSampleUsageShare)}</div>
+            <div className="mt-2 text-sm text-adminInkMuted">
+              近 30 天真实使用 {plan17Business.styleHeatmapUsage.recent30dMultiSampleUsageEventCount}/{plan17Business.styleHeatmapUsage.recent30dUsageEventCount}
+            </div>
+            <div className="mt-2 text-xs leading-6 text-adminInkMuted">
+              累计真实使用 {plan17Business.styleHeatmapUsage.multiSampleUsageEventCount}/{plan17Business.styleHeatmapUsage.totalUsageEventCount}
+            </div>
+          </div>
+        </div>
       </section>
 
       <section className="grid gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">

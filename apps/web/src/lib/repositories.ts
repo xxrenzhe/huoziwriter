@@ -359,6 +359,27 @@ const DEFAULT_PROMPT_SEEDS = [
     changeNotes: "新增独立标题优化 prompt 资产，用于 6 候选、三要素命中与禁词体检",
   },
   {
+    promptId: "opening_optimizer",
+    version: "v1.0.0",
+    category: "writing",
+    name: "开头优化器",
+    description: "围绕同一主轴生成 3 个公众号开头候选并做前三秒留存体检",
+    filePath: "apps/web/src/lib/prompts/opening_optimizer.md",
+    functionName: "openingOptimizer",
+    promptContent: [
+      "你是公众号开头诊断与改写专家，目标是在前 200 字留住读者。",
+      "你只负责开头，不负责重写整篇大纲。",
+      "请围绕同一主轴生成 3 个候选开头，并明确哪一个最推荐。",
+      "优先使用场景切入、冲突反差、判断前置、问句钩子、现象信号等模式，避免 3 个候选写成同一种套路。",
+      "必须同时检查四个维度：抽象度、铺垫度、钩子浓度、信息前置。",
+      "禁止清单：大而空背景铺垫、自我介绍开路、引用/数据诱饵、把真正的钩子埋到后面。",
+      "推荐项必须优先满足：禁区最少、信息前置、读者收益更明确、前三秒更容易留下来。",
+      "输出必须是 JSON，不要解释，不要 markdown。",
+    ].join("\n"),
+    language: "zh-CN",
+    changeNotes: "新增独立开头优化 prompt 资产，用于 3 候选开头、四维诊断与推荐项决策",
+  },
+  {
     promptId: "deep_write",
     version: "v1.0.0",
     category: "writing",
@@ -437,23 +458,35 @@ export async function ensureBootstrapData() {
   await ensureExtendedProductSchema();
   await ensureTemplateLibrarySeeds();
   await ensureDefaultTopics();
+  await ensurePromptCatalogSeeds();
+}
 
+async function ensurePromptCatalogSeeds() {
   const db = getDatabase();
   for (const route of DEFAULT_MODEL_ROUTES) {
-    const exists = await db.queryOne<{ id: number; primary_model: string; fallback_model: string | null; description: string | null }>(
-      "SELECT id, primary_model, fallback_model, description FROM ai_model_routes WHERE scene_code = ?",
+    const exists = await db.queryOne<{
+      id: number;
+      primary_model: string;
+      fallback_model: string | null;
+      shadow_model: string | null;
+      shadow_traffic_percent: number | null;
+      description: string | null;
+    }>(
+      "SELECT id, primary_model, fallback_model, shadow_model, shadow_traffic_percent, description FROM ai_model_routes WHERE scene_code = ?",
       [
       route.sceneCode,
       ],
     );
     if (!exists) {
       await db.exec(
-        `INSERT INTO ai_model_routes (scene_code, primary_model, fallback_model, description, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO ai_model_routes (scene_code, primary_model, fallback_model, shadow_model, shadow_traffic_percent, description, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           route.sceneCode,
           route.primaryModel,
           route.fallbackModel,
+          route.shadowModel ?? null,
+          route.shadowTrafficPercent ?? 0,
           route.description,
           new Date().toISOString(),
           new Date().toISOString(),
@@ -472,9 +505,17 @@ export async function ensureBootstrapData() {
     ) {
       await db.exec(
         `UPDATE ai_model_routes
-         SET primary_model = ?, fallback_model = ?, description = ?, updated_at = ?
+         SET primary_model = ?, fallback_model = ?, shadow_model = ?, shadow_traffic_percent = ?, description = ?, updated_at = ?
          WHERE scene_code = ?`,
-        [route.primaryModel, route.fallbackModel, route.description, new Date().toISOString(), route.sceneCode],
+        [
+          route.primaryModel,
+          route.fallbackModel,
+          route.shadowModel ?? null,
+          route.shadowTrafficPercent ?? 0,
+          route.description,
+          new Date().toISOString(),
+          route.sceneCode,
+        ],
       );
     }
   }
@@ -1746,6 +1787,7 @@ export async function searchFragments(userId: number, query: string) {
 
 export async function getPromptVersions() {
   await ensureExtendedProductSchema();
+  await ensurePromptCatalogSeeds();
   const db = getDatabase();
   return db.query<{
     id: number;
@@ -2019,6 +2061,8 @@ export async function getModelRoutes() {
     scene_code: string;
     primary_model: string;
     fallback_model: string | null;
+    shadow_model: string | null;
+    shadow_traffic_percent: number;
     description: string | null;
     updated_at: string;
   }>("SELECT * FROM ai_model_routes WHERE scene_code != ? ORDER BY id ASC", ["coverImage"]);
@@ -2028,6 +2072,8 @@ export async function updateModelRoute(input: {
   sceneCode: string;
   primaryModel: string;
   fallbackModel?: string | null;
+  shadowModel?: string | null;
+  shadowTrafficPercent?: number | null;
   description?: string | null;
 }) {
   if (!DEFAULT_MODEL_ROUTES.some((route) => route.sceneCode === input.sceneCode)) {
@@ -2036,11 +2082,13 @@ export async function updateModelRoute(input: {
   const db = getDatabase();
   await db.exec(
     `UPDATE ai_model_routes
-     SET primary_model = ?, fallback_model = ?, description = ?, updated_at = ?
+     SET primary_model = ?, fallback_model = ?, shadow_model = ?, shadow_traffic_percent = ?, description = ?, updated_at = ?
      WHERE scene_code = ?`,
     [
       input.primaryModel,
       input.fallbackModel ?? null,
+      input.shadowModel ?? null,
+      Math.max(0, Math.min(100, Math.round(Number(input.shadowTrafficPercent ?? 0)))),
       input.description ?? null,
       new Date().toISOString(),
       input.sceneCode,
@@ -2449,36 +2497,37 @@ export async function getArticleTopicAttribution(articleId: number, userId: numb
   };
 }
 
-export async function getArticleStrategyCard(articleId: number, userId: number) {
-  await ensureExtendedProductSchema();
+type ArticleStrategyCardRow = {
+  id: number;
+  article_id: number;
+  user_id: number;
+  archetype: string | null;
+  mainstream_belief: string | null;
+  target_reader: string | null;
+  core_assertion: string | null;
+  why_now: string | null;
+  research_hypothesis: string | null;
+  market_position_insight: string | null;
+  historical_turning_point: string | null;
+  target_package: string | null;
+  publish_window: string | null;
+  ending_action: string | null;
+  first_hand_observation: string | null;
+  felt_moment: string | null;
+  why_this_hit_me: string | null;
+  real_scene_or_dialogue: string | null;
+  want_to_complain: string | null;
+  non_delegable_truth: string | null;
+  four_point_audit_json: string | Record<string, unknown> | null;
+  strategy_locked_at: string | null;
+  strategy_override: boolean | number | string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+async function getArticleStrategyCardRow(articleId: number, userId: number) {
   const db = getDatabase();
-  const row = await db.queryOne<{
-    id: number;
-    article_id: number;
-    user_id: number;
-    archetype: string | null;
-    mainstream_belief: string | null;
-    target_reader: string | null;
-    core_assertion: string | null;
-    why_now: string | null;
-    research_hypothesis: string | null;
-    market_position_insight: string | null;
-    historical_turning_point: string | null;
-    target_package: string | null;
-    publish_window: string | null;
-    ending_action: string | null;
-    first_hand_observation: string | null;
-    felt_moment: string | null;
-    why_this_hit_me: string | null;
-    real_scene_or_dialogue: string | null;
-    want_to_complain: string | null;
-    non_delegable_truth: string | null;
-    four_point_audit_json: string | Record<string, unknown> | null;
-    strategy_locked_at: string | null;
-    strategy_override: boolean | number | string | null;
-    created_at: string;
-    updated_at: string;
-  }>(
+  return db.queryOne<ArticleStrategyCardRow>(
     `SELECT id, article_id AS article_id, user_id, archetype, mainstream_belief, target_reader, core_assertion, why_now, research_hypothesis, market_position_insight, historical_turning_point, target_package, publish_window, ending_action,
             first_hand_observation, felt_moment, why_this_hit_me, real_scene_or_dialogue, want_to_complain, non_delegable_truth,
             four_point_audit_json, strategy_locked_at, strategy_override,
@@ -2487,6 +2536,11 @@ export async function getArticleStrategyCard(articleId: number, userId: number) 
      WHERE article_id = ? AND user_id = ?`,
     [articleId, userId],
   );
+}
+
+export async function getArticleStrategyCard(articleId: number, userId: number) {
+  await ensureExtendedProductSchema();
+  const row = await getArticleStrategyCardRow(articleId, userId);
   return row ? mapArticleStrategyCard(row) : null;
 }
 
@@ -2582,25 +2636,6 @@ export async function getArticleResearchCards(articleId: number, userId: number)
   return cardRows.map((row) => mapArticleResearchCard(row, sourceMap.get(row.id) ?? []));
 }
 
-async function ensureArticleStrategyCardId(input: {
-  articleId: number;
-  userId: number;
-}) {
-  const current = await getArticleStrategyCard(input.articleId, input.userId);
-  if (current) {
-    return current.id;
-  }
-  const db = getDatabase();
-  const now = new Date().toISOString();
-  const result = await db.exec(
-    `INSERT INTO article_strategy_cards (
-      article_id, user_id, created_at, updated_at
-    ) VALUES (?, ?, ?, ?)`,
-    [input.articleId, input.userId, now, now],
-  );
-  return Number(result.lastInsertRowid!);
-}
-
 export async function upsertArticleStrategyCard(input: {
   articleId: number;
   userId: number;
@@ -2626,49 +2661,120 @@ export async function upsertArticleStrategyCard(input: {
   strategyOverride?: boolean;
 }) {
   await ensureExtendedProductSchema();
-  const strategyCardId = await ensureArticleStrategyCardId({
-    articleId: input.articleId,
-    userId: input.userId,
-  });
-  const current = await getArticleStrategyCard(input.articleId, input.userId);
   const db = getDatabase();
+  const current = await getArticleStrategyCardRow(input.articleId, input.userId);
   const now = new Date().toISOString();
-  await db.exec(
-    `UPDATE article_strategy_cards
-     SET archetype = ?, mainstream_belief = ?, target_reader = ?, core_assertion = ?, why_now = ?, research_hypothesis = ?, market_position_insight = ?, historical_turning_point = ?,
-         target_package = ?, publish_window = ?, ending_action = ?,
-         first_hand_observation = ?, felt_moment = ?, why_this_hit_me = ?, real_scene_or_dialogue = ?, want_to_complain = ?, non_delegable_truth = ?,
-         four_point_audit_json = ?, strategy_locked_at = ?, strategy_override = ?,
-         updated_at = ?
-     WHERE id = ? AND article_id = ? AND user_id = ?`,
-    [
-      input.archetype !== undefined ? input.archetype : current?.archetype ?? null,
-      input.mainstreamBelief !== undefined ? input.mainstreamBelief : current?.mainstreamBelief ?? null,
-      input.targetReader !== undefined ? input.targetReader : current?.targetReader ?? null,
-      input.coreAssertion !== undefined ? input.coreAssertion : current?.coreAssertion ?? null,
-      input.whyNow !== undefined ? input.whyNow : current?.whyNow ?? null,
-      input.researchHypothesis !== undefined ? input.researchHypothesis : current?.researchHypothesis ?? null,
-      input.marketPositionInsight !== undefined ? input.marketPositionInsight : current?.marketPositionInsight ?? null,
-      input.historicalTurningPoint !== undefined ? input.historicalTurningPoint : current?.historicalTurningPoint ?? null,
-      input.targetPackage !== undefined ? input.targetPackage : current?.targetPackage ?? null,
-      input.publishWindow !== undefined ? input.publishWindow : current?.publishWindow ?? null,
-      input.endingAction !== undefined ? input.endingAction : current?.endingAction ?? null,
-      input.firstHandObservation !== undefined ? input.firstHandObservation : current?.firstHandObservation ?? null,
-      input.feltMoment !== undefined ? input.feltMoment : current?.feltMoment ?? null,
-      input.whyThisHitMe !== undefined ? input.whyThisHitMe : current?.whyThisHitMe ?? null,
-      input.realSceneOrDialogue !== undefined ? input.realSceneOrDialogue : current?.realSceneOrDialogue ?? null,
-      input.wantToComplain !== undefined ? input.wantToComplain : current?.wantToComplain ?? null,
-      input.nonDelegableTruth !== undefined ? input.nonDelegableTruth : current?.nonDelegableTruth ?? null,
-      JSON.stringify(input.fourPointAudit !== undefined ? (input.fourPointAudit ?? null) : current?.fourPointAudit ?? null),
-      input.strategyLockedAt !== undefined ? input.strategyLockedAt : current?.strategyLockedAt ?? null,
-      input.strategyOverride !== undefined ? (input.strategyOverride ? 1 : 0) : current?.strategyOverride ? 1 : 0,
-      now,
-      strategyCardId,
-      input.articleId,
-      input.userId,
-    ],
-  );
-  return getArticleStrategyCard(input.articleId, input.userId);
+  const nextRow: ArticleStrategyCardRow = {
+    id: current?.id ?? 0,
+    article_id: input.articleId,
+    user_id: input.userId,
+    archetype: input.archetype !== undefined ? input.archetype : current?.archetype ?? null,
+    mainstream_belief: input.mainstreamBelief !== undefined ? input.mainstreamBelief : current?.mainstream_belief ?? null,
+    target_reader: input.targetReader !== undefined ? input.targetReader : current?.target_reader ?? null,
+    core_assertion: input.coreAssertion !== undefined ? input.coreAssertion : current?.core_assertion ?? null,
+    why_now: input.whyNow !== undefined ? input.whyNow : current?.why_now ?? null,
+    research_hypothesis:
+      input.researchHypothesis !== undefined ? input.researchHypothesis : current?.research_hypothesis ?? null,
+    market_position_insight:
+      input.marketPositionInsight !== undefined ? input.marketPositionInsight : current?.market_position_insight ?? null,
+    historical_turning_point:
+      input.historicalTurningPoint !== undefined ? input.historicalTurningPoint : current?.historical_turning_point ?? null,
+    target_package: input.targetPackage !== undefined ? input.targetPackage : current?.target_package ?? null,
+    publish_window: input.publishWindow !== undefined ? input.publishWindow : current?.publish_window ?? null,
+    ending_action: input.endingAction !== undefined ? input.endingAction : current?.ending_action ?? null,
+    first_hand_observation:
+      input.firstHandObservation !== undefined ? input.firstHandObservation : current?.first_hand_observation ?? null,
+    felt_moment: input.feltMoment !== undefined ? input.feltMoment : current?.felt_moment ?? null,
+    why_this_hit_me: input.whyThisHitMe !== undefined ? input.whyThisHitMe : current?.why_this_hit_me ?? null,
+    real_scene_or_dialogue:
+      input.realSceneOrDialogue !== undefined ? input.realSceneOrDialogue : current?.real_scene_or_dialogue ?? null,
+    want_to_complain: input.wantToComplain !== undefined ? input.wantToComplain : current?.want_to_complain ?? null,
+    non_delegable_truth:
+      input.nonDelegableTruth !== undefined ? input.nonDelegableTruth : current?.non_delegable_truth ?? null,
+    four_point_audit_json:
+      input.fourPointAudit !== undefined ? JSON.stringify(input.fourPointAudit ?? null) : current?.four_point_audit_json ?? null,
+    strategy_locked_at:
+      input.strategyLockedAt !== undefined ? input.strategyLockedAt : current?.strategy_locked_at ?? null,
+    strategy_override: input.strategyOverride !== undefined ? (input.strategyOverride ? 1 : 0) : current?.strategy_override ?? 0,
+    created_at: current?.created_at ?? now,
+    updated_at: now,
+  };
+
+  if (current) {
+    await db.exec(
+      `UPDATE article_strategy_cards
+       SET archetype = ?, mainstream_belief = ?, target_reader = ?, core_assertion = ?, why_now = ?, research_hypothesis = ?, market_position_insight = ?, historical_turning_point = ?,
+           target_package = ?, publish_window = ?, ending_action = ?,
+           first_hand_observation = ?, felt_moment = ?, why_this_hit_me = ?, real_scene_or_dialogue = ?, want_to_complain = ?, non_delegable_truth = ?,
+           four_point_audit_json = ?, strategy_locked_at = ?, strategy_override = ?,
+           updated_at = ?
+       WHERE id = ? AND article_id = ? AND user_id = ?`,
+      [
+        nextRow.archetype,
+        nextRow.mainstream_belief,
+        nextRow.target_reader,
+        nextRow.core_assertion,
+        nextRow.why_now,
+        nextRow.research_hypothesis,
+        nextRow.market_position_insight,
+        nextRow.historical_turning_point,
+        nextRow.target_package,
+        nextRow.publish_window,
+        nextRow.ending_action,
+        nextRow.first_hand_observation,
+        nextRow.felt_moment,
+        nextRow.why_this_hit_me,
+        nextRow.real_scene_or_dialogue,
+        nextRow.want_to_complain,
+        nextRow.non_delegable_truth,
+        nextRow.four_point_audit_json,
+        nextRow.strategy_locked_at,
+        nextRow.strategy_override,
+        nextRow.updated_at,
+        current.id,
+        input.articleId,
+        input.userId,
+      ],
+    );
+    nextRow.id = current.id;
+  } else {
+    const result = await db.exec(
+      `INSERT INTO article_strategy_cards (
+        article_id, user_id, archetype, mainstream_belief, target_reader, core_assertion, why_now, research_hypothesis, market_position_insight, historical_turning_point,
+        target_package, publish_window, ending_action, first_hand_observation, felt_moment, why_this_hit_me, real_scene_or_dialogue, want_to_complain, non_delegable_truth,
+        four_point_audit_json, strategy_locked_at, strategy_override, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        input.articleId,
+        input.userId,
+        nextRow.archetype,
+        nextRow.mainstream_belief,
+        nextRow.target_reader,
+        nextRow.core_assertion,
+        nextRow.why_now,
+        nextRow.research_hypothesis,
+        nextRow.market_position_insight,
+        nextRow.historical_turning_point,
+        nextRow.target_package,
+        nextRow.publish_window,
+        nextRow.ending_action,
+        nextRow.first_hand_observation,
+        nextRow.felt_moment,
+        nextRow.why_this_hit_me,
+        nextRow.real_scene_or_dialogue,
+        nextRow.want_to_complain,
+        nextRow.non_delegable_truth,
+        nextRow.four_point_audit_json,
+        nextRow.strategy_locked_at,
+        nextRow.strategy_override,
+        nextRow.created_at,
+        nextRow.updated_at,
+      ],
+    );
+    nextRow.id = Number(result.lastInsertRowid!);
+  }
+
+  return mapArticleStrategyCard(nextRow);
 }
 
 export async function replaceArticleEvidenceItems(input: {

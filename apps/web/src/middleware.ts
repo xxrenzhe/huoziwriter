@@ -1,17 +1,8 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
-const AUTH_COOKIE_NAME = "huoziwriter_session";
-
 export function middleware(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
-
-  if (pathname === "/" && request.cookies.has(AUTH_COOKIE_NAME)) {
-    const target = request.nextUrl.clone();
-    target.pathname = "/warroom";
-    target.search = "";
-    return NextResponse.redirect(target);
-  }
 
   const staticRedirects = new Map<string, string>([
     ["/dashboard", "/warroom"],
@@ -37,5 +28,5 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/", "/dashboard", "/review", "/editor/:path*"],
+  matcher: ["/dashboard", "/review", "/editor/:path*"],
 };

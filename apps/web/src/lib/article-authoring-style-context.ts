@@ -8,6 +8,8 @@ export async function getArticleAuthoringStyleContext(userId: number, articleId?
   let persona = defaultPersona;
   let preferredWritingStyleProfileId = defaultPersona?.boundWritingStyleProfileId ?? null;
   let preferredWritingStyleProfileName = defaultPersona?.boundWritingStyleProfileName ?? null;
+  let preferredWritingStyleProfileSource =
+    defaultPersona?.boundWritingStyleProfileId != null ? "persona.boundWritingStyleProfileId" : null;
   if (articleId) {
     const article = await getArticleById(articleId, userId);
     if (!article) {
@@ -17,6 +19,7 @@ export async function getArticleAuthoringStyleContext(userId: number, articleId?
       return buildArticleAuthoringStyleContext(defaultPersona, userId, {
         preferredWritingStyleProfileId,
         preferredWritingStyleProfileName,
+        preferredWritingStyleProfileSource,
       });
     }
     const series = await getSeriesById(userId, article.series_id);
@@ -49,10 +52,17 @@ export async function getArticleAuthoringStyleContext(userId: number, articleId?
       series.defaultDnaId != null
         ? `系列默认文风 #${series.defaultDnaId}`
         : series.boundWritingStyleProfileName ?? null;
+    preferredWritingStyleProfileSource =
+      series.defaultDnaId != null
+        ? "series.defaultDnaId"
+        : series.boundWritingStyleProfileId != null
+          ? "series.boundWritingStyleProfileId"
+          : preferredWritingStyleProfileSource;
   }
   return buildArticleAuthoringStyleContext(persona, userId, {
     preferredWritingStyleProfileId,
     preferredWritingStyleProfileName,
+    preferredWritingStyleProfileSource,
   });
 }
 
@@ -62,6 +72,7 @@ async function buildArticleAuthoringStyleContext(
   options?: {
     preferredWritingStyleProfileId?: number | null;
     preferredWritingStyleProfileName?: string | null;
+    preferredWritingStyleProfileSource?: string | null;
   },
 ) {
   const preferredWritingStyleProfileId = options?.preferredWritingStyleProfileId ?? persona?.boundWritingStyleProfileId ?? null;
@@ -91,8 +102,11 @@ async function buildArticleAuthoringStyleContext(
       : null,
     writingStyleProfile: writingStyleProfile
       ? {
+          id: writingStyleProfile.id,
           name: writingStyleProfile.name,
           summary: writingStyleProfile.summary,
+          sampleCount: writingStyleProfile.sampleCount ?? null,
+          bindingSource: options?.preferredWritingStyleProfileSource ?? null,
           toneKeywords: writingStyleProfile.toneKeywords,
           sentenceLengthProfile: writingStyleProfile.sentenceLengthProfile,
           paragraphBreathingPattern: writingStyleProfile.paragraphBreathingPattern,

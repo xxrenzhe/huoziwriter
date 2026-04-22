@@ -87,8 +87,25 @@ const WRITING_EVAL_TASK_TYPE_LABELS: Record<string, string> = {
   rhythm_consistency: "原型节奏一致性",
 };
 
+const GENERAL_WRITING_EVAL_TASK_TYPES = [
+  "tech_commentary",
+  "business_breakdown",
+  "experience_recap",
+  "series_observation",
+] as const;
+
+export const PLAN17_WRITING_EVAL_FOCUS_KEYS = [
+  "topic_fission",
+  "strategy_strength",
+  "evidence_hook",
+  "rhythm_consistency",
+] as const;
+
+export type WritingEvalPlan17FocusKey = (typeof PLAN17_WRITING_EVAL_FOCUS_KEYS)[number];
+
 export type WritingEvalDatasetFocusKey =
   | "general"
+  | "opening_optimizer"
   | "topic_fission"
   | "strategy_strength"
   | "evidence_hook"
@@ -111,6 +128,28 @@ type DatasetFocusDefinition = {
 };
 
 const DATASET_FOCUS_DEFINITIONS: DatasetFocusDefinition[] = [
+  {
+    key: "opening_optimizer",
+    label: "开头优化器评测",
+    description: "围绕 opening_optimizer / lead_template 收集历史稿件样本，用于开头诊断与改写实验。",
+    promptIds: ["opening_optimizer"],
+    recommendedSourceTypes: ["article"],
+    targetTaskTypes: [...GENERAL_WRITING_EVAL_TASK_TYPES],
+    createPreset: {
+      code: "plan21-opening-optimizer-v1",
+      name: "Plan21 · Opening Optimizer",
+      description: "用于 opening_optimizer / lead_template 的离线评测集，优先导入历史已发稿件样本。",
+      status: "draft",
+    },
+    matchers: [
+      "opening-optimizer",
+      "opening_optimizer",
+      "开头优化器",
+      "开头体检",
+      "lead-template",
+      "lead_template",
+    ],
+  },
   {
     key: "topic_fission",
     label: "选题裂变评测",
@@ -146,12 +185,12 @@ const DATASET_FOCUS_DEFINITIONS: DatasetFocusDefinition[] = [
     label: "证据爆点评测",
     description: "围绕 evidenceHookTagging 的标签召回与强度判断建立独立评测桶。",
     promptIds: ["evidenceHookTagging"],
-    recommendedSourceTypes: ["fragment"],
+    recommendedSourceTypes: ["fragment", "topic_item"],
     targetTaskTypes: ["evidence_hook_tagging"],
     createPreset: {
       code: "plan17-evidence-hook-v1",
       name: "Plan17 · Evidence Hook Tagging",
-      description: "用于 evidenceHookTagging 的离线评测集，优先导入素材与截图片段。",
+      description: "用于 evidenceHookTagging 的离线评测集，优先导入素材与截图片段；缺少 fragment 时允许回退到 topic_item。",
       status: "draft",
     },
     matchers: ["evidence-hook", "evidence_hook", "爆点标注", "证据爆点", "hooktagging", "evidencehooktagging"],
@@ -161,12 +200,12 @@ const DATASET_FOCUS_DEFINITIONS: DatasetFocusDefinition[] = [
     label: "原型节奏评测",
     description: "围绕 publishGate.rhythmConsistency 校验策略原型与执行卡节奏是否一致。",
     promptIds: ["publishGate.rhythmConsistency"],
-    recommendedSourceTypes: ["article"],
+    recommendedSourceTypes: ["article", "topic_item"],
     targetTaskTypes: ["rhythm_consistency"],
     createPreset: {
       code: "plan17-rhythm-consistency-v1",
       name: "Plan17 · Rhythm Consistency",
-      description: "用于 publishGate.rhythmConsistency 的离线评测集，优先导入历史稿件样本。",
+      description: "用于 publishGate.rhythmConsistency 的离线评测集，优先导入历史稿件样本；缺少 article 时允许回退到 topic_item。",
       status: "draft",
     },
     matchers: ["rhythm-consistency", "rhythm_consistency", "节奏一致性", "原型节奏", "publishgate.rhythmconsistency"],
@@ -219,7 +258,7 @@ export function inferWritingEvalDatasetFocus(input: {
     description: "默认全文写作评测桶，覆盖标题、开头、传播目标和事实素材的综合质量。",
     promptIds: [],
     recommendedSourceTypes: ["article", "knowledge_card", "topic_item", "fragment"],
-    targetTaskTypes: ["tech_commentary", "business_breakdown", "experience_recap", "series_observation"],
+    targetTaskTypes: [...GENERAL_WRITING_EVAL_TASK_TYPES],
   };
 }
 
@@ -247,6 +286,12 @@ export function getPlan17PromptSceneMeta(promptId: string | null | undefined) {
   return PLAN17_PROMPT_SCENE_DEFINITIONS.find((definition) => definition.promptId === normalized) ?? null;
 }
 
+export function isPlan17WritingEvalFocusKey(
+  key: string | null | undefined,
+): key is WritingEvalPlan17FocusKey {
+  return PLAN17_WRITING_EVAL_FOCUS_KEYS.includes(key as WritingEvalPlan17FocusKey);
+}
+
 export function resolveWritingEvalTaskTypeForDatasetFocus(input: {
   datasetFocusKey?: WritingEvalDatasetFocusKey | null;
   baseTaskType: string;
@@ -260,10 +305,10 @@ export function resolveWritingEvalTaskTypeForDatasetFocus(input: {
   if (datasetFocusKey === "strategy_strength" && (sourceType === "article" || sourceType === "knowledge_card" || sourceType === "topic_item")) {
     return "strategy_strength_audit";
   }
-  if (datasetFocusKey === "evidence_hook" && sourceType === "fragment") {
+  if (datasetFocusKey === "evidence_hook" && (sourceType === "fragment" || sourceType === "topic_item")) {
     return "evidence_hook_tagging";
   }
-  if (datasetFocusKey === "rhythm_consistency" && sourceType === "article") {
+  if (datasetFocusKey === "rhythm_consistency" && (sourceType === "article" || sourceType === "topic_item")) {
     return "rhythm_consistency";
   }
   return input.baseTaskType;
@@ -279,13 +324,24 @@ export function getWritingEvalImportFocusBoost(input: {
   const meta = inferWritingEvalDatasetFocus({ code: focus });
   let score = 0;
   const reasons: string[] = [];
+  const targetTaskTypes = meta.targetTaskTypes as readonly string[];
   if (meta.recommendedSourceTypes.includes(input.candidateSourceType as "article" | "knowledge_card" | "topic_item" | "fragment")) {
     score += 24;
     reasons.push(`匹配 ${meta.label} 的推荐来源`);
   }
-  if (meta.targetTaskTypes.includes(input.candidateTaskType)) {
+  if (targetTaskTypes.includes(input.candidateTaskType)) {
     score += 18;
     reasons.push(`匹配 ${meta.label} 的目标题型`);
   }
   return { score, reasons };
+}
+
+export function isWritingEvalSourceTypeRecommendedForFocus(input: {
+  datasetFocusKey?: WritingEvalDatasetFocusKey | null;
+  candidateSourceType: string;
+}) {
+  const focus = input.datasetFocusKey ?? "general";
+  if (focus === "general") return true;
+  const meta = inferWritingEvalDatasetFocus({ code: focus });
+  return meta.recommendedSourceTypes.includes(input.candidateSourceType as "article" | "knowledge_card" | "topic_item" | "fragment");
 }

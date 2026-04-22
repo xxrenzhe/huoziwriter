@@ -21,7 +21,7 @@ import {
   getWritingEvalAgentStrategyLabel,
   getWritingEvalAgentStrategyPreset,
 } from "@/lib/writing-eval-config";
-import { getWritingEvalDatasetFocusMeta, getWritingEvalTaskTypeLabel } from "@/lib/writing-eval-plan17";
+import { PLAN17_WRITING_EVAL_FOCUS_KEYS, getWritingEvalDatasetFocusMeta, getWritingEvalTaskTypeLabel } from "@/lib/writing-eval-plan17";
 
 type DatasetItem = {
   id: number;
@@ -718,13 +718,6 @@ function getDatasetFocusTaskTypeSummary(dataset: DatasetItem | null | undefined)
   return taskTypes.length > 0 ? taskTypes.map((item) => getWritingEvalTaskTypeLabel(item)).join(" / ") : "通用全文评测";
 }
 
-const PLAN17_WRITING_EVAL_FOCUS_KEYS = [
-  "topic_fission",
-  "strategy_strength",
-  "evidence_hook",
-  "rhythm_consistency",
-] as const;
-
 function getRunCreationBlockedMessage(input: {
   dataset: DatasetItem | null;
   readiness: DatasetItem["readiness"] | null;
@@ -766,7 +759,7 @@ function normalizePlanCodes(value: string) {
 
 const ACTIVE_RUN_STATUSES = new Set(["queued", "running", "scoring", "promoting"]);
 const TITLE_TEMPLATE_PROMPT_ID = "title_optimizer";
-const LEAD_TEMPLATE_PROMPT_ID = "prose_polish";
+const LEAD_TEMPLATE_PROMPT_ID = "opening_optimizer";
 
 function isRunActive(status: unknown) {
   return ACTIVE_RUN_STATUSES.has(String(status || "").trim());
@@ -1014,7 +1007,7 @@ function getVersionOptionsByType(
 }
 
 function getPreferredPromptTargetId(promptOptions: Array<{ promptId: string }>) {
-  return ["article_write", "title_optimizer", "outline_planning", "prose_polish", "deep_write"].find((promptId) =>
+  return ["article_write", "title_optimizer", "opening_optimizer", "outline_planning", "prose_polish", "deep_write"].find((promptId) =>
     promptOptions.some((item) => item.promptId === promptId),
   ) ?? promptOptions[0]?.promptId ?? "";
 }
@@ -1066,7 +1059,7 @@ function getExperimentModeLabel(experimentMode: string) {
 function getVersionTypeLabel(versionType: string) {
   if (versionType === "fact_check") return "fact_check（事实核查 Prompt）";
   if (versionType === "title_template") return "title_template（标题模板 Prompt）";
-  if (versionType === "lead_template") return "lead_template（开头模板 Prompt）";
+  if (versionType === "lead_template") return "lead_template（开头优化器 Prompt）";
   if (versionType === "layout_strategy") return "layout_strategy（写作风格资产）";
   return versionType;
 }
@@ -1586,6 +1579,29 @@ export function AdminWritingEvalClient({
       recommendedDataset,
     };
   });
+  const openingOptimizerFocusCard = (() => {
+    const focusKey = "opening_optimizer" as const;
+    const meta = getWritingEvalDatasetFocusMeta(focusKey);
+    const matchedDatasets = datasets.filter((item) => item.focus?.key === focusKey);
+    const readyCount = matchedDatasets.filter((item) => item.readiness.status === "ready").length;
+    const matchedDatasetIds = new Set(matchedDatasets.map((item) => item.id));
+    const matchedRuns = runs.filter((item) => matchedDatasetIds.has(item.datasetId));
+    const matchedSchedules = schedules.filter((item) => matchedDatasetIds.has(item.datasetId));
+    const recommendedDataset =
+      matchedDatasets.find((item) => item.status === "active" && item.readiness.status === "ready")
+      ?? matchedDatasets.find((item) => item.status === "active")
+      ?? matchedDatasets[0]
+      ?? null;
+    return {
+      key: focusKey,
+      meta,
+      datasets: matchedDatasets,
+      readyCount,
+      runCount: matchedRuns.length,
+      scheduleCount: matchedSchedules.length,
+      recommendedDataset,
+    };
+  })();
   const canCreateRun = canCreateRunFromSelection({
     dataset: selectedRunFormDataset,
     readiness: selectedRunFormDatasetReadiness,
@@ -2412,6 +2428,49 @@ export function AdminWritingEvalClient({
       });
     }
     setMessage(`已按 ${meta.label} 预填实验表单`);
+  }
+
+  function handleApplyOpeningOptimizerPreset() {
+    const meta = openingOptimizerFocusCard.meta;
+    const preferredDataset = openingOptimizerFocusCard.recommendedDataset;
+    if (!meta || !preferredDataset) {
+      setMessage(`当前还没有可用的${meta?.label || "开头优化器"}评测集，请先去 Datasets 建桶。`);
+      return;
+    }
+    const nextPromptVersions = getVersionOptionsByType(
+      "lead_template",
+      promptOptions,
+      scoringProfileOptions,
+      layoutStrategyOptions,
+      applyCommandTemplateOptions,
+      LEAD_TEMPLATE_PROMPT_ID,
+    );
+    const nextPromptRef = nextPromptVersions[0]?.value ?? "";
+    if (!nextPromptRef) {
+      setMessage("当前还没有可用的 opening_optimizer Prompt 版本，请先在 Prompt 后台激活版本。");
+      return;
+    }
+    setSelectedDatasetId(preferredDataset.id);
+    setPromptTargetId(LEAD_TEMPLATE_PROMPT_ID);
+    setRunForm((prev) => ({
+      ...prev,
+      datasetId: String(preferredDataset.id),
+      baseVersionType: "lead_template",
+      candidateVersionType: "lead_template",
+      baseVersionRef: nextPromptRef,
+      candidateVersionRef: nextPromptRef,
+      experimentMode: "lead_only",
+      triggerMode: "manual",
+      decisionMode: "manual_review",
+      summary: `${meta.label} · ${preferredDataset.name}`,
+    }));
+    replaceRunsUrl(selectedRunId, selectedResultId, preferredDataset.id);
+    if (typeof window !== "undefined") {
+      window.requestAnimationFrame(() => {
+        document.getElementById("run-create-form")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+    }
+    setMessage(`已按 ${meta.label} 预填开头专项实验表单`);
   }
 
   function handleSwapRunVersions() {
@@ -3245,6 +3304,61 @@ export function AdminWritingEvalClient({
         </div>
       </section>
 
+      <section className={uiPrimitives.adminPanel + " p-5"}>
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <div className="text-xs uppercase tracking-[0.24em] text-adminInkMuted">Opening Optimizer</div>
+            <h2 className="mt-3 font-serifCn text-2xl text-adminInk text-balance">开头专项实验入口</h2>
+          </div>
+          <div className="text-sm text-adminInkMuted">固定预填 `lead_only` + `lead_template` + opening dataset</div>
+        </div>
+        <div className="mt-5">
+          <article className="border border-adminLineStrong bg-adminBg px-4 py-4">
+            <div className="text-xs uppercase tracking-[0.18em] text-cinnabar">{openingOptimizerFocusCard.meta?.label || "开头优化器评测"}</div>
+            <div className="mt-2 text-sm leading-7 text-adminInkSoft">
+              {openingOptimizerFocusCard.meta?.description || "围绕 opening_optimizer / lead_template 的专项评测桶。"}
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2 text-[11px] uppercase tracking-[0.12em] text-adminInkSoft">
+              <span className="rounded-full border border-adminLineStrong px-2 py-1">datasets {openingOptimizerFocusCard.datasets.length}</span>
+              <span className="rounded-full border border-adminLineStrong px-2 py-1">ready {openingOptimizerFocusCard.readyCount}</span>
+              <span className="rounded-full border border-adminLineStrong px-2 py-1">runs {openingOptimizerFocusCard.runCount}</span>
+              <span className="rounded-full border border-adminLineStrong px-2 py-1">schedules {openingOptimizerFocusCard.scheduleCount}</span>
+            </div>
+            <div className="mt-3 text-xs leading-6 text-adminInkMuted">
+              Prompt：{openingOptimizerFocusCard.meta?.promptIds.join(" / ") || "opening_optimizer"}
+            </div>
+            <div className="mt-2 text-xs leading-6 text-adminInkMuted">
+              题型：{openingOptimizerFocusCard.meta?.targetTaskTypes.map((taskType) => getWritingEvalTaskTypeLabel(taskType)).join(" / ") || "通用全文题型"}
+            </div>
+            <div className="mt-2 text-xs leading-6 text-adminInkMuted">
+              推荐数据集：{openingOptimizerFocusCard.recommendedDataset?.name || "还没有匹配评测集"}
+            </div>
+            <div className="mt-2 text-xs leading-6 text-adminInkMuted">
+              发起后会锁定到开头专项实验模式，只比较 `opening_optimizer / lead_template` 版本。
+            </div>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button
+                type="button"
+                className={uiPrimitives.primaryButton}
+                onClick={() => handleApplyOpeningOptimizerPreset()}
+                disabled={!openingOptimizerFocusCard.recommendedDataset}
+              >
+                一键预填开头实验
+              </button>
+              {openingOptimizerFocusCard.recommendedDataset ? (
+                <Link href={buildAdminWritingEvalDatasetsHref({ datasetId: openingOptimizerFocusCard.recommendedDataset.id })} className={uiPrimitives.adminSecondaryButton}>
+                  打开评测集
+                </Link>
+              ) : (
+                <Link href={buildAdminWritingEvalDatasetsHref()} className={uiPrimitives.adminSecondaryButton}>
+                  去建评测集
+                </Link>
+              )}
+            </div>
+          </article>
+        </div>
+      </section>
+
       <section className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_420px]">
         <div className={uiPrimitives.adminPanel + " p-5"}>
           <div className="flex items-center justify-between gap-3">
@@ -3396,10 +3510,10 @@ export function AdminWritingEvalClient({
             {runForm.experimentMode === "title_only"
               ? "标题专项实验会固定到 title_template（底层绑定 title_optimizer），仅比较标题候选对点击力的影响。"
               : runForm.experimentMode === "lead_only"
-                ? "开头专项实验会固定到 lead_template（底层绑定 prose_polish），仅比较首段改写对留存力的影响。"
+                ? "开头专项实验会固定到 lead_template（底层绑定 opening_optimizer），仅比较开头诊断与改写对留存力的影响。"
                 : hasLayoutStrategyOptions
                   ? hasApplyCommandTemplateOptions
-                  ? "全文实验可比较完整写作 Prompt、fact_check、title_template、lead_template、评分画像、写作风格资产与 apply command 模板。"
+                    ? "全文实验可比较完整写作 Prompt、fact_check、title_template、lead_template、评分画像、写作风格资产与 apply command 模板。"
                     : "全文实验可比较完整写作 Prompt、fact_check、title_template、lead_template、评分画像或写作风格资产。"
                   : hasApplyCommandTemplateOptions
                     ? "全文实验可比较完整写作 Prompt、fact_check、title_template、lead_template、评分画像与 apply command 模板；当前还没有可用写作风格资产。"

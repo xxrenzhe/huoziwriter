@@ -1,4 +1,5 @@
 import { buildSuggestedEvidenceItems } from "@/lib/article-evidence";
+import { recomputeAndPersistArticleOutcome } from "@/lib/article-outcome-runtime";
 import { ensureUserSession } from "@/lib/auth";
 import { getArticleStageArtifact } from "@/lib/article-stage-artifacts";
 import { getArticleNodes } from "@/lib/article-outline";
@@ -92,7 +93,11 @@ export async function POST(_: Request, { params }: { params: { id: string } }) {
       researchTag: getString(item.researchTag) || null,
       evidenceRole: getString(item.evidenceRole) || "supportingEvidence",
       sortOrder: index + 1,
-    })),
+      })),
+  });
+  await recomputeAndPersistArticleOutcome({
+    articleId: article.id,
+    userId: session.userId,
   });
 
   return ok({

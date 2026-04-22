@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { ensureUserSession } from "@/lib/auth";
 import { buildArticleArtifactRuntimeMetaPatch, buildStageArtifactApplyCommand, getArticleStageArtifact, updateArticleStageArtifactPayload } from "@/lib/article-stage-artifacts";
 import { getArticleAuthoringStyleContext } from "@/lib/article-authoring-style-context";
@@ -11,6 +12,7 @@ import { consumeDailyGenerationQuota, getUserPlanContext } from "@/lib/plan-acce
 import { createArticleSnapshot, getArticleById } from "@/lib/repositories";
 import { getLanguageGuardRules, getLanguageGuardTokenBlacklist } from "@/lib/language-guard";
 import { getActiveWritingEvalScoringProfile } from "@/lib/writing-eval";
+import { createPendingWritingStyleProfileStreamUsage } from "@/lib/writing-style-profiles";
 
 export async function GET(_: Request, { params }: { params: { id: string } }) {
   const session = await ensureUserSession();
@@ -154,14 +156,25 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
       });
     }
     const chunks = splitIntoChunks(generated.markdown);
+    const usageToken = authoringStyleContext.writingStyleProfile?.id ? randomUUID() : null;
+    if (usageToken && authoringStyleContext.writingStyleProfile?.id) {
+      await createPendingWritingStyleProfileStreamUsage({
+        userId: session.userId,
+        profileId: authoringStyleContext.writingStyleProfile.id,
+        articleId: article.id,
+        usageToken,
+        profileName: authoringStyleContext.writingStyleProfile.name,
+        sampleCount: authoringStyleContext.writingStyleProfile.sampleCount,
+      });
+    }
 
     const stream = new ReadableStream({
       start(controller) {
-        controller.enqueue(`data: ${JSON.stringify({ status: "start" })}\n\n`);
+        controller.enqueue(`data: ${JSON.stringify({ status: "start", usageToken })}\n\n`);
         for (const chunk of chunks) {
           controller.enqueue(`data: ${JSON.stringify({ status: "writing", delta: chunk })}\n\n`);
         }
-        controller.enqueue(`data: ${JSON.stringify({ status: "done" })}\n\n`);
+        controller.enqueue(`data: ${JSON.stringify({ status: "done", usageToken })}\n\n`);
         controller.close();
       },
     });

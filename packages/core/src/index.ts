@@ -12,6 +12,8 @@ export type ModelRouteDefinition = {
   sceneCode: string;
   primaryModel: string;
   fallbackModel: string | null;
+  shadowModel?: string | null;
+  shadowTrafficPercent?: number;
   description: string;
 };
 
@@ -147,6 +149,12 @@ export const DEFAULT_MODEL_ROUTES: readonly ModelRouteDefinition[] = [
     primaryModel: "claude-sonnet-4-6",
     fallbackModel: "claude-haiku-4-5",
     description: "公众号标题 6 候选生成与体检",
+  },
+  {
+    sceneCode: "openingOptimizer",
+    primaryModel: "claude-sonnet-4-6",
+    fallbackModel: "claude-haiku-4-5",
+    description: "公众号开头 3 候选生成与前三秒留存体检",
   },
   {
     sceneCode: "deepWrite",

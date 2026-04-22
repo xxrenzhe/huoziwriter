@@ -1,4 +1,5 @@
 import { normalizeArticleStatus, toStoredArticleStatus } from "./article-status-label";
+import { recomputeAndPersistArticleOutcome } from "./article-outcome-runtime";
 import { assertWechatTemplateAllowed } from "./plan-access";
 import { getArticleById, saveArticle } from "./repositories";
 
@@ -28,7 +29,7 @@ export async function saveArticleDraft(input: {
         : String(input.body.wechatTemplateId);
   await assertWechatTemplateAllowed(input.userId, wechatTemplateId);
 
-  return saveArticle({
+  const savedArticle = await saveArticle({
     articleId: input.articleId,
     userId: input.userId,
     title: input.body.title,
@@ -42,6 +43,13 @@ export async function saveArticleDraft(input: {
           : Number(input.body.seriesId),
     wechatTemplateId,
   });
+  if (savedArticle) {
+    await recomputeAndPersistArticleOutcome({
+      articleId: input.articleId,
+      userId: input.userId,
+    });
+  }
+  return savedArticle;
 }
 
 export function serializeArticleDraft(

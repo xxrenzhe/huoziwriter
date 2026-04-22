@@ -1,9 +1,41 @@
 import { STYLE_TEMPLATE_LIBRARY } from "./catalog";
 import { backfillAssetFilesFromCoverAssets } from "./asset-files";
 import { getDatabase } from "./db";
+import { runPendingMigrations } from "./db-migrations";
 import { backfillLayoutTemplatesFromTemplateVersions, syncTemplateVersionToLayoutTemplates } from "./layout-templates";
 import { syncPersonaCatalogToPersonaTags } from "./persona-tags";
 import { syncLegacyTopicSourcesToSourceConnectors, syncTopicSourceToSourceConnector } from "./source-connectors";
+
+type CachedBootTask = {
+  key: string;
+  promise: Promise<void>;
+};
+
+let runtimeMigrationsTask: CachedBootTask | null = null;
+let extendedSchemaTask: CachedBootTask | null = null;
+
+function getCurrentDatabaseCacheKey() {
+  if (process.env.DATABASE_URL) {
+    return `postgres:${process.env.DATABASE_URL}:${process.env.DATABASE_SCHEMA || "public"}`;
+  }
+  return `sqlite:${process.cwd()}:${process.env.DATABASE_PATH || ".local/state/huoziwriter.db"}`;
+}
+
+async function ensureRuntimeMigrations() {
+  const key = getCurrentDatabaseCacheKey();
+  if (!runtimeMigrationsTask || runtimeMigrationsTask.key !== key) {
+    const promise = runPendingMigrations()
+      .then(() => undefined)
+      .catch((error) => {
+        if (runtimeMigrationsTask?.key === key) {
+          runtimeMigrationsTask = null;
+        }
+        throw error;
+      });
+    runtimeMigrationsTask = { key, promise };
+  }
+  await runtimeMigrationsTask.promise;
+}
 
 async function execAll(statements: string[]) {
   const db = getDatabase();
@@ -933,7 +965,8 @@ async function ensureWritingActiveAssetSeeds() {
   }
 }
 
-export async function ensureExtendedProductSchema() {
+async function ensureExtendedProductSchemaInternal() {
+  await ensureRuntimeMigrations();
   await renameTableIfNeeded(LEGACY_AUTHOR_PERSONAS_TABLE, "personas");
   await renameTableIfNeeded(LEGACY_AUTHOR_PERSONA_SOURCES_TABLE, "persona_sources");
   await renameTableIfNeeded(LEGACY_AUTHOR_SERIES_TABLE, "series");
@@ -1298,6 +1331,19 @@ export async function ensureExtendedProductSchema() {
       created_at ${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "NOW()" : "(datetime('now'))"},
       updated_at ${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "NOW()" : "(datetime('now'))"}
     )`,
+    `CREATE TABLE IF NOT EXISTS archetype_rhythm_templates (
+      id ${getDatabase().type === "postgres" ? "BIGSERIAL" : "INTEGER"} PRIMARY KEY ${getDatabase().type === "postgres" ? "" : "AUTOINCREMENT"},
+      archetype_key TEXT NOT NULL,
+      version TEXT NOT NULL,
+      name TEXT NOT NULL,
+      description TEXT,
+      hints_json ${getDatabase().type === "postgres" ? "JSONB" : "TEXT"} NOT NULL,
+      is_active ${getDatabase().type === "postgres" ? "BOOLEAN" : "INTEGER"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "FALSE" : "0"},
+      created_by ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"},
+      created_at ${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "NOW()" : "(datetime('now'))"},
+      updated_at ${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "NOW()" : "(datetime('now'))"},
+      UNIQUE(archetype_key, version)
+    )`,
     `CREATE TABLE IF NOT EXISTS prompt_versions (
       id ${getDatabase().type === "postgres" ? "BIGSERIAL" : "INTEGER"} PRIMARY KEY ${getDatabase().type === "postgres" ? "" : "AUTOINCREMENT"},
       prompt_id TEXT NOT NULL,
@@ -1429,6 +1475,32 @@ export async function ensureExtendedProductSchema() {
       created_at ${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "NOW()" : "(datetime('now'))"},
       updated_at ${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "NOW()" : "(datetime('now'))"},
       UNIQUE(asset_type, asset_ref, metric_date)
+    )`,
+    `CREATE TABLE IF NOT EXISTS plan17_runtime_observations (
+      id ${getDatabase().type === "postgres" ? "BIGSERIAL" : "INTEGER"} PRIMARY KEY ${getDatabase().type === "postgres" ? "" : "AUTOINCREMENT"},
+      metric_key TEXT NOT NULL,
+      group_key TEXT,
+      user_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"},
+      status TEXT NOT NULL DEFAULT 'completed',
+      duration_ms INTEGER,
+      meta_json TEXT NOT NULL DEFAULT '{}',
+      observed_at ${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "NOW()" : "(datetime('now'))"},
+      created_at ${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "NOW()" : "(datetime('now'))"}
+    )`,
+    `CREATE TABLE IF NOT EXISTS ai_call_observations (
+      id ${getDatabase().type === "postgres" ? "BIGSERIAL" : "INTEGER"} PRIMARY KEY ${getDatabase().type === "postgres" ? "" : "AUTOINCREMENT"},
+      scene_code TEXT NOT NULL,
+      model TEXT NOT NULL,
+      provider TEXT NOT NULL,
+      call_mode TEXT NOT NULL DEFAULT 'primary',
+      input_tokens INTEGER,
+      output_tokens INTEGER,
+      cache_creation_tokens INTEGER,
+      cache_read_tokens INTEGER,
+      latency_ms INTEGER,
+      status TEXT NOT NULL DEFAULT 'success',
+      error_class TEXT,
+      created_at ${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "NOW()" : "(datetime('now'))"}
     )`,
     `CREATE TABLE IF NOT EXISTS writing_eval_datasets (
       id ${getDatabase().type === "postgres" ? "BIGSERIAL" : "INTEGER"} PRIMARY KEY ${getDatabase().type === "postgres" ? "" : "AUTOINCREMENT"},
@@ -1581,6 +1653,19 @@ export async function ensureExtendedProductSchema() {
       payload_json TEXT NOT NULL DEFAULT '{}',
       created_by ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"},
       captured_at ${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "NOW()" : "(datetime('now'))"},
+      created_at ${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "NOW()" : "(datetime('now'))"},
+      updated_at ${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "NOW()" : "(datetime('now'))"}
+    )`,
+    `CREATE TABLE IF NOT EXISTS writing_eval_case_quality_labels (
+      id ${getDatabase().type === "postgres" ? "BIGSERIAL" : "INTEGER"} PRIMARY KEY ${getDatabase().type === "postgres" ? "" : "AUTOINCREMENT"},
+      case_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"} NOT NULL UNIQUE,
+      dataset_id ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"} NOT NULL,
+      focus_key TEXT NOT NULL,
+      strategy_manual_score REAL,
+      evidence_expected_tags_json TEXT NOT NULL DEFAULT '[]',
+      evidence_detected_tags_json TEXT NOT NULL DEFAULT '[]',
+      notes TEXT,
+      created_by ${getDatabase().type === "postgres" ? "BIGINT" : "INTEGER"},
       created_at ${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "NOW()" : "(datetime('now'))"},
       updated_at ${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "NOW()" : "(datetime('now'))"}
     )`,
@@ -2005,6 +2090,8 @@ export async function ensureExtendedProductSchema() {
   await ensureColumn("prompt_versions", "rollout_plan_codes_json", "TEXT NOT NULL DEFAULT '[]'");
   await ensureColumn("prompt_versions", "updated_at", `${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "NOW()" : "(datetime('now'))"}`);
   await ensureColumn("prompt_versions", "auto_mode", "TEXT NOT NULL DEFAULT 'manual'");
+  await ensureColumn("ai_model_routes", "shadow_model", "TEXT");
+  await ensureColumn("ai_model_routes", "shadow_traffic_percent", "INTEGER NOT NULL DEFAULT 0");
   await ensureColumn("knowledge_cards", "conflict_flags_json", getDatabase().type === "postgres" ? "JSONB" : "TEXT");
   await ensureColumn("knowledge_cards", "latest_change_summary", "TEXT");
   await ensureColumn("knowledge_cards", "overturned_judgements_json", getDatabase().type === "postgres" ? "JSONB" : "TEXT");
@@ -2136,6 +2223,7 @@ export async function ensureExtendedProductSchema() {
   await ensureColumn("asset_files", "updated_at", `${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "NOW()" : "(datetime('now'))"}`);
   await ensureColumn("writing_asset_rollouts", "auto_mode", "TEXT NOT NULL DEFAULT 'manual'");
   await ensureColumn("writing_asset_rollouts", "rollout_observe_only", `${getDatabase().type === "postgres" ? "BOOLEAN" : "INTEGER"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "FALSE" : "0"}`);
+  await ensureColumn("ai_call_observations", "call_mode", "TEXT NOT NULL DEFAULT 'primary'");
   await ensureColumn("prompt_rollout_daily_metrics", "observe_hit_count", "INTEGER NOT NULL DEFAULT 0");
   await ensureColumn("writing_asset_rollout_daily_metrics", "observe_hit_count", "INTEGER NOT NULL DEFAULT 0");
   await ensureColumn("writing_optimization_runs", "experiment_mode", "TEXT NOT NULL DEFAULT 'full_article'");
@@ -2196,6 +2284,13 @@ export async function ensureExtendedProductSchema() {
     "CREATE INDEX IF NOT EXISTS idx_writing_asset_rollouts_type_enabled_updated_at ON writing_asset_rollouts(asset_type, is_enabled, updated_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_writing_asset_rollout_obs_type_ref_last_hit ON writing_asset_rollout_observations(asset_type, asset_ref, last_hit_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_writing_asset_rollout_metrics_type_ref_date ON writing_asset_rollout_daily_metrics(asset_type, asset_ref, metric_date DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_plan17_runtime_metric_observed_at ON plan17_runtime_observations(metric_key, observed_at DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_plan17_runtime_group_metric_observed_at ON plan17_runtime_observations(group_key, metric_key, observed_at DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_plan17_runtime_status_observed_at ON plan17_runtime_observations(status, observed_at DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_ai_call_observations_scene_created_at ON ai_call_observations(scene_code, created_at DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_ai_call_observations_model_created_at ON ai_call_observations(model, created_at DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_ai_call_observations_mode_created_at ON ai_call_observations(call_mode, created_at DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_ai_call_observations_status_created_at ON ai_call_observations(status, created_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_writing_optimization_runs_status_created_at ON writing_optimization_runs(status, created_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_writing_optimization_runs_dataset_created_at ON writing_optimization_runs(dataset_id, created_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_writing_optimization_runs_source_schedule_created_at ON writing_optimization_runs(source_schedule_id, created_at DESC)",
@@ -2211,6 +2306,9 @@ export async function ensureExtendedProductSchema() {
     "CREATE INDEX IF NOT EXISTS idx_writing_eval_online_feedback_result_captured_at ON writing_eval_online_feedback(result_id, captured_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_writing_eval_online_feedback_article_captured_at ON writing_eval_online_feedback(article_id, captured_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_writing_eval_online_feedback_sync_log ON writing_eval_online_feedback(wechat_sync_log_id)",
+    "CREATE INDEX IF NOT EXISTS idx_writing_eval_case_quality_labels_dataset_case ON writing_eval_case_quality_labels(dataset_id, case_id)",
+    "CREATE INDEX IF NOT EXISTS idx_writing_eval_case_quality_labels_focus_updated_at ON writing_eval_case_quality_labels(focus_key, updated_at DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_archetype_rhythm_templates_active_updated_at ON archetype_rhythm_templates(archetype_key, is_active, updated_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_topic_backlogs_user_series_updated_at ON topic_backlogs(user_id, series_id, updated_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_topic_backlog_items_backlog_status_updated_at ON topic_backlog_items(backlog_id, status, updated_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_topic_backlog_items_generated_article_id ON topic_backlog_items(generated_article_id)",
@@ -2230,6 +2328,21 @@ export async function ensureExtendedProductSchema() {
   await backfillLayoutTemplatesFromTemplateVersions();
   await ensureWritingEvalSeeds();
   await ensureWritingActiveAssetSeeds();
+}
+
+export async function ensureExtendedProductSchema() {
+  const key = getCurrentDatabaseCacheKey();
+  if (!extendedSchemaTask || extendedSchemaTask.key !== key) {
+    const promise = ensureExtendedProductSchemaInternal()
+      .catch((error) => {
+        if (extendedSchemaTask?.key === key) {
+          extendedSchemaTask = null;
+        }
+        throw error;
+      });
+    extendedSchemaTask = { key, promise };
+  }
+  await extendedSchemaTask.promise;
 }
 
 export async function ensureTemplateLibrarySeeds() {

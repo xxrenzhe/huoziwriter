@@ -4,6 +4,7 @@ import { derivePersonaName, PERSONA_IDENTITY_OPTIONS, PERSONA_WRITING_STYLE_OPTI
 import { getPersonaTagCatalog, getPersonaTagOptionValues } from "./persona-tags";
 import { getUserPlanContext } from "./plan-access";
 import { getPlanEntitlementDefinition } from "./plan-entitlements";
+import { formatPromptTemplate } from "./prompt-template";
 import { ensureExtendedProductSchema } from "./schema-bootstrap";
 import { getWritingStyleProfileById } from "./writing-style-profiles";
 
@@ -389,10 +390,29 @@ async function analyzePersonaSource(input: {
   const mergedSourceText = input.sources
     .map((source, index) => {
       const sourceLabel = source.sourceType === "file" ? "文件资料" : "文本资料";
-      const title = String(source.title || source.fileName || `${sourceLabel} ${index + 1}`).trim();
+      const title = String(
+        source.title
+        || source.fileName
+        || formatPromptTemplate("{{sourceLabel}} {{sourceIndex}}", {
+          sourceLabel,
+          sourceIndex: index + 1,
+        }),
+      ).trim();
       const sourceUrl = String(source.sourceUrl || "").trim();
       const normalizedText = String(source.sourceText || "").trim().slice(0, 4_000);
-      return [`[${sourceLabel} ${index + 1}] ${title}`, sourceUrl ? `来源链接：${sourceUrl}` : null, normalizedText]
+      return [
+        formatPromptTemplate("[{{sourceLabel}} {{sourceIndex}}] {{title}}", {
+          sourceLabel,
+          sourceIndex: index + 1,
+          title,
+        }),
+        sourceUrl
+          ? formatPromptTemplate("来源链接：{{sourceUrl}}", {
+            sourceUrl,
+          })
+          : null,
+        normalizedText,
+      ]
         .filter(Boolean)
         .join("\n");
     })
@@ -400,12 +420,22 @@ async function analyzePersonaSource(input: {
     .slice(0, 18_000);
   const systemPrompt = ["你是作者人设分析器。", "请根据用户提供的资料，总结出一个适合中文内容写作系统的人设画像。", "只返回 JSON，不要输出任何额外解释。"].join("\n");
   const userPrompt = [
-    input.name ? `用户期望名称：${input.name}` : "用户未指定名称，请你建议一个更贴合资料的人设名称。",
-    `身份标签只能从以下选项中选 1-3 个：${identityOptions.join("、")}`,
-    `写作风格标签只能从以下选项中选 1-3 个：${writingStyleOptions.join("、")}`,
+    input.name
+      ? formatPromptTemplate("用户期望名称：{{name}}", {
+        name: input.name,
+      })
+      : "用户未指定名称，请你建议一个更贴合资料的人设名称。",
+    formatPromptTemplate("身份标签只能从以下选项中选 1-3 个：{{identityOptions}}", {
+      identityOptions: identityOptions.join("、"),
+    }),
+    formatPromptTemplate("写作风格标签只能从以下选项中选 1-3 个：{{writingStyleOptions}}", {
+      writingStyleOptions: writingStyleOptions.join("、"),
+    }),
     '返回字段：{"suggestedName":"字符串","summary":"字符串","identityTags":[""],"writingStyleTags":[""],"domainKeywords":[""],"argumentPreferences":[""],"toneConstraints":[""],"audienceHints":[""]}',
     "要求：summary 要说明这个人设最擅长写什么、常站在哪种立场、适合怎么说话；其余数组都控制在 3-6 条内。",
-    `当前共有 ${input.sources.length} 份资料，请综合分析，不要只盯着其中一份。`,
+    formatPromptTemplate("当前共有 {{sourceCount}} 份资料，请综合分析，不要只盯着其中一份。", {
+      sourceCount: input.sources.length,
+    }),
     "",
     "资料正文：",
     mergedSourceText,

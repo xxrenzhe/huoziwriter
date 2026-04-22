@@ -8,7 +8,9 @@ import {
   surfaceCardStyles,
 } from "@huoziwriter/ui";
 import Link from "next/link";
+import { ArticleOutcomeQuickCaptureButton } from "@/components/article-outcome-quick-capture-button";
 import { ArticleList, CreateArticleForm } from "@/components/dashboard-client";
+import { formatOutcomeHitStatus } from "@/lib/article-workspace-formatters";
 import { compareArticleStatuses, formatArticleStatusLabel, isPublishedArticleStatus, normalizeArticleStatus } from "@/lib/article-status-label";
 import { requireWriterSession } from "@/lib/page-auth";
 import { getArticleOutcomeBundlesByUser, getArticlesByUser, getWechatSyncLogs } from "@/lib/repositories";
@@ -16,6 +18,22 @@ import { getSeries } from "@/lib/series";
 
 function getSearchValue(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] || "" : value || "";
+}
+
+function formatWindowSummary(windowCodes: string[]) {
+  return windowCodes.length > 0 ? windowCodes.join(" / ") : "已补齐";
+}
+
+function getDaysSince(value: string) {
+  const timestamp = new Date(value).getTime();
+  if (!Number.isFinite(timestamp)) {
+    return 0;
+  }
+  const diff = Date.now() - timestamp;
+  if (diff <= 0) {
+    return 0;
+  }
+  return Math.floor(diff / 86_400_000);
 }
 
 const pageClassName = "space-y-8";
@@ -51,6 +69,14 @@ const filterFormClassName = "mt-6 grid gap-3 xl:grid-cols-6";
 const filterActionsClassName = "flex items-end gap-3";
 const filterResultsClassName = "text-sm text-inkSoft";
 const articleListWrapClassName = "mt-6";
+const pendingOutcomeGridClassName = "mt-6 grid gap-4 xl:grid-cols-2";
+const pendingOutcomeCardClassName = cn(surfaceCardStyles({ padding: "md" }), "border-lineStrong bg-surface shadow-none");
+const pendingOutcomeMetaRowClassName = "mt-3 flex flex-wrap gap-2";
+const pendingOutcomeMetaChipClassName = cn(surfaceCardStyles({ tone: "subtle", padding: "sm" }), "px-3 py-1 text-xs text-inkSoft shadow-none");
+const pendingOutcomeWarningChipClassName = cn(surfaceCardStyles({ tone: "warning", padding: "sm" }), "px-3 py-1 text-xs text-warning shadow-none");
+const pendingOutcomeEmptyClassName = cn(surfaceCardStyles({ tone: "success", padding: "md" }), "mt-6 text-sm leading-7 text-emerald-700 shadow-none");
+const pendingOutcomeBodyClassName = "mt-4 text-sm leading-7 text-inkSoft";
+const pendingOutcomeActionsClassName = "mt-5 flex flex-wrap gap-3";
 
 export default async function ArticlesPage({
   searchParams,
@@ -167,6 +193,42 @@ export default async function ArticlesPage({
     { label: "已发布", value: String(publishedArticles.length), note: "结果回流、命中判定和复盘都从稿件详情继续推进。" },
     { label: "已推送微信", value: String(recentlySyncedIds.size), note: "已形成成功草稿箱记录的稿件数。" },
   ] as const;
+  const pendingOutcomeArticles = publishedArticles
+    .map((article) => {
+      const bundle = outcomeBundleMap.get(article.id);
+      const missingWindowCodes = bundle?.missingWindowCodes ?? ["24h", "72h", "7d"];
+      const completedWindowCodes = bundle?.completedWindowCodes ?? [];
+      const hitStatus = bundle?.outcome?.hitStatus ?? "pending";
+      const daysSinceUpdate = getDaysSince(article.updated_at);
+      const isOverdue = daysSinceUpdate >= 7 && (missingWindowCodes.includes("7d") || hitStatus === "pending");
+      return {
+        articleId: article.id,
+        articleTitle: article.title,
+        seriesName: article.series_id ? seriesMap.get(article.series_id)?.name ?? null : null,
+        updatedAt: article.updated_at,
+        daysSinceUpdate,
+        isOverdue,
+        missingWindowCodes,
+        completedWindowCodes,
+        nextWindowCode: bundle?.nextWindowCode ?? null,
+        targetPackage: bundle?.outcome?.targetPackage ?? null,
+        hitStatus,
+        reviewSummary: bundle?.outcome?.reviewSummary ?? null,
+        nextAction: bundle?.outcome?.nextAction ?? null,
+        playbookTags: bundle?.outcome?.playbookTags ?? [],
+      };
+    })
+    .filter((item) => item.missingWindowCodes.length > 0 || item.hitStatus === "pending")
+    .sort((left, right) => {
+      if (left.isOverdue !== right.isOverdue) {
+        return left.isOverdue ? -1 : 1;
+      }
+      if (left.daysSinceUpdate !== right.daysSinceUpdate) {
+        return right.daysSinceUpdate - left.daysSinceUpdate;
+      }
+      return right.missingWindowCodes.length - left.missingWindowCodes.length;
+    });
+  const visiblePendingOutcomeArticles = pendingOutcomeArticles.slice(0, 6);
 
   return (
     <div className={pageClassName}>
@@ -217,6 +279,77 @@ export default async function ArticlesPage({
             }))}
           />
         </div>
+      </section>
+
+      <section className={sectionCardClassName}>
+        <div className={sectionHeaderClassName}>
+          <div>
+            <div className={sectionEyebrowClassName}>待回流</div>
+            <h2 className={sectionTitleClassName}>已发布稿件先在这里补 24h / 72h / 7d 结果。</h2>
+          </div>
+          <Link href="/reviews" className={secondaryActionLinkClassName}>
+            去复盘页
+          </Link>
+        </div>
+        <p className={heroDescriptionClassName}>
+          不用再先钻进稿件详情。这里直接补结果快照，保存后会立刻刷新命中判定、结果归因和后续复盘所依赖的数据。
+        </p>
+        {visiblePendingOutcomeArticles.length > 0 ? (
+          <div className={pendingOutcomeGridClassName}>
+            {visiblePendingOutcomeArticles.map((item) => (
+              <article key={item.articleId} className={pendingOutcomeCardClassName}>
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div className={sectionEyebrowClassName}>结果补录</div>
+                    <h3 className="mt-2 font-serifCn text-2xl text-ink text-balance">{item.articleTitle}</h3>
+                  </div>
+                  <span className={item.isOverdue ? pendingOutcomeWarningChipClassName : pendingOutcomeMetaChipClassName}>
+                    {item.isOverdue ? "已超期待补" : `已发布 ${Math.max(item.daysSinceUpdate, 0)} 天`}
+                  </span>
+                </div>
+                <div className={pendingOutcomeMetaRowClassName}>
+                  {item.seriesName ? (
+                    <span className={pendingOutcomeMetaChipClassName}>系列：{item.seriesName}</span>
+                  ) : null}
+                  <span className={pendingOutcomeMetaChipClassName}>待补：{formatWindowSummary(item.missingWindowCodes)}</span>
+                  <span className={pendingOutcomeMetaChipClassName}>当前判定：{formatOutcomeHitStatus(item.hitStatus)}</span>
+                  {item.targetPackage ? (
+                    <span className={pendingOutcomeMetaChipClassName}>目标包：{item.targetPackage}</span>
+                  ) : null}
+                </div>
+                <div className={pendingOutcomeBodyClassName}>
+                  {item.missingWindowCodes.length > 0
+                    ? `当前还缺 ${formatWindowSummary(item.missingWindowCodes)} 快照。先补最近一个时间窗，后续复盘链路就能继续往下走。`
+                    : item.nextAction || item.reviewSummary || "快照已经补齐，但命中判定和复盘结论还没完成。"}
+                </div>
+                <div className="mt-3 text-xs leading-6 text-inkMuted">
+                  最近更新：{new Date(item.updatedAt).toLocaleString("zh-CN")}
+                </div>
+                <div className={pendingOutcomeActionsClassName}>
+                  <ArticleOutcomeQuickCaptureButton
+                    articleId={item.articleId}
+                    articleTitle={item.articleTitle}
+                    nextWindowCode={item.nextWindowCode}
+                    completedWindowCodes={item.completedWindowCodes}
+                    missingWindowCodes={item.missingWindowCodes}
+                    currentTargetPackage={item.targetPackage}
+                    currentHitStatus={item.hitStatus}
+                    currentReviewSummary={item.reviewSummary}
+                    currentNextAction={item.nextAction}
+                    currentPlaybookTags={item.playbookTags}
+                  />
+                  <Link href={`/articles/${item.articleId}`} className={secondaryActionLinkClassName}>
+                    打开稿件详情
+                  </Link>
+                </div>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <div className={pendingOutcomeEmptyClassName}>
+            当前没有待补结果的已发布稿件。已发布稿件的 24h / 72h / 7d 快照和命中判定都已补齐后，这里会自动清空。
+          </div>
+        )}
       </section>
 
       <section className={sectionCardClassName}>

@@ -420,6 +420,12 @@ export async function getReviewData(userId: number) {
   ]);
   const publishedArticles = articles.filter((article) => article.status === "published");
   const outcomeBundleMap = new Map(outcomeBundles.map((bundle) => [bundle.outcome?.articleId, bundle] as const));
+  const outcomeArticles = publishedArticles
+    .flatMap((article) => {
+      const bundle = outcomeBundleMap.get(article.id);
+      return bundle?.outcome ? [{ article, bundle }] : [];
+    })
+    .sort((left, right) => right.bundle.outcome.updatedAt.localeCompare(left.bundle.outcome.updatedAt));
   const hitCandidates = publishedArticles
     .map((article) => ({ article, bundle: outcomeBundleMap.get(article.id) }))
     .filter((item) => item.bundle?.outcome?.hitStatus === "hit");
@@ -438,6 +444,7 @@ export async function getReviewData(userId: number) {
 
   return {
     publishedArticles,
+    outcomeArticles,
     hitCandidates,
     nearMisses,
     seriesPlaybooks,

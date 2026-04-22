@@ -1,4 +1,5 @@
 import { tagEvidenceItemHooks } from "@/lib/article-evidence";
+import { recomputeAndPersistArticleOutcome } from "@/lib/article-outcome-runtime";
 import { ensureUserSession } from "@/lib/auth";
 import { fail, ok } from "@/lib/http";
 import { getArticleById, getArticleEvidenceItems, replaceArticleEvidenceItems } from "@/lib/repositories";
@@ -62,6 +63,10 @@ export async function POST(request: Request, { params }: { params: { id: string 
         evidenceRole: getString(item.evidenceRole) || "supportingEvidence",
         sortOrder: index + 1,
       })),
+    });
+    await recomputeAndPersistArticleOutcome({
+      articleId: article.id,
+      userId: session.userId,
     });
 
     return ok({

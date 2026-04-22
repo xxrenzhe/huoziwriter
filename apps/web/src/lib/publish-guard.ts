@@ -5,6 +5,7 @@ import { getHumanSignalScore, getStrategyCardMissingFields, isStrategyCardComple
 import { getArticleNodes } from "./article-outline";
 import { getArticleStageArtifact, getArticleStageArtifactsByDocumentIds } from "./article-stage-artifacts";
 import { getActiveTemplateById } from "./layout-templates";
+import { evaluateOpeningGuardChecks as evaluateOpeningPatternGuardChecks } from "./opening-patterns";
 import { getArticleById, getArticleEvidenceItems, getArticlesByUser, getArticleStrategyCard, getLatestArticleCoverImage, getLatestWechatSyncLogForArticle, getWechatConnectionRaw } from "./repositories";
 import { evaluateTitleGuardChecks } from "./title-patterns";
 import { buildWritingDiversityReport } from "./writing-diversity";
@@ -174,7 +175,25 @@ export async function evaluatePublishGuard(input: {
     titleAuditedAt: outlineArtifact?.payload?.titleAuditedAt,
     outlineUpdatedAt: outlineArtifact?.payload?.outlineUpdatedAt,
   });
+  const selectedOpeningHook = getString(outlineSelection?.selectedOpeningHook) || getString(outlineArtifact?.payload?.openingHook);
+  const selectedOpeningOption = getRecordArray(outlineArtifact?.payload?.openingOptions).find((item) => {
+    const optionOpening = getString(item.opening) || getString(item.text) || getString(item.content) || getString(item.value);
+    return optionOpening === selectedOpeningHook;
+  }) ?? null;
+  const openingGuardEvaluation = evaluateOpeningPatternGuardChecks({
+    selectedOpening:
+      getString(article?.markdown_content)
+      || getString(deepWritingArtifact?.payload?.openingStrategy)
+      || selectedOpeningHook,
+    selectedOpeningHook,
+    selectedOpeningOption,
+    openingAuditedAt: outlineArtifact?.payload?.openingAuditedAt,
+    outlineUpdatedAt: outlineArtifact?.payload?.outlineUpdatedAt,
+  });
   const { titleConfirmed } = titleGuardEvaluation;
+  const openingHasBlockingIssues = openingGuardEvaluation.checks.some((item) => item.status === "blocked" || item.severity === "blocking");
+  const openingNeedsAttention =
+    openingHasBlockingIssues || openingGuardEvaluation.checks.some((item) => item.status === "warning" || item.severity === "warning");
   const outlineGapHints = getStringArray(outlineArtifact?.payload?.materialGapHints, 4);
   const historyReferencePlan = getStringArray(deepWritingArtifact?.payload?.historyReferencePlan ? ["history"] : [], 1);
   const languageGuardHits = Array.isArray(prosePolishArtifact?.payload?.languageGuardHits)
@@ -458,6 +477,10 @@ export async function evaluatePublishGuard(input: {
   });
 
   for (const check of titleGuardEvaluation.checks) {
+    pushCheck(checks, blockers, warnings, suggestions, check);
+  }
+
+  for (const check of openingGuardEvaluation.checks) {
     pushCheck(checks, blockers, warnings, suggestions, check);
   }
 
@@ -908,13 +931,17 @@ export async function evaluatePublishGuard(input: {
       title: "深度写作",
       status:
         deepWritingArtifact?.status === "ready" && hasArtifactPayload(deepWritingArtifact)
-          ? historyReferencePlan.length > 0 && !rhythmConsistencyNeedsAttention
+          ? historyReferencePlan.length > 0 && !rhythmConsistencyNeedsAttention && !openingNeedsAttention
             ? "ready"
             : "needs_attention"
           : "blocked",
       detail:
         deepWritingArtifact?.status === "ready" && hasArtifactPayload(deepWritingArtifact)
-          ? rhythmConsistencyNeedsAttention
+          ? openingHasBlockingIssues
+            ? "执行卡已准备，但开头体检仍命中阻断项。"
+            : openingNeedsAttention
+              ? "执行卡已准备，但开头首段仍建议继续收紧钩子与第一屏节奏。"
+            : rhythmConsistencyNeedsAttention
             ? "执行卡已准备，但当前正文原型和策略原型还没完全对齐。"
             : historyReferencePlan.length > 0
               ? "执行卡、系列承接与关键事实都已准备。"
@@ -962,10 +989,21 @@ export async function evaluatePublishGuard(input: {
         !strategyCardReady
           || humanSignalScore < 2
           || !evidenceStats.ready
+          || openingHasBlockingIssues
           ? "blocked"
-          : coverImage && connectionHealth.status === "valid" && hookCoverageReady && fourPointAuditLockable && !rhythmConsistencyNeedsAttention
+          : coverImage
+            && connectionHealth.status === "valid"
+            && hookCoverageReady
+            && fourPointAuditLockable
+            && !rhythmConsistencyNeedsAttention
+            && !openingNeedsAttention
             ? "ready"
-            : coverImage || connectionHealth.status === "valid" || !hookCoverageReady || !fourPointAuditLockable || rhythmConsistencyNeedsAttention
+            : coverImage
+              || connectionHealth.status === "valid"
+              || !hookCoverageReady
+              || !fourPointAuditLockable
+              || rhythmConsistencyNeedsAttention
+              || openingNeedsAttention
               ? "needs_attention"
               : "blocked",
       detail:
@@ -975,9 +1013,17 @@ export async function evaluatePublishGuard(input: {
             ? "人类信号不足，正文还没有稳固的作者真实感，发布仍处于阻断状态。"
           : !evidenceStats.ready
             ? "证据包尚未确认到发布标准，发布仍处于阻断状态。"
-          : coverImage && connectionHealth.status === "valid" && hookCoverageReady && fourPointAuditLockable && !rhythmConsistencyNeedsAttention
+          : openingHasBlockingIssues
+            ? "开头体检未通过，发布仍处于阻断状态。"
+          : coverImage
+            && connectionHealth.status === "valid"
+            && hookCoverageReady
+            && fourPointAuditLockable
+            && !rhythmConsistencyNeedsAttention
+            && !openingNeedsAttention
             ? "连接、封面和模板已准备。"
             : `发布前仍建议处理这些方法论闸门：${[
+                openingNeedsAttention ? "开头体检待处理" : null,
                 !hookCoverageReady ? "爆点覆盖度不足" : null,
                 !fourPointAuditLockable ? "四元强度未达锁定线" : null,
                 rhythmConsistencyNeedsAttention ? "原型节奏还未对齐" : null,

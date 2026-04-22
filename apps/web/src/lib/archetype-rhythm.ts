@@ -1,3 +1,6 @@
+import { getDatabase } from "./db";
+import { ensureExtendedProductSchema } from "./schema-bootstrap";
+
 export type StrategyArchetypeKey = "opinion" | "case" | "howto" | "hotTake" | "phenomenon";
 export type ArchetypeRhythmTolerance = "low" | "med" | "high";
 export type ArchetypeRhythmStrength = "low" | "med" | "high";
@@ -17,6 +20,38 @@ export type ArchetypeRhythmConsistencyReport = {
   matchedSignals: string[];
   issues: string[];
   detail: string;
+};
+
+type ArchetypeRhythmTemplateRow = {
+  archetype_key: string;
+  version: string;
+  name: string;
+  description: string | null;
+  hints_json: string | Record<string, unknown>;
+  is_active: boolean | number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ArchetypeRhythmTemplate = {
+  archetypeKey: StrategyArchetypeKey;
+  version: string;
+  name: string;
+  description: string | null;
+  hints: ArchetypeRhythmHints;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ArchetypeRhythmTemplateInput = {
+  archetypeKey: StrategyArchetypeKey;
+  version: string;
+  name: string;
+  description?: string | null;
+  hints: ArchetypeRhythmHints;
+  activate?: boolean;
+  createdBy?: number | null;
 };
 
 const DEFAULT_ARCHETYPE_RHYTHM_HINTS: Record<StrategyArchetypeKey, ArchetypeRhythmHints> = {
@@ -62,6 +97,10 @@ const DEFAULT_ARCHETYPE_RHYTHM_HINTS: Record<StrategyArchetypeKey, ArchetypeRhyt
   },
 };
 
+const DEFAULT_ARCHETYPE_RHYTHM_TEMPLATE_VERSION = "v1";
+const ARCHETYPE_RHYTHM_TEMPLATE_CACHE_TTL = 5 * 60 * 1000;
+const archetypeRhythmTemplateCache = new Map<string, ArchetypeRhythmTemplate & { at: number }>();
+
 function normalizeTolerance(value: unknown): ArchetypeRhythmTolerance | null {
   if (value === "low" || value === "med" || value === "high") {
     return value;
@@ -82,6 +121,126 @@ function getRecord(value: unknown) {
 
 function getString(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function parseJsonRecord(value: unknown) {
+  if (!value) return null;
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value) as Record<string, unknown>;
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null;
+    } catch {
+      return null;
+    }
+  }
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
+function buildArchetypeRhythmTemplateName(archetype: StrategyArchetypeKey) {
+  return `${archetype} default rhythm`;
+}
+
+function buildArchetypeRhythmTemplateDescription(archetype: StrategyArchetypeKey) {
+  return `Seeded default rhythm template for ${archetype}`;
+}
+
+function normalizeTemplateVersion(value: unknown) {
+  return getString(value).replace(/\s+/g, "-").slice(0, 48);
+}
+
+function normalizeTemplateName(value: unknown) {
+  return getString(value).slice(0, 80);
+}
+
+function normalizeHints(value: unknown, fallback: ArchetypeRhythmHints) {
+  const record = getRecord(value);
+  return {
+    narrativeStance: getString(record?.narrativeStance) || fallback.narrativeStance,
+    energyCurve: getString(record?.energyCurve) || fallback.energyCurve,
+    discoveryMode: getString(record?.discoveryMode) || fallback.discoveryMode,
+    offTopicTolerance: normalizeTolerance(record?.offTopicTolerance) ?? fallback.offTopicTolerance,
+    closureMode: getString(record?.closureMode) || fallback.closureMode,
+    judgmentStrength: normalizeStrength(record?.judgmentStrength) ?? fallback.judgmentStrength,
+  } satisfies ArchetypeRhythmHints;
+}
+
+export function normalizeStrategyArchetypeKey(value: unknown): StrategyArchetypeKey | null {
+  return value === "opinion"
+    || value === "case"
+    || value === "howto"
+    || value === "hotTake"
+    || value === "phenomenon"
+    ? value
+    : null;
+}
+
+function mapTemplateRow(row: ArchetypeRhythmTemplateRow): ArchetypeRhythmTemplate | null {
+  const archetypeKey = normalizeStrategyArchetypeKey(row.archetype_key);
+  if (!archetypeKey) {
+    return null;
+  }
+  return {
+    archetypeKey,
+    version: row.version,
+    name: row.name,
+    description: row.description,
+    hints: normalizeHints(parseJsonRecord(row.hints_json), DEFAULT_ARCHETYPE_RHYTHM_HINTS[archetypeKey]),
+    isActive: Boolean(row.is_active),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+async function ensureArchetypeRhythmTemplateSeeds() {
+  await ensureExtendedProductSchema();
+  const db = getDatabase();
+  const now = new Date().toISOString();
+  for (const archetype of Object.keys(DEFAULT_ARCHETYPE_RHYTHM_HINTS) as StrategyArchetypeKey[]) {
+    const exists = await db.queryOne<{ version: string }>(
+      `SELECT version
+       FROM archetype_rhythm_templates
+       WHERE archetype_key = ? AND version = ?`,
+      [archetype, DEFAULT_ARCHETYPE_RHYTHM_TEMPLATE_VERSION],
+    );
+    if (!exists) {
+      await db.exec(
+        `INSERT INTO archetype_rhythm_templates (
+          archetype_key, version, name, description, hints_json, is_active, created_by, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          archetype,
+          DEFAULT_ARCHETYPE_RHYTHM_TEMPLATE_VERSION,
+          buildArchetypeRhythmTemplateName(archetype),
+          buildArchetypeRhythmTemplateDescription(archetype),
+          JSON.stringify(DEFAULT_ARCHETYPE_RHYTHM_HINTS[archetype]),
+          true,
+          null,
+          now,
+          now,
+        ],
+      );
+    }
+    const active = await db.queryOne<{ version: string }>(
+      `SELECT version
+       FROM archetype_rhythm_templates
+       WHERE archetype_key = ? AND is_active = ?
+       ORDER BY updated_at DESC, id DESC
+       LIMIT 1`,
+      [archetype, true],
+    );
+    if (!active) {
+      await db.exec(
+        `UPDATE archetype_rhythm_templates
+         SET is_active = ?, updated_at = ?
+         WHERE archetype_key = ? AND version = ?`,
+        [true, now, archetype, DEFAULT_ARCHETYPE_RHYTHM_TEMPLATE_VERSION],
+      );
+    }
+  }
+}
+
+export function clearArchetypeRhythmTemplateCache() {
+  archetypeRhythmTemplateCache.clear();
 }
 
 function stripMarkdown(value: string) {
@@ -160,6 +319,193 @@ export function getMergedArchetypeRhythmHints(input: {
     closureMode: getString(override?.closureMode) || base.closureMode,
     judgmentStrength: normalizeStrength(override?.judgmentStrength) ?? base.judgmentStrength,
   } satisfies ArchetypeRhythmHints;
+}
+
+export async function getActiveArchetypeRhythmTemplate(archetype: StrategyArchetypeKey | null | undefined) {
+  const normalizedArchetype = archetype ?? "phenomenon";
+  const cached = archetypeRhythmTemplateCache.get(normalizedArchetype);
+  if (cached && Date.now() - cached.at < ARCHETYPE_RHYTHM_TEMPLATE_CACHE_TTL) {
+    return {
+      archetypeKey: cached.archetypeKey,
+      version: cached.version,
+      name: cached.name,
+      description: cached.description,
+      hints: cached.hints,
+      isActive: cached.isActive,
+      createdAt: cached.createdAt,
+      updatedAt: cached.updatedAt,
+    } satisfies ArchetypeRhythmTemplate;
+  }
+
+  await ensureArchetypeRhythmTemplateSeeds();
+  const db = getDatabase();
+  const row = await db.queryOne<ArchetypeRhythmTemplateRow>(
+    `SELECT archetype_key, version, name, description, hints_json, is_active, created_at, updated_at
+     FROM archetype_rhythm_templates
+     WHERE archetype_key = ? AND is_active = ?
+     ORDER BY updated_at DESC, id DESC
+     LIMIT 1`,
+    [normalizedArchetype, true],
+  );
+  const template = row
+    ? mapTemplateRow(row)
+    : {
+        archetypeKey: normalizedArchetype,
+        version: DEFAULT_ARCHETYPE_RHYTHM_TEMPLATE_VERSION,
+        name: buildArchetypeRhythmTemplateName(normalizedArchetype),
+        description: buildArchetypeRhythmTemplateDescription(normalizedArchetype),
+        hints: getDefaultArchetypeRhythmHints(normalizedArchetype),
+        isActive: true,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      } satisfies ArchetypeRhythmTemplate;
+  if (!template) {
+    return {
+      archetypeKey: normalizedArchetype,
+      version: DEFAULT_ARCHETYPE_RHYTHM_TEMPLATE_VERSION,
+      name: buildArchetypeRhythmTemplateName(normalizedArchetype),
+      description: buildArchetypeRhythmTemplateDescription(normalizedArchetype),
+      hints: getDefaultArchetypeRhythmHints(normalizedArchetype),
+      isActive: true,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    } satisfies ArchetypeRhythmTemplate;
+  }
+  archetypeRhythmTemplateCache.set(normalizedArchetype, {
+    ...template,
+    at: Date.now(),
+  });
+  return template;
+}
+
+export async function getMergedActiveArchetypeRhythmHints(input: {
+  archetype?: StrategyArchetypeKey | null;
+  override?: Record<string, unknown> | null;
+}) {
+  const activeTemplate = await getActiveArchetypeRhythmTemplate(input.archetype ?? null);
+  return getMergedArchetypeRhythmHints({
+    archetype: activeTemplate.archetypeKey,
+    override: {
+      ...activeTemplate.hints,
+      ...(getRecord(input.override) ?? {}),
+    },
+  });
+}
+
+export async function listArchetypeRhythmTemplates() {
+  await ensureArchetypeRhythmTemplateSeeds();
+  const db = getDatabase();
+  const rows = await db.query<ArchetypeRhythmTemplateRow>(
+    `SELECT archetype_key, version, name, description, hints_json, is_active, created_at, updated_at
+     FROM archetype_rhythm_templates
+     ORDER BY archetype_key ASC, is_active DESC, updated_at DESC, id DESC`,
+  );
+  return rows
+    .map((row) => mapTemplateRow(row))
+    .filter((item): item is ArchetypeRhythmTemplate => item != null);
+}
+
+export async function createArchetypeRhythmTemplate(input: ArchetypeRhythmTemplateInput) {
+  await ensureArchetypeRhythmTemplateSeeds();
+  const db = getDatabase();
+  const archetypeKey = normalizeStrategyArchetypeKey(input.archetypeKey);
+  if (!archetypeKey) {
+    throw new Error("节奏模板原型无效");
+  }
+  const version = normalizeTemplateVersion(input.version);
+  if (!version) {
+    throw new Error("节奏模板版本不能为空");
+  }
+  const name = normalizeTemplateName(input.name);
+  if (!name) {
+    throw new Error("节奏模板名称不能为空");
+  }
+  const now = new Date().toISOString();
+  const existing = await db.queryOne<{ version: string }>(
+    `SELECT version
+     FROM archetype_rhythm_templates
+     WHERE archetype_key = ? AND version = ?`,
+    [archetypeKey, version],
+  );
+  if (existing) {
+    throw new Error("同原型下已存在相同版本号的节奏模板");
+  }
+  if (input.activate) {
+    await db.exec(
+      `UPDATE archetype_rhythm_templates
+       SET is_active = ?, updated_at = ?
+       WHERE archetype_key = ? AND is_active = ?`,
+      [false, now, archetypeKey, true],
+    );
+  }
+  await db.exec(
+    `INSERT INTO archetype_rhythm_templates (
+      archetype_key, version, name, description, hints_json, is_active, created_by, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      archetypeKey,
+      version,
+      name,
+      getString(input.description) || null,
+      JSON.stringify(input.hints),
+      input.activate ? true : false,
+      input.createdBy ?? null,
+      now,
+      now,
+    ],
+  );
+  clearArchetypeRhythmTemplateCache();
+  const created = await db.queryOne<ArchetypeRhythmTemplateRow>(
+    `SELECT archetype_key, version, name, description, hints_json, is_active, created_at, updated_at
+     FROM archetype_rhythm_templates
+     WHERE archetype_key = ? AND version = ?`,
+    [archetypeKey, version],
+  );
+  const mapped = created ? mapTemplateRow(created) : null;
+  if (!mapped) {
+    throw new Error("节奏模板创建成功但回读失败");
+  }
+  return mapped;
+}
+
+export async function activateArchetypeRhythmTemplate(input: {
+  archetypeKey: StrategyArchetypeKey;
+  version: string;
+}) {
+  await ensureArchetypeRhythmTemplateSeeds();
+  const db = getDatabase();
+  const archetypeKey = normalizeStrategyArchetypeKey(input.archetypeKey);
+  if (!archetypeKey) {
+    throw new Error("节奏模板原型无效");
+  }
+  const version = normalizeTemplateVersion(input.version);
+  if (!version) {
+    throw new Error("节奏模板版本不能为空");
+  }
+  const target = await db.queryOne<{ version: string }>(
+    `SELECT version
+     FROM archetype_rhythm_templates
+     WHERE archetype_key = ? AND version = ?`,
+    [archetypeKey, version],
+  );
+  if (!target) {
+    throw new Error("目标节奏模板不存在");
+  }
+  const now = new Date().toISOString();
+  await db.exec(
+    `UPDATE archetype_rhythm_templates
+     SET is_active = ?, updated_at = ?
+     WHERE archetype_key = ? AND is_active = ?`,
+    [false, now, archetypeKey, true],
+  );
+  await db.exec(
+    `UPDATE archetype_rhythm_templates
+     SET is_active = ?, updated_at = ?
+     WHERE archetype_key = ? AND version = ?`,
+    [true, now, archetypeKey, version],
+  );
+  clearArchetypeRhythmTemplateCache();
+  return getActiveArchetypeRhythmTemplate(archetypeKey);
 }
 
 export function buildArchetypeRhythmHintText(hints: ArchetypeRhythmHints) {

@@ -3,6 +3,7 @@ import { getDatabase } from "./db";
 import { fetchExternalText } from "./external-fetch";
 import { syncTemplateVersionToLayoutTemplates } from "./layout-templates";
 import { loadPrompt } from "./prompt-loader";
+import { formatPromptTemplate } from "./prompt-template";
 import { ensureExtendedProductSchema } from "./schema-bootstrap";
 
 function decodeHtml(value: string) {
@@ -188,6 +189,7 @@ async function deriveTemplateConfigWithAi(input: {
   finalUrl: string;
   html: string;
   fallback: ReturnType<typeof deriveTemplateConfig>;
+  userId?: number;
 }) {
   const systemPrompt = await loadPrompt("layout_extract");
   const strippedText = stripHtml(input.html).slice(0, 3500);
@@ -196,9 +198,15 @@ async function deriveTemplateConfigWithAi(input: {
     '字段：{"tone":"字符串","titleStyle":"plain|serif|sharp","paragraphLength":"short|medium|long","backgroundStyle":"paper|scroll|newsprint","emphasisStyle":"marker|underline|badge","quoteStyle":"note|editorial|news","codeBlockStyle":"ink|soft|terminal","commandBlockStyle":"command|soft-command|terminal","dividerStyle":"hairline|seal|dots","recommendationStyle":"compact|card|checklist","identity":{"tone":"字符串","sourceExcerpt":"字符串"},"constraints":{"bannedWords":[""],"bannedPunctuation":[""]},"extraction":{"headingDensity":0,"listUsage":"freeform|structured","serifScore":0,"strongScore":0,"paragraphCount":0,"codeBlockCount":0}}',
     "只允许使用给定枚举值，不要杜撰新的样式名。",
     "如果页面结构不明显，优先选择最贴近的微信排版风格，而不是输出空值。",
-    `页面标题：${input.title || "未命名页面"}`,
-    `页面地址：${input.finalUrl}`,
-    `当前启发式候选：${JSON.stringify(input.fallback)}`,
+    formatPromptTemplate("页面标题：{{title}}", {
+      title: input.title || "未命名页面",
+    }),
+    formatPromptTemplate("页面地址：{{finalUrl}}", {
+      finalUrl: input.finalUrl,
+    }),
+    formatPromptTemplate("当前启发式候选：{{fallback}}", {
+      fallback: input.fallback,
+    }),
     "页面正文摘要：",
     strippedText,
   ].join("\n");
@@ -208,6 +216,7 @@ async function deriveTemplateConfigWithAi(input: {
     systemPrompt,
     userPrompt,
     temperature: 0.1,
+    rolloutUserId: input.userId ?? null,
   });
 
   return normalizeTemplateConfig(extractJsonObject(result.text), input.fallback);
@@ -253,6 +262,7 @@ export async function extractTemplateFromUrl(url: string, userId?: number) {
         finalUrl: response.finalUrl || normalizedUrl,
         html,
         fallback: heuristicConfig,
+        userId,
       });
     } catch {
       return heuristicConfig;

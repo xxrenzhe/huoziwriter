@@ -1,6 +1,7 @@
 import { extractJsonObject, generateSceneText } from "./ai-gateway";
 import { ensureBootstrapData } from "./repositories";
 import { loadPrompt } from "./prompt-loader";
+import { formatPromptTemplate } from "./prompt-template";
 import { fetchWebpageArticle } from "./webpage-reader";
 
 export type WritingStyleConfidenceProfile = Record<
@@ -211,8 +212,22 @@ function deriveCrosscheckSummary(input: {
   };
 
   const stableText = stable.length > 0 ? stable.map((item) => stableLabelMap[item] || item).join("、") : "整体语感";
-  const variableText = variable.length > 0 ? `；波动相对更大的维度是 ${variable.map((item) => stableLabelMap[item] || item).join("、")}` : "";
-  return `基于 ${input.sampleCount} 篇样本交叉聚合，这套文风最稳定的特征集中在 ${stableText}。常见语气是 ${input.toneKeywords.slice(0, 3).join("、") || "判断先行"}，常见推进方式偏向 ${input.structurePatterns.slice(0, 2).join("、") || "短段推进"}，语言习惯多为 ${input.languageHabits.slice(0, 2).join("、") || "判断驱动"}${variableText}。`;
+  const variableText = variable.length > 0
+    ? formatPromptTemplate("；波动相对更大的维度是 {{variableLabels}}", {
+      variableLabels: variable.map((item) => stableLabelMap[item] || item).join("、"),
+    })
+    : "";
+  return formatPromptTemplate(
+    "基于 {{sampleCount}} 篇样本交叉聚合，这套文风最稳定的特征集中在 {{stableText}}。常见语气是 {{toneKeywords}}，常见推进方式偏向 {{structurePatterns}}，语言习惯多为 {{languageHabits}}{{variableText}}。",
+    {
+      sampleCount: input.sampleCount,
+      stableText,
+      toneKeywords: input.toneKeywords.slice(0, 3).join("、") || "判断先行",
+      structurePatterns: input.structurePatterns.slice(0, 2).join("、") || "短段推进",
+      languageHabits: input.languageHabits.slice(0, 2).join("、") || "判断驱动",
+      variableText,
+    },
+  );
 }
 
 function deriveFallbackAnalysis(input: { sourceUrl: string; sourceTitle: string; rawText: string }) {
@@ -230,7 +245,9 @@ function deriveFallbackAnalysis(input: { sourceUrl: string; sourceTitle: string;
   return {
     sourceUrl: input.sourceUrl,
     sourceTitle: input.sourceTitle,
-    styleName: `${input.sourceTitle.slice(0, 16) || "提取"}风格`,
+    styleName: formatPromptTemplate("{{styleLead}}风格", {
+      styleLead: input.sourceTitle.slice(0, 16) || "提取",
+    }),
     summary: "基于正文抓取结果生成的风格降级分析，建议后续再做人工确认。",
     toneKeywords,
     sentenceRhythm: shortSentences >= longSentences ? "短句为主，推进速度快" : "中长句较多，解释性更强",
@@ -274,7 +291,12 @@ function deriveFallbackAnalysis(input: { sourceUrl: string; sourceTitle: string;
       "结尾回到行动建议或判断更新，不要口号式收束。",
     ],
     doNotWrite: ["不要直接照抄作者句子", "不要只模仿词面，要保留事实密度"],
-    imitationPrompt: `请模仿这篇文章的节奏：${toneKeywords.join("、")}，先抛出现象和冲突，再给出判断，正文保持中文短句推进，不要空泛赞美。`,
+    imitationPrompt: formatPromptTemplate(
+      "请模仿这篇文章的节奏：{{toneKeywords}}，先抛出现象和冲突，再给出判断，正文保持中文短句推进，不要空泛赞美。",
+      {
+        toneKeywords: toneKeywords.join("、"),
+      },
+    ),
     sourceExcerpt: text.slice(0, 220),
     model: "fallback-style-extract",
     provider: "local",
@@ -310,7 +332,9 @@ export async function extractWritingStyleFromUrl(url: string) {
       "toneKeywords / structurePatterns / transitionPatterns / languageHabits / openingPatterns / endingPatterns / punctuationHabits / tangentPatterns / callbackPatterns / suitableTopics / reusablePromptFragments / doNotWrite / tabooPatterns / statePresets / antiOutlineRules 各返回 2-5 条。",
       "verbatimPhraseBanks 尽量从原文逐字抽取，若样本里没有足够短语，返回少量高置信表达，不要编造作者没写过的话。",
       "必须基于正文内容，不要空泛夸赞，不要出现“该文风很好”这类废话。",
-      `sourceTitle: ${article.sourceTitle || "未命名文章"}`,
+      formatPromptTemplate("sourceTitle: {{sourceTitle}}", {
+        sourceTitle: article.sourceTitle || "未命名文章",
+      }),
       "",
       article.rawText,
     ].join("\n");
@@ -428,7 +452,14 @@ export async function extractWritingStyleFromUrls(urls: string[]) {
   const degradedCount = analyses.filter((item) => item.degradedReason).length;
   const sourceTitles = analyses.map((item) => item.sourceTitle).filter(Boolean);
   const styleNameLead = sourceTitles[0] || analyses[0]!.styleName || "交叉样本";
-  const sourceTitle = analyses.length === 2 ? `${styleNameLead} 等 2 篇样本` : `${styleNameLead} 等 ${analyses.length} 篇样本`;
+  const sourceTitle = analyses.length === 2
+    ? formatPromptTemplate("{{styleNameLead}} 等 2 篇样本", {
+      styleNameLead,
+    })
+    : formatPromptTemplate("{{styleNameLead}} 等 {{sampleCount}} 篇样本", {
+      styleNameLead,
+      sampleCount: analyses.length,
+    });
   const summary = deriveCrosscheckSummary({
     sampleCount: analyses.length,
     toneKeywords: toneKeywords.values,
@@ -440,7 +471,9 @@ export async function extractWritingStyleFromUrls(urls: string[]) {
   return {
     sourceUrl: analyses[0]!.sourceUrl,
     sourceTitle,
-    styleName: `${styleNameLead.slice(0, 18)}交叉风格`,
+    styleName: formatPromptTemplate("{{styleLead}}交叉风格", {
+      styleLead: styleNameLead.slice(0, 18),
+    }),
     summary,
     toneKeywords: toneKeywords.values,
     sentenceRhythm: sentenceRhythm.value,
@@ -463,11 +496,23 @@ export async function extractWritingStyleFromUrls(urls: string[]) {
     tabooPatterns: tabooPatterns.values,
     statePresets: statePresets.values,
     antiOutlineRules: antiOutlineRules.values,
-    imitationPrompt: `请参考这组样本的稳定共性来写：语气偏 ${toneKeywords.values.slice(0, 3).join("、") || "判断先行"}，结构上优先 ${structurePatterns.values.slice(0, 2).join("、") || "短段推进"}，句长节奏遵守“${sentenceLengthProfile.value}”，并尽量沿用这些逐字短语：${phraseBanks.value.transitionPhrases.slice(0, 2).join(" / ") || "但 / 问题是"}。`,
+    imitationPrompt: formatPromptTemplate(
+      "请参考这组样本的稳定共性来写：语气偏 {{toneKeywords}}，结构上优先 {{structurePatterns}}，句长节奏遵守“{{sentenceLengthProfile}}”，并尽量沿用这些逐字短语：{{transitionPhrases}}。",
+      {
+        toneKeywords: toneKeywords.values.slice(0, 3).join("、") || "判断先行",
+        structurePatterns: structurePatterns.values.slice(0, 2).join("、") || "短段推进",
+        sentenceLengthProfile: sentenceLengthProfile.value,
+        transitionPhrases: phraseBanks.value.transitionPhrases.slice(0, 2).join(" / ") || "但 / 问题是",
+      },
+    ),
     sourceExcerpt: analyses.map((item) => item.sourceExcerpt).filter(Boolean).slice(0, 3).join("\n\n---\n\n").slice(0, 660),
     model: analyses.map((item) => item.model).filter(Boolean).join(" + "),
     provider: analyses.map((item) => item.provider).filter(Boolean).join(" + "),
-    degradedReason: degradedCount > 0 ? `共 ${degradedCount} 篇样本走了降级分析。` : null,
+    degradedReason: degradedCount > 0
+      ? formatPromptTemplate("共 {{degradedCount}} 篇样本走了降级分析。", {
+        degradedCount,
+      })
+      : null,
     sampleCount: analyses.length,
     sampleUrls: analyses.map((item) => item.sourceUrl).filter(Boolean),
     sampleTitles: sourceTitles,

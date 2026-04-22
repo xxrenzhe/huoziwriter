@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { adminNav } from "@/config/navigation";
 import { requireWriterSession } from "@/lib/page-auth";
-import { AdminShell } from "@/components/site-shells";
+import { AdminShell } from "@/components/admin-shell";
 import { AdminRouteForbiddenState } from "@/components/admin-route-state";
 
 export default async function AdminLayout({ children }: { children: ReactNode }) {

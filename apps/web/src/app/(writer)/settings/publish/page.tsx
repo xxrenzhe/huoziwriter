@@ -1,6 +1,6 @@
 import { buttonStyles, cn, surfaceCardStyles } from "@huoziwriter/ui";
 import Link from "next/link";
-import { WechatConnectionsManager } from "@/components/article-workspace-client";
+import { WechatConnectionsManager } from "@/components/wechat-connections-manager";
 import { formatPlanDisplayName } from "@/lib/plan-labels";
 import {
   formatConnectionStatus,

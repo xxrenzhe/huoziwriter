@@ -177,6 +177,8 @@ CREATE TABLE IF NOT EXISTS ai_model_routes (
   scene_code TEXT NOT NULL UNIQUE,
   primary_model TEXT NOT NULL,
   fallback_model TEXT,
+  shadow_model TEXT,
+  shadow_traffic_percent INTEGER NOT NULL DEFAULT 0,
   description TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))

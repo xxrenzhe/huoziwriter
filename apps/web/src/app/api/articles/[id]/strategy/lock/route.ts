@@ -1,4 +1,5 @@
 import { buildFourPointAudit } from "@/lib/article-strategy";
+import { recomputeAndPersistArticleOutcome } from "@/lib/article-outcome-runtime";
 import { ensureUserSession } from "@/lib/auth";
 import { fail, ok } from "@/lib/http";
 import { getArticleById, getArticleStrategyCard, upsertArticleStrategyCard } from "@/lib/repositories";
@@ -33,6 +34,10 @@ export async function POST(request: Request, { params }: { params: { id: string 
       fourPointAudit,
       strategyLockedAt: new Date().toISOString(),
       strategyOverride: override,
+    });
+    await recomputeAndPersistArticleOutcome({
+      articleId: article.id,
+      userId: session.userId,
     });
 
     return ok({

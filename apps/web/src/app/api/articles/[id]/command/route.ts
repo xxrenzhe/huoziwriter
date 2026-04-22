@@ -9,6 +9,7 @@ import { fail, ok } from "@/lib/http";
 import { getLanguageGuardRules, getLanguageGuardTokenBlacklist } from "@/lib/language-guard";
 import { getUserPlanContext } from "@/lib/plan-access";
 import { createArticleSnapshot, getArticleById } from "@/lib/repositories";
+import { appendWritingStyleProfileUsageEvent } from "@/lib/writing-style-profiles";
 
 export async function POST(request: Request, { params }: { params: { id: string } }) {
   const session = await ensureUserSession();
@@ -84,6 +85,16 @@ export async function POST(request: Request, { params }: { params: { id: string 
         status: "ready",
       },
     });
+    if (authoringStyleContext.writingStyleProfile?.id) {
+      await appendWritingStyleProfileUsageEvent({
+        userId: session.userId,
+        profileId: authoringStyleContext.writingStyleProfile.id,
+        articleId: article.id,
+        usageSource: "article.command.rewrite",
+        profileName: authoringStyleContext.writingStyleProfile.name,
+        sampleCount: authoringStyleContext.writingStyleProfile.sampleCount,
+      });
+    }
 
     return ok({
       id: saved?.id,

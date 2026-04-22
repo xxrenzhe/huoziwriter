@@ -1,6 +1,7 @@
 import { extractJsonObject, generateSceneText } from "@/lib/ai-gateway";
 import { appendAuditLog } from "@/lib/audit";
 import { getDatabase } from "@/lib/db";
+import { formatPromptTemplate } from "@/lib/prompt-template";
 import { createPromptVersion, getPromptDetail } from "@/lib/repositories";
 import { createWritingEvalRun, getWritingEvalRuns } from "@/lib/writing-eval";
 
@@ -49,7 +50,7 @@ function isPromptBackedVersionType(versionType: string) {
 function getExpectedPromptIdForVersionType(versionType: string) {
   if (versionType === "fact_check") return "fact_check";
   if (versionType === "title_template") return "title_optimizer";
-  if (versionType === "lead_template") return "prose_polish";
+  if (versionType === "lead_template") return "opening_optimizer";
   return null;
 }
 
@@ -76,7 +77,7 @@ function formatDelta(value: number) {
 function buildPromptBackedContextTag(versionType: string, experimentMode: string) {
   if (versionType === "fact_check") return "事实核查 Prompt";
   if (versionType === "title_template" || experimentMode === "title_only") return "标题模板 Prompt";
-  if (versionType === "lead_template" || experimentMode === "lead_only") return "开头模板 Prompt";
+  if (versionType === "lead_template" || experimentMode === "lead_only") return "开头优化器 Prompt";
   return "正文 Prompt";
 }
 
@@ -209,11 +210,28 @@ function buildAutoProposalOptimizationGoal(run: Awaited<ReturnType<typeof getWri
           : "重点优化正文 Prompt 的风格稳定性、信息密度、结构推进和传播表现。";
 
   return [
-    `基于实验 ${run.runCode} 的结果继续优化 ${contextTag}。`,
-    `当前来源判断：${sourceDecisionLabel}。`,
-    deltaTotal !== null ? `上一轮总分 Delta ${formatDelta(deltaTotal)}。` : null,
-    highlights.length ? `优先保留已验证有效的增益：${highlights.join("、")}。` : null,
-    regressions.length ? `下一轮重点修正：${regressions.join("、")}。` : null,
+    formatPromptTemplate("基于实验 {{runCode}} 的结果继续优化 {{contextTag}}。", {
+      runCode: run.runCode,
+      contextTag,
+    }),
+    formatPromptTemplate("当前来源判断：{{sourceDecisionLabel}}。", {
+      sourceDecisionLabel,
+    }),
+    deltaTotal !== null
+      ? formatPromptTemplate("上一轮总分 Delta {{deltaTotal}}。", {
+        deltaTotal: formatDelta(deltaTotal),
+      })
+      : null,
+    highlights.length
+      ? formatPromptTemplate("优先保留已验证有效的增益：{{highlights}}。", {
+        highlights: highlights.join("、"),
+      })
+      : null,
+    regressions.length
+      ? formatPromptTemplate("下一轮重点修正：{{regressions}}。", {
+        regressions: regressions.join("、"),
+      })
+      : null,
     run.recommendationReason || null,
     focus,
     "要求延续已有输出契约，优先做小步、可归因、可回滚的 Prompt 调整，不自动 keep/discard。",
@@ -252,14 +270,33 @@ function buildRunContextText(
       const total = typeof run.scoreSummary.totalScore === "number" ? run.scoreSummary.totalScore.toFixed(2) : "--";
       const delta = typeof run.scoreSummary.deltaTotalScore === "number" ? run.scoreSummary.deltaTotalScore.toFixed(2) : "--";
       return [
-        `${index + 1}. ${run.runCode}`,
-        `状态 ${run.status}`,
-        `基线 ${run.baseVersionRef}`,
-        `候选 ${run.candidateVersionRef}`,
-        `总分 ${total}`,
-        `Delta ${delta}`,
-        `建议 ${run.recommendation}`,
-        run.recommendationReason ? `原因 ${run.recommendationReason}` : null,
+        formatPromptTemplate("{{runIndex}}. {{runCode}}", {
+          runIndex: index + 1,
+          runCode: run.runCode,
+        }),
+        formatPromptTemplate("状态 {{status}}", {
+          status: run.status,
+        }),
+        formatPromptTemplate("基线 {{baseVersionRef}}", {
+          baseVersionRef: run.baseVersionRef,
+        }),
+        formatPromptTemplate("候选 {{candidateVersionRef}}", {
+          candidateVersionRef: run.candidateVersionRef,
+        }),
+        formatPromptTemplate("总分 {{total}}", {
+          total,
+        }),
+        formatPromptTemplate("Delta {{delta}}", {
+          delta,
+        }),
+        formatPromptTemplate("建议 {{recommendation}}", {
+          recommendation: run.recommendation,
+        }),
+        run.recommendationReason
+          ? formatPromptTemplate("原因 {{recommendationReason}}", {
+            recommendationReason: run.recommendationReason,
+          })
+          : null,
       ]
         .filter(Boolean)
         .join("；");
@@ -300,7 +337,9 @@ export async function createPromptCandidateVersionFromBase(input: {
   const systemPrompt = [
     "你是中文写作系统的 Prompt 优化研究员。",
     "你的任务是基于一个已有 Prompt 版本，生成一个更强但仍然可控的候选版本。",
-    `当前优化对象：${promptContextTag}。`,
+    formatPromptTemplate("当前优化对象：{{promptContextTag}}。", {
+      promptContextTag,
+    }),
     "禁止改坏输出契约、变量占位符、事实边界、格式要求和安全限制。",
     "优先做小步、可归因、可回滚的修改，不要整体改写成另一套风格。",
     "返回 JSON，不要解释，不要 markdown 代码块。",
@@ -310,11 +349,23 @@ export async function createPromptCandidateVersionFromBase(input: {
     "changeSummary 返回 3-6 条，说明这版候选 Prompt 做了哪些可归因修改。",
     "riskChecks 返回 2-4 条，说明上线前应重点观察什么风险。",
     "promptContent 必须返回完整 Prompt 内容，而不是 diff。",
-    `Prompt 对象：${promptId}`,
-    `基线版本：${baseVersion}`,
-    `优化对象类型：${versionType}`,
-    input.experimentMode ? `实验模式：${input.experimentMode}` : null,
-    `优化目标：${optimizationGoal}`,
+    formatPromptTemplate("Prompt 对象：{{promptId}}", {
+      promptId,
+    }),
+    formatPromptTemplate("基线版本：{{baseVersion}}", {
+      baseVersion,
+    }),
+    formatPromptTemplate("优化对象类型：{{versionType}}", {
+      versionType,
+    }),
+    input.experimentMode
+      ? formatPromptTemplate("实验模式：{{experimentMode}}", {
+        experimentMode: input.experimentMode,
+      })
+      : null,
+    formatPromptTemplate("优化目标：{{optimizationGoal}}", {
+      optimizationGoal,
+    }),
     "最近相关写作评测运行：",
     buildRunContextText(promptId, writingEvalRuns, {
       versionType,
@@ -331,6 +382,7 @@ export async function createPromptCandidateVersionFromBase(input: {
     systemPrompt,
     userPrompt,
     temperature: 0.35,
+    rolloutUserId: input.operatorUserId ?? null,
   });
   const parsed = extractJsonObject(generated.text) as {
     promptContent?: unknown;

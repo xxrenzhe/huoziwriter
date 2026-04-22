@@ -1,19 +1,10 @@
 "use client";
+
 import { Button, buttonStyles, cn, surfaceCardStyles } from "@huoziwriter/ui";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
-import {
-  Bell,
-  ClipboardCheck,
-  Command,
-  FileText,
-  LayoutDashboard,
-  Search,
-  Settings2,
-  Sparkles,
-  type LucideIcon,
-} from "lucide-react";
+import { Bell, Command, FileText, LayoutDashboard, Search, Settings2, Sparkles, ClipboardCheck, type LucideIcon } from "lucide-react";
 import { useCommandMenu } from "@/components/command-menu";
 import { NotificationCenter, type NotificationCenterItem } from "@/components/notification-center";
 import { formatPlanDisplayName } from "@/lib/plan-labels";
@@ -23,21 +14,6 @@ type NavItem = {
   label: string;
 };
 
-type ShellMatchMode = "exact" | "section";
-type ShellRailTone = "workspace" | "admin";
-
-const marketingChromeClassName = "border-[rgba(88,65,64,0.14)] bg-[rgba(250,247,240,0.92)]";
-const marketingHeaderClassName = cn("sticky top-0 z-40 border-b backdrop-blur-md", marketingChromeClassName);
-const marketingFooterClassName = cn("border-t", marketingChromeClassName);
-const marketingCommandTriggerClassName = cn(
-  buttonStyles({ variant: "secondary", size: "sm" }),
-  "hidden min-h-0 border-lineStrong px-3 py-2 text-inkSoft md:flex",
-);
-const marketingPrimaryActionClassName = cn(
-  buttonStyles({ variant: "primary", size: "sm" }),
-  "min-h-0 px-4 py-2",
-);
-const marketingFooterLinkClassName = "transition-colors hover:text-ink";
 const shellRailNavLinkBaseClassName = "block px-3 py-3 text-sm shadow-none transition-colors";
 const workspaceRailCommandTriggerClassName = cn(
   buttonStyles({ variant: "secondary", size: "sm" }),
@@ -56,28 +32,6 @@ const workspaceUtilityIconButtonClassName = cn(
   buttonStyles({ variant: "secondary", size: "sm" }),
   "h-10 w-10 border-lineStrong bg-surface px-0 py-0 text-inkMuted hover:border-lineStrong hover:bg-surface hover:text-ink",
 );
-const adminCommandTriggerClassName = cn(
-  buttonStyles({ variant: "secondary", size: "sm" }),
-  "border-adminLineStrong bg-adminSurfaceMuted text-adminInkSoft hover:border-adminLineStrong hover:bg-adminSurfaceAlt hover:text-adminInk focus-visible:ring-adminAccent focus-visible:ring-offset-adminBg",
-);
-const adminNotificationTriggerClassName = cn(
-  buttonStyles({ variant: "secondary", size: "sm" }),
-  "h-10 w-10 border-adminLineStrong bg-adminSurfaceMuted px-0 py-0 text-adminInkSoft hover:border-adminLineStrong hover:bg-adminSurfaceAlt hover:text-adminInk focus-visible:ring-adminAccent focus-visible:ring-offset-adminBg",
-);
-const adminAccountCardClassName = cn(
-  surfaceCardStyles({ padding: "sm" }),
-  "border-adminLineStrong bg-adminSurfaceMuted text-adminInk shadow-none",
-);
-const adminStatusPillClassName = cn(
-  surfaceCardStyles(),
-  "border-adminLineStrong bg-adminSurfaceMuted px-4 py-2 text-sm text-adminInk shadow-none",
-);
-const marketingFooterLinks = [
-  { href: "/manifesto", label: "宣言" },
-  { href: "/support", label: "支持" },
-  { href: "/terms", label: "服务条款" },
-  { href: "/privacy", label: "隐私协议" },
-] as const;
 const workspaceMobileNavIcons: Record<string, LucideIcon> = {
   "/warroom": LayoutDashboard,
   "/articles": FileText,
@@ -95,28 +49,17 @@ function normalizeShellItems(items: NavItem[]) {
   return items.map((item) => ({ ...item, href: normalizeShellHref(item.href) }));
 }
 
-function isShellPathActive(pathname: string, href: string, matchMode: ShellMatchMode = "section") {
-  return pathname === href || (matchMode === "section" && pathname.startsWith(`${href}/`));
+function isShellPathActive(pathname: string, href: string) {
+  return pathname === href || pathname.startsWith(`${href}/`);
 }
 
-function marketingNavLinkClassName(active: boolean) {
-  return cn(
-    "border-b px-1 py-2 transition-colors",
-    active
-      ? "border-cinnabar text-cinnabar"
-      : "border-transparent text-inkMuted hover:text-ink",
-  );
-}
-
-function shellRailNavLinkClassName(active: boolean, tone: ShellRailTone) {
+function shellRailNavLinkClassName(active: boolean) {
   return cn(
     surfaceCardStyles({ interactive: !active }),
     shellRailNavLinkBaseClassName,
     active
       ? "border-danger bg-danger text-white"
-      : tone === "admin"
-        ? "border-transparent bg-transparent text-adminInkMuted hover:border-adminLineStrong hover:bg-adminSurfaceAlt hover:text-adminInk"
-        : "border-transparent bg-transparent text-inkSoft hover:border-lineStrong hover:bg-surface hover:text-ink",
+      : "border-transparent bg-transparent text-inkSoft hover:border-lineStrong hover:bg-surface hover:text-ink",
   );
 }
 
@@ -237,71 +180,6 @@ function buildWorkspaceNotificationItems({
   ];
 }
 
-function buildAdminNotificationItems({
-  openMenu,
-}: {
-  openMenu: () => void;
-}): NotificationCenterItem[] {
-  return [
-    {
-      id: "admin-release",
-      title: "命令中心已覆盖管理后台",
-      description: "可直接通过顶部入口搜索模块、跳转页面和触发常用动作。",
-      kind: "release",
-      tone: "highlight",
-      unread: true,
-      meta: "后台体验",
-      actions: [
-        {
-          id: "admin-open-command",
-          label: "立即打开",
-          variant: "secondary",
-          onSelect: openMenu,
-        },
-      ],
-    },
-    {
-      id: "admin-writing-eval",
-      title: "写作评测与业务总览已并入主导航",
-      description: "评测、财务和业务总览都已进入统一后台信息架构，适合继续补移动端卡片 fallback。",
-      kind: "review",
-      meta: "结构升级",
-      href: "/admin/writing-eval",
-    },
-    {
-      id: "admin-security",
-      title: "默认管理员账号需要上线前确认",
-      description: "启动前仍需配置 `DEFAULT_ADMIN_PASSWORD`，避免默认口令进入可部署环境。",
-      kind: "security",
-      tone: "warning",
-      meta: "上线检查",
-      href: "/admin/audit",
-    },
-  ];
-}
-
-function NavLinks({ items }: { items: NavItem[] }) {
-  const pathname = usePathname();
-
-  return (
-    <nav className="flex flex-wrap items-center gap-3 text-sm">
-      {items.map((item) => {
-        const href = normalizeShellHref(item.href);
-        const active = isShellPathActive(pathname, href);
-        return (
-          <Link
-            key={item.href}
-            href={href}
-            className={marketingNavLinkClassName(active)}
-          >
-            {item.label}
-          </Link>
-        );
-      })}
-    </nav>
-  );
-}
-
 function CommandTrigger({
   label,
   icon,
@@ -322,67 +200,7 @@ function CommandTrigger({
   );
 }
 
-export function MarketingShell({
-  items,
-  children,
-}: {
-  items: NavItem[];
-  children: ReactNode;
-}) {
-  return (
-    <div className="min-h-screen bg-paper text-ink">
-      <header
-        data-command-chrome="true"
-        className={marketingHeaderClassName}
-      >
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-6 px-6 py-5">
-          <div className="flex items-center gap-4">
-            <Link href="/" className="font-sansCn text-lg font-semibold tracking-[0.16em] text-cinnabar">
-              HuoZi Writer
-            </Link>
-            <span className="hidden border-l border-lineStrong pl-4 text-xs uppercase tracking-[0.28em] text-inkMuted md:block">
-              Neo Chinese Minimalism
-            </span>
-          </div>
-          <div className="flex items-center gap-6">
-            <nav className="hidden md:block">
-              <NavLinks items={items} />
-            </nav>
-            <CommandTrigger
-              label="搜索命令"
-              icon={<Command size={16} className="text-cinnabar" />}
-              className={marketingCommandTriggerClassName}
-            />
-            <Link
-              href="/support?type=business"
-              className={marketingPrimaryActionClassName}
-            >
-              申请试用资格
-            </Link>
-          </div>
-        </div>
-      </header>
-      <main className="mx-auto max-w-7xl px-6 py-10 md:py-14">{children}</main>
-      <footer
-        data-command-chrome="true"
-        className={marketingFooterClassName}
-      >
-        <div className="mx-auto flex max-w-7xl flex-col gap-4 px-6 py-6 text-sm text-inkMuted md:flex-row md:items-center md:justify-between">
-          <div>HuoZi Writer · 运营后台发号制写作 SaaS</div>
-          <div className="flex flex-wrap gap-4">
-            {marketingFooterLinks.map((item) => (
-              <Link key={item.href} href={item.href} className={marketingFooterLinkClassName}>
-                {item.label}
-              </Link>
-            ))}
-          </div>
-        </div>
-      </footer>
-    </div>
-  );
-}
-
-export function WorkspaceShell({
+export function WriterShell({
   items,
   children,
   currentPlanName,
@@ -465,7 +283,7 @@ export function WorkspaceShell({
                 <Link
                   key={item.href}
                   href={item.href}
-                  className={shellRailNavLinkClassName(active, "workspace")}
+                  className={shellRailNavLinkClassName(active)}
                 >
                   {item.label}
                 </Link>
@@ -538,87 +356,6 @@ export function WorkspaceShell({
             );
           })}
         </nav>
-      </div>
-    </div>
-  );
-}
-
-export function AdminShell({
-  items,
-  children,
-}: {
-  items: NavItem[];
-  children: ReactNode;
-}) {
-  const pathname = usePathname();
-  const { openMenu } = useCommandMenu();
-  const normalizedItems = normalizeShellItems(items);
-  const adminNotificationItems = buildAdminNotificationItems({ openMenu });
-
-  return (
-    <div className="min-h-screen bg-adminBg text-adminInk">
-      <div data-command-focus-root="admin" className="grid min-h-screen grid-cols-1 lg:grid-cols-[320px_minmax(0,1fr)]">
-        <aside data-command-chrome="true" className="bg-adminSurface px-6 py-8">
-          <div className="mb-8 space-y-2 border-b border-adminLineStrong pb-6">
-            <div className="font-sansCn text-xs uppercase tracking-[0.25em] text-adminInkMuted">
-              HuoZi Writer
-            </div>
-            <div className="font-serifCn text-3xl font-semibold text-adminInk text-balance">
-              管理后台
-            </div>
-            <p className="text-sm leading-7 text-adminInkSoft">
-              统一管理用户、套餐、Prompt 版本、模型路由和真实微信分发能力。
-            </p>
-          </div>
-          <nav className="space-y-2">
-            {normalizedItems.map((item) => {
-              const active = isShellPathActive(pathname, item.href, "exact");
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={shellRailNavLinkClassName(active, "admin")}
-                >
-                  {item.label}
-                </Link>
-              );
-            })}
-          </nav>
-          <div className={cn("mt-8", adminAccountCardClassName)}>
-            <div className="text-xs uppercase tracking-[0.24em] text-adminInkMuted">默认管理账号</div>
-            <div className="mt-3 font-serifCn text-2xl text-adminInk text-balance">huozi</div>
-            <p className="mt-2 text-sm leading-6 text-adminInkSoft">
-              首次启动由初始化脚本注入，启动前需先配置 `DEFAULT_ADMIN_PASSWORD`。
-            </p>
-          </div>
-        </aside>
-        <main className="bg-adminBg px-6 py-8 md:px-8">
-          <div className="mb-6 flex flex-wrap items-center justify-between gap-4 border-b border-adminLineStrong pb-4">
-            <div>
-              <div className="text-xs uppercase tracking-[0.28em] text-adminInkMuted">Admin Console</div>
-              <div className="mt-2 font-serifCn text-2xl text-adminInk text-balance">系统当前处于可上线骨架阶段</div>
-            </div>
-            <div className="flex items-center gap-3">
-              <NotificationCenter
-                items={adminNotificationItems}
-                triggerClassName={adminNotificationTriggerClassName}
-                triggerAriaLabel="打开后台通知中心"
-                triggerIcon={<Bell size={16} />}
-                title="后台通知中心"
-                description="汇总当前后台骨架阶段最需要跟进的能力接线和上线检查。"
-              />
-              <CommandTrigger
-                label="搜索命令"
-                icon={<Command size={16} className="text-cinnabar" />}
-                className={adminCommandTriggerClassName}
-              />
-              <div className={adminStatusPillClassName}>
-                微信草稿箱真实推送已纳入 v1
-              </div>
-            </div>
-          </div>
-          {children}
-        </main>
       </div>
     </div>
   );

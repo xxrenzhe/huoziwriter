@@ -74,6 +74,76 @@ function parseStringList(value: string | string[] | null | undefined) {
   }
 }
 
+function parseJsonRecord(value: string | Record<string, unknown> | null | undefined) {
+  if (!value) return null;
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value) as Record<string, unknown>;
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null;
+    } catch {
+      return null;
+    }
+  }
+  return typeof value === "object" && !Array.isArray(value) ? value : null;
+}
+
+async function listWritingStyleUsageEventsForTest(input: {
+  userId: number;
+  articleId?: number;
+  usageSource?: string;
+  profileId?: number;
+}) {
+  await ensureExtendedProductSchema();
+  const db = getDatabase();
+  const rows = await db.query<{
+    id: number;
+    target_id: string | null;
+    payload_json: string | Record<string, unknown> | null;
+    created_at: string;
+  }>(
+    `SELECT id, target_id, payload_json, created_at
+     FROM audit_logs
+     WHERE user_id = ?
+       AND action = ?
+       AND target_type = ?
+     ORDER BY id ASC`,
+    [input.userId, "writing_style_profile_used_in_authoring", "writing_style_profile"],
+  );
+
+  return rows
+    .map((row) => {
+      const payload = parseJsonRecord(row.payload_json);
+      const profileId = Number(row.target_id ?? payload?.profileId ?? 0);
+      const articleId = Number(payload?.articleId ?? 0);
+      return {
+        id: row.id,
+        profileId: Number.isInteger(profileId) && profileId > 0 ? profileId : null,
+        articleId: Number.isInteger(articleId) && articleId > 0 ? articleId : null,
+        usageSource: typeof payload?.usageSource === "string" ? payload.usageSource : null,
+        profileName: typeof payload?.profileName === "string" ? payload.profileName : null,
+        sampleCount: Number(payload?.sampleCount ?? 0) || 0,
+        usedAt: typeof payload?.usedAt === "string" ? payload.usedAt : row.created_at,
+      };
+    })
+    .filter((item) => input.profileId === undefined || item.profileId === input.profileId)
+    .filter((item) => input.articleId === undefined || item.articleId === input.articleId)
+    .filter((item) => input.usageSource === undefined || item.usageSource === input.usageSource);
+}
+
+function parseSsePayloads(body: string) {
+  return body
+    .split("\n\n")
+    .map((chunk) =>
+      chunk
+        .split("\n")
+        .find((line) => line.startsWith("data:"))
+        ?.slice(5)
+        .trim(),
+    )
+    .filter((value): value is string => Boolean(value))
+    .map((value) => JSON.parse(value) as { status: string; delta?: string; usageToken?: string | null });
+}
+
 async function createManualFragmentForTest(
   baseURL: string,
   request: import("@playwright/test").APIRequestContext,
@@ -2344,6 +2414,78 @@ test("prose polish workspace can regenerate six titles without changing outline 
   expect(Date.parse(String(refreshedOutlineJson.data.payload?.titleAuditedAt || ""))).toBeGreaterThanOrEqual(Date.parse(originalTitleAuditedAt));
 });
 
+test("outline opening options can be regenerated without changing outline structure", async ({ page, request, baseURL }) => {
+  const cookie = await loginAsAdmin(baseURL!, request);
+  await ensurePersona(baseURL!, request, cookie);
+
+  const { articleId } = await createArticleForTest(baseURL!, request, cookie, {
+    title: "E2E 大纲开头重生成",
+  });
+
+  const savedDraft = await request.put(`${baseURL}/api/articles/${articleId}/draft`, {
+    headers: { Cookie: cookie },
+    data: {
+      title: "E2E 大纲开头重生成",
+      markdownContent: [
+        "# E2E 大纲开头重生成",
+        "",
+        "很多团队都以为写作返工发生在正文阶段。",
+        "",
+        "真正卡住交付的，往往是开头没立住，后面的判断和大纲只好跟着一起返工。",
+      ].join("\n"),
+    },
+  });
+  expect(savedDraft.ok()).toBeTruthy();
+
+  const outline = await request.post(`${baseURL}/api/articles/${articleId}/stages/outlinePlanning`, {
+    headers: { Cookie: cookie },
+  });
+  expect(outline.ok()).toBeTruthy();
+  const outlineJson = await outline.json();
+  const originalSections = JSON.stringify(outlineJson.data.payload?.outlineSections || []);
+  const originalOutlineUpdatedAt = String(outlineJson.data.payload?.outlineUpdatedAt || "");
+  const originalOpeningAuditedAt = String(outlineJson.data.payload?.openingAuditedAt || "");
+  expect(Array.isArray(outlineJson.data.payload?.openingOptions)).toBeTruthy();
+  expect(outlineJson.data.payload?.openingOptions).toHaveLength(3);
+  expect(originalOutlineUpdatedAt).not.toBe("");
+  expect(originalOpeningAuditedAt).not.toBe("");
+
+  const setOutlinePlanning = await request.patch(`${baseURL}/api/articles/${articleId}/workflow`, {
+    headers: { Cookie: cookie },
+    data: {
+      stageCode: "outlinePlanning",
+      action: "set",
+    },
+  });
+  expect(setOutlinePlanning.ok()).toBeTruthy();
+
+  await seedPageSession(page, baseURL!, cookie);
+  await page.goto(`${baseURL}/articles/${articleId}`);
+  await page.getByRole("button", { name: "阶段工作台" }).click();
+  await expect(page.getByText("开头三选一")).toBeVisible();
+  await expect(page.getByRole("button", { name: "重新优化开头" })).toBeVisible();
+
+  const refreshResponsePromise = page.waitForResponse((response) =>
+    response.url().includes(`/api/articles/${articleId}/stages/outlinePlanning`)
+    && response.request().method() === "POST",
+  );
+  await page.getByRole("button", { name: "重新优化开头" }).click();
+  const refreshResponse = await refreshResponsePromise;
+  expect(refreshResponse.ok()).toBeTruthy();
+  await expect(page.getByText("开头候选已重新优化，当前只刷新开头三选一，不会改动大纲结构。")).toBeVisible();
+
+  const refreshedOutline = await request.get(`${baseURL}/api/articles/${articleId}/stages/outlinePlanning`, {
+    headers: { Cookie: cookie },
+  });
+  expect(refreshedOutline.ok()).toBeTruthy();
+  const refreshedOutlineJson = await refreshedOutline.json();
+  expect(Array.isArray(refreshedOutlineJson.data?.payload?.openingOptions)).toBeTruthy();
+  expect(refreshedOutlineJson.data.payload?.openingOptions).toHaveLength(3);
+  expect(JSON.stringify(refreshedOutlineJson.data.payload?.outlineSections || [])).toBe(originalSections);
+  expect(String(refreshedOutlineJson.data.payload?.outlineUpdatedAt || "")).toBe(originalOutlineUpdatedAt);
+  expect(Date.parse(String(refreshedOutlineJson.data.payload?.openingAuditedAt || ""))).toBeGreaterThanOrEqual(Date.parse(originalOpeningAuditedAt));
+});
+
 test("deep writing execution card exposes research focus and lens from research brief", async ({ request, baseURL }) => {
   const cookie = await loginAsAdmin(baseURL!, request);
   await ensurePersona(baseURL!, request, cookie);
@@ -2775,6 +2917,174 @@ test("generate route prioritizes research brief anchors when composing正文", a
   expect(markdown).toMatch(/研究折返点-K47|对比信号-M9|交汇判断-Z3/);
 });
 
+test("stream generate only records writing style usage after explicit draft save", async ({ request, baseURL }) => {
+  const adminCookie = await loginAsAdmin(baseURL!, request);
+  const user = await createE2EUser(baseURL!, request, adminCookie, {
+    planCode: "ultra",
+  });
+  const cookie = await loginWithPassword(baseURL!, request, {
+    username: user.username,
+    password: user.password,
+  });
+  const persona = await ensurePersona(baseURL!, request, cookie);
+  const writingStyleProfileId = await createWritingStyleProfileForTest(baseURL!, request, cookie, {
+    name: "E2E Stream Usage 文风资产",
+  });
+
+  const { articleId, series } = await createArticleForTest(baseURL!, request, cookie, {
+    title: "E2E Stream Usage 正文",
+  });
+  const seriesBound = await request.patch(`${baseURL}/api/series/${series.id}`, {
+    headers: { Cookie: cookie },
+    data: {
+      personaId: persona.id,
+      defaultDnaId: writingStyleProfileId,
+    },
+  });
+  expect(seriesBound.ok()).toBeTruthy();
+
+  const capture = await createManualFragmentForTest(baseURL!, request, cookie, {
+    title: "stream usage 素材",
+    content: "这篇稿子要验证一件事：流式生成本身不能算文风资产真实使用，只有正文明确保存成功之后，usage event 才能落库。",
+  });
+  expect(Number(capture?.id || 0)).toBeGreaterThan(0);
+
+  const researchPatched = await request.patch(`${baseURL}/api/articles/${articleId}/stages/researchBrief`, {
+    headers: { Cookie: cookie },
+    data: {
+      payloadPatch: {
+        summary: "验证 stream usage 只在保存成功后才计入真实使用。",
+        coreQuestion: "为什么流式生成完成后还必须等正文保存成功，才能算文风资产被真实使用？",
+        mustCoverAngles: ["保存成功", "真实使用", "口径收敛"],
+        timelineCards: [
+          {
+            phase: "当前",
+            title: "保存成功才算真实使用",
+            summary: "SSE 只是把草稿流出来，只有 /draft 保存成功才形成真正正文落库。",
+            signals: ["保存成功"],
+          },
+        ],
+        comparisonCards: [
+          {
+            subject: "真实使用",
+            position: "真正应该记录的不是模型吐出过什么，而是用户最后保存了什么。",
+            differences: ["SSE 结束不等于正文落库"],
+            opportunities: ["把 usage 口径收在保存成功之后"],
+            risks: ["把未保存草稿也记进 usage 会污染报表"],
+          },
+        ],
+        intersectionInsights: [
+          {
+            insight: "只有当流式结果明确保存成功，文风资产才真正参与了作者成稿。",
+            whyNow: "因为 stream 生成和 draft 保存在链路上本来就是两段动作。",
+            caution: "不能把预览态草稿误算成真实使用。",
+          },
+        ],
+      },
+    },
+  });
+  expect(researchPatched.ok()).toBeTruthy();
+
+  const userId = await getCurrentUserId(baseURL!, request, cookie);
+  expect(
+    await listWritingStyleUsageEventsForTest({
+      userId,
+      articleId,
+      usageSource: "article.generate.stream",
+    }),
+  ).toHaveLength(0);
+
+  const streamed = await request.get(`${baseURL}/api/articles/${articleId}/generate/stream`, {
+    headers: { Cookie: cookie },
+  });
+  expect(streamed.ok()).toBeTruthy();
+  const ssePayloads = parseSsePayloads(await streamed.text());
+  expect(ssePayloads.some((item) => item.status === "start")).toBe(true);
+  expect(ssePayloads.some((item) => item.status === "done")).toBe(true);
+  const usageToken =
+    ssePayloads.find((item) => typeof item.usageToken === "string" && item.usageToken.trim())?.usageToken?.trim() || "";
+  expect(usageToken).not.toBe("");
+  const assembledMarkdown = ssePayloads
+    .filter((item) => item.status === "writing" && typeof item.delta === "string")
+    .map((item) => item.delta)
+    .join("");
+  expect(assembledMarkdown.trim().length).toBeGreaterThan(40);
+  expect(assembledMarkdown).toContain("E2E Stream Usage 正文");
+
+  expect(
+    await listWritingStyleUsageEventsForTest({
+      userId,
+      articleId,
+      usageSource: "article.generate.stream",
+    }),
+  ).toHaveLength(0);
+
+  const manualDraftSaved = await request.put(`${baseURL}/api/articles/${articleId}/draft`, {
+    headers: { Cookie: cookie },
+    data: {
+      title: "E2E Stream Usage 正文",
+      markdownContent: assembledMarkdown,
+      status: "ready",
+      seriesId: series.id,
+    },
+  });
+  expect(manualDraftSaved.ok()).toBeTruthy();
+  expect(
+    await listWritingStyleUsageEventsForTest({
+      userId,
+      articleId,
+      usageSource: "article.generate.stream",
+    }),
+  ).toHaveLength(0);
+
+  const missingTokenDraftSaved = await request.put(`${baseURL}/api/articles/${articleId}/draft`, {
+    headers: { Cookie: cookie },
+    data: {
+      title: "E2E Stream Usage 正文",
+      markdownContent: assembledMarkdown,
+      status: "ready",
+      seriesId: series.id,
+      usageSource: "article.generate.stream",
+    },
+  });
+  expect(missingTokenDraftSaved.ok()).toBeTruthy();
+  expect(
+    await listWritingStyleUsageEventsForTest({
+      userId,
+      articleId,
+      usageSource: "article.generate.stream",
+    }),
+  ).toHaveLength(0);
+
+  const usageDraftSaved = await request.put(`${baseURL}/api/articles/${articleId}/draft`, {
+    headers: { Cookie: cookie },
+    data: {
+      title: "E2E Stream Usage 正文",
+      markdownContent: assembledMarkdown,
+      status: "ready",
+      seriesId: series.id,
+      usageSource: "article.generate.stream",
+      usageToken,
+    },
+  });
+  expect(usageDraftSaved.ok()).toBeTruthy();
+
+  const usageEvents = await listWritingStyleUsageEventsForTest({
+    userId,
+    articleId,
+    usageSource: "article.generate.stream",
+  });
+  expect(usageEvents).toHaveLength(1);
+  expect(usageEvents[0]).toMatchObject({
+    profileId: writingStyleProfileId,
+    articleId,
+    usageSource: "article.generate.stream",
+    profileName: "E2E Stream Usage 文风资产",
+    sampleCount: 1,
+  });
+  expect(String(usageEvents[0]?.usedAt || "")).not.toBe("");
+});
+
 test("generate routes block正文 generation when research source coverage is still blocked", async ({ request, baseURL }) => {
   const cookie = await loginAsAdmin(baseURL!, request);
   await ensurePersona(baseURL!, request, cookie);
@@ -3004,6 +3314,67 @@ test("publish guard blocks forbidden titles and warns on weak title element cove
   checks = weakPreviewJson.data.publishGuard.checks as Array<{ key: string; status: string }>;
   expect(checks.find((item) => item.key === "title_forbidden")?.status).toBe("passed");
   expect(checks.find((item) => item.key === "title_elements")?.status).toBe("warning");
+});
+
+test("publish guard blocks forbidden openings and warns on weak opening strength", async ({ request, baseURL }) => {
+  const cookie = await loginAsAdmin(baseURL!, request);
+  await ensurePersona(baseURL!, request, cookie);
+
+  const { articleId } = await createPublishReadyArticle(baseURL!, request, cookie, {
+    title: "E2E 开头体检守卫",
+  });
+
+  const forbiddenOpeningSaved = await request.put(`${baseURL}/api/articles/${articleId}/draft`, {
+    headers: { Cookie: cookie },
+    data: {
+      title: "E2E 开头体检守卫",
+      markdownContent: [
+        "# E2E 开头体检守卫",
+        "",
+        "在当今 AI 时代，内容创作正在经历深刻变化。",
+        "",
+        "很多团队都以为这是效率问题，真正卡住的是判断和动作顺序。",
+      ].join("\n"),
+      status: "ready",
+    },
+  });
+  expect(forbiddenOpeningSaved.ok()).toBeTruthy();
+
+  const forbiddenPreview = await request.post(`${baseURL}/api/articles/${articleId}/publish-preview`, {
+    headers: { Cookie: cookie },
+    data: {},
+  });
+  expect(forbiddenPreview.ok()).toBeTruthy();
+  const forbiddenPreviewJson = await forbiddenPreview.json();
+  let checks = forbiddenPreviewJson.data.publishGuard.checks as Array<{ key: string; status: string; detail: string }>;
+  expect(checks.find((item) => item.key === "opening_forbidden")?.status).toBe("blocked");
+  expect(String(checks.find((item) => item.key === "opening_forbidden")?.detail || "")).toContain("禁止清单");
+
+  const weakOpeningSaved = await request.put(`${baseURL}/api/articles/${articleId}/draft`, {
+    headers: { Cookie: cookie },
+    data: {
+      title: "E2E 开头体检守卫",
+      markdownContent: [
+        "# E2E 开头体检守卫",
+        "",
+        "很多团队都在做内容流程升级，但最后一公里还是会返工。",
+        "",
+        "问题不在写得慢，而在第一屏没有把真正矛盾亮出来。",
+      ].join("\n"),
+      status: "ready",
+    },
+  });
+  expect(weakOpeningSaved.ok()).toBeTruthy();
+
+  const weakPreview = await request.post(`${baseURL}/api/articles/${articleId}/publish-preview`, {
+    headers: { Cookie: cookie },
+    data: {},
+  });
+  expect(weakPreview.ok()).toBeTruthy();
+  const weakPreviewJson = await weakPreview.json();
+  checks = weakPreviewJson.data.publishGuard.checks as Array<{ key: string; status: string }>;
+  expect(checks.find((item) => item.key === "opening_forbidden")?.status).toBe("passed");
+  expect(checks.find((item) => item.key === "opening_strength")?.status).toBe("warning");
 });
 
 test("research evidence apply endpoint can clear counter evidence guard warning", async ({ request, baseURL }) => {

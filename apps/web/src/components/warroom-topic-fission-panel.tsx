@@ -52,6 +52,11 @@ const MODE_ACTIONS: Array<{ mode: TopicFissionMode; label: string }> = [
   { mode: "cross-domain", label: "跨赛道迁移" },
 ];
 
+type TopicFissionStreamEvent =
+  | { status: "start"; message?: string }
+  | { status: "done"; result?: TopicFissionResult }
+  | { status: "error"; error?: string };
+
 function formatStrength(value: number) {
   return `${Math.max(0, Math.min(5, Math.round(value)))} / 5`;
 }
@@ -136,20 +141,52 @@ export function WarroomTopicFissionPanel({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ mode: nextMode, engine: nextEngine }),
     });
-    const json = await response.json().catch(() => ({}));
+    if (!response.ok || !response.body) {
+      const json = await response.json().catch(() => ({}));
+      setLoading(false);
+      setMessage(json.error || "裂变生成失败");
+      return;
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let nextResult: TopicFissionResult | null = null;
+    let nextError = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const events = buffer.split("\n\n");
+      buffer = events.pop() || "";
+
+      for (const event of events) {
+        const line = event
+          .split("\n")
+          .find((item) => item.startsWith("data:"));
+        if (!line) continue;
+        const payload = JSON.parse(line.slice(5).trim()) as TopicFissionStreamEvent;
+        if (payload.status === "start") {
+          setMessage(payload.message || "裂变生成中…");
+        } else if (payload.status === "done" && payload.result) {
+          nextResult = payload.result;
+        } else if (payload.status === "error") {
+          nextError = payload.error || "裂变生成失败";
+        }
+      }
+    }
+
     setLoading(false);
-    if (response.ok && json.success) {
-      const nextResult = json.data as TopicFissionResult;
+    if (nextResult) {
       setResult(nextResult);
       if (nextEngine === "ima" && nextResult.engine !== "ima") {
         setEngine("local");
       }
-      if (nextResult.degradedReason) {
-        setMessage(nextResult.degradedReason);
-      }
+      setMessage(nextResult.degradedReason || "");
       return;
     }
-    setMessage(json.error || "裂变生成失败");
+    setMessage(nextError || "裂变生成失败");
   }
 
   async function startFromCandidate(candidate: TopicFissionCandidate) {

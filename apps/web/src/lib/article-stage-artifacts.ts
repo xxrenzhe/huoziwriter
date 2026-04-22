@@ -1,5 +1,7 @@
 import { extractJsonObject, generateSceneText } from "./ai-gateway";
+import { buildGatewaySystemSegments } from "./ai-gateway-system-segments";
 import { analyzeAiNoise } from "./ai-noise-scan";
+import { getMergedActiveArchetypeRhythmHints, normalizeStrategyArchetypeKey } from "./archetype-rhythm";
 import { inferEvidenceResearchTag, normalizeEvidenceResearchTag } from "./article-evidence";
 import { findUserById } from "./auth";
 import { getDatabase } from "./db";
@@ -17,9 +19,15 @@ import { getArticleWritingContext } from "./article-writing-context";
 import { collectLanguageGuardHits, getLanguageGuardRules, getLanguageGuardTokenBlacklist, type LanguageGuardRule } from "./language-guard";
 import { getUserPlanContext } from "./plan-access";
 import { loadPromptWithMeta } from "./prompt-loader";
+import { formatPromptTemplate } from "./prompt-template";
 import { getArticleById, getArticleOutcomeBundlesByUser, getArticlesByUser, replaceArticleResearchCards } from "./repositories";
 import { ensureExtendedProductSchema } from "./schema-bootstrap";
 import { scoreSemanticMatch } from "./semantic-search";
+import {
+  buildFallbackOpeningOptions,
+  ensureSingleRecommendedOpeningOption,
+  normalizeOpeningOptions,
+} from "./opening-patterns";
 import { TITLE_OPTION_LIMIT, buildFallbackTitleOptions, ensureSingleRecommendedTitleOption, normalizeTitleOptions } from "./title-patterns";
 import { WRITING_EVAL_APPLY_COMMAND_TEMPLATES } from "./writing-eval-assets";
 import { getActiveWritingEvalScoringProfile } from "./writing-eval";
@@ -150,6 +158,7 @@ type GenerationContext = {
     targetPackHint?: string | null;
     defaultArchetype?: string | null;
     defaultLayoutTemplateId?: string | null;
+    rhythmOverride?: Record<string, unknown> | null;
     relatedArticleCount: number;
   } | null;
   strategyCard: {
@@ -354,7 +363,78 @@ function stripMarkdown(text: string) {
 }
 
 function truncateText(text: string, limit = 160) {
-  return text.length > limit ? `${text.slice(0, limit)}…` : text;
+  return text.length > limit ? text.slice(0, limit) + "…" : text;
+}
+
+function promptLine(prefix: string, value: unknown) {
+  return formatPromptTemplate(prefix + "{{value}}", { value });
+}
+
+function promptBlock(prefix: string, value: unknown) {
+  return formatPromptTemplate(prefix + "\n{{value}}", { value });
+}
+
+export function buildArticleArtifactPromptSystemSegments(promptContent: string) {
+  return buildGatewaySystemSegments([
+    { text: promptContent, cacheable: true },
+  ]);
+}
+
+export function buildTitleOptimizerSystemSegments(promptContent: string) {
+  return buildGatewaySystemSegments([
+    { text: promptContent, cacheable: true },
+    {
+      text: [
+        "请输出 JSON，不要解释，不要 markdown。",
+        '字段：{"titleOptions":[{"title":"字符串","styleLabel":"字符串","angle":"字符串","reason":"字符串","riskHint":"字符串","openRateScore":42,"elementsHit":{"specific":true,"curiosityGap":true,"readerView":false},"forbiddenHits":[""],"recommendReason":"字符串"}],"recommendedIndex":0}',
+        "固定返回 6 个 titleOptions，recommendedIndex 取 0-5，代表唯一推荐项。",
+        "每个标题至少满足三要素里的 2 项：具体元素、好奇缺口、读者视角。",
+        "具体元素：标题里尽量出现数字、产品名、人名、场景、结果、角色或具体对象。",
+        "好奇缺口：制造信息差，但不要把结论剧透成清单答案。",
+        "读者视角：优先说读者能得到什么判断或提醒，不要写成作者自我倾诉。",
+        "禁止清单：震惊、不看后悔、99% 的人都、太可怕了、关于…的思考、…的一些感悟、…的 5 个方法、…的 3 个要点、自我复盘式标题、夸大事实、承诺正文无法兑现的结果。",
+        "forbiddenHits 必须列出命中的禁区标签；没命中时返回空数组。",
+        "openRateScore 取 0-50；只有 forbiddenHits 为空且至少命中 2 个要素，才能进入 40 分以上区间。",
+        "6 个标题必须围绕同一主轴，但风格要明显分开，例如观点判断型、误读切口型、结果反差型、数字反差型、读者提醒型。",
+        "title 长度尽量克制，避免空泛大词，不要写成提纲式或方法清单式标题。",
+      ].join("\n"),
+      cacheable: true,
+    },
+  ]);
+}
+
+export function buildOpeningOptimizerSystemSegments(promptContent: string) {
+  return buildGatewaySystemSegments([
+    { text: promptContent, cacheable: true },
+    {
+      text: [
+        "请输出 JSON，不要解释，不要 markdown。",
+        '字段：{"openingOptions":[{"text":"字符串","patternCode":"scene_entry|conflict_entry|judgement_first|question_hook|phenomenon_signal|direct_entry","patternLabel":"字符串","hookScore":78,"qualityCeiling":"A|B+|B|B-|C","forbiddenHits":[""],"recommendReason":"字符串","diagnose":{"abstractLevel":"pass|warn|danger","paddingLevel":"pass|warn|danger","hookDensity":"pass|warn|danger","informationFrontLoading":"pass|warn|danger"}}],"recommendedIndex":0,"recommendedDirection":"字符串"}',
+        "固定返回 3 个 openingOptions，recommendedIndex 取 0-2，代表唯一推荐项。",
+        "openingOptions.text 必须是可直接落稿的中文开头句群，优先控制在 80-200 字，不要返回提纲标签或解释句。",
+        "3 个候选必须覆盖不同开头模式，patternCode 只能是 scene_entry、conflict_entry、judgement_first、question_hook、phenomenon_signal、direct_entry。",
+        "forbiddenHits 必须列出命中的开头禁区标签；没有命中时返回空数组。",
+        "qualityCeiling 只能是 A、B+、B、B-、C；推荐项优先选择 forbiddenHits 为空、qualityCeiling 更高、信息更前置的方案。",
+        "diagnose 四项必须完整返回，使用 pass|warn|danger。",
+        "如果某个候选仍不可用，也要保留它，但必须明确给出 forbiddenHits 和 recommendReason。",
+      ].join("\n"),
+      cacheable: true,
+    },
+  ]);
+}
+
+function withOpeningOptionAliases<T extends Record<string, unknown>>(option: T): T & {
+  opening: string;
+  text: string;
+  value: string;
+} {
+  const opening = String(option.opening || option.text || option.content || option.value || "").trim();
+  return {
+    ...option,
+    opening,
+    text: opening,
+    value: opening,
+  };
 }
 
 function normalizeIsoTimestamp(value: unknown) {
@@ -372,7 +452,14 @@ function listPersonaSummary(context: GenerationContext) {
   }
   const identity = context.persona.identityTags.join(" / ");
   const writingStyle = context.persona.writingStyleTags.join(" / ");
-  return `${context.persona.name}（身份：${identity || "未设置"}；风格：${writingStyle || "未设置"}${context.persona.summary ? `；摘要：${context.persona.summary}` : ""}${context.persona.boundWritingStyleProfileName ? `；绑定文风资产：${context.persona.boundWritingStyleProfileName}` : ""}${context.persona.sourceMode === "analyzed" ? "；资料建模人设" : ""}）`;
+  return formatPromptTemplate("{{name}}（身份：{{identity}}；风格：{{writingStyle}}{{summaryPart}}{{boundProfilePart}}{{sourceModePart}}）", {
+    name: context.persona.name,
+    identity: identity || "未设置",
+    writingStyle: writingStyle || "未设置",
+    summaryPart: context.persona.summary ? "；摘要：" + context.persona.summary : "",
+    boundProfilePart: context.persona.boundWritingStyleProfileName ? "；绑定文风资产：" + context.persona.boundWritingStyleProfileName : "",
+    sourceModePart: context.persona.sourceMode === "analyzed" ? "；资料建模人设" : "",
+  });
 }
 
 function listWritingStyleProfileSummary(context: GenerationContext) {
@@ -382,15 +469,15 @@ function listWritingStyleProfileSummary(context: GenerationContext) {
 
   const profile = context.writingStyleProfile;
   return [
-    `名称：${profile.name}`,
-    profile.summary ? `摘要：${profile.summary}` : null,
-    profile.toneKeywords.length ? `语气关键词：${profile.toneKeywords.join("、")}` : null,
-    profile.structurePatterns.length ? `结构习惯：${profile.structurePatterns.join("；")}` : null,
-    profile.languageHabits.length ? `语言习惯：${profile.languageHabits.join("；")}` : null,
-    profile.openingPatterns.length ? `开头习惯：${profile.openingPatterns.join("；")}` : null,
-    profile.endingPatterns.length ? `结尾习惯：${profile.endingPatterns.join("；")}` : null,
-    profile.doNotWrite.length ? `明确规避：${profile.doNotWrite.join("；")}` : null,
-    profile.imitationPrompt ? `模仿提示：${profile.imitationPrompt}` : null,
+    promptLine("名称：", profile.name),
+    profile.summary ? promptLine("摘要：", profile.summary) : null,
+    profile.toneKeywords.length ? promptLine("语气关键词：", profile.toneKeywords.join("、")) : null,
+    profile.structurePatterns.length ? promptLine("结构习惯：", profile.structurePatterns.join("；")) : null,
+    profile.languageHabits.length ? promptLine("语言习惯：", profile.languageHabits.join("；")) : null,
+    profile.openingPatterns.length ? promptLine("开头习惯：", profile.openingPatterns.join("；")) : null,
+    profile.endingPatterns.length ? promptLine("结尾习惯：", profile.endingPatterns.join("；")) : null,
+    profile.doNotWrite.length ? promptLine("明确规避：", profile.doNotWrite.join("；")) : null,
+    profile.imitationPrompt ? promptLine("模仿提示：", profile.imitationPrompt) : null,
   ].filter(Boolean).join("\n");
 }
 
@@ -417,17 +504,22 @@ function listLayoutStrategySummary(context: GenerationContext) {
   const bannedPunctuation = getLayoutStrategyList(context.layoutStrategy.config, "bannedPunctuation");
 
   return [
-    `名称：${context.layoutStrategy.name}`,
+    promptLine("名称：", context.layoutStrategy.name),
     context.layoutStrategy.resolutionMode === "explicit"
       ? "来源：稿件显式绑定的写作风格资产"
       : context.layoutStrategy.resolutionMode === "active"
         ? "来源：当前活跃写作风格资产"
-        : `来源：线上灰度命中的写作风格资产（${context.layoutStrategy.resolutionReason}）`,
-    tone ? `语气偏好：${tone}` : null,
-    paragraphLength ? `段落呼吸：${paragraphLength}` : null,
-    titleStyle ? `标题倾向：${titleStyle}` : null,
-    bannedWords.length ? `附加禁词：${bannedWords.join("、")}` : null,
-    bannedPunctuation.length ? `禁用标点：${bannedPunctuation.join(" ")}` : null,
+        : promptLine(
+            "来源：",
+            formatPromptTemplate("线上灰度命中的写作风格资产（{{reason}}）", {
+              reason: context.layoutStrategy.resolutionReason,
+            }),
+          ),
+    tone ? promptLine("语气偏好：", tone) : null,
+    paragraphLength ? promptLine("段落呼吸：", paragraphLength) : null,
+    titleStyle ? promptLine("标题倾向：", titleStyle) : null,
+    bannedWords.length ? promptLine("附加禁词：", bannedWords.join("、")) : null,
+    bannedPunctuation.length ? promptLine("禁用标点：", bannedPunctuation.join(" ")) : null,
   ].filter(Boolean).join("\n");
 }
 
@@ -444,7 +536,7 @@ function getMaterialBundle(context: GenerationContext, limit = 8) {
   return [
     ...context.evidenceFragments.slice(0, limit).map((fragment) => ({
       fragmentId: fragment.id,
-      title: String(fragment.title || "").trim() || `素材 #${fragment.id}`,
+      title: String(fragment.title || "").trim() || ("素材 #" + String(fragment.id)),
       usageMode: fragment.usageMode,
       sourceType: fragment.sourceType,
       summary: truncateText(fragment.distilledContent, 120),
@@ -502,8 +594,8 @@ function buildFactCheckEvidenceCards(
       .map((card) => ({
         card,
         score: scoreSemanticMatch(
-          `${check.claim}\n${check.suggestion}`,
-          `${card.title}\n${card.summary ?? ""}\n${card.keyFacts.join("；")}\n${card.latestChangeSummary ?? ""}`,
+          String(check.claim || "").trim() + "\n" + String(check.suggestion || "").trim(),
+          String(card.title || "").trim() + "\n" + String(card.summary ?? "") + "\n" + card.keyFacts.join("；") + "\n" + String(card.latestChangeSummary ?? ""),
         ),
       }))
       .filter((item) => item.score >= 0.18)
@@ -518,13 +610,13 @@ function buildFactCheckEvidenceCards(
       .sort((left, right) => right.score - left.score)
       .map((item) => ({
         fragmentId: item.fragment.id as number | null,
-        title: String(item.fragment.title || "").trim() || `素材 #${item.fragment.id}`,
+        title: String(item.fragment.title || "").trim() || ("素材 #" + String(item.fragment.id)),
         excerpt: truncateText(item.fragment.distilledContent, 120),
         sourceType: item.fragment.sourceType,
         sourceUrl: item.fragment.sourceUrl,
         researchTag:
           inferEvidenceResearchTag({
-            title: String(item.fragment.title || "").trim() || `素材 #${item.fragment.id}`,
+            title: String(item.fragment.title || "").trim() || ("素材 #" + String(item.fragment.id)),
             excerpt: item.fragment.distilledContent,
             claim: check.claim,
             rationale: check.suggestion,
@@ -619,7 +711,7 @@ function buildFactCheckResearchReview(context: GenerationContext) {
   const summary = !researchBrief
     ? "当前没有研究简报，事实核查只能覆盖真假层，无法完整复核判断是否有纵向与横向支撑。"
     : [
-        strongestAnchor ? `当前主判断锚点：${strongestAnchor}` : null,
+        strongestAnchor ? "当前主判断锚点：" + strongestAnchor : null,
         sourceCoverageStatus === "ready"
           ? "研究信源覆盖已具备基础可写性。"
           : sourceCoverageStatus === "limited"
@@ -627,9 +719,9 @@ function buildFactCheckResearchReview(context: GenerationContext) {
             : sourceCoverageStatus === "blocked"
               ? "研究信源覆盖仍被阻断。"
               : null,
-        timelineSupport === "enough" ? `已接入 ${timelineCards.length} 条时间脉络卡。` : "还没有时间脉络卡。",
-        comparisonSupport === "enough" ? `已接入 ${comparisonCards.length} 条横向比较卡。` : "还没有横向比较卡。",
-        intersectionSupport === "enough" ? `已接入 ${intersectionInsights.length} 条交汇洞察。` : "还没有交汇洞察。",
+        timelineSupport === "enough" ? "已接入 " + String(timelineCards.length) + " 条时间脉络卡。" : "还没有时间脉络卡。",
+        comparisonSupport === "enough" ? "已接入 " + String(comparisonCards.length) + " 条横向比较卡。" : "还没有横向比较卡。",
+        intersectionSupport === "enough" ? "已接入 " + String(intersectionInsights.length) + " 条交汇洞察。" : "还没有交汇洞察。",
       ].filter(Boolean).join(" ");
 
   return {
@@ -677,7 +769,7 @@ function dedupeSourceReferences(values: Array<ResearchSourceReference | null | u
     if (!label && !detail) {
       continue;
     }
-    const key = `${label}::${sourceType}::${detail}::${sourceUrl || ""}`;
+    const key = label + "::" + sourceType + "::" + detail + "::" + (sourceUrl || "");
     if (seen.has(key)) {
       continue;
     }
@@ -700,7 +792,7 @@ function buildEvidenceFragmentSourceReference(
   detailOverride?: string | null,
 ): ResearchSourceReference {
   return {
-    label: String(fragment.title || "").trim() || `素材 #${fragment.id}`,
+    label: String(fragment.title || "").trim() || ("素材 #" + String(fragment.id)),
     sourceType: fragment.sourceType === "screenshot" ? "screenshot" : fragment.sourceUrl ? "url" : "manual",
     detail: truncateText(detailOverride || fragment.distilledContent || "素材线索", 96),
     sourceUrl: fragment.sourceUrl || null,
@@ -724,7 +816,7 @@ function buildHistoryReferenceSourceReference(
   detailOverride?: string | null,
 ): ResearchSourceReference {
   return {
-    label: `历史文章《${item.title}》`,
+    label: "历史文章《" + item.title + "》",
     sourceType: "history",
     detail: truncateText(detailOverride || item.relationReason || item.bridgeSentence || "可用于补前情与阶段变化。", 96),
     sourceUrl: null,
@@ -741,12 +833,12 @@ function getResearchCardSourceReferences(value: unknown) {
 }
 
 function looksLikeOfficialSource(input: { title?: string | null; content?: string | null; sourceUrl?: string | null }) {
-  const seed = `${input.title || ""} ${input.content || ""} ${input.sourceUrl || ""}`.toLowerCase();
+  const seed = (String(input.title || "") + " " + String(input.content || "") + " " + String(input.sourceUrl || "")).toLowerCase();
   return /(官网|官方|公告|财报|白皮书|政策|披露|新闻稿|investor|newsroom|press|official|whitepaper|policy|docs|documentation|help|sec\.gov|gov\.)/.test(seed);
 }
 
 function looksLikeUserVoice(input: { title?: string | null; content?: string | null; sourceUrl?: string | null }) {
-  const seed = `${input.title || ""} ${input.content || ""} ${input.sourceUrl || ""}`.toLowerCase();
+  const seed = (String(input.title || "") + " " + String(input.content || "") + " " + String(input.sourceUrl || "")).toLowerCase();
   return /(reddit|forum|community|comment|review|weibo|x\.com|twitter|评论|社区|用户|反馈|口碑|体验|帖子|吐槽)/.test(seed);
 }
 
@@ -768,10 +860,10 @@ function buildResearchCoverage(context: GenerationContext) {
   };
 
   for (const fragment of context.evidenceFragments.slice(0, 12)) {
-    const title = String(fragment.title || "").trim() || `素材 #${fragment.id}`;
+    const title = String(fragment.title || "").trim() || ("素材 #" + String(fragment.id));
     const summary = truncateText(fragment.distilledContent, 96);
-    const descriptor = `${title}：${summary}`;
-    const comparisonSeed = `${title} ${summary}`;
+    const descriptor = title + "：" + summary;
+    const comparisonSeed = title + " " + summary;
     if (looksLikeOfficialSource({ title, content: summary, sourceUrl: fragment.sourceUrl })) {
       buckets.official.push(descriptor);
     } else if (fragment.sourceUrl) {
@@ -790,7 +882,7 @@ function buildResearchCoverage(context: GenerationContext) {
 
   for (const card of context.knowledgeCards.slice(0, 6)) {
     const seed = [card.title, card.summary, card.latestChangeSummary, ...card.keyFacts.slice(0, 2)].filter(Boolean).join(" ");
-    const descriptor = `${card.title}：${truncateText(card.latestChangeSummary || card.summary || card.keyFacts[0] || "背景卡线索", 96)}`;
+    const descriptor = String(card.title || "").trim() + "：" + truncateText(card.latestChangeSummary || card.summary || card.keyFacts[0] || "背景卡线索", 96);
     buckets.industry.push(descriptor);
     if (looksLikeComparison(seed)) {
       buckets.comparison.push(descriptor);
@@ -801,7 +893,7 @@ function buildResearchCoverage(context: GenerationContext) {
   }
 
   if (context.historyReferences.length > 0) {
-    buckets.timeline.push(...context.historyReferences.slice(0, 3).map((item) => `历史文章《${item.title}》：${truncateText(item.relationReason || item.bridgeSentence || "可用于补前情与阶段变化。", 96)}`));
+    buckets.timeline.push(...context.historyReferences.slice(0, 3).map((item) => "历史文章《" + item.title + "》：" + truncateText(item.relationReason || item.bridgeSentence || "可用于补前情与阶段变化。", 96)));
   }
 
   const official = dedupeLimited(buckets.official, 4);
@@ -825,14 +917,14 @@ function buildResearchCoverage(context: GenerationContext) {
       sufficiency === "ready"
         ? "当前研究底座已覆盖多数关键来源维度，可以继续进入结构判断。"
         : sufficiency === "limited"
-          ? `当前仍缺这些来源维度：${missingCategories.join("、")}。建议先补研究，再把判断写硬。`
+          ? "当前仍缺这些来源维度：" + missingCategories.join("、") + "。建议先补研究，再把判断写硬。"
           : "当前信源覆盖过窄，最多只适合写成观点草稿，不适合直接进入判断型长文。",
   } satisfies Record<string, unknown> & { coveredCount: number };
 }
 
 function buildResearchTimelineCards(context: GenerationContext, coverage: ReturnType<typeof buildResearchCoverage>) {
   const timelineFragments = context.evidenceFragments.filter((fragment) =>
-    looksLikeTimeline(`${String(fragment.title || "").trim()} ${truncateText(fragment.distilledContent, 96)}`),
+    looksLikeTimeline(String(fragment.title || "").trim() + " " + truncateText(fragment.distilledContent, 96)),
   );
   const officialFragments = context.evidenceFragments.filter((fragment) =>
     looksLikeOfficialSource({
@@ -842,7 +934,7 @@ function buildResearchTimelineCards(context: GenerationContext, coverage: Return
     }),
   );
   const comparisonFragments = context.evidenceFragments.filter((fragment) =>
-    looksLikeComparison(`${String(fragment.title || "").trim()} ${truncateText(fragment.distilledContent, 96)}`),
+    looksLikeComparison(String(fragment.title || "").trim() + " " + truncateText(fragment.distilledContent, 96)),
   );
   const userVoiceFragments = context.evidenceFragments.filter((fragment) =>
     looksLikeUserVoice({
@@ -860,9 +952,9 @@ function buildResearchTimelineCards(context: GenerationContext, coverage: Return
     ],
     6,
   );
-  const startSignal = timelineSignals[0] || `围绕「${context.article.title}」先补起点，不要把今天的现象写成凭空出现。`;
+  const startSignal = timelineSignals[0] || ("围绕「" + context.article.title + "」先补起点，不要把今天的现象写成凭空出现。");
   const turningSignal = timelineSignals[1] || context.seriesInsight?.whyNow?.[0] || "寻找真正改变竞争格局或用户预期的那个转折。";
-  const currentSignal = timelineSignals[2] || `今天值得写「${context.article.title}」，是因为它已经进入一个需要重新判断的位置。`;
+  const currentSignal = timelineSignals[2] || ("今天值得写「" + context.article.title + "」，是因为它已经进入一个需要重新判断的位置。");
 
   return [
     {
@@ -923,7 +1015,7 @@ function buildResearchComparisonCards(context: GenerationContext, coverage: Retu
   return subjects.map((subject, index) => {
     const matchingKnowledgeCard = context.knowledgeCards.find((card) => card.title.includes(subject) || subject.includes(card.title));
     const matchingFragments = context.evidenceFragments.filter((fragment) => {
-      const seed = `${String(fragment.title || "").trim()} ${truncateText(fragment.distilledContent, 96)}`;
+      const seed = String(fragment.title || "").trim() + " " + truncateText(fragment.distilledContent, 96);
       return seed.includes(subject) || looksLikeComparison(seed);
     });
     const matchingUserVoice = context.evidenceFragments.find((fragment) =>
@@ -987,7 +1079,7 @@ function buildResearchIntersectionInsights(
 
   return [
     {
-      insight: `今天讨论「${context.article.title}」，重点不是现象本身，而是它已经进入一个会暴露路径依赖的新阶段。`,
+      insight: "今天讨论「" + context.article.title + "」，重点不是现象本身，而是它已经进入一个会暴露路径依赖的新阶段。",
       whyNow: turningPoint || "当前阶段变量已经改变，旧判断需要重验。",
       support: dedupeLimited([turningPoint, String(timelineCards[2]?.summary || "").trim()], 3),
       caution: "没有时间脉络时，不要把今天的动作写成单点爆发。",
@@ -1001,7 +1093,7 @@ function buildResearchIntersectionInsights(
       ),
     },
     {
-      insight: `横向上真正值得比的是「${leadingComparison}」和「${secondaryComparison}」背后的组织能力、用户结构与历史负担，而不是表面功能。`,
+      insight: "横向上真正值得比的是「" + leadingComparison + "」和「" + secondaryComparison + "」背后的组织能力、用户结构与历史负担，而不是表面功能。",
       whyNow: "这能把文章从单点观察推进到结构性比较。",
       support: dedupeLimited([String(comparisonCards[0]?.position || "").trim(), String(comparisonCards[1]?.position || "").trim()], 3),
       caution: "如果只有支持性案例，没有反例或用户反馈，判断仍然会偏空。",
@@ -1029,9 +1121,9 @@ function fallbackResearchBrief(context: GenerationContext) {
     "希望快速形成结构性判断的读者";
   const coreAssertion = String(context.outlinePlan?.centralThesis || "").trim() || String(context.article.title || "").trim();
   return {
-    summary: `先围绕「${context.article.title}」把研究问题、信源覆盖、时间脉络和横向比较补齐，再进入策略判断。`,
+    summary: "先围绕「" + context.article.title + "」把研究问题、信源覆盖、时间脉络和横向比较补齐，再进入策略判断。",
     researchObject: context.article.title,
-    coreQuestion: `围绕「${context.article.title}」，真正需要研究清楚的不是发生了什么，而是它为什么在今天以这种方式发生。`,
+    coreQuestion: "围绕「" + context.article.title + "」，真正需要研究清楚的不是发生了什么，而是它为什么在今天以这种方式发生。",
     authorHypothesis: context.seriesInsight?.reason || coreAssertion || "先提出一个待验证判断，但不要把它当成已证实结论。",
     targetReader,
     mustCoverAngles: [
@@ -1042,7 +1134,7 @@ function fallbackResearchBrief(context: GenerationContext) {
       "补反例或限制条件，避免判断写死。",
     ],
     hypothesesToVerify: [
-      `「${context.article.title}」当前最重要的变化，是否来自一个新的阶段性转折。`,
+      "「" + context.article.title + "」当前最重要的变化，是否来自一个新的阶段性转折。",
       "当前竞争差异，是否真正来自用户结构、组织能力或历史负担，而不是表面功能。",
       "这件事现在值得写，是否因为旧判断已经不够用了。",
     ],
@@ -1071,12 +1163,12 @@ function fallbackAudienceAnalysis(context: GenerationContext) {
   const style = context.persona?.writingStyleTags[0] || "经验分享文";
   const sourceFacts = getSourceFacts(context, 3);
   return {
-    summary: `这篇稿子更适合面向希望快速形成判断的 ${identity} 型读者，表达应保持结论前置与事实支撑并行。`,
-    coreReaderLabel: `${identity} / ${style}受众`,
+    summary: "这篇稿子更适合面向希望快速形成判断的 " + identity + " 型读者，表达应保持结论前置与事实支撑并行。",
+    coreReaderLabel: identity + " / " + style + "受众",
     readerSegments: [
       {
         label: "核心关注者",
-        painPoint: `已经关注“${context.article.title}”相关话题，但缺少一篇能快速形成判断的整合稿。`,
+        painPoint: "已经关注“" + context.article.title + "”相关话题，但缺少一篇能快速形成判断的整合稿。",
         motivation: "想迅速知道该关注什么、忽略什么、下一步如何行动。",
         preferredTone: "结论前置、少铺垫、避免空话。",
       },
@@ -1111,7 +1203,7 @@ function fallbackAudienceAnalysis(context: GenerationContext) {
     contentWarnings: [
       "不要默认读者已经掌握全部背景。",
       "避免只有态度，没有时间、数据或案例支撑。",
-      sourceFacts.length ? `优先引用这些已知素材：${sourceFacts.join("；")}` : "优先回到用户已采集的素材与背景卡。",
+      sourceFacts.length ? "优先引用这些已知素材：" + sourceFacts.join("；") : "优先回到用户已采集的素材与背景卡。",
     ],
     recommendedCallToAction: "结尾给出一个明确动作：继续观察什么、验证什么、如何利用这篇稿子做下一步表达。",
   } satisfies Record<string, unknown>;
@@ -1132,7 +1224,7 @@ function fallbackOutlinePlanning(context: GenerationContext) {
       preferredResearchSignals.historicalTurningPoint
       || String(timelineCards[1]?.summary || "").trim()
       || String(timelineCards[0]?.summary || "").trim()
-      || `先交代「${context.article.title}」是在哪个历史节点真正发生了转折。`,
+      || "先交代「" + context.article.title + "」是在哪个历史节点真正发生了转折。",
     middleComparisonAnchor:
       preferredResearchSignals.marketPositionInsight
       || String(comparisonCards[0]?.position || "").trim()
@@ -1142,7 +1234,7 @@ function fallbackOutlinePlanning(context: GenerationContext) {
       preferredResearchSignals.coreAssertion
       || preferredResearchSignals.researchHypothesis
       || researchInsights[0]
-      || `核心判断要回答「${context.article.title}」为什么会这样发生，而不是只复述发生了什么。`,
+      || "核心判断要回答「" + context.article.title + "」为什么会这样发生，而不是只复述发生了什么。",
     sequencingNote: context.researchBrief
       ? "先用历史转折把问题抛出来，再用横向比较拉开差异，最后把交汇洞察写成可站住的主判断。"
       : "如果研究卡还不完整，也要按“转折 -> 比较 -> 判断”的顺序组织大纲，避免平铺素材。",
@@ -1152,12 +1244,30 @@ function fallbackOutlinePlanning(context: GenerationContext) {
     action: "adopted",
     note: "作为补充观点参与结构规划，但不替代主论点。",
   }));
+  const openingHookSeedOptions = [
+    "开头优先从这条历史节点切入：" + String(researchBackbone.openingTimelineAnchor || "").trim(),
+    "先抛今天的现实冲突，再倒回这个转折：" + String(researchBackbone.openingTimelineAnchor || "").trim(),
+    "先给一句判断，再补这组横向差异：" + String(researchBackbone.middleComparisonAnchor || "").trim(),
+  ];
+  const openingOptions = normalizeOpeningOptions(
+    [
+      { opening: openingHookSeedOptions[0], patternLabel: "历史转折型" },
+      { opening: openingHookSeedOptions[1], patternLabel: "冲突回拉型" },
+      { opening: openingHookSeedOptions[2], patternLabel: "判断先行型" },
+    ],
+    buildFallbackOpeningOptions(String(researchBackbone.coreInsightAnchor || context.article.title || "").trim()),
+  ).map((item) => withOpeningOptionAliases(item));
+  const recommendedOpeningOption = openingOptions.find((item) => item.isRecommended) ?? openingOptions[0] ?? null;
+  const openingHookOptions = uniqueStrings(
+    [...openingOptions.map((item) => item.opening), ...openingHookSeedOptions],
+    4,
+  );
   const sections = context.outlineNodes.length > 0
     ? context.outlineNodes.slice(0, 6).map((node, index) => ({
         heading: node.title,
-        goal: node.description || `推进第 ${index + 1} 个论证层次`,
+        goal: node.description || ("推进第 " + String(index + 1) + " 个论证层次"),
         keyPoints: [
-          truncateText(seedFacts[index] || `围绕“${node.title}”先给出判断，再放事实。`, 80),
+          truncateText(seedFacts[index] || ("围绕“" + node.title + "”先给出判断，再放事实。"), 80),
         ],
         evidenceHints: seedFacts.slice(index, index + 2),
         materialRefs: materialBundle.slice(index, index + 2).map((item) => item.fragmentId),
@@ -1222,14 +1332,12 @@ function fallbackOutlinePlanning(context: GenerationContext) {
       "标题只放大正文里会真正展开的矛盾和收益点，不拿正文无法兑现的结果做诱饵。",
     ],
     titleAuditedAt: now,
+    openingAuditedAt: now,
     outlineUpdatedAt: now,
-    centralThesis: String(researchBackbone.coreInsightAnchor || "").trim() || `围绕“${context.article.title}”，用一条主判断串起事实，不做散点式罗列。`,
-    openingHook: `开头优先从这条历史节点切入：${String(researchBackbone.openingTimelineAnchor || "").trim()}`,
-    openingHookOptions: [
-      `开头优先从这条历史节点切入：${String(researchBackbone.openingTimelineAnchor || "").trim()}`,
-      `先抛今天的现实冲突，再倒回这个转折：${String(researchBackbone.openingTimelineAnchor || "").trim()}`,
-      `先给一句判断，再补这组横向差异：${String(researchBackbone.middleComparisonAnchor || "").trim()}`,
-    ],
+    centralThesis: String(researchBackbone.coreInsightAnchor || "").trim() || ("围绕“" + context.article.title + "”，用一条主判断串起事实，不做散点式罗列。"),
+    openingHook: recommendedOpeningOption?.opening || openingHookSeedOptions[0],
+    openingHookOptions,
+    openingOptions,
     targetEmotion: "先建立紧迫感，再转入清晰感，最后以确定性的建议收束。",
     targetEmotionOptions: [
       "先建立紧迫感，再转入清晰感，最后以确定性的建议收束。",
@@ -1434,10 +1542,10 @@ function finalizeDeepWritingOutcomeSignal(bucket: DeepWritingOutcomeBucket, kind
   const rankingAdjustment = getDeepWritingOutcomeRankingAdjustment(bucket.performanceScore, bucket.sampleCount);
   const historySummary =
     bucket.hitCount > 0 || bucket.nearMissCount > 0
-      ? `历史 ${bucket.sampleCount} 篇同${kindLabel}里，命中 ${bucket.hitCount} 篇，接近命中 ${bucket.nearMissCount} 篇。`
+      ? "历史 " + String(bucket.sampleCount) + " 篇同" + kindLabel + "里，命中 " + String(bucket.hitCount) + " 篇，接近命中 " + String(bucket.nearMissCount) + " 篇。"
       : bucket.missCount > 0
-        ? `历史 ${bucket.sampleCount} 篇同${kindLabel}里，未达目标 ${bucket.missCount} 篇。`
-        : `历史已有 ${bucket.sampleCount} 篇同${kindLabel}结果样本。`;
+        ? "历史 " + String(bucket.sampleCount) + " 篇同" + kindLabel + "里，未达目标 " + String(bucket.missCount) + " 篇。"
+        : "历史已有 " + String(bucket.sampleCount) + " 篇同" + kindLabel + "结果样本。";
   const recommendationSummary =
     bucket.followedRecommendationSampleCount > 0
       ? bucket.followedRecommendationPositiveCount > 0
@@ -1556,12 +1664,18 @@ function summarizeDeepWritingOutcomeFeedback(input: {
   };
 }
 
-function resolveDeepWritingState(
+async function resolveDeepWritingState(
   context: GenerationContext,
   preferredStateVariantCode?: WritingStateVariantCode | null,
   preferredPrototypeCode?: ArticlePrototypeCode | null,
 ) {
   const baseStrategies = getDeepWritingBaseStrategies(context);
+  const archetypeRhythmHints = await getMergedActiveArchetypeRhythmHints({
+    archetype:
+      normalizeStrategyArchetypeKey(context.strategyCard?.archetype)
+      ?? normalizeStrategyArchetypeKey(context.seriesInsight?.defaultArchetype),
+    override: context.seriesInsight?.rhythmOverride ?? null,
+  });
   const buildCandidate = (variantCode?: WritingStateVariantCode | null, prototypeCode?: ArticlePrototypeCode | null) => {
     const writingState = buildWritingStateKernel({
       title: context.article.title,
@@ -1571,6 +1685,7 @@ function resolveDeepWritingState(
       seriesInsight: context.seriesInsight,
       researchBrief: context.researchBrief,
       strategyCard: context.strategyCard,
+      archetypeRhythmHints,
       preferredPrototypeCode: prototypeCode,
       preferredVariantCode: variantCode,
     });
@@ -1650,8 +1765,8 @@ function resolveDeepWritingState(
       : bestPrototypeCandidate.writingState.articlePrototype !== autoPrototypeCandidate.writingState.articlePrototype && bestPrototypeScore < autoPrototypeScore
         ? (() => {
             prototypeRotationReason = [
-              `系统原本推荐「${autoPrototypeCandidate.writingState.articlePrototypeLabel}」，但最近几篇的题型重复风险更高。`,
-              `这次已自动轮换到「${bestPrototypeCandidate.writingState.articlePrototypeLabel}」，优先换掉同一种推进骨架。`,
+              "系统原本推荐「" + autoPrototypeCandidate.writingState.articlePrototypeLabel + "」，但最近几篇的题型重复风险更高。",
+              "这次已自动轮换到「" + bestPrototypeCandidate.writingState.articlePrototypeLabel + "」，优先换掉同一种推进骨架。",
               bestPrototypeCandidate.diversityReport.suggestions[0] || "",
             ].filter(Boolean).join(" ");
             return bestPrototypeCandidate;
@@ -1738,8 +1853,8 @@ function resolveDeepWritingState(
       : bestStateCandidate.writingState.stateVariantCode !== autoStateCandidate.writingState.stateVariantCode && bestStateScore < autoStateScore
         ? (() => {
             stateRotationReason = [
-              `系统原本推荐「${autoStateCandidate.writingState.stateVariantLabel}」，但最近几篇的写法重复风险更高。`,
-              `这次已自动轮换到「${bestStateCandidate.writingState.stateVariantLabel}」，优先错开开头、句法、收尾或状态连用。`,
+              "系统原本推荐「" + autoStateCandidate.writingState.stateVariantLabel + "」，但最近几篇的写法重复风险更高。",
+              "这次已自动轮换到「" + bestStateCandidate.writingState.stateVariantLabel + "」，优先错开开头、句法、收尾或状态连用。",
               bestStateCandidate.diversityReport.suggestions[0] || "",
             ].filter(Boolean).join(" ");
             return bestStateCandidate;
@@ -1806,12 +1921,12 @@ function resolveDeepWritingState(
   };
 }
 
-function fallbackDeepWriting(
+async function fallbackDeepWriting(
   context: GenerationContext,
   preferredStateVariantCode?: WritingStateVariantCode | null,
   preferredPrototypeCode?: ArticlePrototypeCode | null,
 ) {
-  const resolvedState = resolveDeepWritingState(context, preferredStateVariantCode, preferredPrototypeCode);
+  const resolvedState = await resolveDeepWritingState(context, preferredStateVariantCode, preferredPrototypeCode);
   const writingState = resolvedState.writingState;
   const preferredResearchSignals = getPreferredResearchSignals(context);
   const researchInsights = getRecordArray(context.researchBrief?.intersectionInsights).map((item) => String(item.insight || "").trim()).filter(Boolean);
@@ -1824,26 +1939,26 @@ function fallbackDeepWriting(
     String(outlinePlan.centralThesis || "").trim() ||
     preferredResearchSignals.coreAssertion ||
     preferredResearchSignals.researchHypothesis ||
-    `围绕“${selectedTitle}”把素材重新组织成一条清晰判断，不做散点式复述。`;
+    ("围绕“" + selectedTitle + "”把素材重新组织成一条清晰判断，不做散点式复述。");
   const openingStrategy = resolvedState.openingStrategy;
   const targetEmotion = resolvedState.targetEmotion;
   const endingStrategy = resolvedState.endingStrategy;
   const diversityReport = resolvedState.diversityReport;
   const openingDiversityGuard =
     diversityReport.openingRepeatCount >= 3
-      ? `最近几篇已经反复用「${diversityReport.currentOpeningPatternLabel}」开头，这次必须主动换切口。`
+      ? "最近几篇已经反复用「" + diversityReport.currentOpeningPatternLabel + "」开头，这次必须主动换切口。"
       : "";
   const endingDiversityGuard =
     diversityReport.endingRepeatCount >= 3
-      ? `最近几篇已经反复停在「${diversityReport.currentEndingPatternLabel}」收尾，这次必须主动换一种停法。`
+      ? "最近几篇已经反复停在「" + diversityReport.currentEndingPatternLabel + "」收尾，这次必须主动换一种停法。"
       : "";
   const syntaxDiversityGuard =
     diversityReport.syntaxRepeatCount >= 3
-      ? `最近几篇已经反复用「${diversityReport.currentSyntaxPatternLabel}」句法推进，这次必须主动换一种句法呼吸。`
+      ? "最近几篇已经反复用「" + diversityReport.currentSyntaxPatternLabel + "」句法推进，这次必须主动换一种句法呼吸。"
       : "";
   const prototypeDiversityGuard =
     diversityReport.prototypeRepeatCount >= 3 && diversityReport.currentPrototypeLabel
-      ? `最近几篇已经反复写成「${diversityReport.currentPrototypeLabel}」，这次必须主动换一种推进骨架。`
+      ? "最近几篇已经反复写成「" + diversityReport.currentPrototypeLabel + "」，这次必须主动换一种推进骨架。"
       : "";
   const guardedOpeningStrategy = [openingStrategy, openingDiversityGuard, syntaxDiversityGuard].filter(Boolean).join(" ");
   const guardedEndingStrategy = [endingStrategy, prototypeDiversityGuard, endingDiversityGuard].filter(Boolean).join(" ");
@@ -1860,23 +1975,23 @@ function fallbackDeepWriting(
   };
   const sectionBlueprint = (
     sectionSource.length
-      ? sectionSource
-      : context.outlineNodes.slice(0, 6).map((node, index) => ({
-          heading: node.title,
-          goal: node.description || `推进第 ${index + 1} 层论证`,
-          keyPoints: [`围绕“${node.title}”先下判断，再补事实。`],
-          evidenceHints: getSourceFacts(context, 4).slice(index, index + 2),
-          materialRefs: [],
-          transition: index === 0 ? "从现象切入" : "承接上一段继续推进判断",
-        }))
+          ? sectionSource
+          : context.outlineNodes.slice(0, 6).map((node, index) => ({
+              heading: node.title,
+              goal: node.description || ("推进第 " + String(index + 1) + " 层论证"),
+              keyPoints: ["围绕“" + node.title + "”先下判断，再补事实。"],
+              evidenceHints: getSourceFacts(context, 4).slice(index, index + 2),
+              materialRefs: [],
+              transition: index === 0 ? "从现象切入" : "承接上一段继续推进判断",
+            }))
   ).slice(0, 6);
   const sectionBlueprintTotal = sectionBlueprint.length;
   const normalizedSectionBlueprint = sectionBlueprint.map((section, index) => ({
-      heading: String(section.heading || "").trim() || `章节 ${index + 1}`,
-      goal: String(section.goal || "").trim() || `推进第 ${index + 1} 段论证`,
+      heading: String(section.heading || "").trim() || ("章节 " + String(index + 1)),
+      goal: String(section.goal || "").trim() || ("推进第 " + String(index + 1) + " 段论证"),
       paragraphMission:
         getStringArray((section as Record<string, unknown>).keyPoints, 3).join("；") ||
-        `围绕“${String(section.heading || "").trim() || `章节 ${index + 1}` }”写出一段结论先行的正文。`,
+        ("围绕“" + (String(section.heading || "").trim() || ("章节 " + String(index + 1))) + "”写出一段结论先行的正文。"),
       evidenceHints: getStringArray((section as Record<string, unknown>).evidenceHints, 3),
       materialRefs: Array.isArray((section as Record<string, unknown>).materialRefs)
         ? ((section as Record<string, unknown>).materialRefs as unknown[])
@@ -1889,11 +2004,11 @@ function fallbackDeepWriting(
     }));
 
   return {
-    summary: `正文建议按“${selectedTitle}”直接进入完整写作，当前采用「${writingState.articlePrototypeLabel} / ${writingState.stateVariantLabel}」，先沿用已确认大纲和素材，不要离题扩写。${diversityReport.status === "needs_attention" ? " 同时启用去重护栏，避免最近几篇又写成同一个原型、开头、句法、收尾或状态。" : ""}`,
+    summary: "正文建议按“" + selectedTitle + "”直接进入完整写作，当前采用「" + writingState.articlePrototypeLabel + " / " + writingState.stateVariantLabel + "」，先沿用已确认大纲和素材，不要离题扩写。" + (diversityReport.status === "needs_attention" ? " 同时启用去重护栏，避免最近几篇又写成同一个原型、开头、句法、收尾或状态。" : ""),
     selectedTitle,
     centralThesis,
     writingAngle: context.audienceSelection?.selectedReaderLabel
-      ? `写给 ${context.audienceSelection.selectedReaderLabel}，先给判断，再补证据与行动意义。`
+      ? "写给 " + context.audienceSelection.selectedReaderLabel + "，先给判断，再补证据与行动意义。"
       : "写给希望快速形成判断的读者，先给结论，再拆证据和影响。",
     openingStrategy: guardedOpeningStrategy,
     targetEmotion,
@@ -1949,10 +2064,10 @@ function fallbackDeepWriting(
         context.audienceSelection?.selectedLanguageGuidance,
         context.audienceSelection?.selectedBackgroundAwareness,
         context.audienceSelection?.selectedReadabilityLevel,
-        researchInsights[0] ? `优先围绕这条研究洞察推进：${researchInsights[0]}` : null,
+        researchInsights[0] ? "优先围绕这条研究洞察推进：" + researchInsights[0] : null,
         "短句优先，避免解释腔和机器腔。",
         "每一段只推进一个判断，并挂一个事实锚点。",
-        context.persona?.summary ? `贴近人设表达：${context.persona.summary}` : null,
+        context.persona?.summary ? "贴近人设表达：" + context.persona.summary : null,
       ].map((item) => String(item || "").trim()).filter(Boolean)),
     ).slice(0, 6),
     mustUseFacts: getSourceFacts(context, 6),
@@ -1966,7 +2081,7 @@ function fallbackDeepWriting(
     seriesInsight: context.seriesInsight,
     seriesChecklist: context.seriesInsight
       ? [
-          context.seriesInsight.label ? `当前文章属于「${context.seriesInsight.label}」这条连续写作线。` : null,
+          context.seriesInsight.label ? "当前文章属于「" + context.seriesInsight.label + "」这条连续写作线。" : null,
           ...context.seriesInsight.driftRisks.slice(0, 2),
           ...context.seriesInsight.whyNow.slice(0, 2),
         ].filter(Boolean)
@@ -2002,7 +2117,7 @@ function fallbackFactCheck(context: GenerationContext) {
   });
   const riskCount = checks.filter((item) => item.status !== "verified").length;
   return {
-    summary: riskCount > 0 ? `当前稿子里至少有 ${riskCount} 条表述需要补来源或改成判断语气。` : "当前主要事实表述基本可站住脚，进入终稿前仍建议补齐来源锚点。",
+    summary: riskCount > 0 ? "当前稿子里至少有 " + String(riskCount) + " 条表述需要补来源或改成判断语气。" : "当前主要事实表述基本可站住脚，进入终稿前仍建议补齐来源锚点。",
     overallRisk: riskCount >= 4 ? "high" : riskCount >= 2 ? "medium" : "low",
     checks,
     evidenceCards: buildFactCheckEvidenceCards(context, checks),
@@ -2011,8 +2126,8 @@ function fallbackFactCheck(context: GenerationContext) {
       ...researchReview.gaps,
     ], 6),
     researchReview,
-    personaAlignment: context.persona ? `当前文风与“${context.persona.name}”基本匹配，但要避免为了人设而牺牲证据密度。` : "当前没有明确人设约束，建议统一为克制、可信的专栏口吻。",
-    topicAlignment: `正文整体围绕“${context.article.title}”，建议删掉与主判断弱相关的旁支信息。`,
+    personaAlignment: context.persona ? "当前文风与“" + context.persona.name + "”基本匹配，但要避免为了人设而牺牲证据密度。" : "当前没有明确人设约束，建议统一为克制、可信的专栏口吻。",
+    topicAlignment: "正文整体围绕“" + context.article.title + "”，建议删掉与主判断弱相关的旁支信息。",
   } satisfies Record<string, unknown>;
 }
 
@@ -2030,7 +2145,7 @@ function fallbackProsePolish(context: GenerationContext) {
     strengths: [
       plain.length >= 240 ? "正文已经具备一定信息密度。" : "正文简洁，方便继续扩写。",
       context.knowledgeCards.length > 0 ? "已经有背景卡可作为事实支撑。" : "主题集中，易于继续打磨单一观点。",
-      context.persona ? `人设方向较明确：${context.persona.name}。` : "稿件口吻还留有较大可塑空间。",
+      context.persona ? "人设方向较明确：" + context.persona.name + "。" : "稿件口吻还留有较大可塑空间。",
     ],
     issues: [
       longParagraph
@@ -2054,9 +2169,9 @@ function fallbackProsePolish(context: GenerationContext) {
       },
     ].filter(Boolean),
     languageGuardHits,
-    rewrittenLead: `${truncateText(firstSentence, 28)}。先把结论扔出来，再补证据，不要让背景介绍抢走前两段的位置。`,
+    rewrittenLead: truncateText(firstSentence, 28) + "。先把结论扔出来，再补证据，不要让背景介绍抢走前两段的位置。",
     punchlines: [
-      `这篇稿子最该强化的，不是态度，而是“${context.article.title}”背后的证据密度。`,
+      "这篇稿子最该强化的，不是态度，而是“" + context.article.title + "”背后的证据密度。",
       "先让读者看见变化，再让他接受判断。",
     ],
     rhythmAdvice: [
@@ -2180,7 +2295,7 @@ function buildPersistedResearchCardSources(value: unknown) {
       const label = String(item.label || "").trim();
       const detail = String(item.detail || "").trim();
       return {
-        label: label || truncateText(detail, 48) || `来源 ${index + 1}`,
+        label: label || truncateText(detail, 48) || ("来源 " + String(index + 1)),
         sourceType: String(item.sourceType || item.kind || "").trim() || "manual",
         detail: detail || null,
         sourceUrl: String(item.sourceUrl || "").trim() || null,
@@ -2212,7 +2327,7 @@ function buildPersistedResearchCardsFromPayload(payload: Record<string, unknown>
     const insight = String(item.insight || "").trim();
     return {
       cardKind: "intersection" as const,
-      title: truncateText(insight, 40) || `洞察 ${index + 1}`,
+      title: truncateText(insight, 40) || ("洞察 " + String(index + 1)),
       summary: insight || null,
       payload: item,
       sortOrder: index + 1,
@@ -2271,6 +2386,10 @@ function normalizeAudiencePayload(value: unknown, fallback: Record<string, unkno
 
 function normalizeOutlinePayload(value: unknown, fallback: Record<string, unknown>) {
   const payload = normalizeRecord(value);
+  const payloadRuntimeMeta = normalizeRecord(payload?.runtimeMeta);
+  const fallbackRuntimeMeta = normalizeRecord(fallback.runtimeMeta);
+  const payloadOpeningOptimizer = normalizeRecord(payloadRuntimeMeta?.openingOptimizer);
+  const fallbackOpeningOptimizer = normalizeRecord(fallbackRuntimeMeta?.openingOptimizer);
   const normalizeOutlineSection = (item: Record<string, unknown>) => ({
     heading: String(item.heading || "").trim(),
     goal: String(item.goal || "").trim(),
@@ -2298,10 +2417,41 @@ function normalizeOutlinePayload(value: unknown, fallback: Record<string, unknow
     : [];
   const payloadResearchBackbone = normalizeRecord(payload?.researchBackbone);
   const fallbackResearchBackbone = normalizeRecord(fallback.researchBackbone);
+  const workingTitle = String(payload?.workingTitle || fallback.workingTitle || "").trim();
+  const researchBackbone = {
+    openingTimelineAnchor: String(payloadResearchBackbone?.openingTimelineAnchor || fallbackResearchBackbone?.openingTimelineAnchor || "").trim(),
+    middleComparisonAnchor: String(payloadResearchBackbone?.middleComparisonAnchor || fallbackResearchBackbone?.middleComparisonAnchor || "").trim(),
+    coreInsightAnchor: String(payloadResearchBackbone?.coreInsightAnchor || fallbackResearchBackbone?.coreInsightAnchor || "").trim(),
+    sequencingNote: String(payloadResearchBackbone?.sequencingNote || fallbackResearchBackbone?.sequencingNote || "").trim(),
+  };
+  const openingHookSeed = String(payload?.openingHook || fallback.openingHook || "").trim();
+  const baseOpeningHookOptions =
+    uniqueStrings(payload?.openingHookOptions, 4).length
+      ? uniqueStrings(payload?.openingHookOptions, 4)
+      : uniqueStrings(fallback.openingHookOptions, 4);
+  const fallbackOpeningOptions = normalizeOpeningOptions(
+    [
+      { opening: baseOpeningHookOptions[0] || openingHookSeed, patternLabel: "历史转折型" },
+      { opening: baseOpeningHookOptions[1] || "先抛现实冲突，再倒回关键转折。", patternLabel: "冲突回拉型" },
+      { opening: baseOpeningHookOptions[2] || "先给一句判断，再补最关键的横向差异。", patternLabel: "判断先行型" },
+    ].filter((item) => String(item.opening || "").trim()),
+    buildFallbackOpeningOptions(
+      workingTitle
+      || researchBackbone.coreInsightAnchor
+      || researchBackbone.openingTimelineAnchor
+      || String(fallback.workingTitle || "").trim(),
+    ),
+  ).map((item) => withOpeningOptionAliases(item));
+  const openingOptions = normalizeOpeningOptions(payload?.openingOptions, fallbackOpeningOptions).map((item) => withOpeningOptionAliases(item));
+  const normalizedOpeningHookOptions = uniqueStrings(
+    [...baseOpeningHookOptions, ...openingOptions.map((item) => item.opening)],
+    4,
+  );
+  const recommendedOpeningText = openingOptions.find((item) => item.isRecommended)?.opening || openingOptions[0]?.opening || "";
 
   return {
     summary: String(payload?.summary || fallback.summary || "").trim(),
-    workingTitle: String(payload?.workingTitle || fallback.workingTitle || "").trim(),
+    workingTitle,
     titleOptions: normalizeTitleOptions(payload?.titleOptions, fallbackTitleOptions),
     titleStrategyNotes:
       uniqueStrings(payload?.titleStrategyNotes, 4).length
@@ -2310,15 +2460,26 @@ function normalizeOutlinePayload(value: unknown, fallback: Record<string, unknow
     titleAuditedAt:
       normalizeIsoTimestamp(payload?.titleAuditedAt)
       || normalizeIsoTimestamp(fallback.titleAuditedAt),
+    openingPromptVersionRef:
+      String(
+        payload?.openingPromptVersionRef
+        || payloadOpeningOptimizer?.ref
+        || fallback.openingPromptVersionRef
+        || fallbackOpeningOptimizer?.ref
+        || "",
+      ).trim() || null,
+    openingAuditedAt:
+      normalizeIsoTimestamp(payload?.openingAuditedAt)
+      || normalizeIsoTimestamp(fallback.openingAuditedAt)
+      || normalizeIsoTimestamp(payload?.outlineUpdatedAt)
+      || normalizeIsoTimestamp(fallback.outlineUpdatedAt),
     outlineUpdatedAt:
       normalizeIsoTimestamp(payload?.outlineUpdatedAt)
       || normalizeIsoTimestamp(fallback.outlineUpdatedAt),
     centralThesis: String(payload?.centralThesis || fallback.centralThesis || "").trim(),
-    openingHook: String(payload?.openingHook || fallback.openingHook || "").trim(),
-    openingHookOptions:
-      uniqueStrings(payload?.openingHookOptions, 4).length
-        ? uniqueStrings(payload?.openingHookOptions, 4)
-        : uniqueStrings(fallback.openingHookOptions, 4),
+    openingHook: recommendedOpeningText || openingHookSeed,
+    openingHookOptions: normalizedOpeningHookOptions,
+    openingOptions,
     targetEmotion: String(payload?.targetEmotion || fallback.targetEmotion || "").trim(),
     targetEmotionOptions:
       uniqueStrings(payload?.targetEmotionOptions, 4).length
@@ -2338,12 +2499,7 @@ function normalizeOutlinePayload(value: unknown, fallback: Record<string, unknow
     materialBundle: getRecordArray(payload?.materialBundle).length
       ? getRecordArray(payload?.materialBundle)
       : getRecordArray(fallback.materialBundle),
-    researchBackbone: {
-      openingTimelineAnchor: String(payloadResearchBackbone?.openingTimelineAnchor || fallbackResearchBackbone?.openingTimelineAnchor || "").trim(),
-      middleComparisonAnchor: String(payloadResearchBackbone?.middleComparisonAnchor || fallbackResearchBackbone?.middleComparisonAnchor || "").trim(),
-      coreInsightAnchor: String(payloadResearchBackbone?.coreInsightAnchor || fallbackResearchBackbone?.coreInsightAnchor || "").trim(),
-      sequencingNote: String(payloadResearchBackbone?.sequencingNote || fallbackResearchBackbone?.sequencingNote || "").trim(),
-    },
+    researchBackbone,
     outlineSections: sections.length ? sections : fallbackSections,
     materialGapHints:
       uniqueStrings(payload?.materialGapHints, 5).length
@@ -2880,7 +3036,7 @@ export function buildArticleArtifactRuntimeMetaPatch(input: ArtifactRuntimeMetaI
       [
         ...(Array.isArray(input.promptVersionRefs) ? input.promptVersionRefs : []),
         input.promptVersion?.promptId && input.promptVersion.version
-          ? `${input.promptVersion.promptId}@${input.promptVersion.version}`
+          ? String(input.promptVersion.promptId) + "@" + String(input.promptVersion.version)
           : null,
       ]
         .map((item) => String(item || "").trim())
@@ -2894,7 +3050,7 @@ export function buildArticleArtifactRuntimeMetaPatch(input: ArtifactRuntimeMetaI
     runtimeMeta.promptVersion = {
       promptId: input.promptVersion.promptId,
       version: input.promptVersion.version,
-      ref: `${input.promptVersion.promptId}@${input.promptVersion.version}`,
+      ref: String(input.promptVersion.promptId) + "@" + String(input.promptVersion.version),
       resolutionMode: input.promptVersion.resolutionMode,
       resolutionReason: input.promptVersion.resolutionReason,
     };
@@ -3131,7 +3287,17 @@ async function upsertArtifact(input: {
 async function generateWithPrompt(input: {
   stageCode: ArticleArtifactStageCode;
   promptId: string;
-  sceneCode: "researchBrief" | "articleWrite" | "languageGuardAudit" | "audienceProfile" | "outlinePlan" | "titleOptimizer" | "deepWrite" | "factCheck" | "prosePolish";
+  sceneCode:
+    | "researchBrief"
+    | "articleWrite"
+    | "languageGuardAudit"
+    | "audienceProfile"
+    | "outlinePlan"
+    | "titleOptimizer"
+    | "openingOptimizer"
+    | "deepWrite"
+    | "factCheck"
+    | "prosePolish";
   userPrompt: string;
   fallback: Record<string, unknown>;
   normalize: (value: unknown, fallback: Record<string, unknown>) => Record<string, unknown>;
@@ -3146,11 +3312,14 @@ async function generateWithPrompt(input: {
       role: input.context.userRole,
       planCode: input.context.planCode,
     });
+    const systemSegments = buildArticleArtifactPromptSystemSegments(promptMeta.content);
     const result = await generateSceneText({
       sceneCode: input.sceneCode,
       systemPrompt: promptMeta.content,
+      systemSegments,
       userPrompt: input.userPrompt,
       temperature: 0.2,
+      rolloutUserId: input.context.userId,
     });
     const normalized = input.normalize(extractJsonObject(result.text), input.fallback);
     const basePayload = preservedSelection ? { ...normalized, selection: preservedSelection } : normalized;
@@ -3226,19 +3395,48 @@ async function generateResearchBrief(
     "intersectionInsights 必须把纵向时间脉络和横向比较交叉起来，输出真正可写成判断的洞察。",
     "每张 timelineCards、comparisonCards、intersectionInsights 都要补 1-3 条 sources，确保作者能回到原始线索继续核对。",
     "strategyWriteback 只给策略卡可直接吸收的字段，不要空话。",
-    `稿件标题：${context.article.title}`,
-    `作者人设：${listPersonaSummary(context)}`,
-    context.seriesInsight ? `系列主轴：${[context.seriesInsight.label, context.seriesInsight.reason, ...context.seriesInsight.whyNow].filter(Boolean).join("；")}` : "当前暂无明确系列主轴。",
-    context.strategyCard?.targetReader ? `已有目标读者：${context.strategyCard.targetReader}` : null,
-    context.strategyCard?.coreAssertion ? `已有核心判断：${context.strategyCard.coreAssertion}` : null,
-    context.strategyCard?.whyNow ? `已有 why now：${context.strategyCard.whyNow}` : null,
-    `当前正文摘要：${truncateText(stripMarkdown(context.article.markdownContent), 700) || "暂无正文，请以研究先行。"}`,
+    promptLine("稿件标题：", context.article.title),
+    promptLine("作者人设：", listPersonaSummary(context)),
+    context.seriesInsight ? promptLine("系列主轴：", [context.seriesInsight.label, context.seriesInsight.reason, ...context.seriesInsight.whyNow].filter(Boolean).join("；")) : "当前暂无明确系列主轴。",
+    context.strategyCard?.targetReader ? promptLine("已有目标读者：", context.strategyCard.targetReader) : null,
+    context.strategyCard?.coreAssertion ? promptLine("已有核心判断：", context.strategyCard.coreAssertion) : null,
+    context.strategyCard?.whyNow ? promptLine("已有 why now：", context.strategyCard.whyNow) : null,
+    promptLine("当前正文摘要：", truncateText(stripMarkdown(context.article.markdownContent), 700) || "暂无正文，请以研究先行。"),
     externalResearch?.attempted
-      ? `外部补源：本次查询「${externalResearch.query}」，发现 ${externalResearch.discoveredUrls.length} 个候选链接，成功补入 ${externalResearch.attached.length} 条外部网页素材。`
+      ? formatPromptTemplate("外部补源：本次查询「{{query}}」，发现 {{discoveredCount}} 个候选链接，成功补入 {{attachedCount}} 条外部网页素材。", {
+        query: externalResearch.query,
+        discoveredCount: externalResearch.discoveredUrls.length,
+        attachedCount: externalResearch.attached.length,
+      })
       : "外部补源：本次未发现可用搜索入口或补源线索。",
-    `可用事实素材：${getSourceFacts(context, 8).join("；") || "暂无已挂载事实素材。"}`,
-    `可用素材包：${getMaterialBundle(context, 8).map((item) => `${item.fragmentId}. ${item.title}（${item.usageMode}/${item.sourceType}）：${item.summary}`).join("；") || "暂无。"}`,
-    context.historyReferences.length ? `历史文章与前情：${context.historyReferences.map((item) => `《${item.title}》${item.relationReason ? `：${item.relationReason}` : ""}`).join("；")}` : "暂无已保存历史文章引用。",
+    promptLine("可用事实素材：", getSourceFacts(context, 8).join("；") || "暂无已挂载事实素材。"),
+    promptLine(
+      "可用素材包：",
+      getMaterialBundle(context, 8)
+        .map((item) =>
+          formatPromptTemplate("{{fragmentId}}. {{title}}（{{usageMode}}/{{sourceType}}）：{{summary}}", {
+            fragmentId: item.fragmentId,
+            title: item.title,
+            usageMode: item.usageMode,
+            sourceType: item.sourceType,
+            summary: item.summary,
+          }),
+        )
+        .join("；") || "暂无。",
+    ),
+    context.historyReferences.length
+      ? promptLine(
+          "历史文章与前情：",
+          context.historyReferences
+            .map((item) =>
+              formatPromptTemplate("《{{title}}》{{relationPart}}", {
+                title: item.title,
+                relationPart: item.relationReason ? "：" + item.relationReason : "",
+              }),
+            )
+            .join("；"),
+        )
+      : "暂无已保存历史文章引用。",
   ].filter(Boolean).join("\n");
 
   return generateWithPrompt({
@@ -3271,17 +3469,27 @@ async function generateAudienceAnalysis(context: GenerationContext) {
     "readabilityOptions 必须覆盖至少三档通俗度，例如新手可读、兼顾专业、高信息密度。",
     "contentWarnings 只写真正会造成理解偏差、争议或阅读门槛的风险点。",
     "recommendedCallToAction 要能指导结尾动作，例如评论区讨论、收藏转发、继续观察某指标。",
-    `稿件标题：${context.article.title}`,
-    `作者人设：${listPersonaSummary(context)}`,
-    `绑定文风资产细节：\n${listWritingStyleProfileSummary(context)}`,
-    `写作风格资产 / DNA 注入细节：\n${listLayoutStrategySummary(context)}`,
-    context.researchBrief ? `研究简报摘要：${String(context.researchBrief.summary || "").trim() || String(context.researchBrief.coreQuestion || "").trim()}` : null,
-    `当前正文摘要：${truncateText(stripMarkdown(context.article.markdownContent), 600) || "暂无正文，请结合标题、素材与大纲推断。"}`,
-    `大纲锚点：${context.outlineNodes.map((item) => `${item.title}${item.description ? `（${item.description}）` : ""}`).join("；") || "暂无大纲锚点"}`,
-    `已知事实：${getSourceFacts(context, 6).join("；") || "暂无事实素材"}`,
-    `开放问题：${context.knowledgeCards.flatMap((card) => card.openQuestions).slice(0, 4).join("；") || "暂无"}`,
-    context.audienceSelection?.selectedBackgroundAwareness ? `已确认背景预设：${context.audienceSelection.selectedBackgroundAwareness}` : null,
-    context.audienceSelection?.selectedReadabilityLevel ? `已确认通俗度：${context.audienceSelection.selectedReadabilityLevel}` : null,
+    promptLine("稿件标题：", context.article.title),
+    promptLine("作者人设：", listPersonaSummary(context)),
+    promptBlock("绑定文风资产细节：", listWritingStyleProfileSummary(context)),
+    promptBlock("写作风格资产 / DNA 注入细节：", listLayoutStrategySummary(context)),
+    context.researchBrief ? promptLine("研究简报摘要：", String(context.researchBrief.summary || "").trim() || String(context.researchBrief.coreQuestion || "").trim()) : null,
+    promptLine("当前正文摘要：", truncateText(stripMarkdown(context.article.markdownContent), 600) || "暂无正文，请结合标题、素材与大纲推断。"),
+    promptLine(
+      "大纲锚点：",
+      context.outlineNodes
+        .map((item) =>
+          formatPromptTemplate("{{title}}{{descriptionPart}}", {
+            title: item.title,
+            descriptionPart: item.description ? "（" + item.description + "）" : "",
+          }),
+        )
+        .join("；") || "暂无大纲锚点",
+    ),
+    promptLine("已知事实：", getSourceFacts(context, 6).join("；") || "暂无事实素材"),
+    promptLine("开放问题：", context.knowledgeCards.flatMap((card) => card.openQuestions).slice(0, 4).join("；") || "暂无"),
+    context.audienceSelection?.selectedBackgroundAwareness ? promptLine("已确认背景预设：", context.audienceSelection.selectedBackgroundAwareness) : null,
+    context.audienceSelection?.selectedReadabilityLevel ? promptLine("已确认通俗度：", context.audienceSelection.selectedReadabilityLevel) : null,
   ].filter(Boolean).join("\n");
 
   return generateWithPrompt({
@@ -3304,32 +3512,20 @@ async function runTitleOptimizer(context: GenerationContext, outlinePayload: Rec
     .slice(0, 6)
     .map((section, index) =>
       [
-        `${index + 1}. ${String(section.heading || "").trim() || `章节 ${index + 1}`}`,
-        String(section.goal || "").trim() ? `目标：${String(section.goal).trim()}` : null,
-        getStringArray(section.keyPoints, 4).length ? `关键点：${getStringArray(section.keyPoints, 4).join("；")}` : null,
-      ].filter(Boolean).join(" / "),
+        promptLine(String(index + 1) + ". ", String(section.heading || "").trim() || ("章节 " + String(index + 1))),
+        String(section.goal || "").trim() ? promptLine("目标：", String(section.goal).trim()) : null,
+        getStringArray(section.keyPoints, 4).length ? promptLine("关键点：", getStringArray(section.keyPoints, 4).join("；")) : null,
+      ].filter(Boolean).join("\n"),
     );
   const userPrompt = [
-    "请输出 JSON，不要解释，不要 markdown。",
-    '字段：{"titleOptions":[{"title":"字符串","styleLabel":"字符串","angle":"字符串","reason":"字符串","riskHint":"字符串","openRateScore":42,"elementsHit":{"specific":true,"curiosityGap":true,"readerView":false},"forbiddenHits":[""],"recommendReason":"字符串"}],"recommendedIndex":0}',
-    "固定返回 6 个 titleOptions，recommendedIndex 取 0-5，代表唯一推荐项。",
-    "每个标题至少满足三要素里的 2 项：具体元素、好奇缺口、读者视角。",
-    "具体元素：标题里尽量出现数字、产品名、人名、场景、结果、角色或具体对象。",
-    "好奇缺口：制造信息差，但不要把结论剧透成清单答案。",
-    "读者视角：优先说读者能得到什么判断或提醒，不要写成作者自我倾诉。",
-    "禁止清单：震惊、不看后悔、99% 的人都、太可怕了、关于…的思考、…的一些感悟、…的 5 个方法、…的 3 个要点、自我复盘式标题、夸大事实、承诺正文无法兑现的结果。",
-    "forbiddenHits 必须列出命中的禁区标签；没命中时返回空数组。",
-    "openRateScore 取 0-50；只有 forbiddenHits 为空且至少命中 2 个要素，才能进入 40 分以上区间。",
-    "6 个标题必须围绕同一主轴，但风格要明显分开，例如观点判断型、误读切口型、结果反差型、数字反差型、读者提醒型。",
-    "title 长度尽量克制，避免空泛大词，不要写成提纲式或方法清单式标题。",
-    `稿件标题：${context.article.title}`,
-    `当前工作标题：${String(outlinePayload.workingTitle || context.article.title).trim()}`,
-    String(outlinePayload.centralThesis || "").trim() ? `核心判断：${String(outlinePayload.centralThesis).trim()}` : null,
-    context.audienceSelection?.selectedReaderLabel ? `目标读者：${context.audienceSelection.selectedReaderLabel}` : null,
-    getStringArray(outlinePayload.titleStrategyNotes, 4).length ? `当前标题主轴：${getStringArray(outlinePayload.titleStrategyNotes, 4).join("；")}` : null,
-    outlineSections.length ? `大纲骨架：\n${outlineSections.join("\n")}` : null,
-    `关键事实：${getSourceFacts(context, 6).join("；") || "暂无关键事实，请围绕现有判断生成标题。"}`,
-    `当前正文摘要：${truncateText(stripMarkdown(context.article.markdownContent), 600) || "暂无正文，请根据标题、判断和大纲生成候选。"}`,
+    promptLine("稿件标题：", context.article.title),
+    promptLine("当前工作标题：", String(outlinePayload.workingTitle || context.article.title).trim()),
+    String(outlinePayload.centralThesis || "").trim() ? promptLine("核心判断：", String(outlinePayload.centralThesis).trim()) : null,
+    context.audienceSelection?.selectedReaderLabel ? promptLine("目标读者：", context.audienceSelection.selectedReaderLabel) : null,
+    getStringArray(outlinePayload.titleStrategyNotes, 4).length ? promptLine("当前标题主轴：", getStringArray(outlinePayload.titleStrategyNotes, 4).join("；")) : null,
+    outlineSections.length ? promptBlock("大纲骨架：", outlineSections.join("\n\n")) : null,
+    promptLine("关键事实：", getSourceFacts(context, 6).join("；") || "暂无关键事实，请围绕现有判断生成标题。"),
+    promptLine("当前正文摘要：", truncateText(stripMarkdown(context.article.markdownContent), 600) || "暂无正文，请根据标题、判断和大纲生成候选。"),
   ].filter(Boolean).join("\n");
 
   try {
@@ -3338,14 +3534,17 @@ async function runTitleOptimizer(context: GenerationContext, outlinePayload: Rec
       role: context.userRole,
       planCode: context.planCode,
     });
+    const systemSegments = buildTitleOptimizerSystemSegments(promptMeta.content);
     const result = await generateSceneText({
       sceneCode: "titleOptimizer",
       systemPrompt: promptMeta.content,
+      systemSegments,
       userPrompt,
       temperature: 0.2,
+      rolloutUserId: context.userId,
     });
     const titleOptimizerRuntimeMeta = buildArticleArtifactRuntimeMetaPatch({
-      promptVersionRefs: [`${promptMeta.promptId}@${promptMeta.version}`],
+      promptVersionRefs: [String(promptMeta.promptId) + "@" + String(promptMeta.version)],
     }).runtimeMeta as Record<string, unknown> | undefined;
     const raw = normalizeRecord(extractJsonObject(result.text)) || {};
     const recommendedIndexRaw = typeof raw.recommendedIndex === "number"
@@ -3370,7 +3569,7 @@ async function runTitleOptimizer(context: GenerationContext, outlinePayload: Rec
           titleOptimizer: {
             promptId: promptMeta.promptId,
             version: promptMeta.version,
-            ref: `${promptMeta.promptId}@${promptMeta.version}`,
+            ref: String(promptMeta.promptId) + "@" + String(promptMeta.version),
             resolutionMode: promptMeta.resolutionMode,
             resolutionReason: promptMeta.resolutionReason,
           },
@@ -3383,6 +3582,117 @@ async function runTitleOptimizer(context: GenerationContext, outlinePayload: Rec
     return {
       titleOptions: ensureSingleRecommendedTitleOption(fallbackTitleOptions),
       titleAuditedAt: new Date().toISOString(),
+      runtimeMetaPatch: undefined,
+      model: null,
+      provider: null,
+    };
+  }
+}
+
+async function runOpeningOptimizer(context: GenerationContext, outlinePayload: Record<string, unknown>) {
+  const fallbackOpeningOptions = normalizeOpeningOptions(
+    outlinePayload.openingOptions,
+    buildFallbackOpeningOptions(
+      String(
+        outlinePayload.workingTitle
+        || outlinePayload.centralThesis
+        || outlinePayload.openingHook
+        || context.article.title
+        || "",
+      ).trim(),
+    ),
+  ).map((item) => withOpeningOptionAliases(item));
+  const outlineSections = getRecordArray(outlinePayload.outlineSections)
+    .slice(0, 6)
+    .map((section, index) =>
+      [
+        promptLine(String(index + 1) + ". ", String(section.heading || "").trim() || ("章节 " + String(index + 1))),
+        String(section.goal || "").trim() ? promptLine("目标：", String(section.goal).trim()) : null,
+        getStringArray(section.keyPoints, 4).length ? promptLine("关键点：", getStringArray(section.keyPoints, 4).join("；")) : null,
+      ].filter(Boolean).join("\n"),
+    );
+  const openingCandidates = fallbackOpeningOptions
+    .map((item, index) =>
+      [
+        promptLine(String(index + 1) + ". ", item.opening),
+        promptLine("模式：", item.patternLabel),
+        promptLine("质量上限：", item.qualityCeiling),
+        item.forbiddenHits.length ? promptLine("当前禁区：", item.forbiddenHits.join("；")) : null,
+        item.recommendReason ? promptLine("当前说明：", item.recommendReason) : null,
+      ].filter(Boolean).join("\n"),
+    )
+    .filter(Boolean);
+  const userPrompt = [
+    promptLine("稿件标题：", context.article.title),
+    promptLine("当前工作标题：", String(outlinePayload.workingTitle || context.article.title).trim()),
+    String(outlinePayload.centralThesis || "").trim() ? promptLine("核心判断：", String(outlinePayload.centralThesis).trim()) : null,
+    context.audienceSelection?.selectedReaderLabel ? promptLine("目标读者：", context.audienceSelection.selectedReaderLabel) : null,
+    String(outlinePayload.targetEmotion || "").trim() ? promptLine("目标情绪：", String(outlinePayload.targetEmotion).trim()) : null,
+    promptLine(
+      "当前推荐开头：",
+      String(outlinePayload.openingHook || "").trim() || fallbackOpeningOptions[0]?.opening || "暂无",
+    ),
+    outlineSections.length ? promptBlock("大纲骨架：", outlineSections.join("\n\n")) : null,
+    promptLine("关键事实：", getSourceFacts(context, 6).join("；") || "暂无关键事实，请围绕现有判断提升开头前三秒留存。"),
+    openingCandidates.length ? promptBlock("当前 3 个开头候选：", openingCandidates.join("\n\n")) : null,
+  ].filter(Boolean).join("\n");
+
+  try {
+    const promptMeta = await loadPromptWithMeta("opening_optimizer", {
+      userId: context.userId,
+      role: context.userRole,
+      planCode: context.planCode,
+    });
+    const systemSegments = buildOpeningOptimizerSystemSegments(promptMeta.content);
+    const result = await generateSceneText({
+      sceneCode: "openingOptimizer",
+      systemPrompt: promptMeta.content,
+      systemSegments,
+      userPrompt,
+      temperature: 0.2,
+      rolloutUserId: context.userId,
+    });
+    const openingOptimizerRuntimeMeta = buildArticleArtifactRuntimeMetaPatch({
+      promptVersionRefs: [String(promptMeta.promptId) + "@" + String(promptMeta.version)],
+    }).runtimeMeta as Record<string, unknown> | undefined;
+    const raw = normalizeRecord(extractJsonObject(result.text)) || {};
+    const recommendedIndexRaw = typeof raw.recommendedIndex === "number"
+      ? raw.recommendedIndex
+      : typeof raw.recommendedIndex === "string" && raw.recommendedIndex.trim()
+        ? Number(raw.recommendedIndex)
+        : -1;
+    const hasRecommendedIndex = Number.isInteger(recommendedIndexRaw) && recommendedIndexRaw >= 0;
+    const normalizedOptions = normalizeOpeningOptions(raw.openingOptions, fallbackOpeningOptions).map((item, index) => ({
+      ...item,
+      isRecommended: hasRecommendedIndex
+        ? index === Math.max(0, Math.min(fallbackOpeningOptions.length - 1, Number(recommendedIndexRaw)))
+        : item.isRecommended,
+    }));
+    const openingOptions = ensureSingleRecommendedOpeningOption(normalizedOptions).map((item) => withOpeningOptionAliases(item));
+    return {
+      openingOptions,
+      openingAuditedAt: new Date().toISOString(),
+      openingPromptVersionRef: String(promptMeta.promptId) + "@" + String(promptMeta.version),
+      runtimeMetaPatch: {
+        runtimeMeta: {
+          ...(openingOptimizerRuntimeMeta ?? {}),
+          openingOptimizer: {
+            promptId: promptMeta.promptId,
+            version: promptMeta.version,
+            ref: String(promptMeta.promptId) + "@" + String(promptMeta.version),
+            resolutionMode: promptMeta.resolutionMode,
+            resolutionReason: promptMeta.resolutionReason,
+          },
+        },
+      },
+      model: result.model,
+      provider: result.provider,
+    };
+  } catch {
+    return {
+      openingOptions: ensureSingleRecommendedOpeningOption(fallbackOpeningOptions).map((item) => withOpeningOptionAliases(item)),
+      openingAuditedAt: new Date().toISOString(),
+      openingPromptVersionRef: null,
       runtimeMetaPatch: undefined,
       model: null,
       provider: null,
@@ -3414,17 +3724,43 @@ async function refreshOutlineTitleOptions(input: {
   });
 }
 
+async function refreshOutlineOpeningOptions(input: {
+  context: GenerationContext;
+  artifact: ArticleStageArtifact;
+  fallback: Record<string, unknown>;
+  preserveOutlineUpdatedAt?: boolean;
+}) {
+  const normalized = normalizeOutlinePayload(input.artifact.payload, input.fallback);
+  const optimized = await runOpeningOptimizer(input.context, normalized);
+  return updateArticleStageArtifactPayload({
+    articleId: input.context.article.id,
+    userId: input.context.userId,
+    stageCode: "outlinePlanning",
+    payloadPatch: {
+      openingOptions: optimized.openingOptions,
+      openingAuditedAt: optimized.openingAuditedAt,
+      openingPromptVersionRef: optimized.openingPromptVersionRef,
+      outlineUpdatedAt:
+        input.preserveOutlineUpdatedAt
+          ? normalized.outlineUpdatedAt || null
+          : new Date().toISOString(),
+      ...(optimized.runtimeMetaPatch ?? {}),
+    },
+  });
+}
+
 async function generateOutlinePlanning(context: GenerationContext) {
   const fallback = fallbackOutlinePlanning(context);
   const preferredResearchSignals = getPreferredResearchSignals(context);
   const userPrompt = [
     "请输出 JSON，不要解释，不要 markdown。",
-    '字段：{"summary":"字符串","workingTitle":"字符串","titleStrategyNotes":[""],"centralThesis":"字符串","openingHook":"字符串","openingHookOptions":[""],"targetEmotion":"字符串","targetEmotionOptions":[""],"researchBackbone":{"openingTimelineAnchor":"字符串","middleComparisonAnchor":"字符串","coreInsightAnchor":"字符串","sequencingNote":"字符串"},"supplementalViewpoints":[""],"viewpointIntegration":[{"viewpoint":"字符串","action":"adopted|softened|deferred|conflicted","note":"字符串"}],"materialBundle":[{"fragmentId":1,"title":"字符串","usageMode":"rewrite|image","sourceType":"manual|url|screenshot","summary":"字符串","screenshotPath":"字符串或空"}],"outlineSections":[{"heading":"字符串","goal":"字符串","keyPoints":[""],"evidenceHints":[""],"materialRefs":[1],"transition":"字符串","researchFocus":"timeline|comparison|intersection|support","researchAnchor":"字符串"}],"materialGapHints":[""],"endingStrategy":"字符串","endingStrategyOptions":[""]}',
+    '字段：{"summary":"字符串","workingTitle":"字符串","titleStrategyNotes":[""],"centralThesis":"字符串","openingHook":"字符串","openingHookOptions":[""],"openingOptions":[{"text":"字符串","patternCode":"scene_entry|conflict_entry|judgement_first|question_hook|phenomenon_signal|direct_entry","patternLabel":"字符串","hookScore":80,"forbiddenHits":[""],"qualityCeiling":"A|B+|B|B-|C","recommendReason":"字符串","isRecommended":true,"diagnose":{"abstractLevel":"pass|warn|danger","paddingLevel":"pass|warn|danger","hookDensity":"pass|warn|danger","informationFrontLoading":"pass|warn|danger"}}],"targetEmotion":"字符串","targetEmotionOptions":[""],"researchBackbone":{"openingTimelineAnchor":"字符串","middleComparisonAnchor":"字符串","coreInsightAnchor":"字符串","sequencingNote":"字符串"},"supplementalViewpoints":[""],"viewpointIntegration":[{"viewpoint":"字符串","action":"adopted|softened|deferred|conflicted","note":"字符串"}],"materialBundle":[{"fragmentId":1,"title":"字符串","usageMode":"rewrite|image","sourceType":"manual|url|screenshot","summary":"字符串","screenshotPath":"字符串或空"}],"outlineSections":[{"heading":"字符串","goal":"字符串","keyPoints":[""],"evidenceHints":[""],"materialRefs":[1],"transition":"字符串","researchFocus":"timeline|comparison|intersection|support","researchAnchor":"字符串"}],"materialGapHints":[""],"endingStrategy":"字符串","endingStrategyOptions":[""]}',
     "outlineSections 返回 3-6 节，每节 2-4 个关键点。",
     "titleStrategyNotes 返回 2-4 条，说明这篇稿子的标题主轴、读者收益点、信息差方向与禁止踩的标题风险。",
     "大纲要体现论证递进，不允许各节只是并列堆料。",
     "主论点必须由系统综合选题、人设、受众和素材形成，用户补充观点只能作为校准或强调，不能直接取代主论点。",
     "openingHookOptions 给出不同开头策略，例如事实冲突、反常识判断、人物切口、问题切口。",
+    "openingOptions 返回 3 个不同模式的候选开头文本或策略句，能够直接回写到 selectedOpeningHook，并补上 patternCode、hookScore、qualityCeiling、forbiddenHits、isRecommended、recommendReason 与 diagnose。",
     "targetEmotionOptions 给出读者读完后的情绪目标，例如警惕、被说服、想转发、愿意行动。",
     "outlineSections.goal 必须说明这一节承担什么推进任务，而不是重复标题。",
     "outlineSections.keyPoints 必须具体到观点或信息点，避免“展开分析”“补充背景”这类空话。",
@@ -3435,30 +3771,78 @@ async function generateOutlinePlanning(context: GenerationContext) {
     "endingStrategy 与 recommendedCallToAction 保持一致，结尾要么收束判断，要么给动作，要么留下观察点。",
     "researchBackbone 必须明确指出：最适合开场的历史节点、中段最该展开的横向比较、最适合落成主判断的交汇洞察，以及为什么按这个顺序排。",
     "outlineSections 至少要有一节承接历史节点、一节承接横向比较、一节承接交汇洞察；researchFocus 和 researchAnchor 不能写空话。",
-    `稿件标题：${context.article.title}`,
-    `作者人设：${listPersonaSummary(context)}`,
-    `绑定文风资产细节：\n${listWritingStyleProfileSummary(context)}`,
-    `写作风格资产 / DNA 注入细节：\n${listLayoutStrategySummary(context)}`,
-    context.researchBrief ? `研究核心问题：${String(context.researchBrief.coreQuestion || "").trim()}` : null,
-    context.researchBrief ? `研究必查维度：${getStringArray(context.researchBrief.mustCoverAngles, 5).join("；")}` : null,
-    context.researchBrief ? `纵向时间脉络：${getRecordArray(context.researchBrief.timelineCards).map((item) => `${String(item.phase || "").trim() || "阶段"}：${String(item.summary || "").trim()}`).join("；")}` : null,
-    context.researchBrief ? `横向比较：${getRecordArray(context.researchBrief.comparisonCards).map((item) => `${String(item.subject || "").trim()}：${String(item.position || "").trim()}`).join("；")}` : null,
-    context.researchBrief ? `交汇洞察：${getRecordArray(context.researchBrief.intersectionInsights).map((item) => String(item.insight || "").trim()).join("；")}` : null,
-    preferredResearchSignals.coreAssertion ? `当前策略核心判断：${preferredResearchSignals.coreAssertion}` : null,
-    preferredResearchSignals.whyNow ? `当前策略 why now：${preferredResearchSignals.whyNow}` : null,
-    preferredResearchSignals.researchHypothesis ? `当前策略研究假设：${preferredResearchSignals.researchHypothesis}` : null,
-    preferredResearchSignals.marketPositionInsight ? `当前策略位置判断：${preferredResearchSignals.marketPositionInsight}` : null,
-    preferredResearchSignals.historicalTurningPoint ? `当前策略历史转折：${preferredResearchSignals.historicalTurningPoint}` : null,
-    context.audienceSelection?.selectedReaderLabel ? `已确认目标读者：${context.audienceSelection.selectedReaderLabel}` : null,
-    context.audienceSelection?.selectedLanguageGuidance ? `已确认表达方式：${context.audienceSelection.selectedLanguageGuidance}` : null,
-    context.audienceSelection?.selectedBackgroundAwareness ? `已确认背景预设：${context.audienceSelection.selectedBackgroundAwareness}` : null,
-    context.audienceSelection?.selectedReadabilityLevel ? `已确认通俗度：${context.audienceSelection.selectedReadabilityLevel}` : null,
-    context.audienceSelection?.selectedCallToAction ? `已确认结尾动作：${context.audienceSelection.selectedCallToAction}` : null,
-    context.supplementalViewpoints.length ? `用户补充观点：${context.supplementalViewpoints.join("；")}` : "用户暂未补充额外观点。",
-    `当前正文摘要：${truncateText(stripMarkdown(context.article.markdownContent), 800) || "暂无正文，请先根据素材规划结构。"}`,
-    `大纲草稿：${context.outlineNodes.map((item) => `${item.title}${item.description ? `（${item.description}）` : ""}`).join("；") || "暂无大纲草稿"}`,
-    `背景卡事实：${getSourceFacts(context, 6).join("；") || "暂无背景卡事实"}`,
-    `当前可用素材包：${getMaterialBundle(context, 8).map((item) => `${item.fragmentId}. ${item.title}（${item.usageMode}/${item.sourceType}）${item.screenshotPath ? `，原图：${item.screenshotPath}` : ""}：${item.summary}`).join("；") || "暂无已挂载素材"}`,
+    promptLine("稿件标题：", context.article.title),
+    promptLine("作者人设：", listPersonaSummary(context)),
+    promptBlock("绑定文风资产细节：", listWritingStyleProfileSummary(context)),
+    promptBlock("写作风格资产 / DNA 注入细节：", listLayoutStrategySummary(context)),
+    context.researchBrief ? promptLine("研究核心问题：", String(context.researchBrief.coreQuestion || "").trim()) : null,
+    context.researchBrief ? promptLine("研究必查维度：", getStringArray(context.researchBrief.mustCoverAngles, 5).join("；")) : null,
+    context.researchBrief
+      ? promptLine(
+          "纵向时间脉络：",
+          getRecordArray(context.researchBrief.timelineCards)
+            .map((item) =>
+              formatPromptTemplate("{{phase}}：{{summary}}", {
+                phase: String(item.phase || "").trim() || "阶段",
+                summary: String(item.summary || "").trim(),
+              }),
+            )
+            .join("；"),
+        )
+      : null,
+    context.researchBrief
+      ? promptLine(
+          "横向比较：",
+          getRecordArray(context.researchBrief.comparisonCards)
+            .map((item) =>
+              formatPromptTemplate("{{subject}}：{{position}}", {
+                subject: String(item.subject || "").trim(),
+                position: String(item.position || "").trim(),
+              }),
+            )
+            .join("；"),
+        )
+      : null,
+    context.researchBrief ? promptLine("交汇洞察：", getRecordArray(context.researchBrief.intersectionInsights).map((item) => String(item.insight || "").trim()).join("；")) : null,
+    preferredResearchSignals.coreAssertion ? promptLine("当前策略核心判断：", preferredResearchSignals.coreAssertion) : null,
+    preferredResearchSignals.whyNow ? promptLine("当前策略 why now：", preferredResearchSignals.whyNow) : null,
+    preferredResearchSignals.researchHypothesis ? promptLine("当前策略研究假设：", preferredResearchSignals.researchHypothesis) : null,
+    preferredResearchSignals.marketPositionInsight ? promptLine("当前策略位置判断：", preferredResearchSignals.marketPositionInsight) : null,
+    preferredResearchSignals.historicalTurningPoint ? promptLine("当前策略历史转折：", preferredResearchSignals.historicalTurningPoint) : null,
+    context.audienceSelection?.selectedReaderLabel ? promptLine("已确认目标读者：", context.audienceSelection.selectedReaderLabel) : null,
+    context.audienceSelection?.selectedLanguageGuidance ? promptLine("已确认表达方式：", context.audienceSelection.selectedLanguageGuidance) : null,
+    context.audienceSelection?.selectedBackgroundAwareness ? promptLine("已确认背景预设：", context.audienceSelection.selectedBackgroundAwareness) : null,
+    context.audienceSelection?.selectedReadabilityLevel ? promptLine("已确认通俗度：", context.audienceSelection.selectedReadabilityLevel) : null,
+    context.audienceSelection?.selectedCallToAction ? promptLine("已确认结尾动作：", context.audienceSelection.selectedCallToAction) : null,
+    context.supplementalViewpoints.length ? promptLine("用户补充观点：", context.supplementalViewpoints.join("；")) : "用户暂未补充额外观点。",
+    promptLine("当前正文摘要：", truncateText(stripMarkdown(context.article.markdownContent), 800) || "暂无正文，请先根据素材规划结构。"),
+    promptLine(
+      "大纲草稿：",
+      context.outlineNodes
+        .map((item) =>
+          formatPromptTemplate("{{title}}{{descriptionPart}}", {
+            title: item.title,
+            descriptionPart: item.description ? "（" + item.description + "）" : "",
+          }),
+        )
+        .join("；") || "暂无大纲草稿",
+    ),
+    promptLine("背景卡事实：", getSourceFacts(context, 6).join("；") || "暂无背景卡事实"),
+    promptLine(
+      "当前可用素材包：",
+      getMaterialBundle(context, 8)
+        .map((item) =>
+          formatPromptTemplate("{{fragmentId}}. {{title}}（{{usageMode}}/{{sourceType}}）{{imagePart}}：{{summary}}", {
+            fragmentId: item.fragmentId,
+            title: item.title,
+            usageMode: item.usageMode,
+            sourceType: item.sourceType,
+            imagePart: item.screenshotPath ? "，原图：" + item.screenshotPath : "",
+            summary: item.summary,
+          }),
+        )
+        .join("；") || "暂无已挂载素材",
+    ),
   ].filter(Boolean).join("\n");
 
   const artifact = await generateWithPrompt({
@@ -3470,10 +3854,16 @@ async function generateOutlinePlanning(context: GenerationContext) {
     normalize: normalizeOutlinePayload,
     context,
   });
-  return refreshOutlineTitleOptions({
+  const titleOptimizedArtifact = await refreshOutlineTitleOptions({
     context,
     artifact,
     fallback,
+  });
+  return refreshOutlineOpeningOptions({
+    context,
+    artifact: titleOptimizedArtifact,
+    fallback,
+    preserveOutlineUpdatedAt: true,
   });
 }
 
@@ -3482,8 +3872,8 @@ async function generateDeepWriting(
   preferredStateVariantCode?: WritingStateVariantCode | null,
   preferredPrototypeCode?: ArticlePrototypeCode | null,
 ) {
-  const fallback = fallbackDeepWriting(context, preferredStateVariantCode, preferredPrototypeCode);
-  const resolvedState = resolveDeepWritingState(context, preferredStateVariantCode, preferredPrototypeCode);
+  const fallback = await fallbackDeepWriting(context, preferredStateVariantCode, preferredPrototypeCode);
+  const resolvedState = await resolveDeepWritingState(context, preferredStateVariantCode, preferredPrototypeCode);
   const writingState = resolvedState.writingState;
   const applyCommandTemplate = await resolveArticleApplyCommandTemplate({
     userId: context.userId,
@@ -3493,13 +3883,13 @@ async function generateDeepWriting(
   const outlineSections = getRecordArray(context.outlinePlan?.outlineSections)
     .map((section, index) =>
       [
-        `${index + 1}. ${String(section.heading || "").trim() || `章节 ${index + 1}`}`,
-        String(section.goal || "").trim() ? `目标：${String(section.goal).trim()}` : null,
-        getStringArray(section.keyPoints, 4).length ? `关键点：${getStringArray(section.keyPoints, 4).join("；")}` : null,
-        getStringArray(section.evidenceHints, 4).length ? `证据提示：${getStringArray(section.evidenceHints, 4).join("；")}` : null,
-        String(section.researchFocus || "").trim() ? `研究焦点：${String(section.researchFocus).trim()}` : null,
-        String(section.researchAnchor || "").trim() ? `研究锚点：${String(section.researchAnchor).trim()}` : null,
-      ].filter(Boolean).join(" / "),
+        promptLine(String(index + 1) + ". ", String(section.heading || "").trim() || ("章节 " + String(index + 1))),
+        String(section.goal || "").trim() ? promptLine("目标：", String(section.goal).trim()) : null,
+        getStringArray(section.keyPoints, 4).length ? promptLine("关键点：", getStringArray(section.keyPoints, 4).join("；")) : null,
+        getStringArray(section.evidenceHints, 4).length ? promptLine("证据提示：", getStringArray(section.evidenceHints, 4).join("；")) : null,
+        String(section.researchFocus || "").trim() ? promptLine("研究焦点：", String(section.researchFocus).trim()) : null,
+        String(section.researchAnchor || "").trim() ? promptLine("研究锚点：", String(section.researchAnchor).trim()) : null,
+      ].filter(Boolean).join("\n"),
     );
   const outlineResearchBackbone = normalizeRecord(context.outlinePlan?.researchBackbone);
   const diversityIssues = uniqueStrings(fallback.diversityIssues, 4);
@@ -3527,70 +3917,164 @@ async function generateDeepWriting(
     diversityIssues.length
       ? "如果最近几篇的原型、开头、句法、结尾或状态已经重复，openingStrategy / endingStrategy / stateChecklist / finalChecklist 必须主动改写并吸收 diversitySuggestions，不能继续沿用同一种推进骨架和句法呼吸。"
       : "如果最近几篇没有明显重复，也要在 diversitySummary 中说明当前多样性状态，并给出 0-2 条保持差异化的动作。",
-    `稿件标题：${context.article.title}`,
-    `作者人设：${listPersonaSummary(context)}`,
-    `绑定文风资产细节：\n${listWritingStyleProfileSummary(context)}`,
-    `写作风格资产 / DNA 注入细节：\n${listLayoutStrategySummary(context)}`,
-    context.researchBrief ? `研究交汇洞察：${getRecordArray(context.researchBrief.intersectionInsights).map((item) => `${String(item.insight || "").trim()}${String(item.whyNow || "").trim() ? `（${String(item.whyNow).trim()}）` : ""}`).join("；")}` : null,
-    preferredResearchSignals.coreAssertion ? `当前策略核心判断：${preferredResearchSignals.coreAssertion}` : null,
-    preferredResearchSignals.whyNow ? `当前策略 why now：${preferredResearchSignals.whyNow}` : null,
-    preferredResearchSignals.researchHypothesis ? `当前策略研究假设：${preferredResearchSignals.researchHypothesis}` : null,
-    preferredResearchSignals.marketPositionInsight ? `当前策略位置判断：${preferredResearchSignals.marketPositionInsight}` : null,
-    preferredResearchSignals.historicalTurningPoint ? `当前策略历史转折：${preferredResearchSignals.historicalTurningPoint}` : null,
-    context.audienceSelection?.selectedReaderLabel ? `已确认目标读者：${context.audienceSelection.selectedReaderLabel}` : null,
-    context.audienceSelection?.selectedLanguageGuidance ? `已确认表达方式：${context.audienceSelection.selectedLanguageGuidance}` : null,
-    context.audienceSelection?.selectedBackgroundAwareness ? `已确认背景预设：${context.audienceSelection.selectedBackgroundAwareness}` : null,
-    context.audienceSelection?.selectedReadabilityLevel ? `已确认通俗度：${context.audienceSelection.selectedReadabilityLevel}` : null,
-    context.outlineSelection?.selectedTitle ? `已确认标题：${context.outlineSelection.selectedTitle}` : null,
-    context.outlineSelection?.selectedOpeningHook ? `已确认开头策略：${context.outlineSelection.selectedOpeningHook}` : null,
-    context.outlineSelection?.selectedTargetEmotion ? `已确认目标情绪：${context.outlineSelection.selectedTargetEmotion}` : null,
-    context.outlineSelection?.selectedEndingStrategy ? `已确认结尾策略：${context.outlineSelection.selectedEndingStrategy}` : null,
-    String(context.outlinePlan?.centralThesis || "").trim() ? `大纲核心观点：${String(context.outlinePlan?.centralThesis).trim()}` : null,
-    outlineResearchBackbone
-      ? `大纲研究骨架：${[
-          String(outlineResearchBackbone.openingTimelineAnchor || "").trim() ? `开场历史节点 ${String(outlineResearchBackbone.openingTimelineAnchor).trim()}` : null,
-          String(outlineResearchBackbone.middleComparisonAnchor || "").trim() ? `中段横向比较 ${String(outlineResearchBackbone.middleComparisonAnchor).trim()}` : null,
-          String(outlineResearchBackbone.coreInsightAnchor || "").trim() ? `核心交汇洞察 ${String(outlineResearchBackbone.coreInsightAnchor).trim()}` : null,
-          String(outlineResearchBackbone.sequencingNote || "").trim() ? `排序理由 ${String(outlineResearchBackbone.sequencingNote).trim()}` : null,
-        ].filter(Boolean).join("；")}`
+    promptLine("稿件标题：", context.article.title),
+    promptLine("作者人设：", listPersonaSummary(context)),
+    promptBlock("绑定文风资产细节：", listWritingStyleProfileSummary(context)),
+    promptBlock("写作风格资产 / DNA 注入细节：", listLayoutStrategySummary(context)),
+    context.researchBrief
+      ? promptLine(
+          "研究交汇洞察：",
+          getRecordArray(context.researchBrief.intersectionInsights)
+            .map((item) =>
+              formatPromptTemplate("{{insight}}{{whyNowPart}}", {
+                insight: String(item.insight || "").trim(),
+                whyNowPart: String(item.whyNow || "").trim() ? "（" + String(item.whyNow).trim() + "）" : "",
+              }),
+            )
+            .join("；"),
+        )
       : null,
-    `当前默认开头策略：${resolvedState.openingStrategy}`,
-    `当前默认结尾策略：${resolvedState.endingStrategy}`,
-    `当前文章原型：${writingState.articlePrototypeLabel}（${writingState.articlePrototype}）`,
-    preferredPrototypeCode ? `本次手动指定文章原型：${writingState.articlePrototypeLabel}` : null,
-    `当前文章原型原因：${writingState.articlePrototypeReason}`,
-    preferredStateVariantCode ? `本次手动指定写作状态：${writingState.stateVariantLabel}` : null,
-    `当前写作状态：${writingState.stateVariantLabel} / ${writingState.stateVariantReason}`,
-    `默认起手方式：${writingState.openingMove}`,
-    `默认章节节奏：${writingState.sectionRhythm}`,
-    `默认证据组织：${writingState.evidenceMode}`,
-    `节奏插件：${writingState.progressiveRevealLabel} / ${writingState.progressiveRevealReason}`,
-    `高潮位置：${writingState.climaxPlacement}`,
-    `升番规则：${writingState.escalationRule}`,
-    `逐层推进：${writingState.progressiveRevealSteps.map((item) => `${item.label}：${item.instruction}`).join(" | ")}`,
-    `原型候选：${writingState.prototypeOptions.map((item) => `${item.label}（${item.suitableWhen}；触发：${item.triggerReason}）`).join(" | ")}`,
-    `状态候选：${writingState.stateOptions.map((item) => `${item.label}（${item.suitableWhen}；触发：${item.triggerReason}）`).join(" | ")}`,
-    String(fallback.diversitySummary || "").trim() ? `长期写法去重观察：${String(fallback.diversitySummary).trim()}` : null,
-    diversityIssues.length ? `检测到的重复风险：${diversityIssues.join("；")}` : "检测到的重复风险：暂无明显撞车。",
-    diversitySuggestions.length ? `这次执行卡必须吸收的去重动作：${diversitySuggestions.join("；")}` : "这次执行卡必须吸收的去重动作：保持当前差异化，不要回到总结式开头、模板化句法或教科书式收尾。",
-    outlineSections.length ? `大纲章节：\n${outlineSections.join("\n")}` : "暂无结构化大纲章节。",
-    `现有事实素材：${getSourceFacts(context, 6).join("；") || "暂无"}`,
-    `可用素材包：${getMaterialBundle(context, 8).map((item) => `${item.fragmentId}. ${item.title}（${item.usageMode}/${item.sourceType}）：${item.summary}`).join("；") || "暂无"}`,
+    preferredResearchSignals.coreAssertion ? promptLine("当前策略核心判断：", preferredResearchSignals.coreAssertion) : null,
+    preferredResearchSignals.whyNow ? promptLine("当前策略 why now：", preferredResearchSignals.whyNow) : null,
+    preferredResearchSignals.researchHypothesis ? promptLine("当前策略研究假设：", preferredResearchSignals.researchHypothesis) : null,
+    preferredResearchSignals.marketPositionInsight ? promptLine("当前策略位置判断：", preferredResearchSignals.marketPositionInsight) : null,
+    preferredResearchSignals.historicalTurningPoint ? promptLine("当前策略历史转折：", preferredResearchSignals.historicalTurningPoint) : null,
+    context.audienceSelection?.selectedReaderLabel ? promptLine("已确认目标读者：", context.audienceSelection.selectedReaderLabel) : null,
+    context.audienceSelection?.selectedLanguageGuidance ? promptLine("已确认表达方式：", context.audienceSelection.selectedLanguageGuidance) : null,
+    context.audienceSelection?.selectedBackgroundAwareness ? promptLine("已确认背景预设：", context.audienceSelection.selectedBackgroundAwareness) : null,
+    context.audienceSelection?.selectedReadabilityLevel ? promptLine("已确认通俗度：", context.audienceSelection.selectedReadabilityLevel) : null,
+    context.outlineSelection?.selectedTitle ? promptLine("已确认标题：", context.outlineSelection.selectedTitle) : null,
+    context.outlineSelection?.selectedOpeningHook ? promptLine("已确认开头策略：", context.outlineSelection.selectedOpeningHook) : null,
+    context.outlineSelection?.selectedTargetEmotion ? promptLine("已确认目标情绪：", context.outlineSelection.selectedTargetEmotion) : null,
+    context.outlineSelection?.selectedEndingStrategy ? promptLine("已确认结尾策略：", context.outlineSelection.selectedEndingStrategy) : null,
+    String(context.outlinePlan?.centralThesis || "").trim() ? promptLine("大纲核心观点：", String(context.outlinePlan?.centralThesis).trim()) : null,
+    outlineResearchBackbone
+      ? promptLine("大纲研究骨架：", [
+          String(outlineResearchBackbone.openingTimelineAnchor || "").trim() ? formatPromptTemplate("开场历史节点 {{value}}", { value: String(outlineResearchBackbone.openingTimelineAnchor).trim() }) : null,
+          String(outlineResearchBackbone.middleComparisonAnchor || "").trim() ? formatPromptTemplate("中段横向比较 {{value}}", { value: String(outlineResearchBackbone.middleComparisonAnchor).trim() }) : null,
+          String(outlineResearchBackbone.coreInsightAnchor || "").trim() ? formatPromptTemplate("核心交汇洞察 {{value}}", { value: String(outlineResearchBackbone.coreInsightAnchor).trim() }) : null,
+          String(outlineResearchBackbone.sequencingNote || "").trim() ? formatPromptTemplate("排序理由 {{value}}", { value: String(outlineResearchBackbone.sequencingNote).trim() }) : null,
+        ].filter(Boolean).join("；"))
+      : null,
+    promptLine("当前默认开头策略：", resolvedState.openingStrategy),
+    promptLine("当前默认结尾策略：", resolvedState.endingStrategy),
+    promptLine(
+      "当前文章原型：",
+      formatPromptTemplate("{{label}}（{{prototype}}）", {
+        label: writingState.articlePrototypeLabel,
+        prototype: writingState.articlePrototype,
+      }),
+    ),
+    preferredPrototypeCode ? promptLine("本次手动指定文章原型：", writingState.articlePrototypeLabel) : null,
+    promptLine("当前文章原型原因：", writingState.articlePrototypeReason),
+    preferredStateVariantCode ? promptLine("本次手动指定写作状态：", writingState.stateVariantLabel) : null,
+    promptLine(
+      "当前写作状态：",
+      formatPromptTemplate("{{label}} / {{reason}}", {
+        label: writingState.stateVariantLabel,
+        reason: writingState.stateVariantReason,
+      }),
+    ),
+    promptLine("默认起手方式：", writingState.openingMove),
+    promptLine("默认章节节奏：", writingState.sectionRhythm),
+    promptLine("默认证据组织：", writingState.evidenceMode),
+    promptLine(
+      "节奏插件：",
+      formatPromptTemplate("{{label}} / {{reason}}", {
+        label: writingState.progressiveRevealLabel,
+        reason: writingState.progressiveRevealReason,
+      }),
+    ),
+    promptLine("高潮位置：", writingState.climaxPlacement),
+    promptLine("升番规则：", writingState.escalationRule),
+    promptLine(
+      "逐层推进：",
+      writingState.progressiveRevealSteps
+        .map((item) =>
+          formatPromptTemplate("{{label}}：{{instruction}}", {
+            label: item.label,
+            instruction: item.instruction,
+          }),
+        )
+        .join(" | "),
+    ),
+    promptLine(
+      "原型候选：",
+      writingState.prototypeOptions
+        .map((item) =>
+          formatPromptTemplate("{{label}}（{{suitableWhen}}；触发：{{triggerReason}}）", {
+            label: item.label,
+            suitableWhen: item.suitableWhen,
+            triggerReason: item.triggerReason,
+          }),
+        )
+        .join(" | "),
+    ),
+    promptLine(
+      "状态候选：",
+      writingState.stateOptions
+        .map((item) =>
+          formatPromptTemplate("{{label}}（{{suitableWhen}}；触发：{{triggerReason}}）", {
+            label: item.label,
+            suitableWhen: item.suitableWhen,
+            triggerReason: item.triggerReason,
+          }),
+        )
+        .join(" | "),
+    ),
+    String(fallback.diversitySummary || "").trim() ? promptLine("长期写法去重观察：", String(fallback.diversitySummary).trim()) : null,
+    diversityIssues.length ? promptLine("检测到的重复风险：", diversityIssues.join("；")) : "检测到的重复风险：暂无明显撞车。",
+    diversitySuggestions.length ? promptLine("这次执行卡必须吸收的去重动作：", diversitySuggestions.join("；")) : "这次执行卡必须吸收的去重动作：保持当前差异化，不要回到总结式开头、模板化句法或教科书式收尾。",
+    outlineSections.length ? promptBlock("大纲章节：", outlineSections.join("\n\n")) : "暂无结构化大纲章节。",
+    promptLine("现有事实素材：", getSourceFacts(context, 6).join("；") || "暂无"),
+    promptLine(
+      "可用素材包：",
+      getMaterialBundle(context, 8)
+        .map((item) =>
+          formatPromptTemplate("{{fragmentId}}. {{title}}（{{usageMode}}/{{sourceType}}）：{{summary}}", {
+            fragmentId: item.fragmentId,
+            title: item.title,
+            usageMode: item.usageMode,
+            sourceType: item.sourceType,
+            summary: item.summary,
+          }),
+        )
+        .join("；") || "暂无",
+    ),
     context.historyReferences.length
-      ? `已保存历史文章自然引用：${context.historyReferences.map((item) => `《${item.title}》${item.relationReason ? `：${item.relationReason}` : ""}${item.bridgeSentence ? `；桥接句：${item.bridgeSentence}` : ""}`).join("；")}`
+      ? promptLine(
+          "已保存历史文章自然引用：",
+          context.historyReferences
+            .map((item) =>
+              formatPromptTemplate("《{{title}}》{{relationPart}}{{bridgePart}}", {
+                title: item.title,
+                relationPart: item.relationReason ? "：" + item.relationReason : "",
+                bridgePart: item.bridgeSentence ? "；桥接句：" + item.bridgeSentence : "",
+              }),
+            )
+            .join("；"),
+        )
       : "暂无历史文章自然引用设置。",
     context.seriesInsight
-      ? `系列一致性：${[
-          context.seriesInsight.label ? `系列标签 ${context.seriesInsight.label}` : null,
-          context.seriesInsight.reason ? `归因理由 ${context.seriesInsight.reason}` : null,
-          context.seriesInsight.commonTerms.length ? `常用术语 ${context.seriesInsight.commonTerms.join(" / ")}` : null,
-          context.seriesInsight.driftRisks.length ? `口径漂移风险 ${context.seriesInsight.driftRisks.join("；")}` : null,
-          context.seriesInsight.whyNow.length ? `为什么现在值得继续写 ${context.seriesInsight.whyNow.join("；")}` : null,
-        ].filter(Boolean).join("；")}`
+      ? promptLine("系列一致性：", [
+          context.seriesInsight.label ? formatPromptTemplate("系列标签 {{value}}", { value: context.seriesInsight.label }) : null,
+          context.seriesInsight.reason ? formatPromptTemplate("归因理由 {{value}}", { value: context.seriesInsight.reason }) : null,
+          context.seriesInsight.commonTerms.length ? formatPromptTemplate("常用术语 {{value}}", { value: context.seriesInsight.commonTerms.join(" / ") }) : null,
+          context.seriesInsight.driftRisks.length ? formatPromptTemplate("口径漂移风险 {{value}}", { value: context.seriesInsight.driftRisks.join("；") }) : null,
+          context.seriesInsight.whyNow.length ? formatPromptTemplate("为什么现在值得继续写 {{value}}", { value: context.seriesInsight.whyNow.join("；") }) : null,
+        ].filter(Boolean).join("；"))
       : "当前暂无明确系列约束。",
-    applyCommandTemplate ? `当前 apply command 模板：${applyCommandTemplate.name}（${applyCommandTemplate.code}）` : null,
-    `语言守卫名单：${context.bannedWords.join("、") || "无"}`,
-    `当前正文摘要：${truncateText(stripMarkdown(context.article.markdownContent), 800) || "暂无正文，请按大纲和素材组织初稿。"}`,
+    applyCommandTemplate
+      ? promptLine(
+          "当前 apply command 模板：",
+          formatPromptTemplate("{{name}}（{{code}}）", {
+            name: applyCommandTemplate.name,
+            code: applyCommandTemplate.code,
+          }),
+        )
+      : null,
+    promptLine("语言守卫名单：", context.bannedWords.join("、") || "无"),
+    promptLine("当前正文摘要：", truncateText(stripMarkdown(context.article.markdownContent), 800) || "暂无正文，请按大纲和素材组织初稿。"),
   ].filter(Boolean).join("\n");
 
   return generateWithPrompt({
@@ -3636,28 +4120,75 @@ async function generateFactCheck(context: GenerationContext) {
     "如果研究简报显示信源覆盖仍 limited 或 blocked，不能把正文里的结构性判断当成已经完全坐实。",
     "如果正文下了横向优劣判断，却没有同类对照或反例，要在 researchReview.gaps 或 missingEvidence 里指出。",
     "personaAlignment 和 topicAlignment 要判断当前正文是否偏离作者人设和主题主轴，必要时直接指出跑题或语气失配。",
-    `稿件标题：${context.article.title}`,
-    `作者人设：${listPersonaSummary(context)}`,
-    `绑定文风资产细节：\n${listWritingStyleProfileSummary(context)}`,
-    `写作风格资产 / DNA 注入细节：\n${listLayoutStrategySummary(context)}`,
-    `当前正文：${context.article.markdownContent || "暂无正文"}`,
-    `可对照事实：${getSourceFacts(context, 8).join("；") || "暂无对照事实"}`,
-    context.researchBrief ? `研究简报摘要：${String(context.researchBrief.summary || "").trim()}` : "当前没有研究简报。",
-    context.researchBrief ? `研究核心问题：${String(context.researchBrief.coreQuestion || "").trim()}` : null,
-    context.researchBrief ? `研究信源覆盖：${String(researchSourceCoverage?.sufficiency || "").trim() || "unknown"}；缺口：${getStringArray(researchSourceCoverage?.missingCategories, 5).join("；") || "暂无"}` : null,
-    context.researchBrief ? `时间脉络卡：${getRecordArray(context.researchBrief.timelineCards).map((item) => `${String(item.phase || "").trim() || "阶段"}：${String(item.summary || "").trim()}`).filter(Boolean).join("；")}` : null,
-    context.researchBrief ? `横向比较卡：${getRecordArray(context.researchBrief.comparisonCards).map((item) => `${String(item.subject || "").trim()}：${String(item.position || "").trim()}`).filter(Boolean).join("；")}` : null,
-    context.researchBrief ? `交汇洞察：${getRecordArray(context.researchBrief.intersectionInsights).map((item) => `${String(item.insight || "").trim()}${String(item.whyNow || "").trim() ? `（${String(item.whyNow).trim()}）` : ""}`).filter(Boolean).join("；")}` : null,
-    preferredResearchSignals.coreAssertion ? `当前策略主判断：${preferredResearchSignals.coreAssertion}` : null,
-    preferredResearchSignals.historicalTurningPoint ? `当前策略历史转折：${preferredResearchSignals.historicalTurningPoint}` : null,
-    preferredResearchSignals.marketPositionInsight ? `当前策略位置判断：${preferredResearchSignals.marketPositionInsight}` : null,
-    preferredResearchSignals.researchHypothesis ? `当前策略研究假设：${preferredResearchSignals.researchHypothesis}` : null,
+    promptLine("稿件标题：", context.article.title),
+    promptLine("作者人设：", listPersonaSummary(context)),
+    promptBlock("绑定文风资产细节：", listWritingStyleProfileSummary(context)),
+    promptBlock("写作风格资产 / DNA 注入细节：", listLayoutStrategySummary(context)),
+    promptLine("当前正文：", context.article.markdownContent || "暂无正文"),
+    promptLine("可对照事实：", getSourceFacts(context, 8).join("；") || "暂无对照事实"),
+    context.researchBrief ? promptLine("研究简报摘要：", String(context.researchBrief.summary || "").trim()) : "当前没有研究简报。",
+    context.researchBrief ? promptLine("研究核心问题：", String(context.researchBrief.coreQuestion || "").trim()) : null,
+    context.researchBrief
+      ? promptLine(
+          "研究信源覆盖：",
+          formatPromptTemplate("{{sufficiency}}；缺口：{{gaps}}", {
+            sufficiency: String(researchSourceCoverage?.sufficiency || "").trim() || "unknown",
+            gaps: getStringArray(researchSourceCoverage?.missingCategories, 5).join("；") || "暂无",
+          }),
+        )
+      : null,
+    context.researchBrief
+      ? promptLine(
+          "时间脉络卡：",
+          getRecordArray(context.researchBrief.timelineCards)
+            .map((item) =>
+              formatPromptTemplate("{{phase}}：{{summary}}", {
+                phase: String(item.phase || "").trim() || "阶段",
+                summary: String(item.summary || "").trim(),
+              }),
+            )
+            .filter(Boolean)
+            .join("；"),
+        )
+      : null,
+    context.researchBrief
+      ? promptLine(
+          "横向比较卡：",
+          getRecordArray(context.researchBrief.comparisonCards)
+            .map((item) =>
+              formatPromptTemplate("{{subject}}：{{position}}", {
+                subject: String(item.subject || "").trim(),
+                position: String(item.position || "").trim(),
+              }),
+            )
+            .filter(Boolean)
+            .join("；"),
+        )
+      : null,
+    context.researchBrief
+      ? promptLine(
+          "交汇洞察：",
+          getRecordArray(context.researchBrief.intersectionInsights)
+            .map((item) =>
+              formatPromptTemplate("{{insight}}{{whyNowPart}}", {
+                insight: String(item.insight || "").trim(),
+                whyNowPart: String(item.whyNow || "").trim() ? "（" + String(item.whyNow).trim() + "）" : "",
+              }),
+            )
+            .filter(Boolean)
+            .join("；"),
+        )
+      : null,
+    preferredResearchSignals.coreAssertion ? promptLine("当前策略主判断：", preferredResearchSignals.coreAssertion) : null,
+    preferredResearchSignals.historicalTurningPoint ? promptLine("当前策略历史转折：", preferredResearchSignals.historicalTurningPoint) : null,
+    preferredResearchSignals.marketPositionInsight ? promptLine("当前策略位置判断：", preferredResearchSignals.marketPositionInsight) : null,
+    preferredResearchSignals.researchHypothesis ? promptLine("当前策略研究假设：", preferredResearchSignals.researchHypothesis) : null,
     context.seriesInsight
-      ? `系列助手提示：${[
-          context.seriesInsight.label ? `当前系列 ${context.seriesInsight.label}` : null,
-          context.seriesInsight.coreStances.length ? `核心立场 ${context.seriesInsight.coreStances.join("；")}` : null,
-          context.seriesInsight.driftRisks.length ? `口径漂移风险 ${context.seriesInsight.driftRisks.join("；")}` : null,
-        ].filter(Boolean).join("；")}`
+      ? promptLine("系列助手提示：", [
+          context.seriesInsight.label ? formatPromptTemplate("当前系列 {{value}}", { value: context.seriesInsight.label }) : null,
+          context.seriesInsight.coreStances.length ? formatPromptTemplate("核心立场 {{value}}", { value: context.seriesInsight.coreStances.join("；") }) : null,
+          context.seriesInsight.driftRisks.length ? formatPromptTemplate("口径漂移风险 {{value}}", { value: context.seriesInsight.driftRisks.join("；") }) : null,
+        ].filter(Boolean).join("；"))
       : "当前暂无系列历史约束。",
   ].join("\n");
 
@@ -3686,13 +4217,24 @@ async function generateProsePolish(context: GenerationContext) {
     "rewrittenLead 要保留原文事实立场，只重写开头表达，长度控制在 80-160 字。",
     "punchlines 提炼 2-4 条可直接入稿的金句或判断句，但不能编造新事实。",
     "rhythmAdvice 给出段落长短、断句、留白、强调句位置等节奏建议。",
-    `稿件标题：${context.article.title}`,
-    `作者人设：${listPersonaSummary(context)}`,
-    `绑定文风资产细节：\n${listWritingStyleProfileSummary(context)}`,
-    `写作风格资产 / DNA 注入细节：\n${listLayoutStrategySummary(context)}`,
-    `禁用词：${context.bannedWords.join("、") || "无"}`,
-    `语言守卫规则：${context.languageGuardRules.slice(0, 12).map((rule) => `${rule.patternText}${rule.rewriteHint ? `（${rule.rewriteHint}）` : ""}`).join("；")}`,
-    `当前正文：${context.article.markdownContent || "暂无正文"}`,
+    promptLine("稿件标题：", context.article.title),
+    promptLine("作者人设：", listPersonaSummary(context)),
+    promptBlock("绑定文风资产细节：", listWritingStyleProfileSummary(context)),
+    promptBlock("写作风格资产 / DNA 注入细节：", listLayoutStrategySummary(context)),
+    promptLine("禁用词：", context.bannedWords.join("、") || "无"),
+    promptLine(
+      "语言守卫规则：",
+      context.languageGuardRules
+        .slice(0, 12)
+        .map((rule) =>
+          formatPromptTemplate("{{pattern}}{{rewriteHintPart}}", {
+            pattern: rule.patternText,
+            rewriteHintPart: rule.rewriteHint ? "（" + rule.rewriteHint + "）" : "",
+          }),
+        )
+        .join("；"),
+    ),
+    promptLine("当前正文：", context.article.markdownContent || "暂无正文"),
   ].join("\n");
 
   return generateWithPrompt({
@@ -3741,11 +4283,11 @@ export async function getArticleStageArtifactsByDocumentIds(input: {
   }
   const placeholders = uniqueArticleIds.map(() => "?").join(", ");
   const rows = await getDatabase().query<ArtifactRow & { article_title: string; article_updated_at: string }>(
-    `SELECT dsa.*, d.title AS article_title, d.updated_at AS article_updated_at
-     FROM article_stage_artifacts dsa
-     INNER JOIN articles d ON d.id = dsa.article_id
-     WHERE d.user_id = ? AND dsa.stage_code = ? AND dsa.article_id IN (${placeholders})
-     ORDER BY d.updated_at DESC, d.id DESC`,
+    "SELECT dsa.*, d.title AS article_title, d.updated_at AS article_updated_at\n"
+      + "FROM article_stage_artifacts dsa\n"
+      + "INNER JOIN articles d ON d.id = dsa.article_id\n"
+      + "WHERE d.user_id = ? AND dsa.stage_code = ? AND dsa.article_id IN (" + placeholders + ")\n"
+      + "ORDER BY d.updated_at DESC, d.id DESC",
     [input.userId, input.stageCode, ...uniqueArticleIds],
   );
   return rows.map((row) => ({
@@ -3836,6 +4378,7 @@ export async function generateArticleStageArtifact(input: {
   deepWritingPrototypeCode?: ArticlePrototypeCode | null;
   deepWritingStateVariantCode?: WritingStateVariantCode | null;
   outlineTitleOptionsOnly?: boolean;
+  outlineOpeningOptionsOnly?: boolean;
 }) {
   if (input.stageCode === "researchBrief") {
     const initialContext = await buildGenerationContext(input.articleId, input.userId);
@@ -3866,17 +4409,30 @@ export async function generateArticleStageArtifact(input: {
     return generateAudienceAnalysis(context);
   }
   if (input.stageCode === "outlinePlanning") {
-    if (input.outlineTitleOptionsOnly) {
+    if (input.outlineTitleOptionsOnly || input.outlineOpeningOptionsOnly) {
       const existingOutlineArtifact = await getArticleStageArtifact(input.articleId, input.userId, "outlinePlanning");
       if (!existingOutlineArtifact?.payload) {
         return generateOutlinePlanning(context);
       }
-      return refreshOutlineTitleOptions({
-        context,
-        artifact: existingOutlineArtifact,
-        fallback: fallbackOutlinePlanning(context),
-        preserveOutlineUpdatedAt: true,
-      });
+      const fallback = fallbackOutlinePlanning(context);
+      let artifact = existingOutlineArtifact;
+      if (input.outlineTitleOptionsOnly) {
+        artifact = await refreshOutlineTitleOptions({
+          context,
+          artifact,
+          fallback,
+          preserveOutlineUpdatedAt: true,
+        });
+      }
+      if (input.outlineOpeningOptionsOnly) {
+        artifact = await refreshOutlineOpeningOptions({
+          context,
+          artifact,
+          fallback,
+          preserveOutlineUpdatedAt: true,
+        });
+      }
+      return artifact;
     }
     return generateOutlinePlanning(context);
   }
@@ -3908,13 +4464,28 @@ export function buildStageArtifactApplyCommand(
   if (artifact.stageCode === "researchBrief") {
     const timelineCards = getRecordArray(payload.timelineCards)
       .slice(0, 3)
-      .map((item) => `${String(item.phase || "").trim() || "阶段"}：${String(item.summary || "").trim()}`);
+      .map((item) =>
+        formatPromptTemplate("{{phase}}：{{summary}}", {
+          phase: String(item.phase || "").trim() || "阶段",
+          summary: String(item.summary || "").trim(),
+        }),
+      );
     const comparisonCards = getRecordArray(payload.comparisonCards)
       .slice(0, 3)
-      .map((item) => `${String(item.subject || "").trim() || "比较对象"}：${String(item.position || "").trim()}`);
+      .map((item) =>
+        formatPromptTemplate("{{subject}}：{{position}}", {
+          subject: String(item.subject || "").trim() || "比较对象",
+          position: String(item.position || "").trim(),
+        }),
+      );
     const insights = getRecordArray(payload.intersectionInsights)
       .slice(0, 3)
-      .map((item) => `${String(item.insight || "").trim()}${String(item.whyNow || "").trim() ? `（${String(item.whyNow).trim()}）` : ""}`);
+      .map((item) =>
+        formatPromptTemplate("{{insight}}{{whyNowPart}}", {
+          insight: String(item.insight || "").trim(),
+          whyNowPart: String(item.whyNow || "").trim() ? "（" + String(item.whyNow).trim() + "）" : "",
+        }),
+      );
     const sourceCoverage = normalizeRecord(payload.sourceCoverage);
     const preferredResearchSignals = getPreferredResearchSignalsForApply({
       strategyWriteback: normalizeRecord(payload.strategyWriteback),
@@ -3922,18 +4493,18 @@ export function buildStageArtifactApplyCommand(
     });
     return [
       "请先按照下面的研究简报重写全文，优先补上时间脉络、横向比较和结构性判断，不要直接把资料平铺成报告。",
-      String(payload.coreQuestion || "").trim() ? `研究问题：${String(payload.coreQuestion).trim()}` : null,
-      String(payload.authorHypothesis || "").trim() ? `待验证假设：${String(payload.authorHypothesis).trim()}` : null,
-      preferredResearchSignals.targetReader ? `默认读者：${preferredResearchSignals.targetReader}` : null,
-      timelineCards.length ? `时间脉络：${timelineCards.join(" | ")}` : null,
-      comparisonCards.length ? `横向比较：${comparisonCards.join(" | ")}` : null,
-      insights.length ? `交汇洞察：${insights.join(" | ")}` : null,
-      preferredResearchSignals.coreAssertion ? `主判断优先围绕这条当前策略判断：${preferredResearchSignals.coreAssertion}` : null,
-      preferredResearchSignals.whyNow ? `为什么现在值得写：${preferredResearchSignals.whyNow}` : null,
-      preferredResearchSignals.researchHypothesis ? `研究假设：${preferredResearchSignals.researchHypothesis}` : null,
-      preferredResearchSignals.marketPositionInsight ? `位置判断：${preferredResearchSignals.marketPositionInsight}` : null,
-      preferredResearchSignals.historicalTurningPoint ? `历史转折：${preferredResearchSignals.historicalTurningPoint}` : null,
-      sourceCoverage?.note ? `研究充分度：${String(sourceCoverage.note).trim()}` : null,
+      String(payload.coreQuestion || "").trim() ? promptLine("研究问题：", String(payload.coreQuestion).trim()) : null,
+      String(payload.authorHypothesis || "").trim() ? promptLine("待验证假设：", String(payload.authorHypothesis).trim()) : null,
+      preferredResearchSignals.targetReader ? promptLine("默认读者：", preferredResearchSignals.targetReader) : null,
+      timelineCards.length ? promptLine("时间脉络：", timelineCards.join(" | ")) : null,
+      comparisonCards.length ? promptLine("横向比较：", comparisonCards.join(" | ")) : null,
+      insights.length ? promptLine("交汇洞察：", insights.join(" | ")) : null,
+      preferredResearchSignals.coreAssertion ? promptLine("主判断优先围绕这条当前策略判断：", preferredResearchSignals.coreAssertion) : null,
+      preferredResearchSignals.whyNow ? promptLine("为什么现在值得写：", preferredResearchSignals.whyNow) : null,
+      preferredResearchSignals.researchHypothesis ? promptLine("研究假设：", preferredResearchSignals.researchHypothesis) : null,
+      preferredResearchSignals.marketPositionInsight ? promptLine("位置判断：", preferredResearchSignals.marketPositionInsight) : null,
+      preferredResearchSignals.historicalTurningPoint ? promptLine("历史转折：", preferredResearchSignals.historicalTurningPoint) : null,
+      sourceCoverage?.note ? promptLine("研究充分度：", String(sourceCoverage.note).trim()) : null,
       "要求：没有研究支撑的绝对判断要收紧；优先把‘为什么走到现在’和‘为什么它与同类不同’写清楚。",
     ].filter(Boolean).join("\n");
   }
@@ -3945,12 +4516,12 @@ export function buildStageArtifactApplyCommand(
     );
     const readerSegments = (selectedSegment ? [selectedSegment] : getRecordArray(payload.readerSegments).slice(0, 3))
       .map((segment) =>
-        [
-          `人群：${String(segment.label || "").trim() || "未命名读者"}`,
-          `痛点：${String(segment.painPoint || "").trim() || "暂无"}`,
-          `动机：${String(segment.motivation || "").trim() || "暂无"}`,
-          `语气：${String(segment.preferredTone || "").trim() || "暂无"}`,
-        ].join("；"),
+        formatPromptTemplate("人群：{{label}}；痛点：{{painPoint}}；动机：{{motivation}}；语气：{{tone}}", {
+          label: String(segment.label || "").trim() || "未命名读者",
+          painPoint: String(segment.painPoint || "").trim() || "暂无",
+          motivation: String(segment.motivation || "").trim() || "暂无",
+          tone: String(segment.preferredTone || "").trim() || "暂无",
+        }),
       );
     const languageGuidance = selection?.selectedLanguageGuidance
       ? [selection.selectedLanguageGuidance]
@@ -3965,19 +4536,19 @@ export function buildStageArtifactApplyCommand(
     return [
       "请根据以下受众分析重写全文，但不要改动核心事实，不要新增未经验证的信息。",
       selection?.selectedReaderLabel
-        ? `已确认目标读者：${selection.selectedReaderLabel}`
+        ? promptLine("已确认目标读者：", selection.selectedReaderLabel)
         : String(payload.coreReaderLabel || "").trim()
-          ? `核心受众：${String(payload.coreReaderLabel).trim()}`
+          ? promptLine("核心受众：", String(payload.coreReaderLabel).trim())
           : null,
-      readerSegments.length ? `重点人群：${readerSegments.join(" | ")}` : null,
-      languageGuidance.length ? `表达方式：${languageGuidance.join("；")}` : null,
-      backgroundAwareness.length ? `背景预设：${backgroundAwareness.join("；")}` : null,
-      readabilityLevel.length ? `语言通俗度：${readabilityLevel.join("；")}` : null,
-      warnings.length ? `写作限制：${warnings.join("；")}` : null,
+      readerSegments.length ? promptLine("重点人群：", readerSegments.join(" | ")) : null,
+      languageGuidance.length ? promptLine("表达方式：", languageGuidance.join("；")) : null,
+      backgroundAwareness.length ? promptLine("背景预设：", backgroundAwareness.join("；")) : null,
+      readabilityLevel.length ? promptLine("语言通俗度：", readabilityLevel.join("；")) : null,
+      warnings.length ? promptLine("写作限制：", warnings.join("；")) : null,
       selection?.selectedCallToAction
-        ? `结尾动作：${selection.selectedCallToAction}`
+        ? promptLine("结尾动作：", selection.selectedCallToAction)
         : String(payload.recommendedCallToAction || "").trim()
-          ? `结尾动作：${String(payload.recommendedCallToAction).trim()}`
+          ? promptLine("结尾动作：", String(payload.recommendedCallToAction).trim())
           : null,
       "要求：增强背景解释层次、调整表达通俗度、让正文更贴近目标读者，但保留当前主题判断。",
     ].filter(Boolean).join("\n");
@@ -3990,46 +4561,52 @@ export function buildStageArtifactApplyCommand(
       .slice(0, 6)
       .map((section, index) =>
         [
-          `${index + 1}. ${String(section.heading || "").trim() || `章节${index + 1}`}`,
-          String(section.goal || "").trim() ? `目标：${String(section.goal).trim()}` : null,
-          getStringArray(section.keyPoints, 4).length ? `关键点：${getStringArray(section.keyPoints, 4).join("；")}` : null,
-          getStringArray(section.evidenceHints, 4).length ? `证据提示：${getStringArray(section.evidenceHints, 4).join("；")}` : null,
-          String(section.researchFocus || "").trim() ? `研究焦点：${String(section.researchFocus).trim()}` : null,
-          String(section.researchAnchor || "").trim() ? `研究锚点：${String(section.researchAnchor).trim()}` : null,
-          String(section.transition || "").trim() ? `衔接：${String(section.transition).trim()}` : null,
-        ].filter(Boolean).join(" / "),
+          promptLine(String(index + 1) + ". ", String(section.heading || "").trim() || ("章节" + String(index + 1))),
+          String(section.goal || "").trim() ? promptLine("目标：", String(section.goal).trim()) : null,
+          getStringArray(section.keyPoints, 4).length ? promptLine("关键点：", getStringArray(section.keyPoints, 4).join("；")) : null,
+          getStringArray(section.evidenceHints, 4).length ? promptLine("证据提示：", getStringArray(section.evidenceHints, 4).join("；")) : null,
+          String(section.researchFocus || "").trim() ? promptLine("研究焦点：", String(section.researchFocus).trim()) : null,
+          String(section.researchAnchor || "").trim() ? promptLine("研究锚点：", String(section.researchAnchor).trim()) : null,
+          String(section.transition || "").trim() ? promptLine("衔接：", String(section.transition).trim()) : null,
+        ].filter(Boolean).join("\n"),
       );
     return [
       "请按照下面的大纲规划重组整篇正文，输出完整 Markdown。",
       selection?.selectedTitle
-        ? `采用标题：${selection.selectedTitle}${selection.selectedTitleStyle ? `（${selection.selectedTitleStyle}）` : ""}`
+        ? promptLine(
+            "采用标题：",
+            formatPromptTemplate("{{title}}{{stylePart}}", {
+              title: selection.selectedTitle,
+              stylePart: selection.selectedTitleStyle ? "（" + selection.selectedTitleStyle + "）" : "",
+            }),
+          )
         : String(payload.workingTitle || "").trim()
-          ? `采用标题：${String(payload.workingTitle).trim()}`
+          ? promptLine("采用标题：", String(payload.workingTitle).trim())
           : null,
-      String(payload.centralThesis || "").trim() ? `核心观点：${String(payload.centralThesis).trim()}` : null,
+      String(payload.centralThesis || "").trim() ? promptLine("核心观点：", String(payload.centralThesis).trim()) : null,
       selection?.selectedOpeningHook
-        ? `开头策略：${selection.selectedOpeningHook}`
+        ? promptLine("开头策略：", selection.selectedOpeningHook)
         : String(payload.openingHook || "").trim()
-          ? `开头策略：${String(payload.openingHook).trim()}`
+          ? promptLine("开头策略：", String(payload.openingHook).trim())
           : null,
       selection?.selectedTargetEmotion
-        ? `目标情绪：${selection.selectedTargetEmotion}`
+        ? promptLine("目标情绪：", selection.selectedTargetEmotion)
         : String(payload.targetEmotion || "").trim()
-          ? `目标情绪：${String(payload.targetEmotion).trim()}`
+          ? promptLine("目标情绪：", String(payload.targetEmotion).trim())
           : null,
       researchBackbone
         ? [
-            String(researchBackbone.openingTimelineAnchor || "").trim() ? `开场历史节点：${String(researchBackbone.openingTimelineAnchor).trim()}` : null,
-            String(researchBackbone.middleComparisonAnchor || "").trim() ? `中段横向比较：${String(researchBackbone.middleComparisonAnchor).trim()}` : null,
-            String(researchBackbone.coreInsightAnchor || "").trim() ? `核心交汇洞察：${String(researchBackbone.coreInsightAnchor).trim()}` : null,
-            String(researchBackbone.sequencingNote || "").trim() ? `排序理由：${String(researchBackbone.sequencingNote).trim()}` : null,
+            String(researchBackbone.openingTimelineAnchor || "").trim() ? promptLine("开场历史节点：", String(researchBackbone.openingTimelineAnchor).trim()) : null,
+            String(researchBackbone.middleComparisonAnchor || "").trim() ? promptLine("中段横向比较：", String(researchBackbone.middleComparisonAnchor).trim()) : null,
+            String(researchBackbone.coreInsightAnchor || "").trim() ? promptLine("核心交汇洞察：", String(researchBackbone.coreInsightAnchor).trim()) : null,
+            String(researchBackbone.sequencingNote || "").trim() ? promptLine("排序理由：", String(researchBackbone.sequencingNote).trim()) : null,
           ].filter(Boolean).join("\n")
         : null,
-      sections.length ? `大纲结构：\n${sections.join("\n")}` : null,
+      sections.length ? promptBlock("大纲结构：", sections.join("\n\n")) : null,
       selection?.selectedEndingStrategy
-        ? `结尾策略：${selection.selectedEndingStrategy}`
+        ? promptLine("结尾策略：", selection.selectedEndingStrategy)
         : String(payload.endingStrategy || "").trim()
-          ? `结尾策略：${String(payload.endingStrategy).trim()}`
+          ? promptLine("结尾策略：", String(payload.endingStrategy).trim())
           : null,
       "要求：保留原有可用事实，调整段落顺序与层次，必要时补充小标题，但不要空泛扩写。",
     ].filter(Boolean).join("\n");
@@ -4046,61 +4623,78 @@ export function buildStageArtifactApplyCommand(
       .slice(0, 6)
       .map((section, index) =>
         [
-          `${index + 1}. ${String(section.heading || "").trim() || `章节 ${index + 1}`}`,
-          String(section.goal || "").trim() ? `目标：${String(section.goal).trim()}` : null,
-          String(section.paragraphMission || "").trim() ? `段落任务：${String(section.paragraphMission).trim()}` : null,
-          getStringArray(section.evidenceHints, 4).length ? `证据提示：${getStringArray(section.evidenceHints, 4).join("；")}` : null,
-          String(section.revealRole || "").trim() ? `节奏角色：${String(section.revealRole).trim()}` : null,
-          String(section.transition || "").trim() ? `衔接：${String(section.transition).trim()}` : null,
-        ].filter(Boolean).join(" / "),
+          promptLine(String(index + 1) + ". ", String(section.heading || "").trim() || ("章节 " + String(index + 1))),
+          String(section.goal || "").trim() ? promptLine("目标：", String(section.goal).trim()) : null,
+          String(section.paragraphMission || "").trim() ? promptLine("段落任务：", String(section.paragraphMission).trim()) : null,
+          getStringArray(section.evidenceHints, 4).length ? promptLine("证据提示：", getStringArray(section.evidenceHints, 4).join("；")) : null,
+          String(section.revealRole || "").trim() ? promptLine("节奏角色：", String(section.revealRole).trim()) : null,
+          String(section.transition || "").trim() ? promptLine("衔接：", String(section.transition).trim()) : null,
+        ].filter(Boolean).join("\n"),
       );
     const historyReferencePlan = getRecordArray(payload.historyReferencePlan)
       .slice(0, 2)
       .map((item) =>
-        [
-          `旧文：${String(item.title || "").trim() || "未命名旧文"}`,
-          String(item.useWhen || "").trim() ? `使用时机：${String(item.useWhen).trim()}` : null,
-          String(item.bridgeSentence || "").trim() ? `桥接句：${String(item.bridgeSentence).trim()}` : null,
-        ].filter(Boolean).join("；"),
+        formatPromptTemplate("旧文：{{title}}{{useWhenPart}}{{bridgePart}}", {
+          title: String(item.title || "").trim() || "未命名旧文",
+          useWhenPart: String(item.useWhen || "").trim() ? "；使用时机：" + String(item.useWhen).trim() : "",
+          bridgePart: String(item.bridgeSentence || "").trim() ? "；桥接句：" + String(item.bridgeSentence).trim() : "",
+        }),
       );
     const coreLines = [
-      String(payload.selectedTitle || "").trim() ? `采用标题：${String(payload.selectedTitle).trim()}` : null,
-      String(payload.centralThesis || "").trim() ? `核心观点：${String(payload.centralThesis).trim()}` : null,
-      String(payload.writingAngle || "").trim() ? `写作角度：${String(payload.writingAngle).trim()}` : null,
+      String(payload.selectedTitle || "").trim() ? promptLine("采用标题：", String(payload.selectedTitle).trim()) : null,
+      String(payload.centralThesis || "").trim() ? promptLine("核心观点：", String(payload.centralThesis).trim()) : null,
+      String(payload.writingAngle || "").trim() ? promptLine("写作角度：", String(payload.writingAngle).trim()) : null,
       String(payload.articlePrototypeLabel || "").trim()
-        ? `文章原型：${String(payload.articlePrototypeLabel).trim()}${String(payload.articlePrototype || "").trim() ? `（${String(payload.articlePrototype).trim()}）` : ""}`
+        ? promptLine(
+            "文章原型：",
+            formatPromptTemplate("{{label}}{{prototypePart}}", {
+              label: String(payload.articlePrototypeLabel).trim(),
+              prototypePart: String(payload.articlePrototype || "").trim() ? "（" + String(payload.articlePrototype).trim() + "）" : "",
+            }),
+          )
         : null,
-      String(payload.articlePrototypeReason || "").trim() ? `原型原因：${String(payload.articlePrototypeReason).trim()}` : null,
-      String(payload.stateVariantLabel || "").trim() ? `状态变体：${String(payload.stateVariantLabel).trim()}` : null,
-      String(payload.stateVariantReason || "").trim() ? `切换原因：${String(payload.stateVariantReason).trim()}` : null,
-      String(payload.researchFocus || "").trim() ? `研究焦点：${String(payload.researchFocus).trim()}` : null,
-      String(payload.researchLens || "").trim() ? `研究镜头：${String(payload.researchLens).trim()}` : null,
-      String(payload.openingStrategy || "").trim() ? `开头策略：${String(payload.openingStrategy).trim()}` : null,
-      String(payload.openingMove || "").trim() ? `起手动作：${String(payload.openingMove).trim()}` : null,
-      String(payload.targetEmotion || "").trim() ? `目标情绪：${String(payload.targetEmotion).trim()}` : null,
-      String(payload.endingStrategy || "").trim() ? `结尾策略：${String(payload.endingStrategy).trim()}` : null,
+      String(payload.articlePrototypeReason || "").trim() ? promptLine("原型原因：", String(payload.articlePrototypeReason).trim()) : null,
+      String(payload.stateVariantLabel || "").trim() ? promptLine("状态变体：", String(payload.stateVariantLabel).trim()) : null,
+      String(payload.stateVariantReason || "").trim() ? promptLine("切换原因：", String(payload.stateVariantReason).trim()) : null,
+      String(payload.researchFocus || "").trim() ? promptLine("研究焦点：", String(payload.researchFocus).trim()) : null,
+      String(payload.researchLens || "").trim() ? promptLine("研究镜头：", String(payload.researchLens).trim()) : null,
+      String(payload.openingStrategy || "").trim() ? promptLine("开头策略：", String(payload.openingStrategy).trim()) : null,
+      String(payload.openingMove || "").trim() ? promptLine("起手动作：", String(payload.openingMove).trim()) : null,
+      String(payload.targetEmotion || "").trim() ? promptLine("目标情绪：", String(payload.targetEmotion).trim()) : null,
+      String(payload.endingStrategy || "").trim() ? promptLine("结尾策略：", String(payload.endingStrategy).trim()) : null,
     ];
     const structureLines = [
-      String(payload.sectionRhythm || "").trim() ? `章节节奏：${String(payload.sectionRhythm).trim()}` : null,
-      String(payload.progressiveRevealLabel || "").trim() ? `节奏插件：${String(payload.progressiveRevealLabel).trim()}` : null,
-      String(payload.progressiveRevealReason || "").trim() ? `启用原因：${String(payload.progressiveRevealReason).trim()}` : null,
-      String(payload.climaxPlacement || "").trim() ? `高潮位置：${String(payload.climaxPlacement).trim()}` : null,
-      sections.length ? `写作结构：\n${sections.join("\n")}` : null,
-      historyReferencePlan.length ? `历史文章自然引用：${historyReferencePlan.join(" | ")}` : null,
+      String(payload.sectionRhythm || "").trim() ? promptLine("章节节奏：", String(payload.sectionRhythm).trim()) : null,
+      String(payload.progressiveRevealLabel || "").trim() ? promptLine("节奏插件：", String(payload.progressiveRevealLabel).trim()) : null,
+      String(payload.progressiveRevealReason || "").trim() ? promptLine("启用原因：", String(payload.progressiveRevealReason).trim()) : null,
+      String(payload.climaxPlacement || "").trim() ? promptLine("高潮位置：", String(payload.climaxPlacement).trim()) : null,
+      sections.length ? promptBlock("写作结构：", sections.join("\n\n")) : null,
+      historyReferencePlan.length ? promptLine("历史文章自然引用：", historyReferencePlan.join(" | ")) : null,
     ];
     const constraintLines = [
-      String(payload.diversitySummary || "").trim() ? `去重约束：${String(payload.diversitySummary).trim()}` : null,
-      getStringArray(payload.diversitySuggestions, 4).length ? `去重动作：${getStringArray(payload.diversitySuggestions, 4).join("；")}` : null,
-      String(payload.evidenceMode || "").trim() ? `证据组织：${String(payload.evidenceMode).trim()}` : null,
-      String(payload.escalationRule || "").trim() ? `升番规则：${String(payload.escalationRule).trim()}` : null,
+      String(payload.diversitySummary || "").trim() ? promptLine("去重约束：", String(payload.diversitySummary).trim()) : null,
+      getStringArray(payload.diversitySuggestions, 4).length ? promptLine("去重动作：", getStringArray(payload.diversitySuggestions, 4).join("；")) : null,
+      String(payload.evidenceMode || "").trim() ? promptLine("证据组织：", String(payload.evidenceMode).trim()) : null,
+      String(payload.escalationRule || "").trim() ? promptLine("升番规则：", String(payload.escalationRule).trim()) : null,
       getRecordArray(payload.progressiveRevealSteps).length
-        ? `逐层推进：${getRecordArray(payload.progressiveRevealSteps).map((item) => `${String(item.label || "").trim()}:${String(item.instruction || "").trim()}`).filter(Boolean).join("；")}`
+        ? promptLine(
+            "逐层推进：",
+            getRecordArray(payload.progressiveRevealSteps)
+              .map((item) =>
+                formatPromptTemplate("{{label}}:{{instruction}}", {
+                  label: String(item.label || "").trim(),
+                  instruction: String(item.instruction || "").trim(),
+                }),
+              )
+              .filter(Boolean)
+              .join("；"),
+          )
         : null,
-      getStringArray(payload.stateChecklist, 6).length ? `状态自检：${getStringArray(payload.stateChecklist, 6).join("；")}` : null,
-      getStringArray(payload.mustUseFacts, 6).length ? `必须吃透的事实：${getStringArray(payload.mustUseFacts, 6).join("；")}` : null,
-      getStringArray(payload.voiceChecklist, 6).length ? `表达约束：${getStringArray(payload.voiceChecklist, 6).join("；")}` : null,
-      getStringArray(payload.bannedWordWatchlist, 8).length ? `重点避开这些语言守卫词：${getStringArray(payload.bannedWordWatchlist, 8).join("、")}` : null,
-      getStringArray(payload.finalChecklist, 6).length ? `终稿自检：${getStringArray(payload.finalChecklist, 6).join("；")}` : null,
+      getStringArray(payload.stateChecklist, 6).length ? promptLine("状态自检：", getStringArray(payload.stateChecklist, 6).join("；")) : null,
+      getStringArray(payload.mustUseFacts, 6).length ? promptLine("必须吃透的事实：", getStringArray(payload.mustUseFacts, 6).join("；")) : null,
+      getStringArray(payload.voiceChecklist, 6).length ? promptLine("表达约束：", getStringArray(payload.voiceChecklist, 6).join("；")) : null,
+      getStringArray(payload.bannedWordWatchlist, 8).length ? promptLine("重点避开这些语言守卫词：", getStringArray(payload.bannedWordWatchlist, 8).join("、")) : null,
+      getStringArray(payload.finalChecklist, 6).length ? promptLine("终稿自检：", getStringArray(payload.finalChecklist, 6).join("；")) : null,
     ];
     const orderedLines =
       templateMode === "structure_first"
@@ -4115,11 +4709,11 @@ export function buildStageArtifactApplyCommand(
     const checks = getRecordArray(payload.checks)
       .slice(0, 6)
       .map((check) =>
-        [
-          `表述：${String(check.claim || "").trim() || "未命名核查项"}`,
-          `状态：${String(check.status || "").trim() || "needs_source"}`,
-          `处理：${String(check.suggestion || "").trim() || "请改写为更稳妥的表达"}`,
-        ].join("；"),
+        formatPromptTemplate("表述：{{claim}}；状态：{{status}}；处理：{{suggestion}}", {
+          claim: String(check.claim || "").trim() || "未命名核查项",
+          status: String(check.status || "").trim() || "needs_source",
+          suggestion: String(check.suggestion || "").trim() || "请改写为更稳妥的表达",
+        }),
       );
     const evidenceCards = getRecordArray(payload.evidenceCards)
       .slice(0, 4)
@@ -4128,47 +4722,47 @@ export function buildStageArtifactApplyCommand(
           .slice(0, 2)
           .map((item) =>
             [
-              `证据：${String(item.title || "").trim() || "未命名证据"}`,
-              String(item.excerpt || "").trim() ? `摘要：${String(item.excerpt).trim()}` : null,
-              String(item.sourceUrl || "").trim() ? `链接：${String(item.sourceUrl).trim()}` : null,
-            ].filter(Boolean).join("；"),
+              promptLine("证据：", String(item.title || "").trim() || "未命名证据"),
+              String(item.excerpt || "").trim() ? promptLine("摘要：", String(item.excerpt).trim()) : null,
+              String(item.sourceUrl || "").trim() ? promptLine("链接：", String(item.sourceUrl).trim()) : null,
+            ].filter(Boolean).join("\n"),
           );
         const counterEvidence = getRecordArray(card.counterEvidence)
           .slice(0, 2)
           .map((item) =>
             [
-              `反证：${String(item.title || "").trim() || "未命名反证"}`,
-              String(item.excerpt || "").trim() ? `摘要：${String(item.excerpt).trim()}` : null,
-              String(item.sourceUrl || "").trim() ? `链接：${String(item.sourceUrl).trim()}` : null,
-            ].filter(Boolean).join("；"),
+              promptLine("反证：", String(item.title || "").trim() || "未命名反证"),
+              String(item.excerpt || "").trim() ? promptLine("摘要：", String(item.excerpt).trim()) : null,
+              String(item.sourceUrl || "").trim() ? promptLine("链接：", String(item.sourceUrl).trim()) : null,
+            ].filter(Boolean).join("\n"),
           );
         return [
-          `${index + 1}. 表述：${String(card.claim || "").trim() || "未命名核查项"}`,
-          `证据强度：${String(card.supportLevel || "").trim() || "missing"}`,
-          supportingEvidence.length ? `支持证据：${supportingEvidence.join(" | ")}` : "支持证据：暂无",
-          counterEvidence.length ? `反向证据：${counterEvidence.join(" | ")}` : "反向证据：暂无",
-        ].join(" / ");
+          promptLine(String(index + 1) + ". 表述：", String(card.claim || "").trim() || "未命名核查项"),
+          promptLine("证据强度：", String(card.supportLevel || "").trim() || "missing"),
+          supportingEvidence.length ? promptBlock("支持证据：", supportingEvidence.join("\n\n")) : "支持证据：暂无",
+          counterEvidence.length ? promptBlock("反向证据：", counterEvidence.join("\n\n")) : "反向证据：暂无",
+        ].join("\n");
       });
     const missingEvidence = getStringArray(payload.missingEvidence, 6);
     const researchReview = normalizeRecord(payload.researchReview);
     return [
       "请根据以下事实核查结果改写全文，输出完整 Markdown。",
-      String(payload.summary || "").trim() ? `核查摘要：${String(payload.summary).trim()}` : null,
-      checks.length ? `逐项处理：${checks.join(" | ")}` : null,
-      evidenceCards.length ? `证据摘要卡：\n${evidenceCards.join("\n")}` : null,
-      missingEvidence.length ? `待补证据：${missingEvidence.join("；")}` : null,
-      researchReview?.summary ? `研究支撑复核：${String(researchReview.summary).trim()}` : null,
+      String(payload.summary || "").trim() ? promptLine("核查摘要：", String(payload.summary).trim()) : null,
+      checks.length ? promptLine("逐项处理：", checks.join(" | ")) : null,
+      evidenceCards.length ? promptBlock("证据摘要卡：", evidenceCards.join("\n\n")) : null,
+      missingEvidence.length ? promptLine("待补证据：", missingEvidence.join("；")) : null,
+      researchReview?.summary ? promptLine("研究支撑复核：", String(researchReview.summary).trim()) : null,
       researchReview
         ? [
-            String(researchReview.sourceCoverage || "").trim() ? `信源覆盖：${String(researchReview.sourceCoverage).trim()}` : null,
-            String(researchReview.timelineSupport || "").trim() ? `纵向脉络：${String(researchReview.timelineSupport).trim()}` : null,
-            String(researchReview.comparisonSupport || "").trim() ? `横向比较：${String(researchReview.comparisonSupport).trim()}` : null,
-            String(researchReview.intersectionSupport || "").trim() ? `交汇洞察：${String(researchReview.intersectionSupport).trim()}` : null,
+            String(researchReview.sourceCoverage || "").trim() ? promptLine("信源覆盖：", String(researchReview.sourceCoverage).trim()) : null,
+            String(researchReview.timelineSupport || "").trim() ? promptLine("纵向脉络：", String(researchReview.timelineSupport).trim()) : null,
+            String(researchReview.comparisonSupport || "").trim() ? promptLine("横向比较：", String(researchReview.comparisonSupport).trim()) : null,
+            String(researchReview.intersectionSupport || "").trim() ? promptLine("交汇洞察：", String(researchReview.intersectionSupport).trim()) : null,
           ].filter(Boolean).join("；")
         : null,
-      getStringArray(researchReview?.gaps, 4).length ? `研究层缺口：${getStringArray(researchReview?.gaps, 4).join("；")}` : null,
-      String(payload.personaAlignment || "").trim() ? `人设提醒：${String(payload.personaAlignment).trim()}` : null,
-      String(payload.topicAlignment || "").trim() ? `主题提醒：${String(payload.topicAlignment).trim()}` : null,
+      getStringArray(researchReview?.gaps, 4).length ? promptLine("研究层缺口：", getStringArray(researchReview?.gaps, 4).join("；")) : null,
+      String(payload.personaAlignment || "").trim() ? promptLine("人设提醒：", String(payload.personaAlignment).trim()) : null,
+      String(payload.topicAlignment || "").trim() ? promptLine("主题提醒：", String(payload.topicAlignment).trim()) : null,
       "要求：没有证据的绝对化表述改成判断语气；高风险数字、时间、案例请弱化或删除；研究层缺口不能靠修辞硬补，要把缺的纵向、横向或交汇支撑明确收紧。",
     ].filter(Boolean).join("\n");
   }
@@ -4177,22 +4771,22 @@ export function buildStageArtifactApplyCommand(
     .slice(0, 6)
     .map((issue) =>
       [
-        `问题：${String(issue.type || "").trim() || "未命名问题"}`,
-        String(issue.example || "").trim() ? `示例：${String(issue.example).trim()}` : null,
-        `建议：${String(issue.suggestion || "").trim() || "请直接改得更清晰有力"}`,
-      ].filter(Boolean).join("；"),
+        promptLine("问题：", String(issue.type || "").trim() || "未命名问题"),
+        String(issue.example || "").trim() ? promptLine("示例：", String(issue.example).trim()) : null,
+        promptLine("建议：", String(issue.suggestion || "").trim() || "请直接改得更清晰有力"),
+      ].filter(Boolean).join("\n"),
     );
   const strengths = getStringArray(payload.strengths, 4);
   const punchlines = getStringArray(payload.punchlines, 4);
   const rhythmAdvice = getStringArray(payload.rhythmAdvice, 4);
   return [
     "请根据以下文笔润色建议重写全文，输出完整 Markdown。",
-    strengths.length ? `保留优点：${strengths.join("；")}` : null,
-    String(payload.overallDiagnosis || "").trim() ? `整体诊断：${String(payload.overallDiagnosis).trim()}` : null,
-    issues.length ? `重点修改：${issues.join(" | ")}` : null,
-    String(payload.rewrittenLead || "").trim() ? `首段建议：${String(payload.rewrittenLead).trim()}` : null,
-    punchlines.length ? `金句候选：${punchlines.join("；")}` : null,
-    rhythmAdvice.length ? `节奏建议：${rhythmAdvice.join("；")}` : null,
+    strengths.length ? promptLine("保留优点：", strengths.join("；")) : null,
+    String(payload.overallDiagnosis || "").trim() ? promptLine("整体诊断：", String(payload.overallDiagnosis).trim()) : null,
+    issues.length ? promptBlock("重点修改：", issues.join("\n\n")) : null,
+    String(payload.rewrittenLead || "").trim() ? promptLine("首段建议：", String(payload.rewrittenLead).trim()) : null,
+    punchlines.length ? promptLine("金句候选：", punchlines.join("；")) : null,
+    rhythmAdvice.length ? promptLine("节奏建议：", rhythmAdvice.join("；")) : null,
     "要求：主要优化语言节奏、句子力度和开头抓力，不改变文章主旨与事实边界。",
   ].filter(Boolean).join("\n");
 }

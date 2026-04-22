@@ -1,4 +1,5 @@
 import { buildVisualAuthoringDirective, buildVisualSignalText, type ImageAuthoringStyleContext } from "./image-authoring-context";
+import { formatPromptTemplate } from "./prompt-template";
 
 function stripMarkdown(text: string) {
   return text
@@ -13,7 +14,7 @@ function stripMarkdown(text: string) {
 }
 
 function resolveMood(seed: string, authoringSignals: string) {
-  const combined = `${seed} ${authoringSignals}`;
+  const combined = [seed, authoringSignals].filter(Boolean).join(" ");
   if (/裁员|下滑|亏损|焦虑|风险|危机|崩|压力/.test(seed)) {
     return "冷峻、高反差、纪实摄影";
   }
@@ -37,7 +38,9 @@ function buildRoleHint(context: ImageAuthoringStyleContext | null | undefined) {
   if (!identity) {
     return "";
   }
-  return `如需出现职业或工作场景，请优先贴近“${identity}”的真实语境。`;
+  return formatPromptTemplate("如需出现职业或工作场景，请优先贴近“{{identity}}”的真实语境。", {
+    identity,
+  });
 }
 
 export function buildVisualSuggestion(
@@ -52,7 +55,16 @@ export function buildVisualSuggestion(
   const subject = title.trim() || seed.slice(0, 24) || "内容生产现场";
   const authoringLine = buildVisualAuthoringDirective(authoringContext, "cover");
   const roleHint = buildRoleHint(authoringContext);
-  return `视觉联想：围绕“${subject}”，提炼一个单主体隐喻场景，画面保持 ${mood}，16:9 横版，不出现水印与密集文字，只保留一个高辨识度主体和明确情绪。${authoringLine ? `${authoringLine} ` : ""}${roleHint ? `${roleHint} ` : ""}参考内容：${seed || "请根据当前稿件核心冲突生成画面。"}。`;
+  return formatPromptTemplate(
+    "视觉联想：围绕“{{subject}}”，提炼一个单主体隐喻场景，画面保持 {{mood}}，16:9 横版，不出现水印与密集文字，只保留一个高辨识度主体和明确情绪。{{authoringLine}}{{roleHint}}参考内容：{{seedText}}。",
+    {
+      subject,
+      mood,
+      authoringLine: authoringLine ? authoringLine + " " : "",
+      roleHint: roleHint ? roleHint + " " : "",
+      seedText: seed || "请根据当前稿件核心冲突生成画面。",
+    },
+  );
 }
 
 export function buildNodeVisualSuggestion(input: {
@@ -73,5 +85,14 @@ export function buildNodeVisualSuggestion(input: {
       : resolveMood(seed, buildVisualSignalText(input.authoringContext));
   const authoringLine = buildVisualAuthoringDirective(input.authoringContext, "inline");
   const roleHint = buildRoleHint(input.authoringContext);
-  return `围绕“${subject}”做一张段落配图：单主体隐喻场景，${mood}，竖版留白，避免海报感与大段文字。${authoringLine ? `${authoringLine} ` : ""}${roleHint ? `${roleHint} ` : ""}参考信息：${seed || "根据当前节点的冲突与结论生成配图。"}。`;
+  return formatPromptTemplate(
+    "围绕“{{subject}}”做一张段落配图：单主体隐喻场景，{{mood}}，竖版留白，避免海报感与大段文字。{{authoringLine}}{{roleHint}}参考信息：{{seedText}}。",
+    {
+      subject,
+      mood,
+      authoringLine: authoringLine ? authoringLine + " " : "",
+      roleHint: roleHint ? roleHint + " " : "",
+      seedText: seed || "根据当前节点的冲突与结论生成配图。",
+    },
+  );
 }

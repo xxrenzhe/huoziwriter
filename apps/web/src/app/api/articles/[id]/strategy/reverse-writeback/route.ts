@@ -1,4 +1,5 @@
 import { applyFourPointReverseWriteback, buildFourPointAudit, hasStrategyLockInputsChanged, type FourPointAuditDimension } from "@/lib/article-strategy";
+import { recomputeAndPersistArticleOutcome } from "@/lib/article-outcome-runtime";
 import { ensureUserSession } from "@/lib/auth";
 import { fail, ok } from "@/lib/http";
 import { getArticleById, getArticleStrategyCard, upsertArticleStrategyCard } from "@/lib/repositories";
@@ -53,6 +54,10 @@ export async function POST(request: Request, { params }: { params: { id: string 
       fourPointAudit,
       strategyLockedAt: shouldClearLock ? null : strategyCard.strategyLockedAt,
       strategyOverride: shouldClearLock ? false : strategyCard.strategyOverride,
+    });
+    await recomputeAndPersistArticleOutcome({
+      articleId: article.id,
+      userId: session.userId,
     });
 
     return ok({

@@ -1,5 +1,6 @@
 import { extractJsonObject, generateSceneText } from "./ai-gateway";
 import { loadPrompt } from "./prompt-loader";
+import { formatPromptTemplate } from "./prompt-template";
 import { fetchWebpageArticle } from "./webpage-reader";
 
 type DistilledCapture = {
@@ -54,13 +55,14 @@ export async function distillCaptureInput(input: {
       sourceUrl = article.url || sourceUrl;
     } catch (error) {
       const degradedReason = error instanceof Error ? error.message : "抓取源链接失败";
+      const degradedRawContent = ["源链接抓取失败：" + sourceUrl, "错误信息：" + degradedReason].join("\n");
       const fallback = fallbackDistill({
         title: sourceTitle || inferTitleFromUrl(sourceUrl),
-        rawContent: `源链接抓取失败：${sourceUrl}\n错误信息：${degradedReason}`,
+        rawContent: degradedRawContent,
       });
       return {
         title: fallback.title,
-        rawContent: `源链接抓取失败：${sourceUrl}\n错误信息：${degradedReason}`,
+        rawContent: degradedRawContent,
         distilledContent: fallback.distilledContent,
         sourceUrl,
         model: "fallback-url-fetch-failed",
@@ -81,9 +83,19 @@ export async function distillCaptureInput(input: {
     "返回 JSON，不要解释，不要 markdown。",
     '字段要求：{"title":"字符串","distilledContent":"字符串"}',
     "distilledContent 只保留时间、地点、数据、动作、冲突，不写空泛判断。",
-    `sourceType: ${input.sourceType}`,
-    sourceUrl ? `sourceUrl: ${sourceUrl}` : null,
-    sourceTitle ? `sourceTitle: ${sourceTitle}` : null,
+    formatPromptTemplate("sourceType: {{sourceType}}", {
+      sourceType: input.sourceType,
+    }),
+    sourceUrl
+      ? formatPromptTemplate("sourceUrl: {{sourceUrl}}", {
+        sourceUrl,
+      })
+      : null,
+    sourceTitle
+      ? formatPromptTemplate("sourceTitle: {{sourceTitle}}", {
+        sourceTitle,
+      })
+      : null,
     "",
     rawContent,
   ]

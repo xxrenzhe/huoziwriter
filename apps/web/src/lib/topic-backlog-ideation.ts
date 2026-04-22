@@ -1,6 +1,7 @@
 import { extractJsonObject, generateSceneText } from "./ai-gateway";
 import { bulkCreateTopicBacklogItems, getTopicBacklogById, type TopicBacklogArchetype, type TopicBacklogItemStatus } from "./topic-backlogs";
 import { loadPrompt } from "./prompt-loader";
+import { formatPromptTemplate } from "./prompt-template";
 import { ensureBootstrapData } from "./repositories";
 
 type TopicBacklogIdea = {
@@ -69,7 +70,11 @@ function buildFallbackIdeas(input: {
 }) {
   const seedTheme = input.seedTheme;
   const targetAudience = input.targetAudience || "正在判断这类变化会不会影响自己的内容作者";
-  const contextHint = input.seedContext ? `，背景是 ${input.seedContext}` : "";
+  const contextHint = input.seedContext
+    ? formatPromptTemplate("，背景是 {{seedContext}}", {
+      seedContext: input.seedContext,
+    })
+    : "";
   const variants: Array<{
     archetype: TopicBacklogArchetype;
     theme: string;
@@ -80,43 +85,87 @@ function buildFallbackIdeas(input: {
   }> = [
     {
       archetype: "phenomenon",
-      theme: `${seedTheme} 正在改写谁的默认判断`,
-      readerSnapshotHint: `${targetAudience} 已经感觉旧经验开始失灵，但还说不清真正变化发生在哪${contextHint}。`,
-      coreAssertion: `${seedTheme} 值得写，不是因为它新，而是因为它让旧判断开始系统性失效。`,
+      theme: formatPromptTemplate("{{seedTheme}} 正在改写谁的默认判断", {
+        seedTheme,
+      }),
+      readerSnapshotHint: formatPromptTemplate("{{targetAudience}} 已经感觉旧经验开始失灵，但还说不清真正变化发生在哪{{contextHint}}。", {
+        targetAudience,
+        contextHint,
+      }),
+      coreAssertion: formatPromptTemplate("{{seedTheme}} 值得写，不是因为它新，而是因为它让旧判断开始系统性失效。", {
+        seedTheme,
+      }),
       whyNow: "现在写，是因为读者已经感到别扭，但多数人还没把别扭翻译成判断。",
-      mainstreamBelief: `大众以为 ${seedTheme} 只是新动向，还不会影响日常判断。`,
+      mainstreamBelief: formatPromptTemplate("大众以为 {{seedTheme}} 只是新动向，还不会影响日常判断。", {
+        seedTheme,
+      }),
     },
     {
       archetype: "opinion",
-      theme: `别把 ${seedTheme} 当成表面机会，真正变化在后面`,
-      readerSnapshotHint: `${targetAudience} 一边被新信号吸引，一边还在沿用旧动作，结果越做越拧巴${contextHint}。`,
-      coreAssertion: `${seedTheme} 真正危险的不是机会太少，而是还在用旧动作理解新局面。`,
+      theme: formatPromptTemplate("别把 {{seedTheme}} 当成表面机会，真正变化在后面", {
+        seedTheme,
+      }),
+      readerSnapshotHint: formatPromptTemplate("{{targetAudience}} 一边被新信号吸引，一边还在沿用旧动作，结果越做越拧巴{{contextHint}}。", {
+        targetAudience,
+        contextHint,
+      }),
+      coreAssertion: formatPromptTemplate("{{seedTheme}} 真正危险的不是机会太少，而是还在用旧动作理解新局面。", {
+        seedTheme,
+      }),
       whyNow: "讨论刚进入泛化阶段，最适合抢先给出判断而不是复述热闹。",
-      mainstreamBelief: `大众以为跟上 ${seedTheme} 的关键词就算跟上变化。`,
+      mainstreamBelief: formatPromptTemplate("大众以为跟上 {{seedTheme}} 的关键词就算跟上变化。", {
+        seedTheme,
+      }),
     },
     {
       archetype: "howto",
-      theme: `面对 ${seedTheme}，先别忙着跟，先改这 3 个判断动作`,
-      readerSnapshotHint: `${targetAudience} 正准备照着别人动作执行，却担心自己只是在追一个已经过载的模板${contextHint}。`,
-      coreAssertion: `面对 ${seedTheme}，最该升级的不是工具清单，而是判断顺序。`,
+      theme: formatPromptTemplate("面对 {{seedTheme}}，先别忙着跟，先改这 3 个判断动作", {
+        seedTheme,
+      }),
+      readerSnapshotHint: formatPromptTemplate("{{targetAudience}} 正准备照着别人动作执行，却担心自己只是在追一个已经过载的模板{{contextHint}}。", {
+        targetAudience,
+        contextHint,
+      }),
+      coreAssertion: formatPromptTemplate("面对 {{seedTheme}}，最该升级的不是工具清单，而是判断顺序。", {
+        seedTheme,
+      }),
       whyNow: "读者已经开始执行，但执行顺序错了，越早纠偏越值钱。",
-      mainstreamBelief: `大众以为碰到 ${seedTheme}，先搜工具和步骤就够了。`,
+      mainstreamBelief: formatPromptTemplate("大众以为碰到 {{seedTheme}}，先搜工具和步骤就够了。", {
+        seedTheme,
+      }),
     },
     {
       archetype: "case",
-      theme: `一个 ${targetAudience} 遇上 ${seedTheme} 后，最先崩掉的是哪条旧经验`,
-      readerSnapshotHint: `${targetAudience} 在一个具体场景里发现过去屡试不爽的做法忽然不灵了${contextHint}。`,
+      theme: formatPromptTemplate("一个 {{targetAudience}} 遇上 {{seedTheme}} 后，最先崩掉的是哪条旧经验", {
+        targetAudience,
+        seedTheme,
+      }),
+      readerSnapshotHint: formatPromptTemplate("{{targetAudience}} 在一个具体场景里发现过去屡试不爽的做法忽然不灵了{{contextHint}}。", {
+        targetAudience,
+        contextHint,
+      }),
       coreAssertion: `案例真正说明的，不是个人执行力，而是旧经验在新环境里已经失效。`,
       whyNow: "单靠抽象判断还不够，真实处境更能把变化写实。",
-      mainstreamBelief: `大众以为遇到 ${seedTheme} 只要更努力执行就能追上。`,
+      mainstreamBelief: formatPromptTemplate("大众以为遇到 {{seedTheme}} 只要更努力执行就能追上。", {
+        seedTheme,
+      }),
     },
     {
       archetype: "hotTake",
-      theme: `${seedTheme} 刷屏之后，最值得警惕的不是热度本身`,
-      readerSnapshotHint: `${targetAudience} 被刷屏信息裹挟着想立刻表态，但越看越觉得大家谈的不是重点${contextHint}。`,
-      coreAssertion: `${seedTheme} 的热度只是表层，真正该警惕的是被一套旧叙事带偏。`,
+      theme: formatPromptTemplate("{{seedTheme}} 刷屏之后，最值得警惕的不是热度本身", {
+        seedTheme,
+      }),
+      readerSnapshotHint: formatPromptTemplate("{{targetAudience}} 被刷屏信息裹挟着想立刻表态，但越看越觉得大家谈的不是重点{{contextHint}}。", {
+        targetAudience,
+        contextHint,
+      }),
+      coreAssertion: formatPromptTemplate("{{seedTheme}} 的热度只是表层，真正该警惕的是被一套旧叙事带偏。", {
+        seedTheme,
+      }),
       whyNow: "热度高的时候最容易形成错误共识，反而适合用评论切开。",
-      mainstreamBelief: `大众以为 ${seedTheme} 最重要的是追热度、抢表态。`,
+      mainstreamBelief: formatPromptTemplate("大众以为 {{seedTheme}} 最重要的是追热度、抢表态。", {
+        seedTheme,
+      }),
     },
   ];
 
@@ -169,6 +218,7 @@ function parseIdeaItems(value: unknown, limit: number, fallbackAudience: string 
 }
 
 async function generateIdeasWithAi(input: {
+  userId: number;
   backlogName: string;
   backlogDescription: string | null;
   seedTheme: string;
@@ -178,12 +228,30 @@ async function generateIdeasWithAi(input: {
 }) {
   const systemPrompt = await loadPrompt("topic_backlog_ideation");
   const userPrompt = [
-    `选题库：${input.backlogName}`,
-    input.backlogDescription ? `选题库说明：${input.backlogDescription}` : null,
-    `种子主题：${input.seedTheme}`,
-    input.targetAudience ? `优先目标读者：${input.targetAudience}` : null,
-    input.seedContext ? `补充背景：${input.seedContext}` : null,
-    `生成条数：${input.count}`,
+    formatPromptTemplate("选题库：{{backlogName}}", {
+      backlogName: input.backlogName,
+    }),
+    input.backlogDescription
+      ? formatPromptTemplate("选题库说明：{{backlogDescription}}", {
+        backlogDescription: input.backlogDescription,
+      })
+      : null,
+    formatPromptTemplate("种子主题：{{seedTheme}}", {
+      seedTheme: input.seedTheme,
+    }),
+    input.targetAudience
+      ? formatPromptTemplate("优先目标读者：{{targetAudience}}", {
+        targetAudience: input.targetAudience,
+      })
+      : null,
+    input.seedContext
+      ? formatPromptTemplate("补充背景：{{seedContext}}", {
+        seedContext: input.seedContext,
+      })
+      : null,
+    formatPromptTemplate("生成条数：{{count}}", {
+      count: input.count,
+    }),
     "",
     "请输出严格 JSON：",
     '{"items":[{"theme":"字符串","archetype":"opinion|case|howto|hotTake|phenomenon","targetAudience":"字符串","readerSnapshotHint":"字符串","coreAssertion":"字符串","whyNow":"字符串","mainstreamBelief":"字符串"}]}',
@@ -202,6 +270,7 @@ async function generateIdeasWithAi(input: {
     systemPrompt,
     userPrompt,
     temperature: 0.5,
+    rolloutUserId: input.userId,
   });
   return parseIdeaItems(extractJsonObject(result.text), input.count, input.targetAudience);
 }
@@ -235,6 +304,7 @@ export async function generateTopicBacklogItemsFromSeed(input: {
   let degradedReason: string | null = null;
   try {
     ideas = await generateIdeasWithAi({
+      userId: input.userId,
       backlogName: backlog.name,
       backlogDescription: backlog.description,
       seedTheme,

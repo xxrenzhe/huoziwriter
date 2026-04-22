@@ -1,6 +1,7 @@
 import { buildFourPointAudit } from "./article-strategy";
 import { appendAuditLog } from "./audit";
 import { getDatabase } from "./db";
+import { recordPlan17RuntimeObservation } from "./plan17-observability";
 import { getUserPlanContext, consumeDailyGenerationQuota } from "./plan-access";
 import { createArticle, upsertArticleStrategyCard } from "./repositories";
 import { ensureExtendedProductSchema } from "./schema-bootstrap";
@@ -932,7 +933,24 @@ export async function executeTopicBacklogGenerationJob(input: {
   if (normalizeItemStatus(row.status) === "discarded") {
     throw new Error("已丢弃的条目不能生成稿件");
   }
+  const startedAt = Date.now();
+  let observationStatus: "completed" | "failed" = "completed";
+  const observationMeta: Record<string, unknown> = {
+    backlogId: input.backlogId,
+    itemId: input.itemId,
+    reused: false,
+  };
   if (normalizeItemStatus(row.status) === "generated" && row.generated_article_id) {
+    observationMeta.reused = true;
+    observationMeta.articleId = row.generated_article_id;
+    await recordPlan17RuntimeObservation({
+      metricKey: "topicBacklogGenerate.item",
+      groupKey: input.batchId ?? row.generated_batch_id ?? null,
+      userId: input.userId,
+      status: observationStatus,
+      durationMs: Date.now() - startedAt,
+      meta: observationMeta,
+    }).catch(() => undefined);
     return {
       batchId: input.batchId ?? null,
       itemId: row.id,
@@ -941,10 +959,10 @@ export async function executeTopicBacklogGenerationJob(input: {
     };
   }
 
-  const resolvedSeriesId = await resolveArticleSeriesId(input.userId, input.seriesId ?? backlog.series_id ?? null);
-  const strategyDraft = parseJsonRecord(row.strategy_draft_json);
-  await consumeDailyGenerationQuota(input.userId);
   try {
+    const resolvedSeriesId = await resolveArticleSeriesId(input.userId, input.seriesId ?? backlog.series_id ?? null);
+    const strategyDraft = parseJsonRecord(row.strategy_draft_json);
+    await consumeDailyGenerationQuota(input.userId);
     const article = await createArticle(input.userId, row.theme, resolvedSeriesId);
     if (!article?.id) {
       throw new Error(`条目《${row.theme}》生成失败`);
@@ -1002,6 +1020,7 @@ export async function executeTopicBacklogGenerationJob(input: {
        WHERE id = ? AND user_id = ?`,
       [resolvedSeriesId, now, now, input.backlogId, input.userId],
     );
+    observationMeta.articleId = Number(article.id);
     return {
       batchId: input.batchId ?? null,
       itemId: row.id,
@@ -1009,12 +1028,24 @@ export async function executeTopicBacklogGenerationJob(input: {
       reused: false,
     };
   } catch (error) {
+    observationStatus = "failed";
+    observationMeta.error =
+      error instanceof Error && error.message ? error.message.slice(0, 200) : "unknown";
     await resetQueuedTopicBacklogItemAfterFailure({
       userId: input.userId,
       backlogId: input.backlogId,
       itemId: input.itemId,
     });
     throw error;
+  } finally {
+    await recordPlan17RuntimeObservation({
+      metricKey: "topicBacklogGenerate.item",
+      groupKey: input.batchId ?? row.generated_batch_id ?? null,
+      userId: input.userId,
+      status: observationStatus,
+      durationMs: Date.now() - startedAt,
+      meta: observationMeta,
+    }).catch(() => undefined);
   }
 }
 

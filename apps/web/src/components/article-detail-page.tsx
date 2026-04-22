@@ -13,7 +13,6 @@ import { getActiveTemplates } from "@/lib/layout-templates";
 import { requireWriterSession } from "@/lib/page-auth";
 import { getCoverImageQuotaStatus, getImageAssetStorageQuotaStatus, getUserPlanContext } from "@/lib/plan-access";
 import { hasPersona } from "@/lib/personas";
-import type { ArticleMainStepCode } from "@/lib/article-workflow-registry";
 import {
   getArticleEvidenceItems,
   getArticleImagePrompts,
@@ -34,18 +33,16 @@ const missingArticleStateClassName = cn(
 );
 
 export async function ArticleDetailPage({
-  params,
-  requestedMainStepCode,
+  articleId: rawArticleId,
 }: {
-  params: { articleId: string };
-  requestedMainStepCode?: ArticleMainStepCode | null;
+  articleId: string;
 }) {
   const { session } = await requireWriterSession();
   if (!(await hasPersona(session.userId))) {
     return null;
   }
 
-  const articleId = Number(params.articleId);
+  const articleId = Number(rawArticleId);
   const [articleOutcomeData, recentArticles, fragments, languageGuardRules, connections, planContext, coverImage, coverImageCandidates, imagePrompts, templates, syncLogs, strategyCard, evidenceItems, coverImageQuota, imageAssetQuota, authoringContext, series] = await Promise.all([
     getArticleOutcomeData(articleId, session.userId),
     getArticlesByUser(session.userId),
@@ -272,7 +269,6 @@ export async function ArticleDetailPage({
             }
           : null
       }
-      requestedMainStepCode={requestedMainStepCode ?? null}
     />
   );
 }

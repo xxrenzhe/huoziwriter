@@ -10,7 +10,7 @@ import { getPersonaCatalog, getPersonas } from "@/lib/personas";
 import { getDailyGenerationUsage } from "@/lib/usage";
 import { getArticlesByUser, getFragmentsByUser } from "@/lib/repositories";
 import { getWritingStyleProfiles } from "@/lib/writing-style-profiles";
-import { WorkspaceShell } from "@/components/site-shells";
+import { WriterShell } from "@/components/writer-shell";
 import { WriterRouteForbiddenState } from "@/components/writer-route-state";
 
 const firstSuccessGuideClassName = cn(surfaceCardStyles({ tone: "warm", padding: "lg" }), "border-lineStrong shadow-none md:p-6");
@@ -83,7 +83,7 @@ export default async function WorkspaceLayout({ children }: { children: ReactNod
 
   return (
     <>
-      <WorkspaceShell
+      <WriterShell
         items={writerNav}
         currentPlanName={plan.name}
         currentUsage={dailyGenerationUsage}
@@ -138,7 +138,7 @@ export default async function WorkspaceLayout({ children }: { children: ReactNod
             detail="当前写作区内容已被锁定。先完成 1 个默认作者人设，系统才会开放作战台、稿件区和一键发布链路。"
           />
         )}
-      </WorkspaceShell>
+      </WriterShell>
       <PersonaManager
         initialPersonas={personas}
         maxCount={personaLimit}

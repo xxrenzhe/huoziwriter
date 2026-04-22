@@ -148,6 +148,20 @@ SUPPORTED_WRITING_SCENES = {
     "publishGuard",
 }
 DEFAULT_WRITING_EVAL_PROMPT = "你是中文爆款文章编辑。写作要短句、具体、有判断、有信息密度，避免机器腔。"
+
+
+def resolve_prompt_scene_code(connection: RuntimeConnection, prompt_id: str, function_name: str) -> str:
+    normalized_prompt_id = prompt_id.strip()
+    normalized_function_name = function_name.strip()
+    if normalized_function_name in SUPPORTED_WRITING_SCENES:
+        return normalized_function_name
+    if normalized_prompt_id:
+        try:
+            get_scene_route(connection, normalized_prompt_id)
+            return normalized_prompt_id
+        except Exception:
+            pass
+    return "articleWrite"
 DEFAULT_WRITING_EVAL_SCORING_PROFILE: dict[str, Any] = {
     "qualityWeights": {
         "style": 1.0,
@@ -584,7 +598,7 @@ def resolve_writing_eval_prompt(connection: RuntimeConnection, version_type: str
         if prompt is None:
             raise RuntimeError(f"prompt version not found: {normalized_ref}")
         function_name = str(prompt.get("function_name") or "").strip()
-        scene_code = function_name if function_name in SUPPORTED_WRITING_SCENES else "articleWrite"
+        scene_code = resolve_prompt_scene_code(connection, prompt_id, function_name)
         prompt_content = str(prompt.get("prompt_content") or "").strip() or DEFAULT_WRITING_EVAL_PROMPT
         return {
             "label": normalized_ref,
@@ -3002,9 +3016,22 @@ def summarize_writing_eval_scores(results: list[dict[str, Any]], base_results: l
             current = current.get(key)
         return float(current) if isinstance(current, (int, float)) else 0.0
 
+    def extract_result_status(item: dict[str, Any]) -> str:
+        top_level = str(item.get("status") or "").strip()
+        if top_level:
+            return top_level
+        judge_payload = item.get("judge_payload_json")
+        if isinstance(judge_payload, str):
+            judge_payload = parse_payload(judge_payload)
+        if isinstance(judge_payload, dict):
+            nested = str(judge_payload.get("status") or "").strip()
+            if nested:
+                return nested
+        return ""
+
     summary: dict[str, Any] = {
         "casesProcessed": len(results),
-        "failedCaseCount": sum(1 for item in results if str(item.get("status") or "").strip() == "failed"),
+        "failedCaseCount": sum(1 for item in results if extract_result_status(item) == "failed"),
     }
     for summary_key, raw_key in metric_pairs:
         summary[summary_key] = average(raw_key)
@@ -3028,12 +3055,12 @@ def summarize_writing_eval_scores(results: list[dict[str, Any]], base_results: l
         summary[delta_key] = round(summary[summary_key] - summary[base_key], 3)
     summary["improvedCaseCount"] = sum(
         1 for index, item in enumerate(results)
-        if str(item.get("status") or "").strip() != "failed"
+        if extract_result_status(item) != "failed"
         if float(item.get("total_score") or 0.0) > float(base_results[index].get("total_score") or 0.0)
     )
     summary["regressedCaseCount"] = sum(
         1 for index, item in enumerate(results)
-        if str(item.get("status") or "").strip() != "failed"
+        if extract_result_status(item) != "failed"
         if float(item.get("total_score") or 0.0) < float(base_results[index].get("total_score") or 0.0)
     )
     return summary

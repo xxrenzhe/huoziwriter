@@ -1,6 +1,8 @@
 import { extractJsonObject, generateSceneText } from "./ai-gateway";
+import { buildGatewaySystemSegments } from "./ai-gateway-system-segments";
 import { inferStrategyArchetype, STRATEGY_ARCHETYPE_OPTIONS } from "./article-strategy";
 import { loadPromptWithMeta, type PromptLoadContext } from "./prompt-loader";
+import { formatPromptTemplate } from "./prompt-template";
 import type { ArticleStrategyCard } from "./repositories";
 
 type StrategyCardDraftField = keyof Pick<
@@ -62,12 +64,36 @@ function compactDraft(input: StrategyCardAutoDraft) {
   ) as StrategyCardAutoDraft;
 }
 
+export function buildStrategyCardAutoDraftSystemSegments(input: {
+  basePrompt: string;
+  archetypeOptions: string;
+}) {
+  return buildGatewaySystemSegments([
+    { text: input.basePrompt, cacheable: true },
+    {
+      text: [
+        "只返回 JSON 对象，不要 markdown，不要解释。",
+        "字段仅允许使用：archetype、mainstreamBelief、targetReader、coreAssertion、whyNow、researchHypothesis、marketPositionInsight、historicalTurningPoint、targetPackage、publishWindow、endingAction、firstHandObservation、feltMoment、whyThisHitMe、realSceneOrDialogue、wantToComplain、nonDelegableTruth。",
+        formatPromptTemplate("archetype 只能是：{{archetypeOptions}}。", {
+          archetypeOptions: input.archetypeOptions,
+        }),
+        "如果某个字段无法可靠判断，就不要输出该字段。",
+      ].join("\n"),
+      cacheable: true,
+    },
+  ]);
+}
+
 export function buildFallbackStrategyCardAutoDraft(input: {
   title: string;
   strategyCard?: StrategyCardAutoDraft | null;
 }) {
   const title = getText(input.title) || "当前选题";
-  const titleLabel = title === "未命名稿件" ? "当前选题" : `「${title}」`;
+  const titleLabel = title === "未命名稿件"
+    ? "当前选题"
+    : formatPromptTemplate("「{{title}}」", {
+      title,
+    });
   const existingDraft = compactDraft(input.strategyCard ?? {});
 
   return compactDraft({
@@ -82,28 +108,42 @@ export function buildFallbackStrategyCardAutoDraft(input: {
       }),
     mainstreamBelief:
       existingDraft.mainstreamBelief
-      ?? `大多数人会把${titleLabel}当成一条表层信息，还没意识到它真正改写了什么判断。`,
+      ?? formatPromptTemplate("大多数人会把{{titleLabel}}当成一条表层信息，还没意识到它真正改写了什么判断。", {
+        titleLabel,
+      }),
     targetReader:
       existingDraft.targetReader
-      ?? `已经被${titleLabel}触发关注，但还没形成稳定判断的读者。`,
+      ?? formatPromptTemplate("已经被{{titleLabel}}触发关注，但还没形成稳定判断的读者。", {
+        titleLabel,
+      }),
     coreAssertion:
       existingDraft.coreAssertion
-      ?? `${titleLabel}真正值得写的，不是重复消息本身，而是它暴露出的判断分水岭。`,
+      ?? formatPromptTemplate("{{titleLabel}}真正值得写的，不是重复消息本身，而是它暴露出的判断分水岭。", {
+        titleLabel,
+      }),
     whyNow:
       existingDraft.whyNow
-      ?? `${titleLabel}正在发生，读者此刻需要一个可落地的判断框架。`,
+      ?? formatPromptTemplate("{{titleLabel}}正在发生，读者此刻需要一个可落地的判断框架。", {
+        titleLabel,
+      }),
     realSceneOrDialogue:
       existingDraft.realSceneOrDialogue
-      ?? `读者刷到${titleLabel}时，第一反应往往还是沿用旧判断。`,
+      ?? formatPromptTemplate("读者刷到{{titleLabel}}时，第一反应往往还是沿用旧判断。", {
+        titleLabel,
+      }),
     feltMoment:
       existingDraft.feltMoment
       ?? `真正该抓住的瞬间，是你意识到旧判断已经不够用了。`,
     wantToComplain:
       existingDraft.wantToComplain
-      ?? `最该反驳的是把${titleLabel}只当作一条普通消息。`,
+      ?? formatPromptTemplate("最该反驳的是把{{titleLabel}}只当作一条普通消息。", {
+        titleLabel,
+      }),
     nonDelegableTruth:
       existingDraft.nonDelegableTruth
-      ?? `${titleLabel}如果只停留在转述层，这篇文章就不会有真实发力点。`,
+      ?? formatPromptTemplate("{{titleLabel}}如果只停留在转述层，这篇文章就不会有真实发力点。", {
+        titleLabel,
+      }),
   });
 }
 
@@ -134,29 +174,58 @@ export function normalizeStrategyCardAutoDraftPayload(payload: unknown): Strateg
 
 export async function generateStrategyCardAutoDraft(input: StrategyCardAutoDraftInput): Promise<StrategyCardAutoDraft> {
   const promptMeta = await loadPromptWithMeta("strategyCard.autoDraft", input.promptContext);
-  const systemPrompt = [
-    promptMeta.content,
-    "只返回 JSON 对象，不要 markdown，不要解释。",
-    "字段仅允许使用：archetype、mainstreamBelief、targetReader、coreAssertion、whyNow、researchHypothesis、marketPositionInsight、historicalTurningPoint、targetPackage、publishWindow、endingAction、firstHandObservation、feltMoment、whyThisHitMe、realSceneOrDialogue、wantToComplain、nonDelegableTruth。",
-    `archetype 只能是：${Array.from(VALID_ARCHETYPES).join(" / ")}。`,
-    "如果某个字段无法可靠判断，就不要输出该字段。",
-  ].join("\n");
+  const systemSegments = buildStrategyCardAutoDraftSystemSegments({
+    basePrompt: promptMeta.content,
+    archetypeOptions: Array.from(VALID_ARCHETYPES).join(" / "),
+  });
   const existingDraft = compactDraft(input.strategyCard ?? {});
   const userPrompt = [
-    `选题标题：${input.title}`,
-    input.summary ? `选题摘要：${input.summary}` : null,
-    input.sourceName ? `来源上下文：${input.sourceName}` : null,
-    input.chosenAngle ? `切入角度：${input.chosenAngle}` : null,
-    input.recommendationReason ? `推荐理由：${input.recommendationReason}` : null,
-    input.readerSnapshotHint ? `读者快照提示：${input.readerSnapshotHint}` : null,
-    input.sourceUrl ? `参考链接：${input.sourceUrl}` : null,
-    Object.keys(existingDraft).length > 0 ? `已有策略草稿：${JSON.stringify(existingDraft)}` : null,
+    formatPromptTemplate("选题标题：{{title}}", {
+      title: input.title,
+    }),
+    input.summary
+      ? formatPromptTemplate("选题摘要：{{summary}}", {
+        summary: input.summary,
+      })
+      : null,
+    input.sourceName
+      ? formatPromptTemplate("来源上下文：{{sourceName}}", {
+        sourceName: input.sourceName,
+      })
+      : null,
+    input.chosenAngle
+      ? formatPromptTemplate("切入角度：{{chosenAngle}}", {
+        chosenAngle: input.chosenAngle,
+      })
+      : null,
+    input.recommendationReason
+      ? formatPromptTemplate("推荐理由：{{recommendationReason}}", {
+        recommendationReason: input.recommendationReason,
+      })
+      : null,
+    input.readerSnapshotHint
+      ? formatPromptTemplate("读者快照提示：{{readerSnapshotHint}}", {
+        readerSnapshotHint: input.readerSnapshotHint,
+      })
+      : null,
+    input.sourceUrl
+      ? formatPromptTemplate("参考链接：{{sourceUrl}}", {
+        sourceUrl: input.sourceUrl,
+      })
+      : null,
+    Object.keys(existingDraft).length > 0
+      ? formatPromptTemplate("已有策略草稿：{{existingDraft}}", {
+        existingDraft,
+      })
+      : null,
   ].filter(Boolean).join("\n");
   const result = await generateSceneText({
     sceneCode: "strategyCard.autoDraft",
-    systemPrompt,
+    systemPrompt: promptMeta.content,
+    systemSegments,
     userPrompt,
     temperature: 0.2,
+    rolloutUserId: input.promptContext?.userId ?? null,
   });
   return normalizeStrategyCardAutoDraftPayload(extractJsonObject(result.text));
 }

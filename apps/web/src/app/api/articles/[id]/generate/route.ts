@@ -12,6 +12,7 @@ import { consumeDailyGenerationQuota, getUserPlanContext } from "@/lib/plan-acce
 import { createArticleSnapshot, getArticleById } from "@/lib/repositories";
 import { getLanguageGuardRules, getLanguageGuardTokenBlacklist } from "@/lib/language-guard";
 import { getActiveWritingEvalScoringProfile } from "@/lib/writing-eval";
+import { appendWritingStyleProfileUsageEvent } from "@/lib/writing-style-profiles";
 
 export async function POST(_: Request, { params }: { params: { id: string } }) {
   const session = await ensureUserSession();
@@ -163,6 +164,16 @@ export async function POST(_: Request, { params }: { params: { id: string } }) {
         status: "ready",
       },
     });
+    if (authoringStyleContext.writingStyleProfile?.id) {
+      await appendWritingStyleProfileUsageEvent({
+        userId: session.userId,
+        profileId: authoringStyleContext.writingStyleProfile.id,
+        articleId: article.id,
+        usageSource: "article.generate",
+        profileName: authoringStyleContext.writingStyleProfile.name,
+        sampleCount: authoringStyleContext.writingStyleProfile.sampleCount,
+      });
+    }
 
     return ok({
       id: saved?.id,

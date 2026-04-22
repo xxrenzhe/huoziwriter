@@ -30,7 +30,7 @@ export function getWritingEvalReadinessMeta(readiness: WritingEvalReadinessLike 
   if (!readiness) {
     return {
       label: "unknown",
-      tone: "border-stone-700 text-stone-400",
+      tone: "border-adminLineStrong text-adminInkMuted",
       summary: "还没有就绪度数据。",
     };
   }
@@ -59,13 +59,13 @@ export function getWritingEvalReadinessTone(status: string | null | undefined) {
   if (status === "ready") return "text-emerald-300";
   if (status === "warning") return "text-amber-200";
   if (status === "blocked") return "text-cinnabar";
-  return "text-stone-400";
+  return "text-adminInkMuted";
 }
 
 export function getWritingEvalExecutionTone(state: string | null | undefined) {
   if (state === "executable") return "text-emerald-300 border-emerald-500/40";
   if (state === "blocked") return "text-cinnabar border-cinnabar/40";
-  return "text-stone-400 border-stone-700";
+  return "text-adminInkMuted border-adminLineStrong";
 }
 
 export function isWritingEvalScheduleExecutable(schedule: WritingEvalScheduleLike) {

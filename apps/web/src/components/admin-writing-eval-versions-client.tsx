@@ -649,7 +649,7 @@ function buildPromptOptimizationGoalFromVersion(version: VersionItem) {
 function getVersionTypeLabel(versionType: string) {
   if (versionType === "fact_check") return "fact_check（事实核查 Prompt）";
   if (versionType === "title_template") return "title_template（标题模板 Prompt）";
-  if (versionType === "lead_template") return "lead_template（开头模板 Prompt）";
+  if (versionType === "lead_template") return "lead_template（开头优化器 Prompt）";
   if (versionType === "layout_strategy") return "layout_strategy（写作风格资产）";
   return versionType;
 }

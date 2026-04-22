@@ -91,6 +91,21 @@ function getDraftStepPosition(steps: WarroomData["drafts"][number]["workflow"]["
   return Math.min(completedCount + 1, steps.length || 1);
 }
 
+function buildReviewsHref({
+  section,
+  tab,
+}: {
+  section: string;
+  tab?: string;
+}) {
+  const params = new URLSearchParams();
+  params.set("section", section);
+  if (tab) {
+    params.set("tab", tab);
+  }
+  return `/reviews?${params.toString()}#${section}`;
+}
+
 function ProgressDots({
   steps,
 }: {
@@ -422,7 +437,7 @@ export function WarroomDashboard({
                     : "按缺失窗口和命中判定直接排序。"
                 }
               />
-              <Link href="/reviews" className={warmSecondaryActionLinkClassName}>
+              <Link href={buildReviewsHref({ section: "outcome-tagging" })} className={warmSecondaryActionLinkClassName}>
                 去看复盘
               </Link>
             </div>
@@ -454,7 +469,7 @@ export function WarroomDashboard({
                   <Link href={`/articles/${item.article.id}`} className={secondaryActionLinkClassName}>
                     打开稿件
                   </Link>
-                  <Link href="/reviews" className={secondaryActionLinkClassName}>
+                  <Link href={buildReviewsHref({ section: "outcome-tagging" })} className={secondaryActionLinkClassName}>
                     去看复盘
                   </Link>
                 </div>
@@ -490,8 +505,14 @@ export function WarroomDashboard({
                 value={String(warroom.playbooks.length)}
                 detail={warroom.playbooks.length > 0 ? "只展示本周已有结果样本的打法。" : "当前还没有可复用的打法沉淀。"}
               />
-              <Link href="/reviews" className={warmSecondaryActionLinkClassName}>
+              <Link
+                href={buildReviewsHref({ section: "review-tab-global", tab: "global" })}
+                className={warmSecondaryActionLinkClassName}
+              >
                 查看复盘页
+              </Link>
+              <Link href="/articles#create-article" className={secondaryActionLinkClassName}>
+                应用到新稿
               </Link>
             </div>
           </div>
@@ -499,7 +520,11 @@ export function WarroomDashboard({
             {warroom.playbooks.map((item) => {
               const hitRate = item.articleCount > 0 ? Math.round((item.hitCount / item.articleCount) * 100) : 0;
               return (
-                <Link key={item.label} href="/reviews" className={cn(interactiveTileCardClassName, "p-4")}>
+                <Link
+                  key={item.label}
+                  href={buildReviewsHref({ section: "review-tab-global", tab: "global" })}
+                  className={cn(interactiveTileCardClassName, "p-4")}
+                >
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="font-medium text-ink">{item.label}</div>
                     <div className={chipMetaClassName}>
@@ -526,7 +551,7 @@ export function WarroomDashboard({
                     "打法标签写得越具体，后续沉淀越有用。",
                     "先求真实样本，再谈泛化模板。",
                   ]}
-                  actionHref="/reviews"
+                  actionHref={buildReviewsHref({ section: "review-tab-global", tab: "global" })}
                   actionLabel="去补结果回流"
                   compact
                 />

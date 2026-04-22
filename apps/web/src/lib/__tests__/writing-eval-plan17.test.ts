@@ -7,6 +7,8 @@ import {
   getWritingEvalDatasetFocusMeta,
   getWritingEvalTaskTypeLabel,
   inferWritingEvalDatasetFocus,
+  isPlan17WritingEvalFocusKey,
+  isWritingEvalSourceTypeRecommendedForFocus,
   resolveWritingEvalTaskTypeForDatasetFocus,
 } from "../writing-eval-plan17";
 
@@ -24,6 +26,17 @@ test("inferWritingEvalDatasetFocus detects plan17 topic fission datasets", () =>
   ]);
 });
 
+test("inferWritingEvalDatasetFocus detects opening optimizer datasets without folding them into plan17", () => {
+  const focus = inferWritingEvalDatasetFocus({
+    code: "plan21-opening-optimizer-v1",
+    name: "Plan21 · Opening Optimizer",
+  });
+
+  assert.equal(focus.key, "opening_optimizer");
+  assert.deepEqual(focus.promptIds, ["opening_optimizer"]);
+  assert.equal(isPlan17WritingEvalFocusKey(focus.key), false);
+});
+
 test("resolveWritingEvalTaskTypeForDatasetFocus remaps focused datasets to scene task types", () => {
   assert.equal(
     resolveWritingEvalTaskTypeForDatasetFocus({
@@ -33,12 +46,28 @@ test("resolveWritingEvalTaskTypeForDatasetFocus remaps focused datasets to scene
     }),
     "evidence_hook_tagging",
   );
+  assert.equal(
+    resolveWritingEvalTaskTypeForDatasetFocus({
+      datasetFocusKey: "evidence_hook",
+      baseTaskType: "series_observation",
+      sourceType: "topic_item",
+    }),
+    "evidence_hook_tagging",
+  );
 
   assert.equal(
     resolveWritingEvalTaskTypeForDatasetFocus({
       datasetFocusKey: "rhythm_consistency",
       baseTaskType: "experience_recap",
       sourceType: "article",
+    }),
+    "rhythm_consistency",
+  );
+  assert.equal(
+    resolveWritingEvalTaskTypeForDatasetFocus({
+      datasetFocusKey: "rhythm_consistency",
+      baseTaskType: "series_observation",
+      sourceType: "topic_item",
     }),
     "rhythm_consistency",
   );
@@ -72,4 +101,42 @@ test("getWritingEvalDatasetFocusMeta returns dataset focus definition by key", (
   const focus = getWritingEvalDatasetFocusMeta("strategy_strength");
   assert.equal(focus?.label, "策略强度评测");
   assert.deepEqual(focus?.targetTaskTypes, ["strategy_strength_audit"]);
+});
+
+test("getWritingEvalDatasetFocusMeta exposes opening optimizer focus metadata", () => {
+  const focus = getWritingEvalDatasetFocusMeta("opening_optimizer");
+  assert.equal(focus?.label, "开头优化器评测");
+  assert.equal(focus?.promptIds.includes("opening_optimizer"), true);
+  assert.equal(isPlan17WritingEvalFocusKey("opening_optimizer"), false);
+});
+
+test("isWritingEvalSourceTypeRecommendedForFocus enforces plan17 preferred source types", () => {
+  assert.equal(
+    isWritingEvalSourceTypeRecommendedForFocus({
+      datasetFocusKey: "evidence_hook",
+      candidateSourceType: "fragment",
+    }),
+    true,
+  );
+  assert.equal(
+    isWritingEvalSourceTypeRecommendedForFocus({
+      datasetFocusKey: "evidence_hook",
+      candidateSourceType: "topic_item",
+    }),
+    true,
+  );
+  assert.equal(
+    isWritingEvalSourceTypeRecommendedForFocus({
+      datasetFocusKey: "rhythm_consistency",
+      candidateSourceType: "article",
+    }),
+    true,
+  );
+  assert.equal(
+    isWritingEvalSourceTypeRecommendedForFocus({
+      datasetFocusKey: "rhythm_consistency",
+      candidateSourceType: "topic_item",
+    }),
+    true,
+  );
 });

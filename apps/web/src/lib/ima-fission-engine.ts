@@ -1,4 +1,5 @@
 import { extractJsonObject, generateSceneText } from "./ai-gateway";
+import { buildGatewaySystemSegments } from "./ai-gateway-system-segments";
 import { getActiveImaContext, markImaConnectionInvalid, normalizeImaError } from "./ima-connections";
 import { ImaApiError, searchKnowledge } from "./ima-client";
 import { loadPrompt } from "./prompt-loader";
@@ -34,6 +35,12 @@ function mapMode(value: unknown, fallback: TopicFissionMode): TopicFissionMode {
   if (value === "contrast" || value === "cross-domain") return value;
   if (value === "regularity") return value;
   return fallback;
+}
+
+export function buildImaHookPatternSystemSegments(prompt: string) {
+  return buildGatewaySystemSegments([
+    { text: prompt, cacheable: true },
+  ]);
 }
 
 export async function runImaFissionEngine(input: {
@@ -78,6 +85,7 @@ export async function runImaFissionEngine(input: {
   const generated = await generateSceneText({
     sceneCode: "imaHookPatternDistill",
     systemPrompt: prompt,
+    systemSegments: buildImaHookPatternSystemSegments(prompt),
     userPrompt: JSON.stringify({
       query: searchQuery || input.topic.title,
       persona: input.topic.matchedPersonaName || null,
@@ -87,6 +95,7 @@ export async function runImaFissionEngine(input: {
       })),
     }),
     temperature: 0.3,
+    rolloutUserId: input.userId,
   });
 
   const payload = extractJsonObject(generated.text) as {

@@ -764,15 +764,29 @@ function PromptCandidateGenerator({
 export function RouteManagerClient({
   routes,
 }: {
-  routes: Array<{ sceneCode: string; primaryModel: string; fallbackModel: string | null; description: string | null }>;
+  routes: Array<{
+    sceneCode: string;
+    primaryModel: string;
+    fallbackModel: string | null;
+    shadowModel: string | null;
+    shadowTrafficPercent: number | null;
+    description: string | null;
+  }>;
 }) {
   const router = useRouter();
 
-  async function handleUpdate(sceneCode: string, primaryModel: string, fallbackModel: string | null, description: string | null) {
+  async function handleUpdate(
+    sceneCode: string,
+    primaryModel: string,
+    fallbackModel: string | null,
+    shadowModel: string | null,
+    shadowTrafficPercent: number | null,
+    description: string | null,
+  ) {
     await fetch("/api/admin/ai-routing", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sceneCode, primaryModel, fallbackModel, description }),
+      body: JSON.stringify({ sceneCode, primaryModel, fallbackModel, shadowModel, shadowTrafficPercent, description }),
     });
     router.refresh();
   }
@@ -1410,20 +1424,50 @@ function RouteRow({
   route,
   onSave,
 }: {
-  route: { sceneCode: string; primaryModel: string; fallbackModel: string | null; description: string | null };
-  onSave: (sceneCode: string, primaryModel: string, fallbackModel: string | null, description: string | null) => Promise<void>;
+  route: {
+    sceneCode: string;
+    primaryModel: string;
+    fallbackModel: string | null;
+    shadowModel: string | null;
+    shadowTrafficPercent: number | null;
+    description: string | null;
+  };
+  onSave: (
+    sceneCode: string,
+    primaryModel: string,
+    fallbackModel: string | null,
+    shadowModel: string | null,
+    shadowTrafficPercent: number | null,
+    description: string | null,
+  ) => Promise<void>;
 }) {
   const [primaryModel, setPrimaryModel] = useState(route.primaryModel);
   const [fallbackModel, setFallbackModel] = useState(route.fallbackModel ?? "");
+  const [shadowModel, setShadowModel] = useState(route.shadowModel ?? "");
+  const [shadowTrafficPercent, setShadowTrafficPercent] = useState(String(route.shadowTrafficPercent ?? 0));
   const [description, setDescription] = useState(route.description ?? "");
 
   return (
-    <div className={`grid gap-3 p-5 md:grid-cols-[180px_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_120px] ${uiPrimitives.adminPanel}`}>
+    <div className={`grid gap-3 p-5 md:grid-cols-[180px_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_120px_minmax(0,1fr)_120px] ${uiPrimitives.adminPanel}`}>
       <div className="flex items-center text-sm text-adminInk">{route.sceneCode}</div>
       <input aria-label="input control" value={primaryModel} onChange={(event) => setPrimaryModel(event.target.value)} className={uiPrimitives.adminInput} />
       <input aria-label="input control" value={fallbackModel} onChange={(event) => setFallbackModel(event.target.value)} className={uiPrimitives.adminInput} />
+      <input aria-label="shadow model" value={shadowModel} onChange={(event) => setShadowModel(event.target.value)} className={uiPrimitives.adminInput} placeholder="shadow model（可空）" />
+      <input aria-label="shadow traffic percent" value={shadowTrafficPercent} onChange={(event) => setShadowTrafficPercent(event.target.value)} className={uiPrimitives.adminInput} placeholder="0-100" />
       <input aria-label="input control" value={description} onChange={(event) => setDescription(event.target.value)} className={uiPrimitives.adminInput} />
-      <button onClick={() => onSave(route.sceneCode, primaryModel, fallbackModel || null, description || null)} className={uiPrimitives.primaryButton}>保存</button>
+      <button
+        onClick={() => onSave(
+          route.sceneCode,
+          primaryModel,
+          fallbackModel || null,
+          shadowModel || null,
+          shadowTrafficPercent.trim() ? Number(shadowTrafficPercent) : 0,
+          description || null,
+        )}
+        className={uiPrimitives.primaryButton}
+      >
+        保存
+      </button>
     </div>
   );
 }

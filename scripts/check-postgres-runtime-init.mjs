@@ -3,6 +3,7 @@ import { createRequire } from "node:module";
 
 const requireFromWeb = createRequire(new URL("../apps/web/package.json", import.meta.url));
 const postgres = requireFromWeb("postgres");
+const defaultAdminConfig = { role: "admin", planCode: "ultra" };
 
 function escapedIdentifier(value) {
   return `"${String(value).replace(/"/g, "\"\"")}"`;
@@ -49,13 +50,13 @@ async function main() {
     }
 
     const [migration] = await client.unsafe(
-      `SELECT migration_name
-       FROM ${escapedIdentifier(schema)}.migration_history
-       ORDER BY id ASC
+      `SELECT version
+       FROM ${escapedIdentifier(schema)}.schema_migrations
+       ORDER BY applied_at ASC, version ASC
        LIMIT 1`,
     );
-    if (!migration?.migration_name) {
-      throw new Error("postgres migration history verification failed");
+    if (!migration?.version) {
+      throw new Error("postgres schema migrations verification failed");
     }
 
     process.stdout.write("postgres runtime init smoke: ok\n");

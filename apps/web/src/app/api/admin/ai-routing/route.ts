@@ -14,6 +14,8 @@ export async function GET() {
           sceneCode: route.scene_code,
           primaryModel: route.primary_model,
           fallbackModel: route.fallback_model,
+          shadowModel: route.shadow_model,
+          shadowTrafficPercent: route.shadow_traffic_percent,
           description: route.description,
           updatedAt: route.updated_at,
         })),
@@ -33,6 +35,8 @@ export async function PATCH(request: Request) {
       sceneCode: body.sceneCode,
       primaryModel: body.primaryModel,
       fallbackModel: body.fallbackModel,
+      shadowModel: body.shadowModel,
+      shadowTrafficPercent: body.shadowTrafficPercent,
       description: body.description,
     });
     return ok({ updated: true });

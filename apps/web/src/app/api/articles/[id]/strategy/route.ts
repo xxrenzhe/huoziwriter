@@ -1,4 +1,5 @@
 import { buildFourPointAudit, buildSuggestedStrategyCard, hasStrategyLockInputsChanged } from "@/lib/article-strategy";
+import { recomputeAndPersistArticleOutcome } from "@/lib/article-outcome-runtime";
 import { ensureUserSession } from "@/lib/auth";
 import { getArticleStageArtifacts } from "@/lib/article-stage-artifacts";
 import { getArticleWritingContext } from "@/lib/article-writing-context";
@@ -64,6 +65,10 @@ export async function PUT(request: Request, { params }: { params: { id: string }
       fourPointAudit,
       strategyLockedAt: shouldClearLock ? null : currentStrategyCard?.strategyLockedAt ?? null,
       strategyOverride: shouldClearLock ? false : currentStrategyCard?.strategyOverride ?? false,
+    });
+    await recomputeAndPersistArticleOutcome({
+      articleId: article.id,
+      userId: session.userId,
     });
     return ok(strategyCard);
   } catch (error) {
