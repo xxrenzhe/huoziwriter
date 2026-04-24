@@ -649,7 +649,7 @@ CREATE TABLE IF NOT EXISTS global_ai_engines (
   provider_name TEXT NOT NULL DEFAULT 'custom',
   base_url TEXT NOT NULL,
   api_key_encrypted TEXT NOT NULL,
-  model TEXT NOT NULL DEFAULT 'Gemini 3.1 Pro',
+  model TEXT NOT NULL DEFAULT 'gpt-image-2',
   is_enabled BOOLEAN NOT NULL DEFAULT TRUE,
   last_checked_at TIMESTAMPTZ,
   last_error TEXT,

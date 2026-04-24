@@ -17,6 +17,9 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1"
+DEFAULT_ANTHROPIC_BASE_URL = "https://api.anthropic.com/v1"
+DEFAULT_GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
 DEFAULT_VISION_MODEL = "gemini-3.0-flash"
 DEFAULT_VISION_FALLBACK_MODEL = "gpt-5.4-mini"
 DEFAULT_VISION_PROMPT = (
@@ -42,8 +45,54 @@ DEFAULT_WRITING_EVAL_CASE_CONCURRENCY = 3
 MAX_WRITING_EVAL_CASE_CONCURRENCY = 6
 
 
+def strip_dotenv_value(raw_value: str) -> str:
+    value = raw_value.strip()
+    if (value.startswith('"') and value.endswith('"')) or (value.startswith("'") and value.endswith("'")):
+        return value[1:-1]
+    return value
+
+
+def load_local_env_file(env_path: Path) -> None:
+    if not env_path.exists():
+        return
+    for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, raw_value = line.split("=", 1)
+        key = key.strip()
+        if not key or key in os.environ:
+            continue
+        os.environ[key] = strip_dotenv_value(raw_value)
+
+
+load_local_env_file(REPO_ROOT / ".env")
+
+
 def now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def normalize_base_url(value: str | None, fallback: str) -> str:
+    normalized = str(value or "").strip() or fallback
+    return normalized.rstrip("/")
+
+
+def join_api_url(base_url: str, path: str) -> str:
+    return f"{base_url.rstrip('/')}/{path.lstrip('/')}"
+
+
+def openai_responses_url() -> str:
+    return join_api_url(normalize_base_url(os.environ.get("OPENAI_BASE_URL"), DEFAULT_OPENAI_BASE_URL), "responses")
+
+
+def anthropic_messages_url() -> str:
+    return join_api_url(normalize_base_url(os.environ.get("ANTHROPIC_BASE_URL"), DEFAULT_ANTHROPIC_BASE_URL), "messages")
+
+
+def gemini_generate_content_url(model: str, api_key: str) -> str:
+    base_url = normalize_base_url(os.environ.get("GEMINI_BASE_URL"), DEFAULT_GEMINI_BASE_URL)
+    return f"{join_api_url(base_url, f'models/{model}:generateContent')}?key={api_key}"
 
 
 def dispatch_writing_eval_auto_resolve(run_id: int, decision: str, reason: str) -> dict[str, Any] | None:
@@ -540,6 +589,36 @@ def infer_provider(model: str) -> str:
     raise RuntimeError(f"unsupported provider for model: {model}")
 
 
+def normalize_nullable_model(value: Any) -> str | None:
+    if value is None:
+        return None
+    normalized = str(value).strip()
+    return normalized or None
+
+
+def get_env_model_route_override(scene_code: str) -> dict[str, Any] | None:
+    raw = os.environ.get("AI_MODEL_ROUTES_JSON", "").strip()
+    if not raw:
+        return None
+    parsed = json.loads(raw)
+    if not isinstance(parsed, dict):
+        return None
+    route = parsed.get(scene_code)
+    return route if isinstance(route, dict) else None
+
+
+def apply_env_model_route_override(scene_code: str, primary_model: str, fallback_model: str | None) -> tuple[str, str | None]:
+    override = get_env_model_route_override(scene_code)
+    if not override:
+        return primary_model, fallback_model
+    next_primary = normalize_nullable_model(override.get("primaryModel", override.get("primary_model"))) or primary_model
+    if "fallbackModel" in override or "fallback_model" in override:
+        next_fallback = normalize_nullable_model(override.get("fallbackModel", override.get("fallback_model")))
+    else:
+        next_fallback = fallback_model
+    return next_primary, next_fallback
+
+
 def get_scene_route(connection: RuntimeConnection, scene_code: str) -> tuple[str, str | None]:
     route = connection.fetchone(
         "SELECT primary_model, fallback_model FROM ai_model_routes WHERE scene_code = ?",
@@ -547,9 +626,9 @@ def get_scene_route(connection: RuntimeConnection, scene_code: str) -> tuple[str
     )
     if route is None:
         if scene_code == "visionNote":
-            return DEFAULT_VISION_MODEL, DEFAULT_VISION_FALLBACK_MODEL
+            return apply_env_model_route_override(scene_code, DEFAULT_VISION_MODEL, DEFAULT_VISION_FALLBACK_MODEL)
         raise RuntimeError(f"scene route missing: {scene_code}")
-    return str(route["primary_model"]), route.get("fallback_model")
+    return apply_env_model_route_override(scene_code, str(route["primary_model"]), route.get("fallback_model"))
 
 
 def load_prompt_content(connection: RuntimeConnection, prompt_id: str, fallback: str) -> str:
@@ -3462,7 +3541,7 @@ def call_openai_vision(model: str, system_prompt: str, user_prompt: str, mime_ty
         raise RuntimeError("missing OPENAI_API_KEY")
     image_data_url = f"data:{mime_type};base64,{base64.b64encode(image_bytes).decode('utf-8')}"
     payload = request_json(
-        "https://api.openai.com/v1/responses",
+        openai_responses_url(),
         {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {api_key}",
@@ -3493,7 +3572,7 @@ def call_anthropic_vision(model: str, system_prompt: str, user_prompt: str, mime
     if not api_key:
         raise RuntimeError("missing ANTHROPIC_API_KEY")
     payload = request_json(
-        "https://api.anthropic.com/v1/messages",
+        anthropic_messages_url(),
         {
             "Content-Type": "application/json",
             "x-api-key": api_key,
@@ -3530,10 +3609,7 @@ def call_gemini_vision(model: str, system_prompt: str, user_prompt: str, mime_ty
     if not api_key:
         raise RuntimeError("missing GEMINI_API_KEY")
     payload = request_json(
-        (
-            "https://generativelanguage.googleapis.com/v1beta/models/"
-            f"{model}:generateContent?key={api_key}"
-        ),
+        gemini_generate_content_url(model, api_key),
         {"Content-Type": "application/json"},
         {
             "contents": [
@@ -3561,7 +3637,7 @@ def call_openai_text(model: str, system_prompt: str, user_prompt: str, temperatu
     if not api_key:
         raise RuntimeError("missing OPENAI_API_KEY")
     payload = request_json(
-        "https://api.openai.com/v1/responses",
+        openai_responses_url(),
         {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {api_key}",
@@ -3589,7 +3665,7 @@ def call_anthropic_text(model: str, system_prompt: str, user_prompt: str, temper
     if not api_key:
         raise RuntimeError("missing ANTHROPIC_API_KEY")
     payload = request_json(
-        "https://api.anthropic.com/v1/messages",
+        anthropic_messages_url(),
         {
             "Content-Type": "application/json",
             "x-api-key": api_key,
@@ -3611,10 +3687,7 @@ def call_gemini_text(model: str, system_prompt: str, user_prompt: str, temperatu
     if not api_key:
         raise RuntimeError("missing GEMINI_API_KEY")
     payload = request_json(
-        (
-            "https://generativelanguage.googleapis.com/v1beta/models/"
-            f"{model}:generateContent?key={api_key}"
-        ),
+        gemini_generate_content_url(model, api_key),
         {"Content-Type": "application/json"},
         {
             "contents": [

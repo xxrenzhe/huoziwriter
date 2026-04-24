@@ -1217,7 +1217,7 @@ export function buildLegacySchemaCreateTableStatements(databaseType: SchemaBoots
       provider_name TEXT NOT NULL DEFAULT 'custom',
       base_url TEXT NOT NULL,
       api_key_encrypted TEXT NOT NULL,
-      model TEXT NOT NULL DEFAULT 'Gemini 3.1 Pro',
+      model TEXT NOT NULL DEFAULT 'gpt-image-2',
       is_enabled ${dbType === "postgres" ? "BOOLEAN" : "INTEGER"} NOT NULL DEFAULT ${dbType === "postgres" ? "TRUE" : "1"},
       last_checked_at ${dbType === "postgres" ? "TIMESTAMPTZ" : "TEXT"},
       last_error TEXT,

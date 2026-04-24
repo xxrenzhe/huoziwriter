@@ -4,7 +4,25 @@ import { decryptSecret, encryptSecret } from "./security";
 import { ensureExtendedProductSchema } from "./schema-bootstrap";
 
 export const COVER_IMAGE_ENGINE_CODE = "coverImage";
-export const DEFAULT_COVER_IMAGE_MODEL = "Gemini 3.1 Pro";
+export const DEFAULT_COVER_IMAGE_MODEL = "gpt-image-2";
+
+type CoverImageEngineProvider = "openai" | "custom";
+
+function inferCoverImageProviderName(baseUrl: string, model: string) {
+  const normalizedBaseUrl = String(baseUrl || "").trim().toLowerCase();
+  const normalizedModel = String(model || "").trim().toLowerCase();
+  if (normalizedBaseUrl.includes("api.openai.com") || normalizedModel.startsWith("gpt-image")) {
+    return "openai";
+  }
+  return "custom";
+}
+
+function normalizeProviderName(value: string | null | undefined): CoverImageEngineProvider | null {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (!normalized) return null;
+  if (normalized === "openai") return "openai";
+  return "custom";
+}
 
 type DbGlobalImageEngine = {
   id: number;
@@ -21,6 +39,33 @@ type DbGlobalImageEngine = {
   updated_at: string;
 };
 
+export type CoverImageEngineConfig = {
+  providerName: string;
+  baseUrl: string;
+  model: string;
+  isEnabled: boolean;
+  hasApiKey: boolean;
+  apiKeyPreview: string | null;
+  lastCheckedAt: string | null;
+  lastError: string | null;
+  updatedBy: number | null;
+  updatedAt: string | null;
+  configSource?: "env" | "database";
+};
+
+export type CoverImageEngineSecret = {
+  id: number | null;
+  providerName: string;
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+  isEnabled: boolean;
+  lastCheckedAt: string | null;
+  lastError: string | null;
+  updatedBy: number | null;
+  configSource?: "env" | "database";
+};
+
 function normalizeBaseUrl(value: string) {
   const trimmed = value.trim();
   if (!trimmed) {
@@ -33,6 +78,42 @@ function maskSecret(value: string | null) {
   if (!value) return null;
   if (value.length <= 8) return "********";
   return `${value.slice(0, 4)}********${value.slice(-4)}`;
+}
+
+function getCoverImageEnvOverride(): {
+  providerName: CoverImageEngineProvider;
+  baseUrl: string;
+  model: string;
+  apiKey: string;
+  isEnabled: boolean;
+} | null {
+  const model = String(process.env.COVER_IMAGE_MODEL || "").trim();
+  const baseUrl = String(process.env.COVER_IMAGE_BASE_URL || "").trim();
+  const providerFromEnv = normalizeProviderName(process.env.COVER_IMAGE_PROVIDER);
+  const apiKey = String(process.env.COVER_IMAGE_API_KEY || "").trim();
+  const enabledRaw = String(process.env.COVER_IMAGE_ENABLED || "").trim().toLowerCase();
+  const hasExplicitEnabled = enabledRaw.length > 0;
+  const isEnabled = hasExplicitEnabled ? !["0", "false", "off", "no"].includes(enabledRaw) : true;
+  const hasAnyOverride = Boolean(model || baseUrl || providerFromEnv || apiKey || hasExplicitEnabled);
+
+  if (!hasAnyOverride) {
+    return null;
+  }
+
+  const resolvedProviderName = providerFromEnv || inferCoverImageProviderName(baseUrl, model || DEFAULT_COVER_IMAGE_MODEL);
+  const resolvedBaseUrl = baseUrl
+    || (resolvedProviderName === "openai" ? String(process.env.OPENAI_BASE_URL || "").trim() || "https://api.openai.com/v1" : "");
+  const resolvedModel = model || DEFAULT_COVER_IMAGE_MODEL;
+  const resolvedApiKey = apiKey
+    || (resolvedProviderName === "openai" ? String(process.env.OPENAI_API_KEY || "").trim() : "");
+
+  return {
+    providerName: resolvedProviderName,
+    baseUrl: resolvedBaseUrl,
+    model: resolvedModel,
+    apiKey: resolvedApiKey,
+    isEnabled,
+  };
 }
 
 async function maybeBackfillFromLegacyUserConfig() {
@@ -88,27 +169,20 @@ async function maybeBackfillFromLegacyUserConfig() {
   );
 }
 
-export async function getGlobalCoverImageEngine() {
-  await ensureExtendedProductSchema();
-  await maybeBackfillFromLegacyUserConfig();
-  const db = getDatabase();
-  const record = await db.queryOne<DbGlobalImageEngine>(
-    "SELECT * FROM global_ai_engines WHERE engine_code = ?",
-    [COVER_IMAGE_ENGINE_CODE],
-  );
-
+function buildCoverImageEngineConfigFromRecord(record: DbGlobalImageEngine | null | undefined): CoverImageEngineConfig {
   if (!record) {
     return {
-      providerName: "custom",
+      providerName: "openai",
       baseUrl: "",
       model: DEFAULT_COVER_IMAGE_MODEL,
       isEnabled: true,
       hasApiKey: false,
-      apiKeyPreview: null as string | null,
-      lastCheckedAt: null as string | null,
-      lastError: null as string | null,
-      updatedBy: null as number | null,
-      updatedAt: null as string | null,
+      apiKeyPreview: null,
+      lastCheckedAt: null,
+      lastError: null,
+      updatedBy: null,
+      updatedAt: null,
+      configSource: "database",
     };
   }
 
@@ -124,10 +198,11 @@ export async function getGlobalCoverImageEngine() {
     lastError: record.last_error,
     updatedBy: record.updated_by,
     updatedAt: record.updated_at,
+    configSource: "database",
   };
 }
 
-export async function getGlobalCoverImageEngineSecret() {
+export async function getGlobalCoverImageEngine(): Promise<CoverImageEngineConfig> {
   await ensureExtendedProductSchema();
   await maybeBackfillFromLegacyUserConfig();
   const db = getDatabase();
@@ -135,6 +210,46 @@ export async function getGlobalCoverImageEngineSecret() {
     "SELECT * FROM global_ai_engines WHERE engine_code = ?",
     [COVER_IMAGE_ENGINE_CODE],
   );
+  const databaseConfig = buildCoverImageEngineConfigFromRecord(record);
+  const envOverride = getCoverImageEnvOverride();
+  if (!envOverride) {
+    return databaseConfig;
+  }
+  return {
+    ...databaseConfig,
+    providerName: envOverride.providerName,
+    baseUrl: envOverride.baseUrl,
+    model: envOverride.model,
+    isEnabled: envOverride.isEnabled,
+    hasApiKey: Boolean(envOverride.apiKey),
+    apiKeyPreview: maskSecret(envOverride.apiKey),
+    configSource: "env",
+  } satisfies CoverImageEngineConfig;
+}
+
+export async function getGlobalCoverImageEngineSecret(): Promise<CoverImageEngineSecret | null> {
+  await ensureExtendedProductSchema();
+  await maybeBackfillFromLegacyUserConfig();
+  const db = getDatabase();
+  const record = await db.queryOne<DbGlobalImageEngine>(
+    "SELECT * FROM global_ai_engines WHERE engine_code = ?",
+    [COVER_IMAGE_ENGINE_CODE],
+  );
+  const envOverride = getCoverImageEnvOverride();
+  if (envOverride) {
+    return {
+      id: record?.id ?? null,
+      providerName: envOverride.providerName,
+      baseUrl: envOverride.baseUrl,
+      apiKey: envOverride.apiKey,
+      model: envOverride.model,
+      isEnabled: envOverride.isEnabled,
+      lastCheckedAt: record?.last_checked_at ?? null,
+      lastError: record?.last_error ?? null,
+      updatedBy: record?.updated_by ?? null,
+      configSource: "env",
+    } satisfies CoverImageEngineSecret;
+  }
   if (!record) {
     return null;
   }
@@ -142,13 +257,14 @@ export async function getGlobalCoverImageEngineSecret() {
     id: record.id,
     providerName: record.provider_name,
     baseUrl: record.base_url,
-    apiKey: decryptSecret(record.api_key_encrypted),
+    apiKey: decryptSecret(record.api_key_encrypted) || "",
     model: record.model || DEFAULT_COVER_IMAGE_MODEL,
     isEnabled: Boolean(record.is_enabled),
     lastCheckedAt: record.last_checked_at,
     lastError: record.last_error,
     updatedBy: record.updated_by,
-  };
+    configSource: "database",
+  } satisfies CoverImageEngineSecret;
 }
 
 export async function upsertGlobalCoverImageEngine(input: {
@@ -168,6 +284,7 @@ export async function upsertGlobalCoverImageEngine(input: {
 
   const normalizedBaseUrl = normalizeBaseUrl(input.baseUrl);
   const model = (input.model || DEFAULT_COVER_IMAGE_MODEL).trim() || DEFAULT_COVER_IMAGE_MODEL;
+  const providerName = inferCoverImageProviderName(normalizedBaseUrl, model);
   const apiKeyEncrypted = input.apiKey?.trim()
     ? encryptSecret(input.apiKey.trim())
     : existing?.api_key_encrypted;
@@ -181,14 +298,14 @@ export async function upsertGlobalCoverImageEngine(input: {
       `UPDATE global_ai_engines
        SET provider_name = ?, base_url = ?, api_key_encrypted = ?, model = ?, is_enabled = ?, last_error = ?, updated_by = ?, updated_at = ?
        WHERE id = ?`,
-      ["custom", normalizedBaseUrl, apiKeyEncrypted, model, input.isEnabled ?? true, null, input.operatorUserId, now, existing.id],
+      [providerName, normalizedBaseUrl, apiKeyEncrypted, model, input.isEnabled ?? true, null, input.operatorUserId, now, existing.id],
     );
   } else {
     await db.exec(
       `INSERT INTO global_ai_engines (
         engine_code, provider_name, base_url, api_key_encrypted, model, is_enabled, updated_by, created_at, updated_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [COVER_IMAGE_ENGINE_CODE, "custom", normalizedBaseUrl, apiKeyEncrypted, model, input.isEnabled ?? true, input.operatorUserId, now, now],
+      [COVER_IMAGE_ENGINE_CODE, providerName, normalizedBaseUrl, apiKeyEncrypted, model, input.isEnabled ?? true, input.operatorUserId, now, now],
     );
   }
 

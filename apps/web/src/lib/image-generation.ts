@@ -1,6 +1,9 @@
 import { getGlobalCoverImageEngineSecret, updateGlobalCoverImageEngineHealth } from "./image-engine";
 import { buildVisualAuthoringDirective, type ImageAuthoringStyleContext } from "./image-authoring-context";
 
+type ImageProvider = "openai" | "custom";
+type ImageRequestMode = "generations" | "edits";
+
 function buildImagePrompt(
   title: string,
   hasReferenceImage: boolean,
@@ -19,11 +22,159 @@ function buildImagePrompt(
   }`;
 }
 
-function resolveImageGenerationEndpoint(baseUrl: string) {
-  if (baseUrl.endsWith("/images/generations")) {
-    return baseUrl;
+function resolveImageProvider(input: {
+  providerName?: string | null;
+  baseUrl?: string | null;
+  model?: string | null;
+}): ImageProvider {
+  const providerName = String(input.providerName || "").trim().toLowerCase();
+  const baseUrl = String(input.baseUrl || "").trim().toLowerCase();
+  const model = String(input.model || "").trim().toLowerCase();
+  if (providerName === "openai" || baseUrl.includes("api.openai.com") || model.startsWith("gpt-image")) {
+    return "openai";
   }
-  return `${baseUrl}/images/generations`;
+  return "custom";
+}
+
+function resolveImageEndpoint(baseUrl: string, mode: ImageRequestMode) {
+  const normalizedBaseUrl = baseUrl.trim().replace(/\/+$/, "");
+  if (/\/images\/(generations|edits)$/.test(normalizedBaseUrl)) {
+    return normalizedBaseUrl.replace(/\/images\/(generations|edits)$/, `/images/${mode}`);
+  }
+  if (normalizedBaseUrl.endsWith("/images")) {
+    return `${normalizedBaseUrl}/${mode}`;
+  }
+  return `${normalizedBaseUrl}/images/${mode}`;
+}
+
+function detectImageExtension(mimeType: string) {
+  const normalizedMimeType = mimeType.toLowerCase();
+  if (normalizedMimeType.includes("jpeg")) return "jpg";
+  if (normalizedMimeType.includes("webp")) return "webp";
+  if (normalizedMimeType.includes("gif")) return "gif";
+  return "png";
+}
+
+function decodeImageDataUrl(dataUrl: string) {
+  const matched = dataUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
+  if (!matched) {
+    throw new Error("参考图格式不合法，必须是 data:image/* 数据");
+  }
+  const mimeType = matched[1];
+  const buffer = Buffer.from(matched[2], "base64");
+  return {
+    mimeType,
+    buffer,
+    filename: `reference.${detectImageExtension(mimeType)}`,
+  };
+}
+
+function buildLegacyImageRequestPayload(input: {
+  model: string;
+  prompt: string;
+  referenceImageDataUrl?: string | null;
+}) {
+  const requestPayload: Record<string, unknown> = {
+    model: input.model,
+    prompt: input.prompt,
+    size: "1536x1024",
+    n: 1,
+    response_format: "b64_json",
+  };
+  if (input.referenceImageDataUrl) {
+    requestPayload.image = input.referenceImageDataUrl;
+    requestPayload.reference_image = input.referenceImageDataUrl;
+    requestPayload.input_image = input.referenceImageDataUrl;
+    requestPayload.image_url = input.referenceImageDataUrl;
+    requestPayload.reference_strength = 0.65;
+  }
+  return requestPayload;
+}
+
+function buildOpenAiImageRequest(input: {
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+  prompt: string;
+  referenceImageDataUrl?: string | null;
+}) {
+  if (!input.referenceImageDataUrl) {
+    const requestInit: RequestInit = {
+      method: "POST",
+      headers: new Headers({
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${input.apiKey}`,
+      }),
+      body: JSON.stringify({
+        model: input.model,
+        prompt: input.prompt,
+        size: "1536x1024",
+        n: 1,
+        output_format: "png",
+      }),
+    };
+    return {
+      endpoint: resolveImageEndpoint(input.baseUrl, "generations"),
+      requestInit,
+    };
+  }
+
+  const referenceImage = decodeImageDataUrl(input.referenceImageDataUrl);
+  const formData = new FormData();
+  formData.append("model", input.model);
+  formData.append("prompt", input.prompt);
+  formData.append("size", "1536x1024");
+  formData.append("n", "1");
+  formData.append("output_format", "png");
+  formData.append(
+    "image",
+    new Blob([referenceImage.buffer], { type: referenceImage.mimeType }),
+    referenceImage.filename,
+  );
+
+  const requestInit: RequestInit = {
+    method: "POST",
+    headers: new Headers({
+      Authorization: `Bearer ${input.apiKey}`,
+    }),
+    body: formData,
+  };
+
+  return {
+    endpoint: resolveImageEndpoint(input.baseUrl, "edits"),
+    requestInit,
+  };
+}
+
+function buildImageRequest(input: {
+  providerName?: string | null;
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+  prompt: string;
+  referenceImageDataUrl?: string | null;
+}) {
+  if (resolveImageProvider(input) === "openai") {
+    return buildOpenAiImageRequest(input);
+  }
+  const requestInit: RequestInit = {
+    method: "POST",
+    headers: new Headers({
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${input.apiKey}`,
+    }),
+    body: JSON.stringify(
+      buildLegacyImageRequestPayload({
+        model: input.model,
+        prompt: input.prompt,
+        referenceImageDataUrl: input.referenceImageDataUrl,
+      }),
+    ),
+  };
+  return {
+    endpoint: resolveImageEndpoint(input.baseUrl, "generations"),
+    requestInit,
+  };
 }
 
 function extractImageUrl(payload: any) {
@@ -110,28 +261,16 @@ export async function generateCoverImage(input: {
     undefined,
     input.authoringContext,
   );
-  const endpoint = resolveImageGenerationEndpoint(engine.baseUrl);
-  const requestPayload: Record<string, unknown> = {
+  const { endpoint, requestInit } = buildImageRequest({
+    providerName: engine.providerName,
+    baseUrl: engine.baseUrl,
+    apiKey: engine.apiKey,
     model: engine.model,
     prompt,
-    size: "1536x1024",
-    n: 1,
-    response_format: "b64_json",
-  };
-  if (input.referenceImageDataUrl) {
-    requestPayload.image = input.referenceImageDataUrl;
-    requestPayload.reference_image = input.referenceImageDataUrl;
-    requestPayload.input_image = input.referenceImageDataUrl;
-    requestPayload.image_url = input.referenceImageDataUrl;
-    requestPayload.reference_strength = 0.65;
-  }
+    referenceImageDataUrl: input.referenceImageDataUrl,
+  });
   const response = await fetch(endpoint, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${engine.apiKey}`,
-    },
-    body: JSON.stringify(requestPayload),
+    ...requestInit,
     signal: AbortSignal.timeout(60_000),
   });
 
@@ -193,28 +332,16 @@ async function requestCoverImage(input: {
     input.variantLabel,
     input.authoringContext,
   );
-  const endpoint = resolveImageGenerationEndpoint(engine.baseUrl);
-  const requestPayload: Record<string, unknown> = {
+  const { endpoint, requestInit } = buildImageRequest({
+    providerName: engine.providerName,
+    baseUrl: engine.baseUrl,
+    apiKey: engine.apiKey,
     model: engine.model,
     prompt,
-    size: "1536x1024",
-    n: 1,
-    response_format: "b64_json",
-  };
-  if (input.referenceImageDataUrl) {
-    requestPayload.image = input.referenceImageDataUrl;
-    requestPayload.reference_image = input.referenceImageDataUrl;
-    requestPayload.input_image = input.referenceImageDataUrl;
-    requestPayload.image_url = input.referenceImageDataUrl;
-    requestPayload.reference_strength = 0.65;
-  }
+    referenceImageDataUrl: input.referenceImageDataUrl,
+  });
   const response = await fetch(endpoint, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${engine.apiKey}`,
-    },
-    body: JSON.stringify(requestPayload),
+    ...requestInit,
     signal: AbortSignal.timeout(60_000),
   });
 

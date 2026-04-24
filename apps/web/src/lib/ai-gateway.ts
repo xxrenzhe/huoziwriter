@@ -1,5 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { recordAiCallObservation } from "./ai-call-observations";
+import { applyModelRouteEnvOverride } from "./ai-model-route-env";
+import { getAnthropicBaseUrl, getAnthropicMessagesUrl, getGeminiGenerateContentUrl, getOpenAiResponsesUrl } from "./ai-provider-config";
 import { getDatabase } from "./db";
 
 type SupportedSceneCode =
@@ -97,6 +99,7 @@ export class GatewayProviderError extends Error {
 
 let anthropicClient: Anthropic | null = null;
 let anthropicClientApiKey: string | null = null;
+let anthropicClientBaseUrl: string | null = null;
 
 function inferProvider(model: string): Provider {
   const normalized = model.trim().toLowerCase();
@@ -162,12 +165,12 @@ async function getSceneRoute(sceneCode: SupportedSceneCode): Promise<SceneRoute>
   if (!route) {
     throw new Error(`未找到场景模型路由：${sceneCode}`);
   }
-  return {
+  return applyModelRouteEnvOverride(sceneCode, {
     primaryModel: route.primary_model,
     fallbackModel: route.fallback_model,
     shadowModel: route.shadow_model,
     shadowTrafficPercent: normalizeShadowTrafficPercent(route.shadow_traffic_percent),
-  };
+  });
 }
 
 function extractOpenAIText(payload: any) {
@@ -275,12 +278,15 @@ function createProviderError(input: {
 }
 
 function getAnthropicClient(apiKey: string) {
-  if (!anthropicClient || anthropicClientApiKey !== apiKey) {
+  const baseURL = getAnthropicBaseUrl();
+  if (!anthropicClient || anthropicClientApiKey !== apiKey || anthropicClientBaseUrl !== baseURL) {
     anthropicClient = new Anthropic({
       apiKey,
+      baseURL,
       timeout: 90_000,
     });
     anthropicClientApiKey = apiKey;
+    anthropicClientBaseUrl = baseURL;
   }
   return anthropicClient;
 }
@@ -290,7 +296,7 @@ async function callOpenAI(model: string, systemPrompt: string, userPrompt: strin
   if (!apiKey) {
     throw new Error("缺少 OPENAI_API_KEY");
   }
-  const response = await fetch("https://api.openai.com/v1/responses", {
+  const response = await fetch(getOpenAiResponsesUrl(), {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -351,7 +357,7 @@ async function callAnthropicWithFetch(model: string, systemPrompt: string, userP
   if (!apiKey) {
     throw new Error("缺少 ANTHROPIC_API_KEY");
   }
-  const response = await fetch("https://api.anthropic.com/v1/messages", {
+  const response = await fetch(getAnthropicMessagesUrl(), {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -462,7 +468,7 @@ async function callGemini(model: string, systemPrompt: string, userPrompt: strin
     throw new Error("缺少 GEMINI_API_KEY");
   }
   const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`,
+    getGeminiGenerateContentUrl(model, apiKey),
     {
       method: "POST",
       headers: {

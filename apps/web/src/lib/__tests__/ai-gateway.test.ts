@@ -19,8 +19,16 @@ async function withTempDatabase<T>(name: string, run: () => Promise<T>) {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), `huoziwriter-ai-gateway-${name}-`));
   const tempDbPath = path.join(tempDir, "fresh.db");
   const previousDatabasePath = process.env.DATABASE_PATH;
+  const previousOpenAiBaseUrl = process.env.OPENAI_BASE_URL;
+  const previousAnthropicBaseUrl = process.env.ANTHROPIC_BASE_URL;
+  const previousGeminiBaseUrl = process.env.GEMINI_BASE_URL;
+  const previousModelRoutesJson = process.env.AI_MODEL_ROUTES_JSON;
 
   process.env.DATABASE_PATH = tempDbPath;
+  delete process.env.OPENAI_BASE_URL;
+  delete process.env.ANTHROPIC_BASE_URL;
+  delete process.env.GEMINI_BASE_URL;
+  delete process.env.AI_MODEL_ROUTES_JSON;
   await closeDatabase();
 
   try {
@@ -33,6 +41,14 @@ async function withTempDatabase<T>(name: string, run: () => Promise<T>) {
     } else {
       process.env.DATABASE_PATH = previousDatabasePath;
     }
+    if (previousOpenAiBaseUrl == null) delete process.env.OPENAI_BASE_URL;
+    else process.env.OPENAI_BASE_URL = previousOpenAiBaseUrl;
+    if (previousAnthropicBaseUrl == null) delete process.env.ANTHROPIC_BASE_URL;
+    else process.env.ANTHROPIC_BASE_URL = previousAnthropicBaseUrl;
+    if (previousGeminiBaseUrl == null) delete process.env.GEMINI_BASE_URL;
+    else process.env.GEMINI_BASE_URL = previousGeminiBaseUrl;
+    if (previousModelRoutesJson == null) delete process.env.AI_MODEL_ROUTES_JSON;
+    else process.env.AI_MODEL_ROUTES_JSON = previousModelRoutesJson;
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
 }
@@ -322,6 +338,54 @@ test("generateSceneText keeps using the Anthropic fetch path when system segment
       } else {
         process.env.ANTHROPIC_API_KEY = previousApiKey;
       }
+    }
+  });
+});
+
+test("generateSceneText supports env base urls and model route overrides", async () => {
+  await withTempDatabase("env-route-overrides", async () => {
+    await seedOpenAiRoute("outlinePlan", "gpt-4o-mini", null);
+
+    const previousApiKey = process.env.OPENAI_API_KEY;
+    const previousBaseUrl = process.env.OPENAI_BASE_URL;
+    const previousModelRoutesJson = process.env.AI_MODEL_ROUTES_JSON;
+    process.env.OPENAI_API_KEY = "test-openai-key";
+    process.env.OPENAI_BASE_URL = "https://ai-gateway.local/openai/v1/";
+    process.env.AI_MODEL_ROUTES_JSON = JSON.stringify({
+      outlinePlan: {
+        primaryModel: "gpt-4.1-mini",
+      },
+    });
+
+    const originalFetch = globalThis.fetch;
+    const calls: Array<{ url: string; model: string }> = [];
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const payload = JSON.parse(String(init?.body || "{}")) as { model?: string };
+      calls.push({ url: String(input), model: String(payload.model || "") });
+      return new Response(JSON.stringify({ output_text: "env route ok" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }) as typeof fetch;
+
+    try {
+      const result = await generateSceneText({
+        sceneCode: "outlinePlan",
+        systemPrompt: "system",
+        userPrompt: "user",
+      });
+
+      assert.equal(result.model, "gpt-4.1-mini");
+      assert.equal(result.text, "env route ok");
+      assert.deepEqual(calls, [{ url: "https://ai-gateway.local/openai/v1/responses", model: "gpt-4.1-mini" }]);
+    } finally {
+      globalThis.fetch = originalFetch;
+      if (previousApiKey == null) delete process.env.OPENAI_API_KEY;
+      else process.env.OPENAI_API_KEY = previousApiKey;
+      if (previousBaseUrl == null) delete process.env.OPENAI_BASE_URL;
+      else process.env.OPENAI_BASE_URL = previousBaseUrl;
+      if (previousModelRoutesJson == null) delete process.env.AI_MODEL_ROUTES_JSON;
+      else process.env.AI_MODEL_ROUTES_JSON = previousModelRoutesJson;
     }
   });
 });

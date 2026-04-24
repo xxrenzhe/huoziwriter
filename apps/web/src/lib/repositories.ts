@@ -1,5 +1,6 @@
 import { getDatabase } from "./db";
 import { DEFAULT_MODEL_ROUTES } from "./domain";
+import { applyDbModelRouteEnvOverride, getConfiguredDefaultModelRoutes, hasModelRouteEnvOverride } from "./ai-model-route-env";
 import { renderMarkdownToHtml } from "./rendering";
 import { getActiveTemplateById } from "./layout-templates";
 import { resolveTemplateRenderConfig } from "./template-rendering";
@@ -463,7 +464,7 @@ export async function ensureBootstrapData() {
 
 async function ensurePromptCatalogSeeds() {
   const db = getDatabase();
-  for (const route of DEFAULT_MODEL_ROUTES) {
+  for (const route of getConfiguredDefaultModelRoutes()) {
     const exists = await db.queryOne<{
       id: number;
       primary_model: string;
@@ -474,7 +475,7 @@ async function ensurePromptCatalogSeeds() {
     }>(
       "SELECT id, primary_model, fallback_model, shadow_model, shadow_traffic_percent, description FROM ai_model_routes WHERE scene_code = ?",
       [
-      route.sceneCode,
+        route.sceneCode,
       ],
     );
     if (!exists) {
@@ -490,6 +491,33 @@ async function ensurePromptCatalogSeeds() {
           route.description,
           new Date().toISOString(),
           new Date().toISOString(),
+        ],
+      );
+      continue;
+    }
+
+    if (
+      hasModelRouteEnvOverride(route.sceneCode) &&
+      (
+        exists.primary_model !== route.primaryModel ||
+        exists.fallback_model !== route.fallbackModel ||
+        exists.shadow_model !== (route.shadowModel ?? null) ||
+        Number(exists.shadow_traffic_percent ?? 0) !== Number(route.shadowTrafficPercent ?? 0) ||
+        exists.description !== route.description
+      )
+    ) {
+      await db.exec(
+        `UPDATE ai_model_routes
+         SET primary_model = ?, fallback_model = ?, shadow_model = ?, shadow_traffic_percent = ?, description = ?, updated_at = ?
+         WHERE scene_code = ?`,
+        [
+          route.primaryModel,
+          route.fallbackModel,
+          route.shadowModel ?? null,
+          route.shadowTrafficPercent ?? 0,
+          route.description,
+          new Date().toISOString(),
+          route.sceneCode,
         ],
       );
       continue;
@@ -2333,7 +2361,7 @@ export async function updatePromptVersionRolloutConfig(input: {
 
 export async function getModelRoutes() {
   const db = getDatabase();
-  return db.query<{
+  const routes = await db.query<{
     id: number;
     scene_code: string;
     primary_model: string;
@@ -2343,6 +2371,7 @@ export async function getModelRoutes() {
     description: string | null;
     updated_at: string;
   }>("SELECT * FROM ai_model_routes WHERE scene_code != ? ORDER BY id ASC", ["coverImage"]);
+  return routes.map((route) => applyDbModelRouteEnvOverride(route.scene_code, route));
 }
 
 export async function updateModelRoute(input: {

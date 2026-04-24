@@ -12,8 +12,16 @@ async function withTempDatabase<T>(name: string, run: () => Promise<T>) {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), `huoziwriter-ai-credentials-health-${name}-`));
   const tempDbPath = path.join(tempDir, "fresh.db");
   const previousDatabasePath = process.env.DATABASE_PATH;
+  const previousOpenAiBaseUrl = process.env.OPENAI_BASE_URL;
+  const previousAnthropicBaseUrl = process.env.ANTHROPIC_BASE_URL;
+  const previousGeminiBaseUrl = process.env.GEMINI_BASE_URL;
+  const previousModelRoutesJson = process.env.AI_MODEL_ROUTES_JSON;
 
   process.env.DATABASE_PATH = tempDbPath;
+  delete process.env.OPENAI_BASE_URL;
+  delete process.env.ANTHROPIC_BASE_URL;
+  delete process.env.GEMINI_BASE_URL;
+  delete process.env.AI_MODEL_ROUTES_JSON;
   clearAiCredentialHealthCache();
   await closeDatabase();
 
@@ -28,6 +36,14 @@ async function withTempDatabase<T>(name: string, run: () => Promise<T>) {
     } else {
       process.env.DATABASE_PATH = previousDatabasePath;
     }
+    if (previousOpenAiBaseUrl == null) delete process.env.OPENAI_BASE_URL;
+    else process.env.OPENAI_BASE_URL = previousOpenAiBaseUrl;
+    if (previousAnthropicBaseUrl == null) delete process.env.ANTHROPIC_BASE_URL;
+    else process.env.ANTHROPIC_BASE_URL = previousAnthropicBaseUrl;
+    if (previousGeminiBaseUrl == null) delete process.env.GEMINI_BASE_URL;
+    else process.env.GEMINI_BASE_URL = previousGeminiBaseUrl;
+    if (previousModelRoutesJson == null) delete process.env.AI_MODEL_ROUTES_JSON;
+    else process.env.AI_MODEL_ROUTES_JSON = previousModelRoutesJson;
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
 }
@@ -144,6 +160,50 @@ test("getCredentialHealthMatrix groups deduped routes by provider and skips prob
       assert.equal(calls.length, 2);
       assert(calls.some((url) => url.includes("openai.com")));
       assert(calls.some((url) => url.includes("generativelanguage.googleapis.com")));
+    } finally {
+      globalThis.fetch = originalFetch;
+      restoreEnv();
+    }
+  });
+});
+
+test("getCredentialHealthMatrix probes provider-specific env base urls", async () => {
+  await withTempDatabase("env-base-urls", async () => {
+    await seedRoutes();
+    const restoreEnv = setProviderEnv({
+      OPENAI_API_KEY: "openai-test-key",
+      ANTHROPIC_API_KEY: "anthropic-test-key",
+      GEMINI_API_KEY: "gemini-test-key",
+      GOOGLE_API_KEY: undefined,
+    });
+    process.env.OPENAI_BASE_URL = "https://ai-gateway.local/openai/v1/";
+    process.env.ANTHROPIC_BASE_URL = "https://ai-gateway.local/anthropic/v1/";
+    process.env.GEMINI_BASE_URL = "https://ai-gateway.local/gemini/v1beta/";
+    const originalFetch = globalThis.fetch;
+    const calls: string[] = [];
+
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      calls.push(url);
+      if (url.includes("/openai/")) {
+        return new Response(JSON.stringify({ output_text: "ok" }), { status: 200 });
+      }
+      if (url.includes("/anthropic/")) {
+        return new Response(JSON.stringify({ content: [{ type: "text", text: "ok" }] }), { status: 200 });
+      }
+      if (url.includes("/gemini/")) {
+        return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: "ok" }] } }] }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ error: { message: "unexpected provider" } }), { status: 500 });
+    }) as typeof fetch;
+
+    try {
+      const matrix = await getCredentialHealthMatrix();
+
+      assert.deepEqual(matrix.providers.map((item) => item.status), ["healthy", "healthy", "healthy"]);
+      assert(calls.includes("https://ai-gateway.local/openai/v1/responses"));
+      assert(calls.includes("https://ai-gateway.local/anthropic/v1/messages"));
+      assert(calls.some((url) => url.startsWith("https://ai-gateway.local/gemini/v1beta/models/gemini-2.0-flash:generateContent?key=")));
     } finally {
       globalThis.fetch = originalFetch;
       restoreEnv();

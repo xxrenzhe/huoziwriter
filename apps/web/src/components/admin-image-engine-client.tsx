@@ -3,6 +3,7 @@
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import { cn, surfaceCardStyles, uiPrimitives } from "@huoziwriter/ui";
+import type { CoverImageEngineConfig } from "@/lib/image-engine";
 import type { GlobalObjectStorageConfig } from "@/lib/object-storage-config";
 import {
   getObjectStorageProviderPresetMeta,
@@ -11,19 +12,6 @@ import {
   type ObjectStorageProviderName,
   type ObjectStorageProviderPreset,
 } from "@/lib/object-storage-provider-presets";
-
-type GlobalCoverImageEngineConfig = {
-  providerName: string;
-  baseUrl: string;
-  model: string;
-  isEnabled: boolean;
-  hasApiKey: boolean;
-  apiKeyPreview: string | null;
-  lastCheckedAt: string | null;
-  lastError: string | null;
-  updatedBy: number | null;
-  updatedAt: string | null;
-};
 
 const adminSectionClassName = cn(
   surfaceCardStyles(),
@@ -73,11 +61,11 @@ function getFeedbackNoticeClassName(message: string) {
 export function GlobalCoverImageEngineSettings({
   config,
 }: {
-  config: GlobalCoverImageEngineConfig;
+  config: CoverImageEngineConfig;
 }) {
   const router = useRouter();
   const [baseUrl, setBaseUrl] = useState(config.baseUrl);
-  const [model, setModel] = useState(config.model || "Gemini 3.1 Pro");
+  const [model, setModel] = useState(config.model || "gpt-image-2");
   const [apiKey, setApiKey] = useState("");
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
@@ -107,14 +95,14 @@ export function GlobalCoverImageEngineSettings({
       <div className={adminEyebrowClassName}>Global Image Engine</div>
       <h2 className={adminTitleClassName}>全局生图 AI 引擎</h2>
       <p className={adminDescriptionClassName}>
-        这是运营后台统一维护的封面图生成引擎。用户不单独配置，所有封面图请求都读取这里的 Base_URL、API Key 和默认模型。
+        这是运营后台统一维护的封面图生成引擎。推荐直接接 OpenAI Image API：Base_URL 填 https://api.openai.com/v1，模型填 gpt-image-2。纯文生图会走 generations，带参考图时会自动切到 edits。
       </p>
       <form onSubmit={handleSubmit} className={adminFormClassName}>
         <input
-          aria-label="Base_URL，例如 http://127.0.0.1:3301/v1"
+          aria-label="Base_URL，例如 https://api.openai.com/v1"
           value={baseUrl}
           onChange={(event) => setBaseUrl(event.target.value)}
-          placeholder="Base_URL，例如 http://127.0.0.1:3301/v1"
+          placeholder="Base_URL，例如 https://api.openai.com/v1"
           className={uiPrimitives.adminInput}
         />
         <input
@@ -139,6 +127,8 @@ export function GlobalCoverImageEngineSettings({
         <div className={adminInsetCardClassName}>
           当前状态：{config.hasApiKey ? "已配置" : "未配置"}
           <br />
+          配置来源：{config.configSource === "env" ? ".env 本地覆盖" : "后台数据库"}
+          <br />
           最近检查：{config.lastCheckedAt ? new Date(config.lastCheckedAt).toLocaleString("zh-CN") : "尚未调用"}
         </div>
         <div className={adminInsetCardClassName}>
@@ -147,6 +137,11 @@ export function GlobalCoverImageEngineSettings({
           最近更新：{config.updatedAt ? new Date(config.updatedAt).toLocaleString("zh-CN") : "尚未保存"}
         </div>
       </div>
+      {config.configSource === "env" ? (
+        <div className={adminWarningNoticeClassName}>
+          当前运行时优先读取 `.env` 中的图片引擎配置。这里保存到后台的值仍会保留，但本地开发时不会覆盖 env。
+        </div>
+      ) : null}
       {message ? (
         <div aria-live="polite" className={getFeedbackNoticeClassName(message)}>
           {message}

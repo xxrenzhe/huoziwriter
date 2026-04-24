@@ -1,4 +1,5 @@
 import { getModelRoutes } from "./repositories";
+import { getAnthropicMessagesUrl, getGeminiGenerateContentUrl, getOpenAiResponsesUrl } from "./ai-provider-config";
 
 export type AiCredentialProvider = "openai" | "anthropic" | "gemini";
 export type AiCredentialHealthStatus = "healthy" | "missing_env" | "probe_failed" | "unused";
@@ -114,7 +115,7 @@ async function parseJsonResponse(response: Response) {
 }
 
 async function probeOpenAI(model: string, apiKey: string): Promise<ProbeResult> {
-  const response = await fetch("https://api.openai.com/v1/responses", {
+  const response = await fetch(getOpenAiResponsesUrl(), {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -144,7 +145,7 @@ async function probeOpenAI(model: string, apiKey: string): Promise<ProbeResult> 
 }
 
 async function sendAnthropicProbe(model: string, apiKey: string, useCacheControl: boolean): Promise<ProbeResult> {
-  const response = await fetch("https://api.anthropic.com/v1/messages", {
+  const response = await fetch(getAnthropicMessagesUrl(), {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -191,7 +192,7 @@ async function probeAnthropic(model: string, apiKey: string) {
 
 async function probeGemini(model: string, apiKey: string): Promise<ProbeResult> {
   const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`,
+    getGeminiGenerateContentUrl(model, apiKey),
     {
       method: "POST",
       headers: {
