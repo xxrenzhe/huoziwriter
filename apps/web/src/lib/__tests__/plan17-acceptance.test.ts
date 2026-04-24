@@ -110,6 +110,7 @@ function buildPlan17QualityReportFixture(input?: {
           rhythmDeviationVsReadCompletionSampleCount: 0,
           rhythmDeviationVsReadCompletionPValue: null,
         },
+        observationGaps: [],
       },
       {
         key: "strategy_strength",
@@ -140,6 +141,7 @@ function buildPlan17QualityReportFixture(input?: {
           rhythmDeviationVsReadCompletionSampleCount: 0,
           rhythmDeviationVsReadCompletionPValue: null,
         },
+        observationGaps: [],
       },
       {
         key: "evidence_hook",
@@ -170,6 +172,7 @@ function buildPlan17QualityReportFixture(input?: {
           rhythmDeviationVsReadCompletionSampleCount: 0,
           rhythmDeviationVsReadCompletionPValue: null,
         },
+        observationGaps: [],
       },
       {
         key: "rhythm_consistency",
@@ -200,6 +203,7 @@ function buildPlan17QualityReportFixture(input?: {
           rhythmDeviationVsReadCompletionSampleCount: input?.rhythm?.pairSampleCount ?? 0,
           rhythmDeviationVsReadCompletionPValue: input?.rhythm?.pValue ?? null,
         },
+        observationGaps: [],
       },
     ],
   };
@@ -317,6 +321,12 @@ function buildPlan17BusinessReportFixture(input?: {
       reviewCoverage: null,
       hitRate: null,
       items: [],
+    },
+    observationGaps: {
+      authorLift: [],
+      fissionVsRadar: [],
+      matrixOutput: [],
+      styleUsage: [],
     },
     authorLiftDrilldown: [],
     matrixAuthorDrilldown: [],

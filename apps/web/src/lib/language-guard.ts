@@ -177,6 +177,67 @@ export async function createLanguageGuardRule(input: {
   } satisfies LanguageGuardRule;
 }
 
+export async function updateLanguageGuardRule(input: {
+  userId: number;
+  id: string;
+  ruleKind: unknown;
+  matchMode?: unknown;
+  patternText: unknown;
+  rewriteHint?: unknown;
+}) {
+  await ensureExtendedProductSchema();
+  const normalized = normalizeRule(input);
+  const db = getDatabase();
+  const existingRules = await getUserStoredLanguageGuardRules(input.userId);
+  const duplicated = existingRules.find(
+    (rule) =>
+      rule.scope === "user"
+      && rule.id !== input.id
+      && rule.ruleKind === normalized.ruleKind
+      && rule.patternText.trim() === normalized.patternText,
+  );
+  if (duplicated) {
+    throw new Error("已存在相同规则，无需重复保存");
+  }
+  const now = new Date().toISOString();
+  const normalizedId = String(input.id || "").trim();
+  if (normalizedId.startsWith("token-rule-")) {
+    await db.exec(`DELETE FROM ${LANGUAGE_GUARD_TOKENS_TABLE} WHERE id = ? AND user_id = ?`, [Number(normalizedId.replace("token-rule-", "")), input.userId]);
+    const result = await db.exec(
+      `INSERT INTO language_guard_rules (
+        user_id, rule_kind, match_mode, pattern_text, rewrite_hint, is_enabled, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [input.userId, normalized.ruleKind, normalized.matchMode, normalized.patternText, normalized.rewriteHint, true, now, now],
+    );
+    return {
+      id: `rule-${Number(result.lastInsertRowid ?? 0)}`,
+      scope: "user",
+      source: "rule",
+      ruleKind: normalized.ruleKind,
+      matchMode: normalized.matchMode,
+      patternText: normalized.patternText,
+      rewriteHint: normalized.rewriteHint,
+      isEnabled: true,
+      createdAt: now,
+    } satisfies LanguageGuardRule;
+  }
+  if (normalizedId.startsWith("rule-")) {
+    const rawId = Number(normalizedId.replace("rule-", ""));
+    await db.exec(
+      `UPDATE language_guard_rules
+       SET rule_kind = ?, match_mode = ?, pattern_text = ?, rewrite_hint = ?, updated_at = ?
+       WHERE id = ? AND user_id = ?`,
+      [normalized.ruleKind, normalized.matchMode, normalized.patternText, normalized.rewriteHint, now, rawId, input.userId],
+    );
+    const updated = await getUserStoredLanguageGuardRules(input.userId);
+    const matched = updated.find((rule) => rule.id === normalizedId);
+    if (matched) {
+      return matched;
+    }
+  }
+  throw new Error("不支持编辑系统默认规则");
+}
+
 export async function deleteLanguageGuardRule(userId: number, id: string) {
   await ensureExtendedProductSchema();
   const db = getDatabase();

@@ -4,6 +4,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { formatArticleMainStepStatus, formatResearchStepSummaryStatus } from "@/lib/article-workspace-formatters";
 import type {
+  WorkspaceCurrentTask,
   WorkspaceResearchCoverageRibbon,
   WorkspaceResearchStepSummary,
   WorkspaceShellAuthoringPhase,
@@ -30,6 +31,7 @@ type WorkspaceShellProps = {
   };
   currentArticleMainStepDetail: string;
   saveState: string;
+  topbarActions?: ReactNode;
   theme: string;
   isFocusMode: boolean;
   onToggleTheme: () => void;
@@ -38,6 +40,7 @@ type WorkspaceShellProps = {
   generateBlockedMessage: string;
   researchStepSummary: WorkspaceResearchStepSummary;
   researchCoverageRibbon: WorkspaceResearchCoverageRibbon;
+  currentArticleTask: WorkspaceCurrentTask;
   onGoToResearchStep: () => void;
   isUpdatingWorkflow: boolean;
   hideMainStepRail: boolean;
@@ -66,6 +69,7 @@ export function WorkspaceShell({
   currentArticleMainStep,
   currentArticleMainStepDetail,
   saveState,
+  topbarActions,
   theme,
   isFocusMode,
   onToggleTheme,
@@ -74,6 +78,7 @@ export function WorkspaceShell({
   generateBlockedMessage,
   researchStepSummary,
   researchCoverageRibbon,
+  currentArticleTask,
   onGoToResearchStep,
   isUpdatingWorkflow,
   hideMainStepRail,
@@ -97,6 +102,28 @@ export function WorkspaceShell({
   message,
 }: WorkspaceShellProps) {
   const StepComponent = STEP_COMPONENTS[currentArticleMainStep.code];
+  const currentTaskStep =
+    currentArticleTask.targetStepCode
+      ? articleMainSteps.find((step) => step.code === currentArticleTask.targetStepCode) ?? null
+      : null;
+  const currentTaskToneClass =
+    currentArticleTask.tone === "danger"
+      ? {
+          container: "border-danger/30 bg-surface",
+          badge: "border-danger/20 bg-surface text-danger",
+          detail: "text-danger",
+        }
+      : currentArticleTask.tone === "ready"
+        ? {
+            container: "border-emerald-200 bg-emerald-50",
+            badge: "border-emerald-200 bg-surface text-emerald-700",
+            detail: "text-inkSoft",
+          }
+        : {
+            container: "border-warning/40 bg-surfaceWarning",
+            badge: "border-warning/30 bg-surface text-warning",
+            detail: "text-warning",
+          };
 
   return (
     <section className="min-w-0 border border-lineStrong/40 bg-surface p-6 shadow-ink">
@@ -122,6 +149,7 @@ export function WorkspaceShell({
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2 text-xs">
+            {topbarActions}
             <span className="border border-lineStrong/70 bg-paperStrong px-3 py-2 text-inkMuted">{saveState}</span>
             <Button type="button" onClick={onToggleTheme} variant="secondary" size="sm" className="text-xs">
               {theme === "night" ? "切回日间" : "切到夜读"}
@@ -230,6 +258,37 @@ export function WorkspaceShell({
           </div>
         </div>
 
+        <div className={`mt-4 border px-4 py-4 ${currentTaskToneClass.container}`}>
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="text-xs uppercase tracking-[0.18em] text-inkMuted">当前稿件任务</div>
+                <div className={`border px-2 py-1 text-xs ${currentTaskToneClass.badge}`}>{currentArticleTask.badge}</div>
+              </div>
+              <div className="mt-2 font-serifCn text-2xl text-ink text-balance">{currentArticleTask.title}</div>
+              <div className={`mt-2 text-sm leading-7 ${currentTaskToneClass.detail}`}>{currentArticleTask.detail}</div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {currentArticleTask.actionKind === "goto-research" ? (
+                <Button type="button" onClick={onGoToResearchStep} disabled={isUpdatingWorkflow} variant="primary" size="sm">
+                  {currentArticleTask.actionLabel}
+                </Button>
+              ) : currentTaskStep ? (
+                <Button
+                  type="button"
+                  onClick={() => onSelectMainStep(currentTaskStep)}
+                  disabled={isUpdatingWorkflow || Boolean(currentTaskStep.disabled)}
+                  variant="primary"
+                  size="sm"
+                  title={currentTaskStep.disabledReason ?? undefined}
+                >
+                  {currentArticleTask.actionLabel}
+                </Button>
+              ) : null}
+            </div>
+          </div>
+        </div>
+
         <div data-command-chrome="true" className={`border-b border-line pb-4 ${hideMainStepRail ? "hidden" : ""}`}>
           <div className="text-xs uppercase tracking-[0.24em] text-cinnabar">稿件六步链路</div>
           <div className="mt-3 space-y-3 md:hidden">
@@ -261,8 +320,9 @@ export function WorkspaceShell({
                   key={step.code}
                   type="button"
                   onClick={() => onSelectMainStep(step)}
-                  disabled={isUpdatingWorkflow || (step.code === "result" && !canOpenResultStep)}
+                  disabled={isUpdatingWorkflow || Boolean(step.disabled) || (step.code === "result" && !canOpenResultStep)}
                   variant="secondary"
+                  title={step.disabledReason ?? undefined}
                   className={`min-w-[220px] shrink-0 snap-start whitespace-normal px-4 py-4 text-left [&>span]:flex [&>span]:w-full [&>span]:flex-col [&>span]:items-start ${
                     step.statusLabel === "current"
                       ? "border-cinnabar bg-surfaceWarm hover:border-cinnabar hover:bg-surfaceWarm"
@@ -303,8 +363,9 @@ export function WorkspaceShell({
                 key={step.code}
                 type="button"
                 onClick={() => onSelectMainStep(step)}
-                disabled={isUpdatingWorkflow || (step.code === "result" && !canOpenResultStep)}
+                disabled={isUpdatingWorkflow || Boolean(step.disabled) || (step.code === "result" && !canOpenResultStep)}
                 variant="secondary"
+                title={step.disabledReason ?? undefined}
                 fullWidth
                 className={`h-full whitespace-normal px-4 py-3 text-left [&>span]:flex [&>span]:w-full [&>span]:flex-col [&>span]:items-start ${
                   step.statusLabel === "current"
@@ -442,7 +503,7 @@ export function WorkspaceShell({
           </div>
         </div>
 
-        <div data-command-chrome="true" className="mt-4">
+        <div id="workspace-metadata" data-command-chrome="true" className="mt-4 scroll-mt-24">
           {controlsBar}
         </div>
         {generateBlockedByResearch ? (
@@ -458,6 +519,7 @@ export function WorkspaceShell({
               {(["workspace", "edit", "preview", "audit"] as const).map((workspaceView) => (
                 <Button
                   key={workspaceView}
+                  aria-label={`移动端视图按钮-${workspaceView}`}
                   onClick={() => onViewChange(workspaceView)}
                   variant={view === workspaceView ? "primary" : "secondary"}
                   size="sm"

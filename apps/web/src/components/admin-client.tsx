@@ -15,6 +15,108 @@ const adminMobileMetaValueClassName = "mt-1 text-sm text-adminInk";
 const adminDarkSecondaryButtonClassName = "border-adminLineStrong bg-adminBg text-adminInk hover:border-adminLineStrong hover:bg-adminSurfaceAlt hover:text-adminInk focus-visible:ring-adminAccent focus-visible:ring-offset-adminBg";
 const adminDarkPrimaryButtonClassName = "focus-visible:ring-offset-adminBg";
 
+type AdminUserSubscriptionHistoryItem = {
+  id: number | null;
+  planCode: string;
+  status: string;
+  startAt: string | null;
+  endAt: string | null;
+  source: string | null;
+  updatedAt: string | null;
+};
+
+type AdminUserRecord = {
+  id: number;
+  username: string;
+  email: string | null;
+  displayName: string | null;
+  role: string;
+  planCode: string;
+  isActive: boolean;
+  lastLoginAt: string | null;
+  createdAt: string;
+  articleCount: number;
+  publishedArticleCount: number;
+  totalUsage: number;
+  lastUsageAt: string | null;
+  subscriptionHistory: AdminUserSubscriptionHistoryItem[];
+};
+
+type AdminFinanceOverview = {
+  activeSubscriptionCount: number;
+  endingSoonCount: number;
+  monthlyRevenueEstimate: number;
+  planDistribution: Array<{
+    planCode: string;
+    planName: string;
+    subscriberCount: number;
+    sharePercent: number;
+    revenueEstimate: number;
+  }>;
+  subscriptionTrend: Array<{
+    monthKey: string;
+    label: string;
+    startedCount: number;
+    endedCount: number;
+  }>;
+  usageTopUsers: Array<{
+    userId: number;
+    username: string;
+    displayName: string | null;
+    planCode: string;
+    totalUsage: number;
+    activeDays: number;
+    lastUsageAt: string | null;
+  }>;
+};
+
+function formatAdminDateTime(value: string | null, fallback = "未记录") {
+  if (!value) {
+    return fallback;
+  }
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return fallback;
+  }
+  return parsed.toLocaleString("zh-CN");
+}
+
+function formatAdminDate(value: string | null, fallback = "未记录") {
+  if (!value) {
+    return fallback;
+  }
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return fallback;
+  }
+  return parsed.toLocaleDateString("zh-CN");
+}
+
+function formatCompactNumber(value: number) {
+  return new Intl.NumberFormat("zh-CN").format(value);
+}
+
+function getManagedPlanLabel(planCode: string) {
+  return MANAGED_PLAN_OPTIONS.find((option) => option.code === planCode)?.label ?? planCode;
+}
+
+function getSubscriptionStatusLabel(status: string) {
+  if (status === "active") return "生效中";
+  if (status === "ended") return "已结束";
+  if (status === "inactive") return "未生效";
+  return status;
+}
+
+function getSubscriptionStatusClassName(status: string) {
+  if (status === "active") {
+    return "border-emerald-900/60 bg-emerald-950/30 text-emerald-300";
+  }
+  if (status === "ended") {
+    return "border-adminLineStrong bg-adminBg text-adminInkSoft";
+  }
+  return "border-warning/40 bg-surfaceWarm text-warning";
+}
+
 function formatPromptRolloutWindowLabel(observeOnly: boolean) {
   return observeOnly ? "观察优先" : "公开灰度";
 }
@@ -30,14 +132,7 @@ export function AdminUsersClient({
   users,
   initialPasswordHint,
 }: {
-  users: Array<{
-    id: number;
-    username: string;
-    role: string;
-    planCode: string;
-    isActive: boolean;
-    lastLoginAt: string | null;
-  }>;
+  users: AdminUserRecord[];
   initialPasswordHint: string;
 }) {
   const router = useRouter();
@@ -45,6 +140,12 @@ export function AdminUsersClient({
   const [email, setEmail] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [planCode, setPlanCode] = useState("free");
+  const [selectedUserId, setSelectedUserId] = useState<number | null>(users[0]?.id ?? null);
+
+  const selectedUser = users.find((user) => user.id === selectedUserId) ?? users[0] ?? null;
+  const activeUserCount = users.filter((user) => user.isActive).length;
+  const totalArticleCount = users.reduce((sum, user) => sum + user.articleCount, 0);
+  const totalPublishedArticleCount = users.reduce((sum, user) => sum + user.publishedArticleCount, 0);
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -77,26 +178,73 @@ export function AdminUsersClient({
           创建用户
         </Button>
       </form>
-      <div className={`${adminMobileListClassName}`}>
-        {users.map((user) => (
-          <AdminUserMobileCard key={user.id} user={user} onUpdated={() => router.refresh()} />
-        ))}
-      </div>
-      <div className={`hidden overflow-x-auto md:block ${uiPrimitives.adminPanel}`}>
-        <table className="w-full min-w-[860px] text-left text-sm">
-          <thead className="bg-adminBg text-adminInkSoft">
-            <tr>
-              {["用户名", "角色", "套餐", "状态", "最近登录", "操作"].map((head) => (
-                <th key={head} className="px-6 py-4 font-medium">{head}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
+      <section className="grid gap-4 xl:grid-cols-4">
+        <article className={`${uiPrimitives.adminPanel} p-5`}>
+          <div className="text-xs uppercase tracking-[0.2em] text-adminInkSoft">总用户</div>
+          <div className="mt-3 font-serifCn text-3xl text-adminInk">{formatCompactNumber(users.length)}</div>
+        </article>
+        <article className={`${uiPrimitives.adminPanel} p-5`}>
+          <div className="text-xs uppercase tracking-[0.2em] text-adminInkSoft">活跃账号</div>
+          <div className="mt-3 font-serifCn text-3xl text-adminInk">{formatCompactNumber(activeUserCount)}</div>
+          <div className="mt-2 text-xs text-adminInkSoft">当前启用 {users.length > 0 ? `${Math.round((activeUserCount / users.length) * 100)}%` : "0%"}</div>
+        </article>
+        <article className={`${uiPrimitives.adminPanel} p-5`}>
+          <div className="text-xs uppercase tracking-[0.2em] text-adminInkSoft">文章总量</div>
+          <div className="mt-3 font-serifCn text-3xl text-adminInk">{formatCompactNumber(totalArticleCount)}</div>
+          <div className="mt-2 text-xs text-adminInkSoft">已发布 {formatCompactNumber(totalPublishedArticleCount)}</div>
+        </article>
+        <article className={`${uiPrimitives.adminPanel} p-5`}>
+          <div className="text-xs uppercase tracking-[0.2em] text-adminInkSoft">最近选中</div>
+          <div className="mt-3 truncate font-serifCn text-2xl text-adminInk">{selectedUser?.displayName || selectedUser?.username || "未选择"}</div>
+          <div className="mt-2 text-xs text-adminInkSoft">
+            最近登录 {selectedUser ? formatAdminDateTime(selectedUser.lastLoginAt, "未登录") : "未记录"}
+          </div>
+        </article>
+      </section>
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
+        <div className="space-y-6">
+          <div className="lg:hidden">
+            <AdminUserDetailPanel user={selectedUser} />
+          </div>
+          <div className={adminMobileListClassName}>
             {users.map((user) => (
-              <AdminUserRow key={user.id} user={user} onUpdated={() => router.refresh()} />
+              <AdminUserMobileCard
+                key={user.id}
+                user={user}
+                isSelected={selectedUserId === user.id}
+                onSelect={() => setSelectedUserId(user.id)}
+                onUpdated={() => router.refresh()}
+              />
             ))}
-          </tbody>
-        </table>
+          </div>
+          <div className={`hidden overflow-x-auto md:block ${uiPrimitives.adminPanel}`}>
+            <table className="w-full min-w-[980px] text-left text-sm">
+              <thead className="bg-adminBg text-adminInkSoft">
+                <tr>
+                  {["用户名", "角色", "套餐", "状态", "注册", "最近登录", "操作"].map((head) => (
+                    <th key={head} className="px-6 py-4 font-medium">{head}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {users.map((user) => (
+                  <AdminUserRow
+                    key={user.id}
+                    user={user}
+                    isSelected={selectedUserId === user.id}
+                    onSelect={() => setSelectedUserId(user.id)}
+                    onUpdated={() => router.refresh()}
+                  />
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <aside className="hidden lg:block">
+          <div className="sticky top-6">
+            <AdminUserDetailPanel user={selectedUser} />
+          </div>
+        </aside>
       </div>
     </div>
   );
@@ -104,16 +252,13 @@ export function AdminUsersClient({
 
 function AdminUserRow({
   user,
+  isSelected,
+  onSelect,
   onUpdated,
 }: {
-  user: {
-    id: number;
-    username: string;
-    role: string;
-    planCode: string;
-    isActive: boolean;
-    lastLoginAt: string | null;
-  };
+  user: AdminUserRecord;
+  isSelected: boolean;
+  onSelect: () => void;
   onUpdated: () => void;
 }) {
   const [role, setRole] = useState(user.role);
@@ -130,8 +275,17 @@ function AdminUserRow({
   }
 
   return (
-    <tr className="border-t border-adminLineStrong">
-      <td className="px-6 py-4 text-adminInk">{user.username}</td>
+    <tr className={`border-t border-adminLineStrong ${isSelected ? "bg-adminSurfaceAlt/70" : ""}`}>
+      <td className="px-6 py-4 text-adminInk">
+        <button
+          type="button"
+          onClick={onSelect}
+          className="text-left transition hover:text-cinnabar focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-adminAccent focus-visible:ring-offset-2 focus-visible:ring-offset-adminBg"
+        >
+          <div className="font-medium">{user.displayName || user.username}</div>
+          <div className="mt-1 text-xs text-adminInkSoft">{user.username}</div>
+        </button>
+      </td>
       <td className="px-6 py-4 text-adminInkSoft">
         <select aria-label="select control" value={role} onChange={(event) => setRole(event.target.value)} className={uiPrimitives.adminCompactSelect}>
           <option value="user">user</option>
@@ -153,20 +307,32 @@ function AdminUserRow({
           size="sm"
           className={adminDarkSecondaryButtonClassName}
         >
-          {isActive ? "启用" : "停用"}
+          {isActive ? "停用" : "启用"}
         </Button>
       </td>
-      <td className="px-6 py-4 text-adminInkSoft">{user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleString("zh-CN") : "未登录"}</td>
+      <td className="px-6 py-4 text-adminInkSoft">{formatAdminDate(user.createdAt)}</td>
+      <td className="px-6 py-4 text-adminInkSoft">{formatAdminDateTime(user.lastLoginAt, "未登录")}</td>
       <td className="px-6 py-4">
-        <Button
-          type="button"
-          onClick={handleSave}
-          variant="secondary"
-          size="sm"
-          className={adminDarkSecondaryButtonClassName}
-        >
-          保存
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            onClick={onSelect}
+            variant="secondary"
+            size="sm"
+            className={adminDarkSecondaryButtonClassName}
+          >
+            详情
+          </Button>
+          <Button
+            type="button"
+            onClick={handleSave}
+            variant="secondary"
+            size="sm"
+            className={adminDarkSecondaryButtonClassName}
+          >
+            保存
+          </Button>
+        </div>
       </td>
     </tr>
   );
@@ -174,16 +340,13 @@ function AdminUserRow({
 
 function AdminUserMobileCard({
   user,
+  isSelected,
+  onSelect,
   onUpdated,
 }: {
-  user: {
-    id: number;
-    username: string;
-    role: string;
-    planCode: string;
-    isActive: boolean;
-    lastLoginAt: string | null;
-  };
+  user: AdminUserRecord;
+  isSelected: boolean;
+  onSelect: () => void;
   onUpdated: () => void;
 }) {
   const [role, setRole] = useState(user.role);
@@ -200,11 +363,12 @@ function AdminUserMobileCard({
   }
 
   return (
-    <article className={adminMobileCardClassName}>
+    <article className={`${adminMobileCardClassName} ${isSelected ? "border-cinnabar/50" : ""}`}>
       <div>
-        <div className="text-base text-adminInk">{user.username}</div>
+        <div className="text-base text-adminInk">{user.displayName || user.username}</div>
+        <div className="mt-1 text-xs text-adminInkSoft">{user.username}</div>
         <div className="mt-1 text-xs text-adminInkSoft">
-          最近登录：{user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleString("zh-CN") : "未登录"}
+          最近登录：{formatAdminDateTime(user.lastLoginAt, "未登录")}
         </div>
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
@@ -239,10 +403,100 @@ function AdminUserMobileCard({
           切换状态
         </Button>
       </div>
-      <Button type="button" onClick={handleSave} variant="secondary" size="sm" className={adminDarkSecondaryButtonClassName}>
-        保存用户设置
-      </Button>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div>
+          <div className={adminMobileMetaLabelClassName}>注册时间</div>
+          <div className={adminMobileMetaValueClassName}>{formatAdminDate(user.createdAt)}</div>
+        </div>
+        <div>
+          <div className={adminMobileMetaLabelClassName}>文章 / 发布</div>
+          <div className={adminMobileMetaValueClassName}>
+            {formatCompactNumber(user.articleCount)} / {formatCompactNumber(user.publishedArticleCount)}
+          </div>
+        </div>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <Button type="button" onClick={onSelect} variant="secondary" size="sm" className={adminDarkSecondaryButtonClassName}>
+          查看详情
+        </Button>
+        <Button type="button" onClick={handleSave} variant="secondary" size="sm" className={adminDarkSecondaryButtonClassName}>
+          保存用户设置
+        </Button>
+      </div>
     </article>
+  );
+}
+
+function AdminUserDetailPanel({ user }: { user: AdminUserRecord | null }) {
+  if (!user) {
+    return (
+      <section className={`${uiPrimitives.adminPanel} p-5 text-sm text-adminInkSoft`}>
+        选择用户后，可在这里查看订阅历史、文章数、最近登录和用量概况。
+      </section>
+    );
+  }
+
+  return (
+    <section className={`${uiPrimitives.adminPanel} space-y-5 p-5`}>
+      <div>
+        <div className="text-xs uppercase tracking-[0.24em] text-cinnabar">User Detail</div>
+        <div className="mt-3 text-2xl text-adminInk">{user.displayName || user.username}</div>
+        <div className="mt-1 text-sm text-adminInkSoft">{user.email || user.username}</div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <span className="border border-adminLineStrong bg-adminBg px-2 py-1 text-xs text-adminInkSoft">{user.role}</span>
+          <span className="border border-adminLineStrong bg-adminBg px-2 py-1 text-xs text-adminInkSoft">{getManagedPlanLabel(user.planCode)}</span>
+          <span className={`border px-2 py-1 text-xs ${user.isActive ? "border-emerald-900/60 bg-emerald-950/30 text-emerald-300" : "border-warning/40 bg-surfaceWarm text-warning"}`}>
+            {user.isActive ? "启用中" : "停用"}
+          </span>
+        </div>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <article className="border border-adminLineStrong bg-adminBg p-4">
+          <div className={adminMobileMetaLabelClassName}>文章数</div>
+          <div className="mt-2 text-2xl text-adminInk">{formatCompactNumber(user.articleCount)}</div>
+          <div className="mt-1 text-xs text-adminInkSoft">已发布 {formatCompactNumber(user.publishedArticleCount)}</div>
+        </article>
+        <article className="border border-adminLineStrong bg-adminBg p-4">
+          <div className={adminMobileMetaLabelClassName}>累计用量</div>
+          <div className="mt-2 text-2xl text-adminInk">{formatCompactNumber(user.totalUsage)}</div>
+          <div className="mt-1 text-xs text-adminInkSoft">最近使用 {formatAdminDate(user.lastUsageAt, "未记录")}</div>
+        </article>
+        <article className="border border-adminLineStrong bg-adminBg p-4">
+          <div className={adminMobileMetaLabelClassName}>注册时间</div>
+          <div className="mt-2 text-base text-adminInk">{formatAdminDate(user.createdAt)}</div>
+        </article>
+        <article className="border border-adminLineStrong bg-adminBg p-4">
+          <div className={adminMobileMetaLabelClassName}>最近登录</div>
+          <div className="mt-2 text-base text-adminInk">{formatAdminDateTime(user.lastLoginAt, "未登录")}</div>
+        </article>
+      </div>
+      <div className="border border-adminLineStrong bg-adminBg p-4">
+        <div className="flex items-center justify-between gap-3">
+          <div className="text-xs uppercase tracking-[0.18em] text-cinnabar">订阅历史</div>
+          <div className="text-xs text-adminInkSoft">{formatCompactNumber(user.subscriptionHistory.length)} 条</div>
+        </div>
+        <div className="mt-4 space-y-3">
+          {user.subscriptionHistory.length ? (
+            user.subscriptionHistory.map((item) => (
+              <article key={`${user.id}-${item.id ?? item.planCode}-${item.updatedAt ?? item.startAt ?? "fallback"}`} className="border border-adminLineStrong bg-adminSurfaceAlt p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="text-sm text-adminInk">{getManagedPlanLabel(item.planCode)}</div>
+                  <span className={`border px-2 py-1 text-xs ${getSubscriptionStatusClassName(item.status)}`}>
+                    {getSubscriptionStatusLabel(item.status)}
+                  </span>
+                </div>
+                <div className="mt-2 text-xs leading-6 text-adminInkSoft">
+                  生效：{formatAdminDate(item.startAt)} · 结束：{formatAdminDate(item.endAt, "未截止")}<br />
+                  来源：{item.source || "manual"} · 最近变更：{formatAdminDateTime(item.updatedAt)}
+                </div>
+              </article>
+            ))
+          ) : (
+            <div className="text-sm text-adminInkSoft">当前还没有显式订阅记录，沿用用户套餐配置。</div>
+          )}
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -1139,9 +1393,11 @@ export function AdminTopicSourcesClient({
 export function AdminFinanceClient({
   plans,
   subscriptions,
+  overview,
 }: {
   plans: ResolvedPlanFeatureSnapshot[];
   subscriptions: Array<{ id: number | null; userId: number; username: string; displayName: string | null; planCode: string; planName: string | null; status: string; startAt: string | null; endAt: string | null }>;
+  overview: AdminFinanceOverview;
 }) {
   const router = useRouter();
   const [planForm, setPlanForm] = useState({
@@ -1189,6 +1445,75 @@ export function AdminFinanceClient({
 
   return (
     <div className="space-y-6">
+      <section className="grid gap-4 xl:grid-cols-3">
+        <article className={`${uiPrimitives.adminPanel} p-5`}>
+          <div className="text-xs uppercase tracking-[0.2em] text-adminInkSoft">生效订阅</div>
+          <div className="mt-3 font-serifCn text-3xl text-adminInk">{formatCompactNumber(overview.activeSubscriptionCount)}</div>
+          <div className="mt-2 text-xs text-adminInkSoft">30 天内到期 {formatCompactNumber(overview.endingSoonCount)}</div>
+        </article>
+        <article className={`${uiPrimitives.adminPanel} p-5`}>
+          <div className="text-xs uppercase tracking-[0.2em] text-adminInkSoft">月度收入估算</div>
+          <div className="mt-3 font-serifCn text-3xl text-adminInk">￥{formatCompactNumber(overview.monthlyRevenueEstimate)}</div>
+          <div className="mt-2 text-xs text-adminInkSoft">按当前套餐分布轻量估算</div>
+        </article>
+        <article className={`${uiPrimitives.adminPanel} p-5`}>
+          <div className="text-xs uppercase tracking-[0.2em] text-adminInkSoft">使用榜覆盖</div>
+          <div className="mt-3 font-serifCn text-3xl text-adminInk">{formatCompactNumber(overview.usageTopUsers.length)}</div>
+          <div className="mt-2 text-xs text-adminInkSoft">Top 10 高频用户</div>
+        </article>
+      </section>
+      <section className="grid gap-6 xl:grid-cols-[1.1fr_1fr]">
+        <article className={`${uiPrimitives.adminPanel} p-5`}>
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="text-xs uppercase tracking-[0.2em] text-cinnabar">套餐分布</div>
+              <div className="mt-2 text-lg text-adminInk">当前订阅按套餐分层</div>
+            </div>
+            <div className="text-xs text-adminInkSoft">{formatCompactNumber(subscriptions.length)} 个账号</div>
+          </div>
+          <div className="mt-5 space-y-4">
+            {overview.planDistribution.map((item) => (
+              <div key={item.planCode} className="space-y-2">
+                <div className="flex items-center justify-between gap-3 text-sm">
+                  <div className="text-adminInk">{item.planName}</div>
+                  <div className="text-adminInkSoft">
+                    {formatCompactNumber(item.subscriberCount)} 人 · {item.sharePercent.toFixed(1)}% · ￥{formatCompactNumber(item.revenueEstimate)}
+                  </div>
+                </div>
+                <div className="h-2 overflow-hidden rounded-full bg-adminBg">
+                  <div className="h-full bg-cinnabar" style={{ width: `${Math.max(item.sharePercent, item.subscriberCount > 0 ? 6 : 0)}%` }} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </article>
+        <article className={`${uiPrimitives.adminPanel} p-5`}>
+          <div className="text-xs uppercase tracking-[0.2em] text-cinnabar">订阅趋势</div>
+          <div className="mt-2 text-lg text-adminInk">最近 6 个月新开 / 到期</div>
+          <div className="mt-5 grid grid-cols-6 gap-3">
+            {overview.subscriptionTrend.map((item) => {
+              const maxValue = Math.max(
+                1,
+                ...overview.subscriptionTrend.flatMap((entry) => [entry.startedCount, entry.endedCount]),
+              );
+              const startedHeight = `${Math.max((item.startedCount / maxValue) * 100, item.startedCount > 0 ? 10 : 0)}%`;
+              const endedHeight = `${Math.max((item.endedCount / maxValue) * 100, item.endedCount > 0 ? 10 : 0)}%`;
+              return (
+                <div key={item.monthKey} className="flex flex-col items-center gap-3">
+                  <div className="flex h-32 w-full items-end justify-center gap-2 rounded border border-adminLineStrong bg-adminBg px-2 py-3">
+                    <div className="w-1/3 rounded-t-sm bg-cinnabar/85" style={{ height: startedHeight }} title={`新开 ${item.startedCount}`} />
+                    <div className="w-1/3 rounded-t-sm bg-adminInk/55" style={{ height: endedHeight }} title={`到期 ${item.endedCount}`} />
+                  </div>
+                  <div className="text-center text-xs text-adminInkSoft">
+                    <div>{item.label}</div>
+                    <div className="mt-1">新开 {item.startedCount} / 到期 {item.endedCount}</div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </article>
+      </section>
       <form onSubmit={handleCreatePlan} className={`grid gap-3 p-5 md:grid-cols-3 ${uiPrimitives.adminPanel}`}>
         <input aria-label="套餐 code" value={planForm.code} onChange={(event) => setPlanForm((prev) => ({ ...prev, code: event.target.value }))} placeholder="套餐 code" className={uiPrimitives.adminInput} />
         <input aria-label="套餐名称" value={planForm.name} onChange={(event) => setPlanForm((prev) => ({ ...prev, name: event.target.value }))} placeholder="套餐名称" className={uiPrimitives.adminInput} />
@@ -1236,6 +1561,68 @@ export function AdminFinanceClient({
             </div>
           </article>
         ))}
+      </section>
+      <section className={`${uiPrimitives.adminPanel} p-5`}>
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <div className="text-xs uppercase tracking-[0.2em] text-cinnabar">Usage Top 10</div>
+            <div className="mt-2 text-lg text-adminInk">高用量账号</div>
+          </div>
+          <div className="text-xs text-adminInkSoft">累计 usage_counters 聚合</div>
+        </div>
+        <div className="mt-5 hidden overflow-x-auto md:block">
+          <table className="w-full min-w-[760px] text-left text-sm">
+            <thead className="text-adminInkSoft">
+              <tr>
+                {["排名", "用户", "套餐", "总用量", "活跃天数", "最近使用"].map((head) => (
+                  <th key={head} className="px-4 py-3 font-medium">{head}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {overview.usageTopUsers.map((item, index) => (
+                <tr key={item.userId} className="border-t border-adminLineStrong">
+                  <td className="px-4 py-3 text-adminInk">#{index + 1}</td>
+                  <td className="px-4 py-3 text-adminInk">
+                    <div>{item.displayName || item.username}</div>
+                    <div className="mt-1 text-xs text-adminInkSoft">{item.username}</div>
+                  </td>
+                  <td className="px-4 py-3 text-adminInkSoft">{getManagedPlanLabel(item.planCode)}</td>
+                  <td className="px-4 py-3 text-adminInk">{formatCompactNumber(item.totalUsage)}</td>
+                  <td className="px-4 py-3 text-adminInkSoft">{formatCompactNumber(item.activeDays)}</td>
+                  <td className="px-4 py-3 text-adminInkSoft">{formatAdminDate(item.lastUsageAt)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className={`${adminMobileListClassName} mt-5`}>
+          {overview.usageTopUsers.map((item, index) => (
+            <article key={item.userId} className={adminMobileCardClassName}>
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-base text-adminInk">#{index + 1} {item.displayName || item.username}</div>
+                  <div className="mt-1 text-xs text-adminInkSoft">{item.username}</div>
+                </div>
+                <div className="text-xs text-adminInkSoft">{getManagedPlanLabel(item.planCode)}</div>
+              </div>
+              <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                <div>
+                  <div className={adminMobileMetaLabelClassName}>总用量</div>
+                  <div className={adminMobileMetaValueClassName}>{formatCompactNumber(item.totalUsage)}</div>
+                </div>
+                <div>
+                  <div className={adminMobileMetaLabelClassName}>活跃天数</div>
+                  <div className={adminMobileMetaValueClassName}>{formatCompactNumber(item.activeDays)}</div>
+                </div>
+                <div>
+                  <div className={adminMobileMetaLabelClassName}>最近使用</div>
+                  <div className={adminMobileMetaValueClassName}>{formatAdminDate(item.lastUsageAt)}</div>
+                </div>
+              </div>
+            </article>
+          ))}
+        </div>
       </section>
       <div className={`${adminMobileListClassName}`}>
         {subscriptions.map((subscription) => (

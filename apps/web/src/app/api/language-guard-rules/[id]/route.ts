@@ -1,6 +1,27 @@
 import { ensureUserSession } from "@/lib/auth";
 import { fail, ok } from "@/lib/http";
-import { deleteLanguageGuardRule } from "@/lib/language-guard";
+import { deleteLanguageGuardRule, updateLanguageGuardRule } from "@/lib/language-guard";
+
+export async function PATCH(request: Request, { params }: { params: { id: string } }) {
+  const session = await ensureUserSession();
+  if (!session) {
+    return fail("未登录", 401);
+  }
+  try {
+    const body = await request.json();
+    const updated = await updateLanguageGuardRule({
+      userId: session.userId,
+      id: decodeURIComponent(params.id),
+      ruleKind: body.ruleKind,
+      matchMode: body.matchMode,
+      patternText: body.patternText,
+      rewriteHint: body.rewriteHint,
+    });
+    return ok(updated);
+  } catch (error) {
+    return fail(error instanceof Error ? error.message : "更新语言守卫规则失败", 400);
+  }
+}
 
 export async function DELETE(_: Request, { params }: { params: { id: string } }) {
   const session = await ensureUserSession();

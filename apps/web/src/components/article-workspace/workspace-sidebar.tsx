@@ -45,13 +45,27 @@ export function WorkspaceSidebar({
 }: WorkspaceSidebarProps) {
   return (
     <aside className={`${isFocusMode ? "hidden" : "min-w-0 space-y-4 xl:sticky xl:top-24 xl:self-start"}`}>
-      <WorkspaceStatusRail {...statusRailProps} />
+      <div className="hidden md:block">
+        <WorkspaceStatusRail {...statusRailProps} />
+      </div>
 
-      {showKnowledgeCardsRail ? <KnowledgeCardsRail {...knowledgeCardsRailProps} /> : null}
+      {showKnowledgeCardsRail ? (
+        <div className="hidden md:block">
+          <KnowledgeCardsRail {...knowledgeCardsRailProps} />
+        </div>
+      ) : null}
 
-      {showLanguageGuardRail ? <LanguageGuardRail {...languageGuardRailProps} /> : null}
+      {showLanguageGuardRail ? (
+        <div className="hidden md:block">
+          <LanguageGuardRail {...languageGuardRailProps} />
+        </div>
+      ) : null}
 
-      {showVisualEngineRail ? <VisualEngineRail {...visualEngineRailProps} /> : null}
+      {showVisualEngineRail ? (
+        <div className="hidden md:block">
+          <VisualEngineRail {...visualEngineRailProps} />
+        </div>
+      ) : null}
 
       {showMobileInspectorEntry ? <MobileInspectorEntryCard onOpen={onOpenMobileInspector} /> : null}
 
@@ -59,7 +73,11 @@ export function WorkspaceSidebar({
 
       {showDeliveryRail ? <WechatPublishRail {...wechatPublishRailProps} /> : null}
 
-      {isPolishPhase ? <ArticleDiffPanel diffState={diffState} /> : null}
+      {isPolishPhase ? (
+        <div className="hidden md:block">
+          <ArticleDiffPanel diffState={diffState} />
+        </div>
+      ) : null}
     </aside>
   );
 }

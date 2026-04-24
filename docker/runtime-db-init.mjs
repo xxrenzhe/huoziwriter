@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import process from "node:process";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 
@@ -13,6 +14,11 @@ const BASELINE_TABLES = [
   "ai_model_routes",
   "prompt_versions",
 ];
+
+const envPath = path.resolve(process.cwd(), ".env");
+if (fs.existsSync(envPath)) {
+  process.loadEnvFile(envPath);
+}
 
 function loadPackage(name) {
   const candidates = [
@@ -348,19 +354,19 @@ async function ensureDefaultAdmin(runtime, mode) {
     if (mode === "postgres") {
       await runtime.run(
         `UPDATE users
-         SET role = $1, plan_code = $2, must_change_password = $3, is_active = $4, updated_at = NOW()
-         WHERE id = $5`,
-        ["admin", adminPlanCode, false, true, userId],
+         SET password_hash = $1, role = $2, plan_code = $3, must_change_password = $4, is_active = $5, updated_at = NOW()
+         WHERE id = $6`,
+        [passwordHash, "admin", adminPlanCode, false, true, userId],
       );
     } else {
       await runtime.run(
         `UPDATE users
-         SET role = ?, plan_code = ?, must_change_password = ?, is_active = ?, updated_at = ?
+         SET password_hash = ?, role = ?, plan_code = ?, must_change_password = ?, is_active = ?, updated_at = ?
          WHERE id = ?`,
-        ["admin", adminPlanCode, 0, 1, new Date().toISOString(), userId],
+        [passwordHash, "admin", adminPlanCode, 0, 1, new Date().toISOString(), userId],
       );
     }
-    console.log("runtime-db-init: default admin user already exists");
+    console.log("runtime-db-init: reset default admin user huozi");
   }
 
   const referralCode = buildReferralCode(Number(userId), "huozi");

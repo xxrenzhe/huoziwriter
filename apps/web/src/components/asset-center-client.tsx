@@ -177,6 +177,12 @@ export function WriterAssetCenterClient({
   const [knowledgeCards, setKnowledgeCards] = useState(initialKnowledgeCards);
   const [refreshingKnowledgeId, setRefreshingKnowledgeId] = useState<number | null>(null);
   const [message, setMessage] = useState("");
+  const recentFragments = fragments.slice(0, 6);
+  const recentKnowledgeCards = knowledgeCards.slice(0, 6);
+  const recentImageAssets = imageAssets.slice(0, 6);
+  const conflictedKnowledgeCards = knowledgeCards.filter((card) => card.status === "conflicted");
+  const staleKnowledgeCards = knowledgeCards.filter((card) => card.status === "stale");
+  const problematicImageAssets = imageAssets.filter((asset) => asset.status !== "ready");
 
   async function refreshKnowledgeCard(cardId: number) {
     setRefreshingKnowledgeId(cardId);
@@ -219,23 +225,158 @@ export function WriterAssetCenterClient({
           {message}
         </div>
       ) : null}
+      <div className="grid gap-4 xl:grid-cols-3">
+        <section id="asset-queue-conflicted-knowledge" className={sectionClassName}>
+          <div className={sectionHeaderClassName}>
+            <div>
+              <div className={sectionEyebrowClassName}>待处理库存</div>
+              <h2 className={sectionTitleClassName}>冲突背景卡</h2>
+            </div>
+            <div aria-label={`冲突背景卡共 ${conflictedKnowledgeCards.length} 张`} className={countBadgeClassName}>
+              <div className="text-lg font-semibold tabular-nums text-ink">{conflictedKnowledgeCards.length}</div>
+              <div className="mt-1 text-[11px] uppercase tracking-[0.18em] text-inkMuted">张</div>
+            </div>
+          </div>
+          <div className="space-y-4">
+            {conflictedKnowledgeCards.length > 0 ? (
+              conflictedKnowledgeCards.slice(0, 4).map((card) => (
+                <article key={`conflicted-${card.id}`} className={itemCardClassName}>
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <div className={getKnowledgeStatusChipClassName(card.status)}>{formatKnowledgeStatus(card.status)}</div>
+                      <h3 className="mt-2 font-medium text-ink">{card.title}</h3>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void refreshKnowledgeCard(card.id)}
+                      disabled={refreshingKnowledgeId === card.id}
+                      className={actionClassName}
+                    >
+                      {refreshingKnowledgeId === card.id ? "刷新中…" : "立即刷新"}
+                    </button>
+                  </div>
+                  <p className="text-sm leading-7 text-inkSoft">{summarizeText(card.latestChangeSummary || card.summary, 72)}</p>
+                  <div className="flex flex-wrap gap-2">
+                    {card.conflictFlags.slice(0, 3).map((flag) => (
+                      <span key={`${card.id}-${flag}`} className={warningChipClassName}>
+                        {flag}
+                      </span>
+                    ))}
+                  </div>
+                </article>
+              ))
+            ) : (
+              <div className={emptyStateClassName}>当前没有冲突背景卡，背景知识状态相对稳定。</div>
+            )}
+          </div>
+        </section>
+
+        <section id="asset-queue-stale-knowledge" className={sectionClassName}>
+          <div className={sectionHeaderClassName}>
+            <div>
+              <div className={sectionEyebrowClassName}>待处理库存</div>
+              <h2 className={sectionTitleClassName}>待刷新背景卡</h2>
+            </div>
+            <div aria-label={`待刷新背景卡共 ${staleKnowledgeCards.length} 张`} className={countBadgeClassName}>
+              <div className="text-lg font-semibold tabular-nums text-ink">{staleKnowledgeCards.length}</div>
+              <div className="mt-1 text-[11px] uppercase tracking-[0.18em] text-inkMuted">张</div>
+            </div>
+          </div>
+          <div className="space-y-4">
+            {staleKnowledgeCards.length > 0 ? (
+              staleKnowledgeCards.slice(0, 4).map((card) => (
+                <article key={`stale-${card.id}`} className={itemCardClassName}>
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <div className={getKnowledgeStatusChipClassName(card.status)}>{formatKnowledgeStatus(card.status)}</div>
+                      <h3 className="mt-2 font-medium text-ink">{card.title}</h3>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void refreshKnowledgeCard(card.id)}
+                      disabled={refreshingKnowledgeId === card.id}
+                      className={actionClassName}
+                    >
+                      {refreshingKnowledgeId === card.id ? "刷新中…" : "立即刷新"}
+                    </button>
+                  </div>
+                  <p className="text-sm leading-7 text-inkSoft">{summarizeText(card.summary || card.latestChangeSummary, 72)}</p>
+                  <div className="flex flex-wrap gap-2">
+                    <span className={mutedChipClassName}>来源素材 {card.sourceFragmentCount} 条</span>
+                    {card.lastCompiledAt ? <span className={mutedChipClassName}>最近编译 {formatDateTime(card.lastCompiledAt)}</span> : null}
+                  </div>
+                </article>
+              ))
+            ) : (
+              <div className={emptyStateClassName}>当前没有待刷新的背景卡。</div>
+            )}
+          </div>
+        </section>
+
+        <section id="asset-queue-problematic-images" className={sectionClassName}>
+          <div className={sectionHeaderClassName}>
+            <div>
+              <div className={sectionEyebrowClassName}>待处理库存</div>
+              <h2 className={sectionTitleClassName}>待处理图片</h2>
+            </div>
+            <div aria-label={`待处理图片共 ${problematicImageAssets.length} 项`} className={countBadgeClassName}>
+              <div className="text-lg font-semibold tabular-nums text-ink">{problematicImageAssets.length}</div>
+              <div className="mt-1 text-[11px] uppercase tracking-[0.18em] text-inkMuted">项</div>
+            </div>
+          </div>
+          <div className="space-y-4">
+            {problematicImageAssets.length > 0 ? (
+              problematicImageAssets.slice(0, 4).map((asset) => (
+                <article key={`problematic-image-${asset.id}`} className={itemCardClassName}>
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <div className={getImageStatusChipClassName(asset.status)}>{formatImageAssetStatus(asset.status)}</div>
+                      <h3 className="mt-2 font-medium text-ink">{asset.articleTitle || "未绑定稿件"}</h3>
+                    </div>
+                    <time dateTime={asset.updatedAt} className="text-xs tabular-nums text-inkMuted">
+                      {formatDateTime(asset.updatedAt)}
+                    </time>
+                  </div>
+                  <p className="text-sm leading-7 text-inkSoft">
+                    {formatImageAssetType(asset.assetType)} · {asset.variantLabel || formatImageAssetScope(asset.assetScope)}
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {asset.articleId ? (
+                      <Link href={`/articles/${asset.articleId}?step=publish`} className={actionClassName}>
+                        回到发布步骤
+                      </Link>
+                    ) : null}
+                    {asset.publicUrl ? (
+                      <a href={asset.publicUrl} target="_blank" rel="noreferrer" className={actionClassName}>
+                        查看原图
+                      </a>
+                    ) : null}
+                  </div>
+                </article>
+              ))
+            ) : (
+              <div className={emptyStateClassName}>当前没有待处理图片资产。</div>
+            )}
+          </div>
+        </section>
+      </div>
       <div className="grid items-start gap-4 xl:grid-cols-3">
         <section aria-labelledby="asset-center-fragments-title" className={sectionClassName}>
           <div className={sectionHeaderClassName}>
             <div>
               <div className={sectionEyebrowClassName}>素材库</div>
               <h2 id="asset-center-fragments-title" className={sectionTitleClassName}>
-                最近素材
+                素材库存
               </h2>
             </div>
-            <div aria-label={`最近素材共 ${fragments.length} 条`} className={countBadgeClassName}>
+            <div aria-label={`素材库存共 ${fragments.length} 条`} className={countBadgeClassName}>
               <div className="text-lg font-semibold tabular-nums text-ink">{fragments.length}</div>
               <div className="mt-1 text-[11px] uppercase tracking-[0.18em] text-inkMuted">条</div>
             </div>
           </div>
           <div className="space-y-4">
-            {fragments.length > 0 ? (
-              fragments.map((fragment) => (
+            {recentFragments.length > 0 ? (
+              recentFragments.map((fragment) => (
                 <article key={fragment.id} className={itemCardClassName}>
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="flex flex-wrap items-center gap-2">
@@ -275,17 +416,17 @@ export function WriterAssetCenterClient({
             <div>
               <div className={sectionEyebrowClassName}>背景卡</div>
               <h2 id="asset-center-knowledge-title" className={sectionTitleClassName}>
-                最近背景卡
+                背景卡库存
               </h2>
             </div>
-            <div aria-label={`最近背景卡共 ${knowledgeCards.length} 张`} className={countBadgeClassName}>
+            <div aria-label={`背景卡库存共 ${knowledgeCards.length} 张`} className={countBadgeClassName}>
               <div className="text-lg font-semibold tabular-nums text-ink">{knowledgeCards.length}</div>
               <div className="mt-1 text-[11px] uppercase tracking-[0.18em] text-inkMuted">张</div>
             </div>
           </div>
           <div className="space-y-4">
-            {knowledgeCards.length > 0 ? (
-              knowledgeCards.map((card) => (
+            {recentKnowledgeCards.length > 0 ? (
+              recentKnowledgeCards.map((card) => (
                 <article key={card.id} className={itemCardClassName}>
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="space-y-2">
@@ -354,17 +495,17 @@ export function WriterAssetCenterClient({
             <div>
               <div className={sectionEyebrowClassName}>图片资产</div>
               <h2 id="asset-center-images-title" className={sectionTitleClassName}>
-                最近封面与配图
+                图片库存
               </h2>
             </div>
-            <div aria-label={`最近图片资产共 ${imageAssets.length} 项`} className={countBadgeClassName}>
+            <div aria-label={`图片资产共 ${imageAssets.length} 项`} className={countBadgeClassName}>
               <div className="text-lg font-semibold tabular-nums text-ink">{imageAssets.length}</div>
               <div className="mt-1 text-[11px] uppercase tracking-[0.18em] text-inkMuted">项</div>
             </div>
           </div>
           <div className="space-y-4">
-            {imageAssets.length > 0 ? (
-              imageAssets.map((asset) => (
+            {recentImageAssets.length > 0 ? (
+              recentImageAssets.map((asset) => (
                 <article key={asset.id} className={itemCardClassName}>
                   {asset.publicUrl ? (
                     <div className="overflow-hidden border border-lineStrong bg-surface">

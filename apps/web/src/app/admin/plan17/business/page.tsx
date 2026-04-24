@@ -11,6 +11,10 @@ const titleClassName = "mt-4 font-serifCn text-4xl text-adminInk text-balance";
 const descriptionClassName = "mt-4 text-sm leading-7 text-adminInkSoft";
 const actionClassName = "inline-flex items-center justify-center rounded-full border border-adminLineStrong bg-adminSurfaceAlt px-4 py-2 text-sm text-adminInk transition hover:border-adminAccent hover:text-adminAccent";
 const tableCellClassName = "px-4 py-4 align-top";
+const mobileDetailListClassName = "mt-6 grid gap-3 md:hidden";
+const mobileDetailCardClassName = cn(surfaceCardStyles({ padding: "md" }), "border-adminLineStrong bg-adminSurfaceMuted text-adminInk shadow-none");
+const mobileDetailLabelClassName = "text-xs uppercase tracking-[0.18em] text-adminInkMuted";
+const mobileDetailValueClassName = "mt-2 text-sm leading-7 text-adminInkSoft";
 
 function formatPercent(value: number | null) {
   return value == null ? "--" : `${value.toFixed(value % 1 === 0 ? 0 : 1)}%`;
@@ -55,6 +59,32 @@ function formatStyleUsageSourceLabel(value: string | null) {
     return `阶段应用 · ${value.slice("article.stage.apply.".length)}`;
   }
   return value;
+}
+
+function formatGapReasons(reasons: string[]) {
+  return reasons.length > 0 ? reasons.join(" / ") : "已具备可比性";
+}
+
+function GapSummaryList({
+  items,
+  emptyText,
+}: {
+  items: Array<{ key: string; label: string; count: number }>;
+  emptyText: string;
+}) {
+  if (items.length === 0) {
+    return <div className="mt-4 text-sm leading-7 text-adminInkSoft">{emptyText}</div>;
+  }
+  return (
+    <div className="mt-4 space-y-2">
+      {items.map((item) => (
+        <div key={item.key} className="flex items-center justify-between gap-3 border-t border-adminLineStrong pt-2 text-sm">
+          <span className="text-adminInkSoft">{item.label}</span>
+          <span className="font-serifCn text-lg text-adminInk">{item.count}</span>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 export default async function AdminPlan17BusinessPage() {
@@ -159,6 +189,32 @@ export default async function AdminPlan17BusinessPage() {
         </article>
       </div>
 
+      <article className={panelClassName}>
+        <div className={eyebrowClassName}>Observation Gaps</div>
+        <h2 className="mt-4 font-serifCn text-3xl text-adminInk text-balance">下一步补样方向</h2>
+        <p className="mt-3 text-sm leading-7 text-adminInkSoft">
+          这里把 `11.3` 业务验收的阻塞拆成可执行的样本缺口：先补前后窗复盘，再补 radar / 裂变对照，最后补 3+ 样本文风真实使用。
+        </p>
+        <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <div className={mutedPanelClassName}>
+            <div className={eyebrowClassName}>作者抬升</div>
+            <GapSummaryList items={report.observationGaps.authorLift} emptyText="作者前后窗样本已具备可比性。" />
+          </div>
+          <div className={mutedPanelClassName}>
+            <div className={eyebrowClassName}>裂变 vs Radar</div>
+            <GapSummaryList items={report.observationGaps.fissionVsRadar} emptyText="裂变与 radar 的最低回收样本已满足。" />
+          </div>
+          <div className={mutedPanelClassName}>
+            <div className={eyebrowClassName}>矩阵产能</div>
+            <GapSummaryList items={report.observationGaps.matrixOutput} emptyText="矩阵作者产能与质量窗口已具备可比性。" />
+          </div>
+          <div className={mutedPanelClassName}>
+            <div className={eyebrowClassName}>风格真实使用</div>
+            <GapSummaryList items={report.observationGaps.styleUsage} emptyText="近 30 天 3+ 样本画像使用占比已达目标。" />
+          </div>
+        </div>
+      </article>
+
       <div className="grid gap-4 xl:grid-cols-2">
         <article className={panelClassName}>
           <div className="flex items-center justify-between gap-3">
@@ -174,30 +230,66 @@ export default async function AdminPlan17BusinessPage() {
           {topAuthorLiftItems.length === 0 ? (
             <div className="mt-6 text-sm leading-7 text-adminInkSoft">当前没有作者启用样本。</div>
           ) : (
-            <div className="mt-6 overflow-x-auto">
-              <table className="w-full min-w-[520px] text-left text-sm">
-                <thead className="bg-adminBg text-adminInkMuted">
-                  <tr>
-                    {["作者", "启用时间", "前窗", "后窗", "命中率", "抬升", "可比"].map((head) => (
-                      <th key={head} className="px-4 py-3 font-medium">{head}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {topAuthorLiftItems.map((item) => (
-                    <tr key={`${item.userId}-${item.activationAt || "none"}`} className="border-t border-adminLineStrong">
-                      <td className={tableCellClassName}>{item.userId}</td>
-                      <td className={cn(tableCellClassName, "text-adminInkSoft")}>{formatDateTime(item.activationAt)}</td>
-                      <td className={cn(tableCellClassName, "text-adminInkSoft")}>{item.baselineReviewedCount}</td>
-                      <td className={cn(tableCellClassName, "text-adminInkSoft")}>{item.currentReviewedCount}</td>
-                      <td className={cn(tableCellClassName, "text-adminInkSoft")}>{formatPercent(item.baselineHitRate)} / {formatPercent(item.currentHitRate)}</td>
-                      <td className={tableCellClassName}>{formatPercent(item.liftPp)}</td>
-                      <td className={cn(tableCellClassName, item.comparable ? "text-adminAccent" : "text-adminInkMuted")}>{item.comparable ? "是" : "否"}</td>
+            <>
+              <div className={mobileDetailListClassName}>
+                {topAuthorLiftItems.map((item) => (
+                  <article key={`mobile-${item.userId}-${item.activationAt || "none"}`} className={mobileDetailCardClassName}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className={eyebrowClassName}>作者 {item.userId}</div>
+                        <div className={mobileDetailValueClassName}>启用时间 {formatDateTime(item.activationAt)}</div>
+                      </div>
+                      <div className={cn("text-sm", item.comparable ? "text-adminAccent" : "text-adminInkMuted")}>
+                        {item.comparable ? "可比" : "待补样"}
+                      </div>
+                    </div>
+                    <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                      <div>
+                        <div className={mobileDetailLabelClassName}>前窗 / 后窗</div>
+                        <div className={mobileDetailValueClassName}>{item.baselineReviewedCount} / {item.currentReviewedCount}</div>
+                      </div>
+                      <div>
+                        <div className={mobileDetailLabelClassName}>命中率</div>
+                        <div className={mobileDetailValueClassName}>{formatPercent(item.baselineHitRate)} / {formatPercent(item.currentHitRate)}</div>
+                      </div>
+                      <div>
+                        <div className={mobileDetailLabelClassName}>抬升</div>
+                        <div className={mobileDetailValueClassName}>{formatPercent(item.liftPp)}</div>
+                      </div>
+                      <div>
+                        <div className={mobileDetailLabelClassName}>缺口</div>
+                        <div className={mobileDetailValueClassName}>{formatGapReasons(item.gapReasons)}</div>
+                      </div>
+                    </div>
+                  </article>
+                ))}
+              </div>
+              <div className="mt-6 hidden overflow-x-auto md:block">
+                <table className="w-full min-w-[520px] text-left text-sm">
+                  <thead className="bg-adminBg text-adminInkMuted">
+                    <tr>
+                      {["作者", "启用时间", "前窗", "后窗", "命中率", "抬升", "可比", "缺口"].map((head) => (
+                        <th key={head} className="px-4 py-3 font-medium">{head}</th>
+                      ))}
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {topAuthorLiftItems.map((item) => (
+                      <tr key={`${item.userId}-${item.activationAt || "none"}`} className="border-t border-adminLineStrong">
+                        <td className={tableCellClassName}>{item.userId}</td>
+                        <td className={cn(tableCellClassName, "text-adminInkSoft")}>{formatDateTime(item.activationAt)}</td>
+                        <td className={cn(tableCellClassName, "text-adminInkSoft")}>{item.baselineReviewedCount}</td>
+                        <td className={cn(tableCellClassName, "text-adminInkSoft")}>{item.currentReviewedCount}</td>
+                        <td className={cn(tableCellClassName, "text-adminInkSoft")}>{formatPercent(item.baselineHitRate)} / {formatPercent(item.currentHitRate)}</td>
+                        <td className={tableCellClassName}>{formatPercent(item.liftPp)}</td>
+                        <td className={cn(tableCellClassName, item.comparable ? "text-adminAccent" : "text-adminInkMuted")}>{item.comparable ? "是" : "否"}</td>
+                        <td className={cn(tableCellClassName, "text-adminInkSoft")}>{formatGapReasons(item.gapReasons)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
           )}
         </article>
 
@@ -215,29 +307,60 @@ export default async function AdminPlan17BusinessPage() {
           {topFissionItems.length === 0 ? (
             <div className="mt-6 text-sm leading-7 text-adminInkSoft">当前没有裂变或 radar 的真实 7 天回收样本。</div>
           ) : (
-            <div className="mt-6 overflow-x-auto">
-              <table className="w-full min-w-[560px] text-left text-sm">
-                <thead className="bg-adminBg text-adminInkMuted">
-                  <tr>
-                    {["作者", "文章", "创建时间", "来源", "裂变模式", "结果"].map((head) => (
-                      <th key={head} className="px-4 py-3 font-medium">{head}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {topFissionItems.map((item) => (
-                    <tr key={`${item.userId}-${item.articleId}`} className="border-t border-adminLineStrong">
-                      <td className={tableCellClassName}>{item.userId}</td>
-                      <td className={cn(tableCellClassName, "text-adminInkSoft")}>{item.articleId}</td>
-                      <td className={cn(tableCellClassName, "text-adminInkSoft")}>{formatDateTime(item.articleCreatedAt)}</td>
-                      <td className={cn(tableCellClassName, item.topicSource === "topicFission" ? "text-adminAccent" : "text-adminInkSoft")}>{item.topicSource ?? "--"}</td>
-                      <td className={cn(tableCellClassName, "text-adminInkSoft")}>{item.topicFissionMode ?? "--"}</td>
-                      <td className={tableCellClassName}>{item.hitStatus}</td>
+            <>
+              <div className={mobileDetailListClassName}>
+                {topFissionItems.map((item) => (
+                  <article key={`mobile-${item.userId}-${item.articleId}`} className={mobileDetailCardClassName}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className={eyebrowClassName}>作者 {item.userId}</div>
+                        <div className={mobileDetailValueClassName}>文章 {item.articleId}</div>
+                      </div>
+                      <div className={cn("text-sm", item.topicSource === "topicFission" ? "text-adminAccent" : "text-adminInkSoft")}>
+                        {item.topicSource ?? "--"}
+                      </div>
+                    </div>
+                    <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                      <div>
+                        <div className={mobileDetailLabelClassName}>创建时间</div>
+                        <div className={mobileDetailValueClassName}>{formatDateTime(item.articleCreatedAt)}</div>
+                      </div>
+                      <div>
+                        <div className={mobileDetailLabelClassName}>裂变模式</div>
+                        <div className={mobileDetailValueClassName}>{item.topicFissionMode ?? "--"}</div>
+                      </div>
+                      <div className="sm:col-span-2">
+                        <div className={mobileDetailLabelClassName}>结果</div>
+                        <div className={mobileDetailValueClassName}>{item.hitStatus}</div>
+                      </div>
+                    </div>
+                  </article>
+                ))}
+              </div>
+              <div className="mt-6 hidden overflow-x-auto md:block">
+                <table className="w-full min-w-[560px] text-left text-sm">
+                  <thead className="bg-adminBg text-adminInkMuted">
+                    <tr>
+                      {["作者", "文章", "创建时间", "来源", "裂变模式", "结果"].map((head) => (
+                        <th key={head} className="px-4 py-3 font-medium">{head}</th>
+                      ))}
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {topFissionItems.map((item) => (
+                      <tr key={`${item.userId}-${item.articleId}`} className="border-t border-adminLineStrong">
+                        <td className={tableCellClassName}>{item.userId}</td>
+                        <td className={cn(tableCellClassName, "text-adminInkSoft")}>{item.articleId}</td>
+                        <td className={cn(tableCellClassName, "text-adminInkSoft")}>{formatDateTime(item.articleCreatedAt)}</td>
+                        <td className={cn(tableCellClassName, item.topicSource === "topicFission" ? "text-adminAccent" : "text-adminInkSoft")}>{item.topicSource ?? "--"}</td>
+                        <td className={cn(tableCellClassName, "text-adminInkSoft")}>{item.topicFissionMode ?? "--"}</td>
+                        <td className={tableCellClassName}>{item.hitStatus}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
           )}
         </article>
 
@@ -255,30 +378,70 @@ export default async function AdminPlan17BusinessPage() {
           {topMatrixItems.length === 0 ? (
             <div className="mt-6 text-sm leading-7 text-adminInkSoft">当前没有矩阵批次样本。</div>
           ) : (
-            <div className="mt-6 overflow-x-auto">
-              <table className="w-full min-w-[620px] text-left text-sm">
-                <thead className="bg-adminBg text-adminInkMuted">
-                  <tr>
-                    {["作者", "启用时间", "前/后发文", "周中位数", "增长", "质量前/后", "质量对照"].map((head) => (
-                      <th key={head} className="px-4 py-3 font-medium">{head}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {topMatrixItems.map((item) => (
-                    <tr key={`${item.userId}-${item.activationAt || "none"}`} className="border-t border-adminLineStrong">
-                      <td className={tableCellClassName}>{item.userId}</td>
-                      <td className={cn(tableCellClassName, "text-adminInkSoft")}>{formatDateTime(item.activationAt)}</td>
-                      <td className={cn(tableCellClassName, "text-adminInkSoft")}>{item.beforeArticleCount} / {item.afterArticleCount}</td>
-                      <td className={cn(tableCellClassName, "text-adminInkSoft")}>{item.beforeMedian ?? "--"} / {item.afterMedian ?? "--"}</td>
-                      <td className={tableCellClassName}>{formatPercent(item.outputGrowthPp)}</td>
-                      <td className={cn(tableCellClassName, "text-adminInkSoft")}>{formatPercent(item.beforeHitRate)} / {formatPercent(item.afterHitRate)}</td>
-                      <td className={cn(tableCellClassName, item.comparableQuality ? "text-adminAccent" : "text-adminInkMuted")}>{item.comparableOutput ? (item.comparableQuality ? "完整" : "仅产能") : "不足"}</td>
+            <>
+              <div className={mobileDetailListClassName}>
+                {topMatrixItems.map((item) => (
+                  <article key={`mobile-${item.userId}-${item.activationAt || "none"}`} className={mobileDetailCardClassName}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className={eyebrowClassName}>作者 {item.userId}</div>
+                        <div className={mobileDetailValueClassName}>启用时间 {formatDateTime(item.activationAt)}</div>
+                      </div>
+                      <div className={cn("text-sm", item.comparableQuality ? "text-adminAccent" : "text-adminInkMuted")}>
+                        {item.comparableOutput ? (item.comparableQuality ? "完整对照" : "仅产能") : "不足"}
+                      </div>
+                    </div>
+                    <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                      <div>
+                        <div className={mobileDetailLabelClassName}>前 / 后发文</div>
+                        <div className={mobileDetailValueClassName}>{item.beforeArticleCount} / {item.afterArticleCount}</div>
+                      </div>
+                      <div>
+                        <div className={mobileDetailLabelClassName}>周中位数</div>
+                        <div className={mobileDetailValueClassName}>{item.beforeMedian ?? "--"} / {item.afterMedian ?? "--"}</div>
+                      </div>
+                      <div>
+                        <div className={mobileDetailLabelClassName}>增长</div>
+                        <div className={mobileDetailValueClassName}>{formatPercent(item.outputGrowthPp)}</div>
+                      </div>
+                      <div>
+                        <div className={mobileDetailLabelClassName}>质量前 / 后</div>
+                        <div className={mobileDetailValueClassName}>{formatPercent(item.beforeHitRate)} / {formatPercent(item.afterHitRate)}</div>
+                      </div>
+                      <div className="sm:col-span-2">
+                        <div className={mobileDetailLabelClassName}>缺口</div>
+                        <div className={mobileDetailValueClassName}>{formatGapReasons(item.gapReasons)}</div>
+                      </div>
+                    </div>
+                  </article>
+                ))}
+              </div>
+              <div className="mt-6 hidden overflow-x-auto md:block">
+                <table className="w-full min-w-[620px] text-left text-sm">
+                  <thead className="bg-adminBg text-adminInkMuted">
+                    <tr>
+                      {["作者", "启用时间", "前/后发文", "周中位数", "增长", "质量前/后", "质量对照", "缺口"].map((head) => (
+                        <th key={head} className="px-4 py-3 font-medium">{head}</th>
+                      ))}
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {topMatrixItems.map((item) => (
+                      <tr key={`${item.userId}-${item.activationAt || "none"}`} className="border-t border-adminLineStrong">
+                        <td className={tableCellClassName}>{item.userId}</td>
+                        <td className={cn(tableCellClassName, "text-adminInkSoft")}>{formatDateTime(item.activationAt)}</td>
+                        <td className={cn(tableCellClassName, "text-adminInkSoft")}>{item.beforeArticleCount} / {item.afterArticleCount}</td>
+                        <td className={cn(tableCellClassName, "text-adminInkSoft")}>{item.beforeMedian ?? "--"} / {item.afterMedian ?? "--"}</td>
+                        <td className={tableCellClassName}>{formatPercent(item.outputGrowthPp)}</td>
+                        <td className={cn(tableCellClassName, "text-adminInkSoft")}>{formatPercent(item.beforeHitRate)} / {formatPercent(item.afterHitRate)}</td>
+                        <td className={cn(tableCellClassName, item.comparableQuality ? "text-adminAccent" : "text-adminInkMuted")}>{item.comparableOutput ? (item.comparableQuality ? "完整" : "仅产能") : "不足"}</td>
+                        <td className={cn(tableCellClassName, "text-adminInkSoft")}>{formatGapReasons(item.gapReasons)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
           )}
         </article>
 
@@ -296,31 +459,66 @@ export default async function AdminPlan17BusinessPage() {
           {topStyleItems.length === 0 ? (
             <div className="mt-6 text-sm leading-7 text-adminInkSoft">当前还没有风格资产真实 usage event。</div>
           ) : (
-            <div className="mt-6 overflow-x-auto">
-              <table className="w-full min-w-[640px] text-left text-sm">
-                <thead className="bg-adminBg text-adminInkMuted">
-                  <tr>
-                    {["作者", "画像", "文章", "触发动作", "画像样本数", "3+ 样本", "近 30 天", "使用时间"].map((head) => (
-                      <th key={head} className="px-4 py-3 font-medium">{head}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {topStyleItems.map((item) => (
-                    <tr key={`${item.userId}-${item.profileId || "none"}-${item.usedAt || "none"}`} className="border-t border-adminLineStrong">
-                      <td className={tableCellClassName}>{item.userId}</td>
-                      <td className={cn(tableCellClassName, "text-adminInkSoft")}>{item.profileId ?? "--"}</td>
-                      <td className={cn(tableCellClassName, "text-adminInkSoft")}>{item.articleId ?? "--"}</td>
-                      <td className={cn(tableCellClassName, "text-adminInkSoft")}>{formatStyleUsageSourceLabel(item.usageSource)}</td>
-                      <td className={cn(tableCellClassName, "text-adminInkSoft")}>{item.sampleCount}</td>
-                      <td className={cn(tableCellClassName, item.isMultiSample ? "text-adminAccent" : "text-adminInkMuted")}>{item.isMultiSample ? "3+ 篇" : "单篇"}</td>
-                      <td className={cn(tableCellClassName, item.isRecent30d ? "text-adminAccent" : "text-adminInkMuted")}>{item.isRecent30d ? "是" : "否"}</td>
-                      <td className={cn(tableCellClassName, "text-adminInkSoft")}>{formatDateTime(item.usedAt)}</td>
+            <>
+              <div className={mobileDetailListClassName}>
+                {topStyleItems.map((item) => (
+                  <article key={`mobile-${item.userId}-${item.profileId || "none"}-${item.usedAt || "none"}`} className={mobileDetailCardClassName}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className={eyebrowClassName}>作者 {item.userId}</div>
+                        <div className={mobileDetailValueClassName}>画像 {item.profileId ?? "--"} · 文章 {item.articleId ?? "--"}</div>
+                      </div>
+                      <div className={cn("text-sm", item.isMultiSample ? "text-adminAccent" : "text-adminInkMuted")}>
+                        {item.isMultiSample ? "3+ 样本" : "单样本"}
+                      </div>
+                    </div>
+                    <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                      <div>
+                        <div className={mobileDetailLabelClassName}>触发动作</div>
+                        <div className={mobileDetailValueClassName}>{formatStyleUsageSourceLabel(item.usageSource)}</div>
+                      </div>
+                      <div>
+                        <div className={mobileDetailLabelClassName}>画像样本数</div>
+                        <div className={mobileDetailValueClassName}>{item.sampleCount}</div>
+                      </div>
+                      <div>
+                        <div className={mobileDetailLabelClassName}>近 30 天</div>
+                        <div className={mobileDetailValueClassName}>{item.isRecent30d ? "是" : "否"}</div>
+                      </div>
+                      <div>
+                        <div className={mobileDetailLabelClassName}>使用时间</div>
+                        <div className={mobileDetailValueClassName}>{formatDateTime(item.usedAt)}</div>
+                      </div>
+                    </div>
+                  </article>
+                ))}
+              </div>
+              <div className="mt-6 hidden overflow-x-auto md:block">
+                <table className="w-full min-w-[640px] text-left text-sm">
+                  <thead className="bg-adminBg text-adminInkMuted">
+                    <tr>
+                      {["作者", "画像", "文章", "触发动作", "画像样本数", "3+ 样本", "近 30 天", "使用时间"].map((head) => (
+                        <th key={head} className="px-4 py-3 font-medium">{head}</th>
+                      ))}
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {topStyleItems.map((item) => (
+                      <tr key={`${item.userId}-${item.profileId || "none"}-${item.usedAt || "none"}`} className="border-t border-adminLineStrong">
+                        <td className={tableCellClassName}>{item.userId}</td>
+                        <td className={cn(tableCellClassName, "text-adminInkSoft")}>{item.profileId ?? "--"}</td>
+                        <td className={cn(tableCellClassName, "text-adminInkSoft")}>{item.articleId ?? "--"}</td>
+                        <td className={cn(tableCellClassName, "text-adminInkSoft")}>{formatStyleUsageSourceLabel(item.usageSource)}</td>
+                        <td className={cn(tableCellClassName, "text-adminInkSoft")}>{item.sampleCount}</td>
+                        <td className={cn(tableCellClassName, item.isMultiSample ? "text-adminAccent" : "text-adminInkMuted")}>{item.isMultiSample ? "3+ 篇" : "单篇"}</td>
+                        <td className={cn(tableCellClassName, item.isRecent30d ? "text-adminAccent" : "text-adminInkMuted")}>{item.isRecent30d ? "是" : "否"}</td>
+                        <td className={cn(tableCellClassName, "text-adminInkSoft")}>{formatDateTime(item.usedAt)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
           )}
         </article>
       </div>

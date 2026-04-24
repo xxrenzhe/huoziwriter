@@ -29,6 +29,8 @@ type WritingSyntaxPatternCode =
   | "list_enumeration"
   | "mixed_balance";
 
+type OpeningPatternQualityCeiling = "A" | "B+" | "B" | "B-" | "C";
+
 export type WritingDiversityReport = {
   status: "balanced" | "needs_attention";
   summary: string;
@@ -93,6 +95,18 @@ function getPatternLabel(code: WritingPatternCode) {
     open_end: "开放式收尾",
   };
   return map[code];
+}
+
+function getOpeningPatternQualityCeiling(code: WritingPatternCode): OpeningPatternQualityCeiling | null {
+  const map: Partial<Record<WritingPatternCode, OpeningPatternQualityCeiling>> = {
+    question_hook: "B",
+    scene_entry: "A",
+    judgement_first: "B+",
+    phenomenon_signal: "B-",
+    conflict_entry: "A",
+    direct_entry: "C",
+  };
+  return map[code] ?? null;
 }
 
 function getSyntaxPatternLabel(code: WritingSyntaxPatternCode) {
@@ -347,7 +361,7 @@ export function buildWritingDiversityReport(input: {
   ].filter(Boolean) as string[];
   const suggestions = [
     needsOpeningAttention
-      ? `这次开头别再走「${getPatternLabel(currentOpeningPatternCode)}」，优先试「${getAlternativePatternLabels(currentOpeningPatternCode).slice(0, 2).join("」或「")}」。`
+      ? `这次开头别再走「${getPatternLabel(currentOpeningPatternCode)}」（质量上限 ${getOpeningPatternQualityCeiling(currentOpeningPatternCode) || "未知"}），优先试「${getAlternativePatternLabels(currentOpeningPatternCode).slice(0, 2).join("」或「")}」。`
       : null,
     needsEndingAttention
       ? `这次结尾别再停在「${getPatternLabel(currentEndingPatternCode)}」，优先试「${getAlternativePatternLabels(currentEndingPatternCode).slice(0, 2).join("」或「")}」。`

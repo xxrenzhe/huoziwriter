@@ -10,6 +10,7 @@ import { getPersonaCatalog, getPersonas } from "@/lib/personas";
 import { getDailyGenerationUsage } from "@/lib/usage";
 import { getArticlesByUser, getFragmentsByUser } from "@/lib/repositories";
 import { getWritingStyleProfiles } from "@/lib/writing-style-profiles";
+import { getWriterShellNotificationItems } from "@/lib/shell-notifications";
 import { WriterShell } from "@/components/writer-shell";
 import { WriterRouteForbiddenState } from "@/components/writer-route-state";
 
@@ -52,8 +53,8 @@ const firstSuccessSteps = [
 ] as const;
 
 export default async function WorkspaceLayout({ children }: { children: ReactNode }) {
-  const { session } = await requireWriterSession();
-  const [planContext, dailyGenerationUsage, articles, fragments, personas, personaCatalog, writingStyleProfiles] = await Promise.all([
+  const { session, user } = await requireWriterSession();
+  const [planContext, dailyGenerationUsage, articles, fragments, personas, personaCatalog, writingStyleProfiles, notificationItems] = await Promise.all([
     getUserPlanContext(session.userId),
     getDailyGenerationUsage(session.userId),
     getArticlesByUser(session.userId),
@@ -61,6 +62,7 @@ export default async function WorkspaceLayout({ children }: { children: ReactNod
     getPersonas(session.userId),
     getPersonaCatalog(),
     getWritingStyleProfiles(session.userId),
+    getWriterShellNotificationItems(session.userId),
   ]);
   const { plan, planSnapshot } = planContext;
   const personaLimit = planSnapshot.personaLimit;
@@ -86,10 +88,12 @@ export default async function WorkspaceLayout({ children }: { children: ReactNod
       <WriterShell
         items={writerNav}
         currentPlanName={plan.name}
+        accountLabel={user.display_name?.trim() || session.username}
         currentUsage={dailyGenerationUsage}
         usageLimit={planSnapshot.dailyGenerationLimit}
         statusHeadline={statusHeadline}
         statusDetail={statusDetail}
+        notificationItems={notificationItems}
       >
         {personaReady && showFirstSuccessGuide ? (
           <section className={cn("mb-8", firstSuccessGuideClassName)}>

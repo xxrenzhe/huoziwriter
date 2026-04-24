@@ -627,6 +627,9 @@ export async function generateSceneText(input: {
   systemPrompt: string;
   userPrompt: string;
   systemSegments?: GatewaySystemSegment[];
+  observationMeta?: {
+    articleId?: number | null;
+  };
   temperature?: number;
   rolloutUserId?: number | null;
 }) {
@@ -658,6 +661,7 @@ export async function generateSceneText(input: {
       );
       void recordAiCallObservation({
         sceneCode: input.sceneCode,
+        articleId: input.observationMeta?.articleId ?? null,
         model,
         provider,
         callMode: model === route.primaryModel ? "primary" : "fallback",
@@ -693,6 +697,7 @@ export async function generateSceneText(input: {
             );
             await recordAiCallObservation({
               sceneCode: input.sceneCode,
+              articleId: input.observationMeta?.articleId ?? null,
               model: shadowModel,
               provider: shadowProvider,
               callMode: "shadow",
@@ -707,6 +712,7 @@ export async function generateSceneText(input: {
           } catch (error) {
             await recordAiCallObservation({
               sceneCode: input.sceneCode,
+              articleId: input.observationMeta?.articleId ?? null,
               model: shadowModel,
               provider: shadowProvider,
               callMode: "shadow",
@@ -731,6 +737,7 @@ export async function generateSceneText(input: {
       if (classifyGatewayError(error) === "fatal") {
         void recordAiCallObservation({
           sceneCode: input.sceneCode,
+          articleId: input.observationMeta?.articleId ?? null,
           model,
           provider,
           callMode: model === route.primaryModel ? "primary" : "fallback",
@@ -746,6 +753,7 @@ export async function generateSceneText(input: {
   if (lastFailedModel && lastFailedProvider) {
     void recordAiCallObservation({
       sceneCode: input.sceneCode,
+      articleId: input.observationMeta?.articleId ?? null,
       model: lastFailedModel,
       provider: lastFailedProvider,
       callMode: lastFailedModel === route.primaryModel ? "primary" : "fallback",

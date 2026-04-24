@@ -1,9 +1,9 @@
 "use client";
 
 import { Button, Input, Select, cn, surfaceCardStyles } from "@huoziwriter/ui";
-import { createTopicSourceAction, disableTopicSourceAction, updateTopicSourceAction } from "@/app/(writer)/writer-actions";
+import { createTopicSourceAction, disableTopicSourceAction, restoreTopicSourceAction, updateTopicSourceAction } from "@/app/(writer)/writer-actions";
 import { useRouter } from "next/navigation";
-import { FormEvent, startTransition, useState } from "react";
+import { FormEvent, startTransition, useEffect, useMemo, useState } from "react";
 
 const summaryCardClassName = cn(surfaceCardStyles({ tone: "highlight", padding: "sm" }), "text-sm leading-7 text-inkSoft shadow-none");
 const createFormClassName = cn(
@@ -13,6 +13,24 @@ const createFormClassName = cn(
 const sourceCardClassName = cn(surfaceCardStyles({ padding: "sm" }), "flex flex-wrap items-center justify-between gap-3");
 const sourceBadgeClassName = "border border-lineStrong bg-surfaceWarm px-2 py-1";
 const messageCardClassName = cn(surfaceCardStyles({ tone: "highlight", padding: "sm" }), "text-sm text-cinnabar");
+
+function buildSourceDrafts(
+  sources: Array<{
+    id: number;
+    sourceType: string;
+    priority: number;
+  }>,
+) {
+  return Object.fromEntries(
+    sources.map((source) => [
+      source.id,
+      {
+        sourceType: source.sourceType,
+        priority: String(source.priority),
+      },
+    ]),
+  );
+}
 
 export function TopicSourceManagerClient({
   sources,
@@ -28,6 +46,7 @@ export function TopicSourceManagerClient({
     sourceType: string;
     priority: number;
     scope: "system" | "custom";
+    isActive: boolean;
     status?: string;
     attemptCount?: number;
     consecutiveFailures?: number;
@@ -50,6 +69,7 @@ export function TopicSourceManagerClient({
   const [message, setMessage] = useState("");
   const [updatingId, setUpdatingId] = useState<number | null>(null);
   const reachedLimit = canManage && maxCustomCount > 0 && currentCustomCount >= maxCustomCount;
+  const [drafts, setDrafts] = useState(() => buildSourceDrafts(sources));
 
   function formatSourceTypeLabel(value: string) {
     if (value === "youtube") return "YouTube";
@@ -67,6 +87,28 @@ export function TopicSourceManagerClient({
     if (value === "paused") return "暂停";
     return "健康";
   }
+
+  const activeSources = sources.filter((source) => source.isActive);
+  const inactiveCustomSources = sources.filter((source) => source.scope === "custom" && !source.isActive);
+  const customActiveSources = activeSources.filter((source) => source.scope === "custom");
+  const rankingBySourceId = useMemo(
+    () =>
+      new Map(
+        [...customActiveSources]
+          .sort((left, right) => {
+            if (right.priority !== left.priority) {
+              return right.priority - left.priority;
+            }
+            return left.id - right.id;
+          })
+          .map((source, index) => [source.id, index + 1] as const),
+      ),
+    [customActiveSources],
+  );
+
+  useEffect(() => {
+    setDrafts(buildSourceDrafts(sources));
+  }, [sources]);
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -107,6 +149,32 @@ export function TopicSourceManagerClient({
     startTransition(() => router.refresh());
   }
 
+  function updateDraft(sourceId: number, patch: Partial<{ sourceType: string; priority: string }>) {
+    setDrafts((current) => ({
+      ...current,
+      [sourceId]: {
+        sourceType: patch.sourceType ?? current[sourceId]?.sourceType ?? "news",
+        priority: patch.priority ?? current[sourceId]?.priority ?? "100",
+      },
+    }));
+  }
+
+  async function saveDraft(source: (typeof sources)[number]) {
+    const draft = drafts[source.id] ?? {
+      sourceType: source.sourceType,
+      priority: String(source.priority),
+    };
+    const nextPriority = Number(draft.priority);
+    if (!Number.isInteger(nextPriority) || nextPriority < 0 || nextPriority > 999) {
+      setMessage("优先级只能填写 0 到 999 的整数。");
+      return;
+    }
+    await updateSource(source.id, {
+      sourceType: draft.sourceType,
+      priority: nextPriority,
+    });
+  }
+
   async function disableSource(id: number) {
     try {
       await disableTopicSourceAction(id);
@@ -115,6 +183,17 @@ export function TopicSourceManagerClient({
       return;
     }
     setMessage("信息源已停用。");
+    startTransition(() => router.refresh());
+  }
+
+  async function restoreSource(id: number) {
+    try {
+      await restoreTopicSourceAction(id);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "恢复失败");
+      return;
+    }
+    setMessage("信息源已恢复并重新参与热点同步。");
     startTransition(() => router.refresh());
   }
 
@@ -149,7 +228,7 @@ export function TopicSourceManagerClient({
         </div>
       )}
       <div className="space-y-3">
-        {sources.map((source) => (
+        {activeSources.map((source) => (
           <article key={source.id} className={sourceCardClassName}>
             <div>
               <div className="text-xs uppercase tracking-[0.24em] text-inkMuted">
@@ -186,8 +265,8 @@ export function TopicSourceManagerClient({
               <div className="flex flex-wrap items-center gap-2">
                 <Select
                   aria-label="select control"
-                  defaultValue={source.sourceType}
-                  onChange={(event) => updateSource(source.id, { sourceType: event.target.value })}
+                  value={drafts[source.id]?.sourceType ?? source.sourceType}
+                  onChange={(event) => updateDraft(source.id, { sourceType: event.target.value })}
                   disabled={updatingId === source.id}
                   className="w-auto min-w-[140px] px-3"
                 >
@@ -199,25 +278,77 @@ export function TopicSourceManagerClient({
                   <option value="blog">Blog</option>
                   <option value="rss">RSS</option>
                 </Select>
-                <Button
-                  onClick={() => {
-                    const next = window.prompt("设置优先级（0-999）", String(source.priority));
-                    if (next == null) return;
-                    updateSource(source.id, { priority: Number(next) });
-                  }}
+                <Input
+                  aria-label={`${source.name} 优先级`}
+                  value={drafts[source.id]?.priority ?? String(source.priority)}
+                  onChange={(event) => updateDraft(source.id, { priority: event.target.value })}
                   disabled={updatingId === source.id}
+                  className="w-28 bg-surface"
+                  inputMode="numeric"
+                  placeholder="0-999"
+                />
+                <Button
+                  onClick={() => void saveDraft(source)}
+                  disabled={
+                    updatingId === source.id
+                    || (
+                      (drafts[source.id]?.sourceType ?? source.sourceType) === source.sourceType
+                      && (drafts[source.id]?.priority ?? String(source.priority)) === String(source.priority)
+                    )
+                  }
                   variant="secondary"
                 >
-                  调整优先级
+                  保存排序
                 </Button>
                 <Button onClick={() => disableSource(source.id)} variant="secondary">
                   停用
                 </Button>
+                <div className="w-full text-xs leading-6 text-inkMuted">
+                  当前排位 {rankingBySourceId.get(source.id) ?? "-"} / {customActiveSources.length}，优先级越高越靠前。
+                </div>
               </div>
             ) : null}
           </article>
         ))}
       </div>
+      {inactiveCustomSources.length > 0 ? (
+        <div className="space-y-3">
+          <div className={summaryCardClassName}>
+            已停用 {inactiveCustomSources.length} 个自定义信息源。恢复后会重新参与热点同步与排序，并重新占用启用名额。
+          </div>
+          {inactiveCustomSources.map((source) => (
+            <article key={`inactive-${source.id}`} className={sourceCardClassName}>
+              <div>
+                <div className="text-xs uppercase tracking-[0.24em] text-inkMuted">已停用来源</div>
+                <div className="mt-2 font-serifCn text-2xl text-ink text-balance">{source.name}</div>
+                <div className="mt-2 text-sm text-inkSoft">{source.homepageUrl || "未配置主页地址"}</div>
+                <div className="mt-3 flex flex-wrap gap-2 text-xs text-inkMuted">
+                  <span className={sourceBadgeClassName}>
+                    类型 · {formatSourceTypeLabel(source.sourceType)}
+                  </span>
+                  <span className={sourceBadgeClassName}>
+                    优先级 · {source.priority}
+                  </span>
+                  <span className={sourceBadgeClassName}>
+                    状态 · 已停用
+                  </span>
+                </div>
+                {source.degradedReason || source.lastError ? (
+                  <div className="mt-3 space-y-1 text-xs leading-6 text-inkMuted">
+                    {source.degradedReason ? <div>停用前异常：{source.degradedReason}</div> : null}
+                    {source.lastError ? <div>最近错误：{source.lastError}{source.lastHttpStatus ? `（HTTP ${source.lastHttpStatus}）` : ""}</div> : null}
+                  </div>
+                ) : null}
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button onClick={() => restoreSource(source.id)} variant="secondary">
+                  恢复来源
+                </Button>
+              </div>
+            </article>
+          ))}
+        </div>
+      ) : null}
       {message ? <div className={messageCardClassName}>{message}</div> : null}
     </div>
   );

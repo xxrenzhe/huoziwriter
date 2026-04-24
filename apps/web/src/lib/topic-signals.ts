@@ -1301,6 +1301,31 @@ export async function getVisibleTopicSources(userId: number) {
   return getTopicSources(userId);
 }
 
+export async function getTopicSourcesForSettings(userId: number) {
+  const db = getDatabase();
+  const scope = await getUserAccessScope(userId);
+  const placeholders = scope.userIds.map(() => "?").join(", ");
+  return db.query<TopicSourceRow>(
+    `SELECT
+       ts.*,
+       sc.connector_scope,
+       sc.status as connector_status,
+       sc.attempt_count as connector_attempt_count,
+       sc.consecutive_failures as connector_consecutive_failures,
+       sc.last_error as connector_last_error,
+       sc.last_http_status as connector_last_http_status,
+       sc.next_retry_at as connector_next_retry_at,
+       sc.health_score as connector_health_score,
+       sc.degraded_reason as connector_degraded_reason
+     FROM topic_sources ts
+     LEFT JOIN source_connectors sc ON sc.topic_source_id = ts.id
+     WHERE (ts.owner_user_id IS NULL AND ts.is_active = ?)
+        OR ts.owner_user_id IN (${placeholders})
+     ORDER BY ts.is_active DESC, ts.priority DESC, ts.owner_user_id ASC, ts.id ASC`,
+    [true, ...scope.userIds],
+  );
+}
+
 export async function createTopicSource(input: {
   userId: number;
   name: string;
@@ -1366,6 +1391,21 @@ export async function disableTopicSource(input: { userId: number; sourceId: numb
     [false, new Date().toISOString(), input.sourceId, ...scope.userIds],
   );
   await syncTopicSourceToSourceConnectorById(input.sourceId);
+}
+
+export async function enableTopicSource(input: { userId: number; sourceId: number }) {
+  await assertTopicSourceQuota(input.userId);
+  const db = getDatabase();
+  const scope = await getUserAccessScope(input.userId);
+  const placeholders = scope.userIds.map(() => "?").join(", ");
+  await db.exec(
+    `UPDATE topic_sources
+     SET is_active = ?, updated_at = ?
+     WHERE id = ? AND owner_user_id IN (${placeholders})`,
+    [true, new Date().toISOString(), input.sourceId, ...scope.userIds],
+  );
+  await syncTopicSourceToSourceConnectorById(input.sourceId);
+  await syncTopicSignals({ userId: input.userId, limitPerSource: 4 });
 }
 
 export async function updateTopicSource(input: {

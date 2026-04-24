@@ -3377,6 +3377,157 @@ test("publish guard blocks forbidden openings and warns on weak opening strength
   expect(checks.find((item) => item.key === "opening_strength")?.status).toBe("warning");
 });
 
+test("opening check endpoint returns rewrite directions for forbidden opening", async ({ request, baseURL }) => {
+  const cookie = await loginAsAdmin(baseURL!, request);
+  await ensurePersona(baseURL!, request, cookie);
+
+  const { articleId } = await createDeepWritingReadyArticle(baseURL!, request, cookie, {
+    title: "E2E 开头体检接口",
+  });
+
+  const deepWritingSeed = await request.patch(`${baseURL}/api/articles/${articleId}/stages/deepWriting`, {
+    headers: { Cookie: cookie },
+    data: {
+      payloadPatch: {
+        openingStrategy: "在当今 AI 时代，内容创作正在经历深刻变化。",
+        openingPatternLabel: "趋势判断",
+      },
+    },
+  });
+  expect(deepWritingSeed.ok()).toBeTruthy();
+
+  const response = await request.post(`${baseURL}/api/articles/${articleId}/opening-check`, {
+    headers: { Cookie: cookie },
+  });
+  expect(response.ok()).toBeTruthy();
+  const json = await response.json();
+  expect(json.success).toBe(true);
+  expect(String(json.data?.check?.openingText || "")).toContain("在当今 AI 时代");
+  expect(String(json.data?.check?.recommendedDirection || "")).not.toBe("");
+  expect(String(json.data?.check?.checkedAt || "")).not.toBe("");
+  expect(Array.isArray(json.data?.check?.rewriteDirections)).toBeTruthy();
+  expect((json.data?.check?.rewriteDirections || []).length).toBeGreaterThan(0);
+
+  const checks = json.data?.check?.checks as Array<{ key: string; status: string }> | undefined;
+  expect(checks?.find((item) => item.key === "opening_forbidden")?.status).toBe("blocked");
+});
+
+test("forbidden opening is caught from outline selection through opening check and publish guard rewrite", async ({ request, baseURL }) => {
+  const cookie = await loginAsAdmin(baseURL!, request);
+  await ensurePersona(baseURL!, request, cookie);
+
+  const title = "E2E 开头全链路改写";
+  const forbiddenOpening = "在当今 AI 时代，内容创作正在经历深刻变化。";
+  const rewrittenOpening = "上周我帮朋友改稿，改到一半我把电脑关了。";
+
+  const { articleId } = await createArticleForTest(baseURL!, request, cookie, {
+    title,
+  });
+
+  const draftSaved = await request.put(`${baseURL}/api/articles/${articleId}/draft`, {
+    headers: { Cookie: cookie },
+    data: {
+      title,
+      markdownContent: [
+        `# ${title}`,
+        "",
+        "很多团队都以为返工发生在正文阶段。",
+        "",
+        "真正拖慢交付的，往往是第一屏没有先把矛盾亮出来。",
+      ].join("\n"),
+    },
+  });
+  expect(draftSaved.ok()).toBeTruthy();
+
+  const outline = await request.post(`${baseURL}/api/articles/${articleId}/stages/outlinePlanning`, {
+    headers: { Cookie: cookie },
+  });
+  expect(outline.ok()).toBeTruthy();
+  const outlineJson = await outline.json();
+  expect(Array.isArray(outlineJson.data.payload?.openingOptions)).toBeTruthy();
+  expect(outlineJson.data.payload?.openingOptions).toHaveLength(3);
+
+  const outlineSaved = await request.patch(`${baseURL}/api/articles/${articleId}/stages/outlinePlanning`, {
+    headers: { Cookie: cookie },
+    data: {
+      payloadPatch: {
+        selection: {
+          selectedTitle: String(outlineJson.data.payload?.workingTitle || title).trim() || title,
+          selectedOpeningHook: forbiddenOpening,
+          selectedTargetEmotion: String(outlineJson.data.payload?.targetEmotionOptions?.[0] || outlineJson.data.payload?.targetEmotion || "").trim() || null,
+          selectedEndingStrategy: String(outlineJson.data.payload?.endingStrategyOptions?.[0] || outlineJson.data.payload?.endingStrategy || "").trim() || null,
+        },
+      },
+    },
+  });
+  expect(outlineSaved.ok()).toBeTruthy();
+
+  const openingCheck = await request.post(`${baseURL}/api/articles/${articleId}/opening-check`, {
+    headers: { Cookie: cookie },
+  });
+  expect(openingCheck.ok()).toBeTruthy();
+  const openingCheckJson = await openingCheck.json();
+  expect(String(openingCheckJson.data?.check?.openingText || "")).toContain("在当今 AI 时代");
+  expect(Array.isArray(openingCheckJson.data?.check?.rewriteDirections)).toBeTruthy();
+  expect((openingCheckJson.data?.check?.rewriteDirections || []).length).toBeGreaterThan(0);
+  const openingChecks = openingCheckJson.data?.check?.checks as Array<{ key: string; status: string }> | undefined;
+  expect(openingChecks?.find((item) => item.key === "opening_forbidden")?.status).toBe("blocked");
+
+  const forbiddenDraftSaved = await request.put(`${baseURL}/api/articles/${articleId}/draft`, {
+    headers: { Cookie: cookie },
+    data: {
+      title,
+      markdownContent: [
+        `# ${title}`,
+        "",
+        forbiddenOpening,
+        "",
+        "很多团队都以为这是效率问题，真正卡住的是第一屏没有亮出真正矛盾。",
+        "",
+        "如果开头只是趋势铺垫，后面再好的判断也很难把读者拉回来。",
+      ].join("\n"),
+      status: "ready",
+    },
+  });
+  expect(forbiddenDraftSaved.ok()).toBeTruthy();
+
+  const forbiddenPreview = await request.post(`${baseURL}/api/articles/${articleId}/publish-preview`, {
+    headers: { Cookie: cookie },
+    data: {},
+  });
+  expect(forbiddenPreview.ok()).toBeTruthy();
+  const forbiddenPreviewJson = await forbiddenPreview.json();
+  let publishChecks = forbiddenPreviewJson.data.publishGuard.checks as Array<{ key: string; status: string }>;
+  expect(publishChecks.find((item) => item.key === "opening_forbidden")?.status).toBe("blocked");
+
+  const rewrittenDraftSaved = await request.put(`${baseURL}/api/articles/${articleId}/draft`, {
+    headers: { Cookie: cookie },
+    data: {
+      title,
+      markdownContent: [
+        `# ${title}`,
+        "",
+        rewrittenOpening,
+        "",
+        "朋友盯着那段开头看了五分钟，最后问我：这篇到底要先讲变化，还是先讲冲突？",
+        "",
+        "我说都不用，先把现场摆出来，再告诉读者为什么这件事会反复返工。",
+      ].join("\n"),
+      status: "ready",
+    },
+  });
+  expect(rewrittenDraftSaved.ok()).toBeTruthy();
+
+  const rewrittenPreview = await request.post(`${baseURL}/api/articles/${articleId}/publish-preview`, {
+    headers: { Cookie: cookie },
+    data: {},
+  });
+  expect(rewrittenPreview.ok()).toBeTruthy();
+  const rewrittenPreviewJson = await rewrittenPreview.json();
+  publishChecks = rewrittenPreviewJson.data.publishGuard.checks as Array<{ key: string; status: string }>;
+  expect(publishChecks.find((item) => item.key === "opening_forbidden")?.status).toBe("passed");
+});
+
 test("research evidence apply endpoint can clear counter evidence guard warning", async ({ request, baseURL }) => {
   const cookie = await loginAsAdmin(baseURL!, request);
   await ensurePersona(baseURL!, request, cookie);
@@ -4725,6 +4876,64 @@ test("articles scorecard, outcomes and playbooks expose result model data", asyn
   );
   expect(matchedPlaybook).toBeTruthy();
   expect(Number(matchedPlaybook.hitCount || 0)).toBeGreaterThan(0);
+});
+
+test("warroom quick outcome capture drawer saves snapshot end to end", async ({ page, request, baseURL }) => {
+  const cookie = await loginAsAdmin(baseURL!, request);
+  await ensurePersona(baseURL!, request, cookie);
+  const uniqueTitle = `E2E 待回流快速录入 ${Date.now()}`;
+  const { articleId, selectedTitle } = await createPublishReadyArticle(baseURL!, request, cookie, {
+    title: uniqueTitle,
+  });
+
+  const publishedArticle = await request.put(`${baseURL}/api/articles/${articleId}/draft`, {
+    headers: { Cookie: cookie },
+    data: {
+      title: selectedTitle,
+      status: "published",
+    },
+  });
+  expect(publishedArticle.ok()).toBeTruthy();
+  await getDatabase().exec("UPDATE articles SET updated_at = ? WHERE id = ?", [
+    new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString(),
+    articleId,
+  ]);
+
+  await seedPageSession(page, baseURL!, cookie);
+  await page.goto(`${baseURL}/warroom`);
+
+  const articleCard = page.locator("article").filter({ hasText: selectedTitle }).first();
+  await expect(articleCard).toBeVisible();
+  await expect(articleCard).toContainText("待回流");
+
+  const flowStartedAt = Date.now();
+  await articleCard.getByRole("button", { name: "快速录入结果" }).click();
+
+  const dialog = page.getByRole("dialog", { name: `为《${selectedTitle}》快速录入结果` });
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toContainText("待回流快速录入");
+
+  await dialog.getByLabel("阅读").fill("2400");
+  await dialog.getByLabel("分享").fill("120");
+  await dialog.getByLabel("在看 / 点赞").fill("66");
+  await dialog.getByLabel("快照备注").fill("E2E warroom 快速录入闭环。");
+  await dialog.getByRole("button", { name: "保存结果快照" }).click();
+
+  await expect(dialog).toBeHidden();
+  expect(Date.now() - flowStartedAt).toBeLessThanOrEqual(30_000);
+
+  const outcomes = await request.get(`${baseURL}/api/articles/${articleId}/outcomes`, {
+    headers: { Cookie: cookie },
+  });
+  expect(outcomes.ok()).toBeTruthy();
+  const outcomesJson = await outcomes.json();
+  const snapshots = Array.isArray(outcomesJson.data?.snapshots) ? outcomesJson.data.snapshots : [];
+  const savedSnapshot = snapshots.find((item: { windowCode?: string; readCount?: number; shareCount?: number; likeCount?: number }) =>
+    String(item.windowCode || "") === "24h"
+    && Number(item.readCount || 0) === 2400
+    && Number(item.shareCount || 0) === 120
+    && Number(item.likeCount || 0) === 66);
+  expect(savedSnapshot).toBeTruthy();
 });
 
 test("wechat publish can resume after adding missing connection", async ({ request, baseURL }) => {

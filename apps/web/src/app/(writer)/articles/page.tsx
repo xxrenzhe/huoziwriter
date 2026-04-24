@@ -8,6 +8,7 @@ import {
   surfaceCardStyles,
 } from "@huoziwriter/ui";
 import Link from "next/link";
+import { AppBanner } from "@/components/app-feedback";
 import { ArticleOutcomeQuickCaptureButton } from "@/components/article-outcome-quick-capture-button";
 import { ArticleList, CreateArticleForm } from "@/components/dashboard-client";
 import { formatOutcomeHitStatus } from "@/lib/article-workspace-formatters";
@@ -54,18 +55,14 @@ const statLabelClassName = "text-xs uppercase tracking-[0.24em] text-inkMuted";
 const statValueClassName = cn(headingBaseClassName, "mt-3 text-4xl");
 const statNoteClassName = cn("mt-3", bodyCopyClassName);
 const secondaryActionLinkClassName = buttonStyles({ variant: "secondary" });
-const redirectedBannerClassName = cn(
-  "mt-5",
-  surfaceCardStyles({ tone: "warning", padding: "sm" }),
-  "shadow-none text-sm leading-7 text-warning",
-);
-const completionBannerClassName = cn(
-  "mt-5",
-  surfaceCardStyles({ tone: "success", padding: "sm" }),
-  "shadow-none text-sm leading-7 text-emerald-700",
-);
 const createFormWrapClassName = "mt-5";
-const filterFormClassName = "mt-6 grid gap-3 xl:grid-cols-6";
+const filterBarWrapClassName = cn(
+  "mt-6 sticky top-20 z-20 border border-lineStrong bg-paper/95 p-4 backdrop-blur-sm",
+  surfaceCardStyles({ padding: "sm" }),
+  "shadow-none",
+);
+const filterBarHeaderClassName = "flex flex-wrap items-start justify-between gap-4";
+const filterFormClassName = "mt-4 grid gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_220px]";
 const filterActionsClassName = "flex items-end gap-3";
 const filterResultsClassName = "text-sm text-inkSoft";
 const articleListWrapClassName = "mt-6";
@@ -77,6 +74,10 @@ const pendingOutcomeWarningChipClassName = cn(surfaceCardStyles({ tone: "warning
 const pendingOutcomeEmptyClassName = cn(surfaceCardStyles({ tone: "success", padding: "md" }), "mt-6 text-sm leading-7 text-emerald-700 shadow-none");
 const pendingOutcomeBodyClassName = "mt-4 text-sm leading-7 text-inkSoft";
 const pendingOutcomeActionsClassName = "mt-5 flex flex-wrap gap-3";
+const queueGridClassName = "mt-6 grid gap-4 xl:grid-cols-2";
+const queueCardClassName = cn(surfaceCardStyles({ tone: "warm", padding: "md" }), "flex h-full flex-col shadow-none");
+const queueMetaChipClassName = cn(surfaceCardStyles({ padding: "sm" }), "px-3 py-1 text-xs text-inkSoft shadow-none");
+const queueMutedChipClassName = cn(surfaceCardStyles({ tone: "subtle", padding: "sm" }), "px-3 py-1 text-xs text-inkMuted shadow-none");
 
 export default async function ArticlesPage({
   searchParams,
@@ -99,6 +100,7 @@ export default async function ArticlesPage({
   const selectedTargetPackage = getSearchValue(searchParams?.targetPackage);
   const selectedBacklogId = Number(getSearchValue(searchParams?.backlog));
   const selectedBatchId = getSearchValue(searchParams?.batch);
+  const selectedSort = getSearchValue(searchParams?.sort) || "updated_desc";
   const redirectedFromCapture = getSearchValue(searchParams?.fromCapture) === "1";
   const hasActiveFilters =
     (Number.isInteger(selectedSeriesId) && selectedSeriesId > 0)
@@ -145,7 +147,41 @@ export default async function ArticlesPage({
     const matchesBatch = !selectedBatchId || String(article.topic_backlog_batch_id || "").trim() === selectedBatchId;
     return matchesSeries && matchesStatus && matchesTargetPackage && matchesBacklog && matchesBatch;
   });
-  const articleCards = filteredArticles.map((article) => {
+  const collator = new Intl.Collator("zh-CN");
+  const sortedArticles = [...filteredArticles].sort((left, right) => {
+    const leftBundle = outcomeBundleMap.get(left.id);
+    const rightBundle = outcomeBundleMap.get(right.id);
+    const leftSeriesName = left.series_id ? seriesMap.get(left.series_id)?.name ?? "" : "";
+    const rightSeriesName = right.series_id ? seriesMap.get(right.series_id)?.name ?? "" : "";
+    const leftTargetPackage = String(leftBundle?.outcome?.targetPackage || "").trim();
+    const rightTargetPackage = String(rightBundle?.outcome?.targetPackage || "").trim();
+    if (selectedSort === "updated_asc") {
+      return left.updated_at.localeCompare(right.updated_at, "zh-CN");
+    }
+    if (selectedSort === "status") {
+      const statusDiff = compareArticleStatuses(left.status, right.status);
+      if (statusDiff !== 0) {
+        return statusDiff;
+      }
+      return right.updated_at.localeCompare(left.updated_at, "zh-CN");
+    }
+    if (selectedSort === "series") {
+      const seriesDiff = collator.compare(leftSeriesName || "未归属系列", rightSeriesName || "未归属系列");
+      if (seriesDiff !== 0) {
+        return seriesDiff;
+      }
+      return right.updated_at.localeCompare(left.updated_at, "zh-CN");
+    }
+    if (selectedSort === "target") {
+      const targetDiff = collator.compare(leftTargetPackage || "未设置目标包", rightTargetPackage || "未设置目标包");
+      if (targetDiff !== 0) {
+        return targetDiff;
+      }
+      return right.updated_at.localeCompare(left.updated_at, "zh-CN");
+    }
+    return right.updated_at.localeCompare(left.updated_at, "zh-CN");
+  });
+  const articleCards = sortedArticles.map((article) => {
     const bundle = outcomeBundleMap.get(article.id);
     return {
       id: article.id,
@@ -187,12 +223,6 @@ export default async function ArticlesPage({
         secondaryHref: "/warroom",
         secondaryLabel: "回作战台",
       };
-  const articleStats = [
-    { label: "全部稿件", value: String(articles.length), note: "统一从这里进入稿件详情。" },
-    { label: "待推进", value: String(drafts.length), note: "还没发布的稿件优先清空。" },
-    { label: "已发布", value: String(publishedArticles.length), note: "结果回流、命中判定和复盘都从稿件详情继续推进。" },
-    { label: "已推送微信", value: String(recentlySyncedIds.size), note: "已形成成功草稿箱记录的稿件数。" },
-  ] as const;
   const pendingOutcomeArticles = publishedArticles
     .map((article) => {
       const bundle = outcomeBundleMap.get(article.id);
@@ -229,6 +259,50 @@ export default async function ArticlesPage({
       return right.missingWindowCodes.length - left.missingWindowCodes.length;
     });
   const visiblePendingOutcomeArticles = pendingOutcomeArticles.slice(0, 6);
+  const draftArticles = drafts
+    .map((article) => {
+      const daysSinceUpdate = getDaysSince(article.updated_at);
+      return {
+        articleId: article.id,
+        articleTitle: article.title,
+        seriesName: article.series_id ? seriesMap.get(article.series_id)?.name ?? null : null,
+        updatedAt: article.updated_at,
+        daysSinceUpdate,
+        status: article.status,
+        synced: recentlySyncedIds.has(article.id),
+      };
+    })
+    .sort((left, right) => right.daysSinceUpdate - left.daysSinceUpdate || right.updatedAt.localeCompare(left.updatedAt, "zh-CN"));
+  const staleDraftArticles = draftArticles.filter((item) => item.daysSinceUpdate >= 2).slice(0, 4);
+  const failedSyncArticles = Array.from(
+    new Map(
+      syncLogs
+        .filter((log) => log.status === "failed")
+        .sort((left, right) => right.createdAt.localeCompare(left.createdAt, "zh-CN"))
+        .map((log) => [log.articleId, log] as const),
+    ).values(),
+  )
+    .map((log) => ({
+      articleId: log.articleId,
+      articleTitle: log.title || `未命名稿件 #${log.articleId}`,
+      connectionName: log.connectionName,
+      createdAt: log.createdAt,
+      failureReason: log.failureReason,
+      failureCode: log.failureCode,
+      retryCount: log.retryCount,
+    }))
+    .slice(0, 4);
+  const articleQueueCount =
+    (draftArticles.length > 0 ? 1 : 0) +
+    (staleDraftArticles.length > 0 ? 1 : 0) +
+    (failedSyncArticles.length > 0 ? 1 : 0) +
+    (pendingOutcomeArticles.length > 0 ? 1 : 0);
+  const articleStats = [
+    { label: "全部稿件", value: String(articles.length), note: "统一从这里进入稿件详情。" },
+    { label: "在推稿件", value: String(drafts.length), note: "还没发布的稿件优先清空。" },
+    { label: "已发布", value: String(publishedArticles.length), note: "结果回流、命中判定和复盘都从稿件详情继续推进。" },
+    { label: "待回流", value: String(pendingOutcomeArticles.length), note: "优先补 24h / 72h / 7d，别让结果链路断掉。" },
+  ] as const;
 
   return (
     <div className={pageClassName}>
@@ -249,6 +323,152 @@ export default async function ArticlesPage({
         </div>
       </section>
 
+      <section className={sectionCardClassName}>
+        <div className={sectionHeaderClassName}>
+          <div>
+            <div className={sectionEyebrowClassName}>待处理稿件任务</div>
+            <h2 className={sectionTitleClassName}>先决定该继续写哪篇、重试哪篇、回流哪篇。</h2>
+          </div>
+          <div className={filterResultsClassName}>当前 {articleQueueCount} 类任务入口</div>
+        </div>
+        <p className={heroDescriptionClassName}>
+          稿件页不只负责列表筛选。这里把最容易卡主生产链路的稿件任务单独提出来，优先给出继续写、重新发布和补结果的入口。
+        </p>
+        <div className={queueGridClassName}>
+          {draftArticles.length > 0 ? (
+            <article className={queueCardClassName}>
+              <div className="flex flex-wrap gap-2">
+                <span className={queueMetaChipClassName}>草稿待推进</span>
+                <span className={queueMutedChipClassName}>当前 {draftArticles.length} 篇</span>
+              </div>
+              <div className="mt-4">
+                <div className={sectionTitleClassName}>还有未发布稿件停在主链路中间</div>
+              </div>
+              <div className={pendingOutcomeBodyClassName}>
+                这些稿件还没走完六步链路。优先继续现有草稿，通常比重复新建更能保持判断线和系列一致性。
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {draftArticles.slice(0, 3).map((item) => (
+                  <span key={`draft-${item.articleId}`} className={queueMutedChipClassName}>
+                    {item.articleTitle || `稿件 #${item.articleId}`}
+                  </span>
+                ))}
+              </div>
+              <div className={pendingOutcomeActionsClassName}>
+                <Link href="/articles?status=draft" className={secondaryActionLinkClassName}>
+                  只看草稿
+                </Link>
+                <Link href={`/articles/${draftArticles[0].articleId}`} className={secondaryActionLinkClassName}>
+                  打开最新草稿
+                </Link>
+              </div>
+            </article>
+          ) : null}
+
+          {staleDraftArticles.length > 0 ? (
+            <article className={queueCardClassName}>
+              <div className="flex flex-wrap gap-2">
+                <span className={queueMetaChipClassName}>久未推进</span>
+                <span className={queueMutedChipClassName}>待清理 {staleDraftArticles.length} 篇</span>
+              </div>
+              <div className="mt-4">
+                <div className={sectionTitleClassName}>有些草稿已经搁置超过 2 天</div>
+              </div>
+              <div className={pendingOutcomeBodyClassName}>
+                久未推进的草稿最容易造成系列漂移和重复起稿。先决定继续推进、合并判断，还是直接清理。
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {staleDraftArticles.slice(0, 2).map((item) => (
+                  <span key={`stale-${item.articleId}`} className={queueMetaChipClassName}>
+                    {item.articleTitle || `稿件 #${item.articleId}`} · {item.daysSinceUpdate} 天未动
+                  </span>
+                ))}
+              </div>
+              <div className={pendingOutcomeActionsClassName}>
+                <Link href={`/articles/${staleDraftArticles[0].articleId}`} className={secondaryActionLinkClassName}>
+                  先处理最久未动草稿
+                </Link>
+              </div>
+            </article>
+          ) : null}
+
+          {failedSyncArticles.length > 0 ? (
+            <article className={queueCardClassName}>
+              <div className="flex flex-wrap gap-2">
+                <span className={queueMetaChipClassName}>发布失败</span>
+                <span className={queueMutedChipClassName}>待重试 {failedSyncArticles.length} 篇</span>
+              </div>
+              <div className="mt-4">
+                <div className={sectionTitleClassName}>有些稿件在推送到公众号时失败了</div>
+              </div>
+              <div className={pendingOutcomeBodyClassName}>
+                发布失败通常意味着连接、素材或内容格式出了问题。优先回到发布阶段修正，不要让结果链路卡在最后一步。
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {failedSyncArticles.slice(0, 2).map((item) => (
+                  <span key={`failed-${item.articleId}`} className={queueMetaChipClassName}>
+                    {item.articleTitle} · {item.connectionName || "未命名公众号"}
+                  </span>
+                ))}
+              </div>
+              <div className={pendingOutcomeActionsClassName}>
+                <Link href={`/articles/${failedSyncArticles[0].articleId}?step=publish`} className={secondaryActionLinkClassName}>
+                  先处理最近失败稿件
+                </Link>
+                <Link href="/settings/publish#publishing-connections" className={secondaryActionLinkClassName}>
+                  检查发布连接
+                </Link>
+              </div>
+            </article>
+          ) : null}
+
+          {pendingOutcomeArticles.length > 0 ? (
+            <article className={queueCardClassName}>
+              <div className="flex flex-wrap gap-2">
+                <span className={queueMetaChipClassName}>待回流结果</span>
+                <span className={queueMutedChipClassName}>当前 {pendingOutcomeArticles.length} 篇</span>
+              </div>
+              <div className="mt-4">
+                <div className={sectionTitleClassName}>已发布稿件还在等待补 24h / 72h / 7d 结果</div>
+              </div>
+              <div className={pendingOutcomeBodyClassName}>
+                结果窗口没补齐时，命中判定和复盘沉淀都不完整。先补最近时间窗，再把这批稿件送进复盘。
+              </div>
+              <div className={pendingOutcomeActionsClassName}>
+                <Link href="#pending-outcomes" className={secondaryActionLinkClassName}>
+                  去补结果
+                </Link>
+                <Link href="/reviews" className={secondaryActionLinkClassName}>
+                  去复盘页
+                </Link>
+              </div>
+            </article>
+          ) : null}
+
+          {articleQueueCount === 0 ? (
+            <article className={queueCardClassName}>
+              <div className="flex flex-wrap gap-2">
+                <span className={queueMetaChipClassName}>稿件队列健康</span>
+              </div>
+              <div className="mt-4">
+                <div className={sectionTitleClassName}>当前没有明显卡住的稿件任务</div>
+              </div>
+              <div className={pendingOutcomeBodyClassName}>
+                草稿、发布和结果回流链路都处于可用状态。可以继续新建稿件，或回作战台选择下一条高价值选题。
+              </div>
+              <div className={pendingOutcomeActionsClassName}>
+                <Link href="#create-article" className={secondaryActionLinkClassName}>
+                  去新建稿件
+                </Link>
+                <Link href="/warroom" className={secondaryActionLinkClassName}>
+                  回作战台
+                </Link>
+              </div>
+            </article>
+          ) : null}
+        </div>
+      </section>
+
       <section id="create-article" className={sectionCardClassName}>
         <div className={sectionHeaderClassName}>
           <div>
@@ -260,14 +480,20 @@ export default async function ArticlesPage({
           </Link>
         </div>
         {redirectedFromCapture ? (
-          <div className={redirectedBannerClassName}>
-            历史采集入口已经并入「稿件 -&gt; 证据」。当前还没有可接续的草稿，请先新建一篇稿件；创建后会在稿件详情里继续挂素材、补截图和做事实核查。
-          </div>
+          <AppBanner
+            tone="warning"
+            className="mt-5"
+            eyebrow="入口迁移"
+            description="历史采集入口已经并入「稿件 -> 证据」。当前还没有可接续的草稿，请先新建一篇稿件；创建后会在稿件详情里继续挂素材、补截图和做事实核查。"
+          />
         ) : null}
         {hasClearedActiveQueue ? (
-          <div className={completionBannerClassName}>
-            当前没有待推进稿件，已建稿件都已进入发布或结果回流阶段。接下来可以回复盘页补结果，也可以直接从作战台再开一篇新稿。
-          </div>
+          <AppBanner
+            tone="success"
+            className="mt-5"
+            eyebrow="当前状态"
+            description="当前没有待推进稿件，已建稿件都已进入发布或结果回流阶段。接下来可以回复盘页补结果，也可以直接从作战台再开一篇新稿。"
+          />
         ) : null}
         <div className={createFormWrapClassName}>
           <CreateArticleForm
@@ -281,7 +507,7 @@ export default async function ArticlesPage({
         </div>
       </section>
 
-      <section className={sectionCardClassName}>
+      <section id="pending-outcomes" className={sectionCardClassName}>
         <div className={sectionHeaderClassName}>
           <div>
             <div className={sectionEyebrowClassName}>待回流</div>
@@ -356,73 +582,96 @@ export default async function ArticlesPage({
         <div className={sectionHeaderClassName}>
           <div>
             <div className={sectionEyebrowClassName}>全部稿件</div>
-            <h2 className={sectionTitleClassName}>统一在这里按系列、状态、目标包、选题库和批次筛选。</h2>
+            <h2 className={sectionTitleClassName}>统一在这里按系列、状态、目标包、选题库和批次筛选，并按排序快速扫读。</h2>
           </div>
           <Link href="/articles" className={secondaryActionLinkClassName}>
             清空筛选
           </Link>
         </div>
-        <form className={filterFormClassName} method="GET">
-          <label className={fieldLabelClassName}>
-            <div className={fieldEyebrowClassName}>系列</div>
-            <Select aria-label="select control" name="series" defaultValue={Number.isInteger(selectedSeriesId) && selectedSeriesId > 0 ? String(selectedSeriesId) : ""}>
-              <option value="">全部系列</option>
-              {series.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.name}
-                </option>
-              ))}
-            </Select>
-          </label>
-          <label className={fieldLabelClassName}>
-            <div className={fieldEyebrowClassName}>状态</div>
-            <Select aria-label="select control" name="status" defaultValue={selectedStatus}>
-              <option value="">全部状态</option>
-              {statusOptions.map((status) => (
-                <option key={status} value={status}>
-                  {formatArticleStatusLabel(status)}
-                </option>
-              ))}
-            </Select>
-          </label>
-          <label className={fieldLabelClassName}>
-            <div className={fieldEyebrowClassName}>目标包</div>
-            <Select aria-label="select control" name="targetPackage" defaultValue={selectedTargetPackage}>
-              <option value="">全部目标包</option>
-              {targetPackageOptions.map((targetPackage) => (
-                <option key={targetPackage} value={targetPackage}>
-                  {targetPackage}
-                </option>
-              ))}
-            </Select>
-          </label>
-          <label className={fieldLabelClassName}>
-            <div className={fieldEyebrowClassName}>选题库</div>
-            <Select aria-label="select control" name="backlog" defaultValue={Number.isInteger(selectedBacklogId) && selectedBacklogId > 0 ? String(selectedBacklogId) : ""}>
-              <option value="">全部选题库</option>
-              {backlogOptions.map(([backlogId, backlogName]) => (
-                <option key={backlogId} value={backlogId}>
-                  {backlogName}
-                </option>
-              ))}
-            </Select>
-          </label>
-          <label className={fieldLabelClassName}>
-            <div className={fieldEyebrowClassName}>批次</div>
-            <Select aria-label="select control" name="batch" defaultValue={selectedBatchId}>
-              <option value="">全部批次</option>
-              {batchOptions.map((batchId) => (
-                <option key={batchId} value={batchId}>
-                  {batchId}
-                </option>
-              ))}
-            </Select>
-          </label>
-          <div className={filterActionsClassName}>
-            <Button type="submit" variant="primary">应用筛选</Button>
-            <div className={filterResultsClassName}>当前命中 {filteredArticles.length} 篇稿件</div>
+        <div className={filterBarWrapClassName}>
+          <div className={filterBarHeaderClassName}>
+            <div>
+              <div className={sectionEyebrowClassName}>Filter Bar</div>
+              <div className="mt-2 text-sm leading-7 text-inkSoft">筛选条固定在顶部，滚动时也能继续切系列、状态和排序，不用反复回卷。</div>
+            </div>
+            <div className="flex flex-wrap items-center gap-3">
+              <div className={filterResultsClassName}>当前 {filteredArticles.length} 篇稿件</div>
+              <Link href="/articles#create-article" className={secondaryActionLinkClassName}>
+                去新建稿件
+              </Link>
+            </div>
           </div>
-        </form>
+          <form className={filterFormClassName} method="GET">
+            <label className={fieldLabelClassName}>
+              <div className={fieldEyebrowClassName}>系列</div>
+              <Select aria-label="select control" name="series" defaultValue={Number.isInteger(selectedSeriesId) && selectedSeriesId > 0 ? String(selectedSeriesId) : ""}>
+                <option value="">全部系列</option>
+                {series.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name}
+                  </option>
+                ))}
+              </Select>
+            </label>
+            <label className={fieldLabelClassName}>
+              <div className={fieldEyebrowClassName}>状态</div>
+              <Select aria-label="select control" name="status" defaultValue={selectedStatus}>
+                <option value="">全部状态</option>
+                {statusOptions.map((status) => (
+                  <option key={status} value={status}>
+                    {formatArticleStatusLabel(status)}
+                  </option>
+                ))}
+              </Select>
+            </label>
+            <label className={fieldLabelClassName}>
+              <div className={fieldEyebrowClassName}>目标包</div>
+              <Select aria-label="select control" name="targetPackage" defaultValue={selectedTargetPackage}>
+                <option value="">全部目标包</option>
+                {targetPackageOptions.map((targetPackage) => (
+                  <option key={targetPackage} value={targetPackage}>
+                    {targetPackage}
+                  </option>
+                ))}
+              </Select>
+            </label>
+            <label className={fieldLabelClassName}>
+              <div className={fieldEyebrowClassName}>选题库</div>
+              <Select aria-label="select control" name="backlog" defaultValue={Number.isInteger(selectedBacklogId) && selectedBacklogId > 0 ? String(selectedBacklogId) : ""}>
+                <option value="">全部选题库</option>
+                {backlogOptions.map(([backlogId, backlogName]) => (
+                  <option key={backlogId} value={backlogId}>
+                    {backlogName}
+                  </option>
+                ))}
+              </Select>
+            </label>
+            <label className={fieldLabelClassName}>
+              <div className={fieldEyebrowClassName}>批次</div>
+              <Select aria-label="select control" name="batch" defaultValue={selectedBatchId}>
+                <option value="">全部批次</option>
+                {batchOptions.map((batchId) => (
+                  <option key={batchId} value={batchId}>
+                    {batchId}
+                  </option>
+                ))}
+              </Select>
+            </label>
+            <label className={fieldLabelClassName}>
+              <div className={fieldEyebrowClassName}>排序</div>
+              <Select aria-label="select control" name="sort" defaultValue={selectedSort}>
+                <option value="updated_desc">最近更新优先</option>
+                <option value="updated_asc">最早更新优先</option>
+                <option value="status">按状态排序</option>
+                <option value="series">按系列排序</option>
+                <option value="target">按目标包排序</option>
+              </Select>
+            </label>
+            <div className={filterActionsClassName}>
+              <Button type="submit" variant="primary">应用筛选</Button>
+            </div>
+          </form>
+        </div>
         <div className={articleListWrapClassName}>
           <ArticleList articles={articleCards} emptyState={articleListEmptyState} />
         </div>

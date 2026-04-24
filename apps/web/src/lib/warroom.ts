@@ -1,7 +1,7 @@
 import { isPublishedArticleStatus } from "./article-status-label";
 import { buildArticlePublicWorkflow, getArticleWorkflow } from "./article-workflows";
 import { getUserPlanContext } from "./plan-access";
-import { getArticleOutcomeBundlesByUser, getArticleStrategyCard, getArticlesByUser, getAuthorPlaybooks, getFragmentsByUser } from "./repositories";
+import { getArticleOutcomeBundlesByUser, getArticleStrategyCard, getArticlesByUser, getAuthorPlaybooks, getFragmentsByUser, getWechatSyncLogs } from "./repositories";
 import { getSeries } from "./series";
 import { getTopicBacklogs } from "./topic-backlogs";
 import { getVisibleTopicRecommendationsForUser } from "./topic-recommendations";
@@ -55,7 +55,7 @@ function buildDraftNextFocus(currentStepCode: string) {
 }
 
 export async function getWarroomData(userId: number) {
-  const [articles, fragments, outcomeBundles, playbooks, topics, planContext, series, topicBacklogs] = await Promise.all([
+  const [articles, fragments, outcomeBundles, playbooks, topics, planContext, series, topicBacklogs, syncLogs] = await Promise.all([
     getArticlesByUser(userId),
     getFragmentsByUser(userId),
     getArticleOutcomeBundlesByUser(userId),
@@ -64,40 +64,45 @@ export async function getWarroomData(userId: number) {
     getUserPlanContext(userId),
     getSeries(userId),
     getTopicBacklogs(userId),
+    getWechatSyncLogs(userId),
   ]);
   const seriesMap = new Map(series.map((item) => [item.id, item] as const));
   const canStartRadar = planContext.planSnapshot.canStartTopicSignal;
   const drafts = articles.filter((article) => !isPublishedArticleStatus(article.status));
   const publishedArticles = articles.filter((article) => isPublishedArticleStatus(article.status));
   const outcomeBundleMap = new Map(outcomeBundles.map((bundle) => [bundle.outcome?.articleId, bundle] as const));
-  const topicPool = topics.map((topic) => ({
-    id: topic.id,
-    sourceName: topic.sourceName,
-    sourceType: topic.sourceType,
-    sourcePriority: topic.sourcePriority,
-    title: topic.title,
-    summary: topic.summary,
-    emotionLabels: topic.emotionLabels,
-    angleOptions: topic.angleOptions,
-    sourceUrl: topic.sourceUrl,
-    relatedSourceNames: topic.relatedSourceNames,
-    relatedSourceUrls: topic.relatedSourceUrls,
-    publishedAt: topic.publishedAt,
-    recommendationType: topic.recommendationType,
-    recommendationReason: topic.recommendationReason,
-    matchedPersonaName: topic.matchedPersonaName,
-    freshnessScore: topic.freshnessScore,
-    relevanceScore: topic.relevanceScore,
-    priorityScore: topic.priorityScore,
-    suggestedSeriesId: pickSuggestedSeriesId(
+  const topicPool = topics.map((topic) => {
+    const suggestedSeriesId = pickSuggestedSeriesId(
       { matchedPersonaName: topic.matchedPersonaName },
       series.map((item) => ({
         id: item.id,
         personaName: item.personaName,
         activeStatus: item.activeStatus,
       })),
-    ),
-  }));
+    );
+    return {
+      id: topic.id,
+      sourceName: topic.sourceName,
+      sourceType: topic.sourceType,
+      sourcePriority: topic.sourcePriority,
+      title: topic.title,
+      summary: topic.summary,
+      emotionLabels: topic.emotionLabels,
+      angleOptions: topic.angleOptions,
+      sourceUrl: topic.sourceUrl,
+      relatedSourceNames: topic.relatedSourceNames,
+      relatedSourceUrls: topic.relatedSourceUrls,
+      publishedAt: topic.publishedAt,
+      recommendationType: topic.recommendationType,
+      recommendationReason: topic.recommendationReason,
+      matchedPersonaName: topic.matchedPersonaName,
+      freshnessScore: topic.freshnessScore,
+      relevanceScore: topic.relevanceScore,
+      priorityScore: topic.priorityScore,
+      suggestedSeriesId,
+      suggestedSeriesName: suggestedSeriesId ? seriesMap.get(suggestedSeriesId)?.name ?? null : null,
+    };
+  });
   const pendingOutcomeArticles = publishedArticles
     .map((article) => {
       const bundle = outcomeBundleMap.get(article.id);
@@ -121,6 +126,7 @@ export async function getWarroomData(userId: number) {
         targetPackage: bundle?.outcome?.targetPackage ?? null,
         reviewSummary: bundle?.outcome?.reviewSummary ?? null,
         nextAction: bundle?.outcome?.nextAction ?? null,
+        playbookTags: bundle?.outcome?.playbookTags ?? [],
         daysSinceUpdate,
         isOverdue,
       };
@@ -135,6 +141,42 @@ export async function getWarroomData(userId: number) {
       }
       return right.missingWindowCodes.length - left.missingWindowCodes.length;
     });
+  const latestSyncLogByArticleId = new Map<number, Awaited<ReturnType<typeof getWechatSyncLogs>>[number]>();
+  for (const log of syncLogs) {
+    if (!latestSyncLogByArticleId.has(log.articleId)) {
+      latestSyncLogByArticleId.set(log.articleId, log);
+    }
+  }
+  const failedPublishArticles = articles
+    .map((article) => {
+      const latestSyncLog = latestSyncLogByArticleId.get(article.id);
+      if (!latestSyncLog || latestSyncLog.status !== "failed") {
+        return null;
+      }
+      return {
+        articleId: article.id,
+        articleTitle: article.title,
+        seriesName: article.series_id ? seriesMap.get(article.series_id)?.name ?? null : null,
+        updatedAt: article.updated_at,
+        connectionName: latestSyncLog.connectionName,
+        failureReason: latestSyncLog.failureReason,
+        failureCode: latestSyncLog.failureCode,
+        retryCount: latestSyncLog.retryCount,
+        createdAt: latestSyncLog.createdAt,
+      };
+    })
+    .filter(Boolean)
+    .sort((left, right) => String(right?.createdAt || "").localeCompare(String(left?.createdAt || ""), "zh-CN")) as Array<{
+      articleId: number;
+      articleTitle: string;
+      seriesName: string | null;
+      updatedAt: string;
+      connectionName: string | null;
+      failureReason: string | null;
+      failureCode: string | null;
+      retryCount: number;
+      createdAt: string;
+    }>;
   const visibleDrafts = drafts.slice(0, 5);
   const [draftWorkflows, draftStrategyCards] = await Promise.all([
     Promise.all(
@@ -151,10 +193,20 @@ export async function getWarroomData(userId: number) {
     (bundle) => bundle.outcome && bundle.missingWindowCodes.length === 0 && bundle.outcome.hitStatus !== "pending",
   ).length;
   const overdueOutcomeCount = pendingOutcomeArticles.filter((item) => item.isOverdue).length;
+  const failedPublishCount = failedPublishArticles.length;
   const visibleTopics = topicPool.slice(0, 3);
   const visiblePendingOutcomeArticles = pendingOutcomeArticles.slice(0, 3);
   const focus =
-    overdueOutcomeCount > 0
+    failedPublishCount > 0
+      ? {
+          key: "publish",
+          eyebrow: "先修发布",
+          title: `${failedPublishCount} 篇稿件卡在发布失败`,
+          detail: "发布失败意味着主链路停在最后一步。先修连接、素材或内容格式，再谈继续扩题或补复盘。",
+          href: failedPublishArticles[0] ? `/articles/${failedPublishArticles[0].articleId}?step=publish` : "/settings/publish",
+          actionLabel: "打开失败发布稿件",
+        }
+      : overdueOutcomeCount > 0
       ? {
           key: "outcome",
           eyebrow: "先补回流",
@@ -212,9 +264,10 @@ export async function getWarroomData(userId: number) {
 
   return {
     summary: {
-      topicCount: visibleTopics.length,
+      topicCount: topicPool.length,
       draftCount: drafts.length,
       pendingOutcomeCount: pendingOutcomeArticles.length,
+      failedPublishCount,
       fragmentCount: fragments.length,
       canStartRadar,
       publishedCount: publishedArticles.length,
@@ -226,6 +279,7 @@ export async function getWarroomData(userId: number) {
       workspaceEmpty:
         topicPool.length === 0
         && drafts.length === 0
+        && failedPublishArticles.length === 0
         && pendingOutcomeArticles.length === 0
         && playbooks.length === 0
         && fragments.length === 0,
@@ -247,6 +301,7 @@ export async function getWarroomData(userId: number) {
         nextFocus: buildDraftNextFocus(draftWorkflows[index]?.currentStepCode ?? "opportunity"),
       },
     })),
+    failedPublishArticles: failedPublishArticles.slice(0, 3),
     pendingOutcomeArticles: visiblePendingOutcomeArticles,
     playbooks,
     series: series.map((item) => ({

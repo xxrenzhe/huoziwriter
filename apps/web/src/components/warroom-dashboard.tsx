@@ -1,6 +1,8 @@
 import { buttonStyles, cn, surfaceCardStyles } from "@huoziwriter/ui";
 import Link from "next/link";
+import { ArticleOutcomeQuickCaptureButton } from "@/components/article-outcome-quick-capture-button";
 import { CreateArticleForm, WriterPaperEmptyState } from "@/components/dashboard-client";
+import { formatPublishFailureCode } from "@/lib/article-workspace-formatters";
 import { WarroomTopicFissionPanel } from "@/components/warroom-topic-fission-panel";
 import type { WarroomData } from "@/lib/warroom";
 
@@ -32,9 +34,14 @@ const sectionDividerClassName = "mt-5 border-t border-lineStrong pt-4";
 const emptyWorkspaceSectionClassName = cn(surfaceCardStyles({ tone: "warm" }), "border-lineStrong", heroSectionBackgroundClassName, "p-6 md:p-10 shadow-none");
 const heroSectionClassName = cn(surfaceCardStyles({ tone: "warm" }), "border-lineStrong", heroSectionBackgroundClassName, "p-4 sm:p-6 lg:p-8 shadow-none");
 const dashboardSectionClassName = cn(surfaceCardStyles(), "border-lineStrong p-4 shadow-none sm:p-6");
+const taskQueueGridClassName = "grid gap-4 xl:grid-cols-2";
 const statCardClassName = cn(surfaceCardStyles({ padding: "sm" }), "border-lineStrong bg-surface shadow-none");
+const taskQueueCardClassName = cn(surfaceCardStyles({ tone: "warm", padding: "md" }), "flex h-full flex-col border-lineStrong shadow-none");
 const focusPanelClassName = cn(surfaceCardStyles(), "border-lineStrong bg-surface px-4 py-5 shadow-none sm:px-5");
-const focusSummaryCardClassName = cn(surfaceCardStyles({ tone: "subtle" }), "border-lineStrong px-3 py-3 shadow-none");
+const focusJumpCardClassName = cn(
+  surfaceCardStyles({ tone: "subtle", interactive: true, padding: "sm" }),
+  "block border-lineStrong px-3 py-3 shadow-none hover:border-cinnabar/50 hover:bg-surface",
+);
 const sectionSummaryCardClassName = cn(
   surfaceCardStyles({ tone: "highlight", padding: "sm" }),
   "min-w-[168px] px-3 py-3 text-right shadow-none",
@@ -80,6 +87,16 @@ function buildPendingOutcomeCopy(item: WarroomData["pendingOutcomeArticles"][num
     return item.nextAction || item.reviewSummary || "快照已补齐，但还没完成命中判定和复盘结论。";
   }
   return item.reviewSummary || "结果回流仍有待补项。";
+}
+
+function buildPendingOutcomeClosureCopy(item: WarroomData["pendingOutcomeArticles"][number]) {
+  if (item.missingWindowCodes.length === 0 && item.hitStatus === "pending") {
+    return "时间窗已补齐，但还缺命中判定和复盘结论；这次录入应尽量直接收口。";
+  }
+  if (item.missingWindowCodes.length === 1) {
+    return `当前只剩 ${item.missingWindowCodes[0]} 这个缺口，建议顺手补齐命中判定与下一步动作。`;
+  }
+  return null;
 }
 
 function getDraftStepPosition(steps: WarroomData["drafts"][number]["workflow"]["steps"]) {
@@ -164,6 +181,29 @@ function SectionSummary({
   );
 }
 
+function FocusJumpCard({
+  label,
+  value,
+  detail,
+  href,
+  actionLabel,
+}: {
+  label: string;
+  value: string;
+  detail: string;
+  href: string;
+  actionLabel: string;
+}) {
+  return (
+    <Link href={href} className={focusJumpCardClassName}>
+      <div className={detailEyebrowClassName}>{label}</div>
+      <div className="mt-2 text-sm leading-7 text-ink">{value}</div>
+      <div className="mt-3 text-xs leading-6 text-inkMuted">{detail}</div>
+      <div className="mt-3 text-xs font-medium uppercase tracking-[0.18em] text-cinnabar">{actionLabel}</div>
+    </Link>
+  );
+}
+
 function getPendingStatusChipClassName(isOverdue: boolean) {
   return cn(
     surfaceCardStyles({ tone: isOverdue ? "warning" : "subtle", padding: "sm" }),
@@ -179,6 +219,7 @@ export function WarroomDashboard({
 }) {
   const firstTopic = warroom.topics[0] ?? null;
   const firstDraft = warroom.drafts[0] ?? null;
+  const firstPendingOutcome = warroom.pendingOutcomeArticles[0] ?? null;
   const firstPlaybook = warroom.playbooks[0] ?? null;
 
   if (warroom.summary.workspaceEmpty) {
@@ -220,6 +261,7 @@ export function WarroomDashboard({
             </p>
             <div className="mt-4 flex flex-wrap gap-x-4 gap-y-2 text-sm text-inkMuted">
               <span>已发 {warroom.summary.publishedCount} 篇</span>
+              <span>发布失败 {warroom.summary.failedPublishCount} 篇</span>
               <span>命中 {warroom.summary.hitCount} 篇</span>
               <span>差一点 {warroom.summary.nearMissCount} 篇</span>
               <span>待回流 {warroom.summary.pendingOutcomeCount} 篇</span>
@@ -255,18 +297,52 @@ export function WarroomDashboard({
             <Link href={warroom.summary.focus.href} className={focusActionLinkClassName}>
               {warroom.summary.focus.actionLabel}
             </Link>
-            <div className="mt-6 space-y-3 border-t border-lineStrong pt-4">
-              <div className={focusSummaryCardClassName}>
-                <div className={detailEyebrowClassName}>今天写什么</div>
-                <div className="mt-2 text-sm leading-7 text-ink">{firstTopic ? firstTopic.title : "先把在推稿件清掉"}</div>
-              </div>
-              <div className={focusSummaryCardClassName}>
-                <div className={detailEyebrowClassName}>在推什么</div>
-                <div className="mt-2 text-sm leading-7 text-ink">{firstDraft ? firstDraft.title : "当前没有在推稿件"}</div>
-              </div>
-              <div className={focusSummaryCardClassName}>
-                <div className={detailEyebrowClassName}>最近学到什么</div>
-                <div className="mt-2 text-sm leading-7 text-ink">{firstPlaybook ? firstPlaybook.label : "等待更多真实回流样本"}</div>
+            <div className="mt-6 border-t border-lineStrong pt-4">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <FocusJumpCard
+                  label="今天写什么"
+                  value={firstTopic ? firstTopic.title : "先把在推稿件清掉"}
+                  detail={
+                    firstTopic
+                      ? `当前展示 ${warroom.topics.length} / ${warroom.summary.topicCount} 条优先题，按推荐优先级排序。`
+                      : "当前没有新的高优先题。"
+                  }
+                  href="#warroom-topics"
+                  actionLabel="定位到选题面板"
+                />
+                <FocusJumpCard
+                  label="在推什么"
+                  value={firstDraft ? firstDraft.title : "当前没有在推稿件"}
+                  detail={
+                    warroom.summary.draftCount > 0
+                      ? `当前展示 ${warroom.drafts.length} / ${warroom.summary.draftCount} 篇，按最近更新时间排序。`
+                      : "当前没有需要续推的稿件。"
+                  }
+                  href="#warroom-drafts"
+                  actionLabel="定位到稿件面板"
+                />
+                <FocusJumpCard
+                  label="等什么结果"
+                  value={firstPendingOutcome ? firstPendingOutcome.article.title : "当前没有待补回流"}
+                  detail={
+                    warroom.summary.pendingOutcomeCount > 0
+                      ? `当前展示 ${warroom.pendingOutcomeArticles.length} / ${warroom.summary.pendingOutcomeCount} 篇，逾期与缺窗更多的稿件优先。`
+                      : "结果回流当前已基本补齐。"
+                  }
+                  href="#warroom-outcomes"
+                  actionLabel="定位到回流面板"
+                />
+                <FocusJumpCard
+                  label="最近学到什么"
+                  value={firstPlaybook ? firstPlaybook.label : "等待更多真实回流样本"}
+                  detail={
+                    warroom.playbooks.length > 0
+                      ? "只展示已有真实结果样本的打法。"
+                      : "先补回流与打法标签，这里才会长出可复用经验。"
+                  }
+                  href="#warroom-playbooks"
+                  actionLabel="定位到打法面板"
+                />
               </div>
             </div>
           </aside>
@@ -276,14 +352,166 @@ export function WarroomDashboard({
       <section className={dashboardSectionClassName}>
         <div className={sectionHeaderClassName}>
           <div className="min-w-0">
+            <div className={sectionEyebrowClassName}>待处理作战任务</div>
+            <h2 className={sectionTitleClassName}>先修最后一步阻塞，再推进写作与复盘。</h2>
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <SectionSummary
+              label="当前入口"
+              value={String(
+                (warroom.failedPublishArticles.length > 0 ? 1 : 0)
+                + (warroom.summary.overdueOutcomeCount > 0 ? 1 : 0)
+                + (warroom.drafts.length > 0 ? 1 : 0)
+                + (warroom.topics.length > 0 ? 1 : 0),
+              )}
+              detail="按最后一步阻塞、回流逾期、在推稿件和今日优先题排序。"
+            />
+          </div>
+        </div>
+        <div className="mt-6">
+          <div className={taskQueueGridClassName}>
+            {warroom.failedPublishArticles.length > 0 ? (
+              <article className={taskQueueCardClassName}>
+                <div className="flex flex-wrap gap-2">
+                  <span className={chipClassName}>发布失败</span>
+                  <span className={mutedChipClassName}>待修 {warroom.summary.failedPublishCount} 篇</span>
+                </div>
+                <div className="mt-4 font-serifCn text-2xl text-ink text-balance">
+                  有稿件停在发布最后一步，先修这批阻塞。
+                </div>
+                <p className={cn("mt-3 flex-1", bodyCopyClassName)}>
+                  发布失败意味着内容已经写完，但连接、素材或内容格式没有真正打通。先处理最近失败的稿件，再继续扩题或补回流。
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {warroom.failedPublishArticles.slice(0, 2).map((item) => (
+                    <span key={`failed-publish-${item.articleId}`} className={chipClassName}>
+                      {item.articleTitle} · {formatPublishFailureCode(item.failureCode)}
+                    </span>
+                  ))}
+                </div>
+                <div className="mt-5 flex flex-wrap gap-3">
+                  <Link href={`/articles/${warroom.failedPublishArticles[0].articleId}?step=publish`} className={secondaryActionLinkClassName}>
+                    先处理失败发布
+                  </Link>
+                  <Link href="/settings/publish#publishing-connections" className={secondaryActionLinkClassName}>
+                    查看发布连接
+                  </Link>
+                </div>
+              </article>
+            ) : null}
+
+            {warroom.summary.overdueOutcomeCount > 0 ? (
+              <article className={taskQueueCardClassName}>
+                <div className="flex flex-wrap gap-2">
+                  <span className={chipClassName}>超期待回流</span>
+                  <span className={mutedChipClassName}>待补 {warroom.summary.overdueOutcomeCount} 篇</span>
+                </div>
+                <div className="mt-4 font-serifCn text-2xl text-ink text-balance">
+                  有结果回流已经拖到超时，先补 7d 和命中判定。
+                </div>
+                <p className={cn("mt-3 flex-1", bodyCopyClassName)}>
+                  回流拖得越久，复盘沉淀越容易失真。先把最久未补的结果窗口补齐，再回到打法总结。
+                </p>
+                <div className="mt-5 flex flex-wrap gap-3">
+                  <Link href="#warroom-outcomes" className={secondaryActionLinkClassName}>
+                    去补结果
+                  </Link>
+                  <Link href={buildReviewsHref({ section: "outcome-tagging" })} className={secondaryActionLinkClassName}>
+                    去看复盘
+                  </Link>
+                </div>
+              </article>
+            ) : null}
+
+            {warroom.drafts.length > 0 ? (
+              <article className={taskQueueCardClassName}>
+                <div className="flex flex-wrap gap-2">
+                  <span className={chipClassName}>在推稿件</span>
+                  <span className={mutedChipClassName}>当前 {warroom.summary.draftCount} 篇</span>
+                </div>
+                <div className="mt-4 font-serifCn text-2xl text-ink text-balance">
+                  已经开头的稿件优先推完，不先继续开新坑。
+                </div>
+                <p className={cn("mt-3 flex-1", bodyCopyClassName)}>
+                  草稿是最接近产出的工作对象。先把当前在推稿件往前推一步，再决定是否接新题。
+                </p>
+                <div className="mt-5 flex flex-wrap gap-3">
+                  <Link href="#warroom-drafts" className={secondaryActionLinkClassName}>
+                    去看在推稿件
+                  </Link>
+                  <Link href="/articles" className={secondaryActionLinkClassName}>
+                    进入稿件区
+                  </Link>
+                </div>
+              </article>
+            ) : null}
+
+            {warroom.topics.length > 0 ? (
+              <article className={taskQueueCardClassName}>
+                <div className="flex flex-wrap gap-2">
+                  <span className={chipClassName}>今日优先题</span>
+                  <span className={mutedChipClassName}>当前 {warroom.summary.topicCount} 条</span>
+                </div>
+                <div className="mt-4 font-serifCn text-2xl text-ink text-balance">
+                  没有阻塞时，再从优先位里挑今天最值得开的题。
+                </div>
+                <p className={cn("mt-3 flex-1", bodyCopyClassName)}>
+                  先修掉发布和回流阻塞后，再从今天的高优先题里开稿，能让作战台判断更稳定。
+                </p>
+                <div className="mt-5 flex flex-wrap gap-3">
+                  <Link href="#warroom-topics" className={secondaryActionLinkClassName}>
+                    去看优先题
+                  </Link>
+                  <Link href="/articles#create-article" className={secondaryActionLinkClassName}>
+                    手动立稿
+                  </Link>
+                </div>
+              </article>
+            ) : null}
+
+            {warroom.failedPublishArticles.length === 0
+            && warroom.summary.overdueOutcomeCount === 0
+            && warroom.drafts.length === 0
+            && warroom.topics.length === 0 ? (
+              <article className={taskQueueCardClassName}>
+                <div className="flex flex-wrap gap-2">
+                  <span className={chipClassName}>作战面健康</span>
+                </div>
+                <div className="mt-4 font-serifCn text-2xl text-ink text-balance">
+                  当前没有明显阻塞，作战台可以直接进入新一轮判断。
+                </div>
+                <p className={cn("mt-3 flex-1", bodyCopyClassName)}>
+                  发布、回流和草稿推进都没有堆积项。接下来优先补信源、扩题或直接新建一篇稿件。
+                </p>
+                <div className="mt-5 flex flex-wrap gap-3">
+                  <Link href="/settings/sources" className={secondaryActionLinkClassName}>
+                    去补信源
+                  </Link>
+                  <Link href="/articles#create-article" className={secondaryActionLinkClassName}>
+                    去新建稿件
+                  </Link>
+                </div>
+              </article>
+            ) : null}
+          </div>
+        </div>
+      </section>
+
+      <section id="warroom-topics" className={dashboardSectionClassName}>
+        <div className={sectionHeaderClassName}>
+          <div className="min-w-0">
             <div className={sectionEyebrowClassName}>今日优先选题</div>
             <h2 className={sectionTitleClassName}>先选最值得写的，不先堆能力入口。</h2>
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <SectionSummary
               label="当前候选"
-              value={String(warroom.topics.length)}
-              detail={warroom.topics.length > 0 ? "优先位按当前推荐顺序展开。" : "当前没有新的高优先题。"}
+              value={String(warroom.summary.topicCount)}
+              detail={
+                warroom.summary.topicCount > 0
+                  ? `当前展示 ${warroom.topics.length} 条，按推荐优先级展开。`
+                  : "当前没有新的高优先题。"
+              }
             />
             <Link href="/articles" className={warmSecondaryActionLinkClassName}>
               进入稿件区
@@ -310,7 +538,7 @@ export function WarroomDashboard({
               <div className="mt-4 flex flex-wrap gap-2 text-xs text-inkMuted">
                 <span className={chipClassName}>{topic.sourceName}</span>
                 {topic.matchedPersonaName ? <span className={chipClassName}>{topic.matchedPersonaName}</span> : null}
-                {topic.suggestedSeriesId ? <span className={chipClassName}>已有建议系列</span> : null}
+                {topic.suggestedSeriesId ? <span className={chipClassName}>建议系列 · {topic.suggestedSeriesName || `#${topic.suggestedSeriesId}`}</span> : null}
               </div>
               <div className={sectionDividerClassName}>
                 <div className={detailEyebrowClassName}>为什么现在写</div>
@@ -341,7 +569,7 @@ export function WarroomDashboard({
         </div>
       </section>
 
-      <section className={dashboardSectionClassName}>
+      <section id="warroom-drafts" className={dashboardSectionClassName}>
         <div className={sectionHeaderClassName}>
           <div className="min-w-0">
             <div className={sectionEyebrowClassName}>待推进稿件</div>
@@ -421,7 +649,7 @@ export function WarroomDashboard({
       </section>
 
       <div className="grid gap-6 2xl:grid-cols-2">
-        <section className={dashboardSectionClassName}>
+        <section id="warroom-outcomes" className={dashboardSectionClassName}>
           <div className={sectionHeaderClassName}>
             <div className="min-w-0">
               <div className={sectionEyebrowClassName}>待回流稿件</div>
@@ -465,7 +693,25 @@ export function WarroomDashboard({
                   <span className={mutedChipClassName}>更新 {item.daysSinceUpdate} 天前</span>
                 </div>
                 <p className={cn("mt-3", bodyCopyClassName)}>{buildPendingOutcomeCopy(item)}</p>
+                {buildPendingOutcomeClosureCopy(item) ? (
+                  <div className={cn(surfaceCardStyles({ tone: "warning", padding: "sm" }), "mt-3 px-4 py-3 text-sm leading-6 text-warning shadow-none")}>
+                    {buildPendingOutcomeClosureCopy(item)}
+                  </div>
+                ) : null}
                 <div className="mt-4 flex flex-wrap gap-3">
+                  <ArticleOutcomeQuickCaptureButton
+                    articleId={item.article.id}
+                    articleTitle={item.article.title}
+                    nextWindowCode={item.nextWindowCode}
+                    completedWindowCodes={item.completedWindowCodes}
+                    missingWindowCodes={item.missingWindowCodes}
+                    currentTargetPackage={item.targetPackage}
+                    currentHitStatus={item.hitStatus}
+                    currentReviewSummary={item.reviewSummary}
+                    currentNextAction={item.nextAction}
+                    currentPlaybookTags={item.playbookTags}
+                    buttonText="快速录入结果"
+                  />
                   <Link href={`/articles/${item.article.id}`} className={secondaryActionLinkClassName}>
                     打开稿件
                   </Link>
@@ -493,7 +739,7 @@ export function WarroomDashboard({
           </div>
         </section>
 
-        <section className={dashboardSectionClassName}>
+        <section id="warroom-playbooks" className={dashboardSectionClassName}>
           <div className={sectionHeaderClassName}>
             <div className="min-w-0">
               <div className={sectionEyebrowClassName}>本周有效打法</div>

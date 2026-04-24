@@ -219,6 +219,13 @@ export function buildArticleWorkspaceShellBundle(input: BuildArticleWorkspaceShe
       onGoToResearchStep: input.goToResearchStep,
       updatingWorkflow: Boolean(input.updatingWorkflowCode),
     },
+    topbarActionsProps: {
+      articleId: input.article.id,
+      canExportPdf: input.canExportPdf,
+      onCopyMarkdown: input.copyMarkdown,
+      onDeleteArticle: input.deleteCurrentArticle,
+      metadataHref: "#workspace-metadata",
+    },
     editViewProps: {
       hasDraftContent: input.hasDraftContent,
       draftBlankSlate: input.draftBlankSlate as never,
@@ -278,6 +285,7 @@ export function buildArticleWorkspaceShellBundle(input: BuildArticleWorkspaceShe
     generateBlockedMessage: input.generateBlockedMessage,
     researchStepSummary: input.researchStepSummary as never,
     researchCoverageRibbon: input.researchCoverageRibbon as never,
+    currentArticleTask: input.currentArticleTask as never,
     onGoToResearchStep: input.goToResearchStep,
     isUpdatingWorkflow: input.updatingWorkflowCode !== null,
     hideMainStepRail: input.isFocusMode || input.isWritePhase || input.isPolishPhase,
@@ -434,6 +442,7 @@ export function buildArticleWorkspaceShellBundle(input: BuildArticleWorkspaceShe
     mobileInspectorSheetProps: {
       open: input.showMobileInspector,
       currentArticleMainStep: input.currentArticleMainStep as never,
+      articleMainSteps: input.articleMainSteps as never,
       currentStage: input.currentStage as never,
       status: input.status,
       showLeftWorkspaceRail: input.showLeftWorkspaceRail,

@@ -14,13 +14,12 @@ export function parseTopicFissionEngine(value: unknown): TopicFissionEngine {
   return value === "ima" ? "ima" : "local";
 }
 
-export async function createTopicFissionSseResponse(input: {
+async function resolveTopicFissionRequest(input: {
   userId: number;
   topicId: number;
   mode: TopicFissionMode;
   engine: TopicFissionEngine;
 }) {
-  const routeStartedAt = Date.now();
   const topics = await getVisibleTopicRecommendationsForUser(input.userId);
   const topic = topics.find((item) => item.id === input.topicId);
   if (!topic) {
@@ -29,6 +28,33 @@ export async function createTopicFissionSseResponse(input: {
   if (input.engine === "ima") {
     await consumeImaFissionQuota(input.userId);
   }
+
+  return topic;
+}
+
+export async function createTopicFissionJsonResult(input: {
+  userId: number;
+  topicId: number;
+  mode: TopicFissionMode;
+  engine: TopicFissionEngine;
+}) {
+  const topic = await resolveTopicFissionRequest(input);
+  return generateTopicFission({
+    userId: input.userId,
+    topic,
+    mode: input.mode,
+    engine: input.engine,
+  });
+}
+
+export async function createTopicFissionSseResponse(input: {
+  userId: number;
+  topicId: number;
+  mode: TopicFissionMode;
+  engine: TopicFissionEngine;
+}) {
+  const routeStartedAt = Date.now();
+  const topic = await resolveTopicFissionRequest(input);
 
   const stream = new ReadableStream({
     start(controller) {

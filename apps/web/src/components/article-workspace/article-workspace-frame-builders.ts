@@ -55,6 +55,7 @@ export function buildWorkspaceShellProps(input: {
   generateBlockedMessage: string;
   researchStepSummary: ComponentProps<typeof WorkspaceShell>["researchStepSummary"];
   researchCoverageRibbon: ComponentProps<typeof WorkspaceShell>["researchCoverageRibbon"];
+  currentArticleTask: ComponentProps<typeof WorkspaceShell>["currentArticleTask"];
   onGoToResearchStep: ComponentProps<typeof WorkspaceShell>["onGoToResearchStep"];
   isUpdatingWorkflow: boolean;
   hideMainStepRail: boolean;
@@ -77,6 +78,7 @@ export function buildWorkspaceShellProps(input: {
     currentArticleMainStep: input.currentArticleMainStep,
     currentArticleMainStepDetail: input.currentArticleMainStepDetail,
     saveState: input.saveState,
+    topbarActions: input.workspaceShellViewSlots.topbarActions,
     theme: input.theme,
     isFocusMode: input.isFocusMode,
     onToggleTheme: input.onToggleTheme,
@@ -85,6 +87,7 @@ export function buildWorkspaceShellProps(input: {
     generateBlockedMessage: input.generateBlockedMessage,
     researchStepSummary: input.researchStepSummary,
     researchCoverageRibbon: input.researchCoverageRibbon,
+    currentArticleTask: input.currentArticleTask,
     onGoToResearchStep: input.onGoToResearchStep,
     isUpdatingWorkflow: input.isUpdatingWorkflow,
     hideMainStepRail: input.hideMainStepRail,

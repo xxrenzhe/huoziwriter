@@ -1,7 +1,7 @@
 import { analyzeAiNoise } from "./ai-noise-scan";
 import { evaluateArchetypeRhythmConsistency } from "./archetype-rhythm";
 import { EVIDENCE_HOOK_TAG_OPTIONS, getArticleEvidenceStats } from "./article-evidence";
-import { getHumanSignalScore, getStrategyCardMissingFields, isStrategyCardComplete, STRATEGY_ARCHETYPE_OPTIONS } from "./article-strategy";
+import { getStrategyCardMissingFields, isStrategyCardComplete, STRATEGY_ARCHETYPE_OPTIONS } from "./article-strategy";
 import { getArticleNodes } from "./article-outline";
 import { getArticleStageArtifact, getArticleStageArtifactsByDocumentIds } from "./article-stage-artifacts";
 import { getActiveTemplateById } from "./layout-templates";
@@ -91,6 +91,114 @@ function getNumericValue(value: unknown) {
   return null;
 }
 
+function extractPublishOpeningText(markdownContent: string | null | undefined) {
+  const normalized = String(markdownContent || "")
+    .replace(/\r\n/g, "\n")
+    .trim();
+  if (!normalized) return "";
+
+  const blocks = normalized
+    .split(/\n{2,}/)
+    .map((block) => block.trim())
+    .filter(Boolean);
+
+  for (const block of blocks) {
+    if (/^#/.test(block)) continue;
+    if (/^\s*[-*]\s+/.test(block)) continue;
+    const text = block
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .join(" ");
+    if (text) {
+      return text;
+    }
+  }
+
+  return normalized
+    .split("\n")
+    .map((line) => line.trim())
+    .find((line) => line && !/^#/.test(line))
+    || "";
+}
+
+const HUMAN_SIGNAL_TITLE_REF_PATTERN = /[「“"]?[^\s"”」]{2,30}[”」"]?如果只停留在转述层|读者刷到[「“"][^"”」]+[”」"]/;
+const HUMAN_SIGNAL_SCENE_PATTERN = /说过一句话|一句话：|一句：|“|”|「|」|那天|当时|现场|会议室|工位|群里|电话里|语音里|刚刚|最近|上周|昨晚|今天|看到|看了|听到|听见|盯着|退回来/;
+const HUMAN_SIGNAL_FIRST_HAND_PATTERN = /我|我们|自己|亲眼|亲耳|亲手|最近|连续|刚刚|那天|上周|昨晚|这周|看到|看了|听到|聊了|遇到|踩过坑/;
+const HUMAN_SIGNAL_FELT_PATTERN = /我|自己|一下子|瞬间|一下|心里|后背|手心|上头|发麻|别扭|不对劲|烦|怕|愣住|皱眉/;
+
+function hasUsableHumanObservation(value: string) {
+  const normalized = String(value || "").trim();
+  if (!normalized) return false;
+  return HUMAN_SIGNAL_FIRST_HAND_PATTERN.test(normalized) && normalized.length >= 16;
+}
+
+function hasUsableHumanFeltMoment(value: string) {
+  const normalized = String(value || "").trim();
+  if (!normalized) return false;
+  return HUMAN_SIGNAL_FELT_PATTERN.test(normalized) && normalized.length >= 10;
+}
+
+function hasUsableHumanWhyThisHitMe(value: string) {
+  const normalized = String(value || "").trim();
+  if (!normalized) return false;
+  return /我|自己|因为|卡住|刺痛|打到|戳中|让我/.test(normalized) && normalized.length >= 12;
+}
+
+function hasUsableHumanSceneOrDialogue(value: string) {
+  const normalized = String(value || "").trim();
+  if (!normalized || HUMAN_SIGNAL_TITLE_REF_PATTERN.test(normalized)) return false;
+  return HUMAN_SIGNAL_SCENE_PATTERN.test(normalized) && normalized.length >= 12;
+}
+
+function hasUsableHumanComplaint(value: string) {
+  const normalized = String(value || "").trim();
+  if (!normalized) return false;
+  return /吐槽|最烦|受不了|最想骂|我最想说|我最想吐槽/.test(normalized);
+}
+
+function hasUsableNonDelegableTruth(value: string, hasHumanAnchor: boolean) {
+  const normalized = String(value || "").trim();
+  if (!normalized || !hasHumanAnchor) return false;
+  if (HUMAN_SIGNAL_TITLE_REF_PATTERN.test(normalized)) return false;
+  return normalized.length >= 18;
+}
+
+function getEffectiveHumanSignalState(strategyCard: {
+  firstHandObservation?: string | null;
+  feltMoment?: string | null;
+  whyThisHitMe?: string | null;
+  realSceneOrDialogue?: string | null;
+  wantToComplain?: string | null;
+  nonDelegableTruth?: string | null;
+} | null | undefined) {
+  const firstHandObservation = String(strategyCard?.firstHandObservation || "").trim();
+  const feltMoment = String(strategyCard?.feltMoment || "").trim();
+  const whyThisHitMe = String(strategyCard?.whyThisHitMe || "").trim();
+  const realSceneOrDialogue = String(strategyCard?.realSceneOrDialogue || "").trim();
+  const wantToComplain = String(strategyCard?.wantToComplain || "").trim();
+  const nonDelegableTruth = String(strategyCard?.nonDelegableTruth || "").trim();
+
+  const hasObservation = hasUsableHumanObservation(firstHandObservation);
+  const hasScene = hasUsableHumanSceneOrDialogue(realSceneOrDialogue);
+  const hasAnchor = hasObservation || hasScene;
+  const completion = {
+    firstHandObservation: hasObservation,
+    feltMoment: hasAnchor && hasUsableHumanFeltMoment(feltMoment),
+    whyThisHitMe: hasAnchor && hasUsableHumanWhyThisHitMe(whyThisHitMe),
+    realSceneOrDialogue: hasScene,
+    wantToComplain: hasAnchor && hasUsableHumanComplaint(wantToComplain),
+    nonDelegableTruth: hasUsableNonDelegableTruth(nonDelegableTruth, hasAnchor),
+  };
+
+  return {
+    completion,
+    score: Object.values(completion).filter(Boolean).length,
+    hasRealScene: hasAnchor,
+    hasNonDelegableTruth: completion.nonDelegableTruth,
+  };
+}
+
 function hasArtifactPayload(value: { payload?: Record<string, unknown> | null } | null) {
   return Boolean(value?.payload && Object.keys(value.payload).length > 0);
 }
@@ -176,13 +284,14 @@ export async function evaluatePublishGuard(input: {
     outlineUpdatedAt: outlineArtifact?.payload?.outlineUpdatedAt,
   });
   const selectedOpeningHook = getString(outlineSelection?.selectedOpeningHook) || getString(outlineArtifact?.payload?.openingHook);
+  const draftOpening = extractPublishOpeningText(article?.markdown_content);
   const selectedOpeningOption = getRecordArray(outlineArtifact?.payload?.openingOptions).find((item) => {
     const optionOpening = getString(item.opening) || getString(item.text) || getString(item.content) || getString(item.value);
     return optionOpening === selectedOpeningHook;
   }) ?? null;
   const openingGuardEvaluation = evaluateOpeningPatternGuardChecks({
     selectedOpening:
-      getString(article?.markdown_content)
+      draftOpening
       || getString(deepWritingArtifact?.payload?.openingStrategy)
       || selectedOpeningHook,
     selectedOpeningHook,
@@ -236,7 +345,8 @@ export async function evaluatePublishGuard(input: {
   const researchReady = researchArtifact?.status === "ready" && hasArtifactPayload(researchArtifact);
   const strategyCardMissingFields = getStrategyCardMissingFields(strategyCard);
   const strategyCardReady = isStrategyCardComplete(strategyCard);
-  const humanSignalScore = getHumanSignalScore(strategyCard);
+  const effectiveHumanSignalState = getEffectiveHumanSignalState(strategyCard);
+  const humanSignalScore = effectiveHumanSignalState.score;
   const evidenceStats = getArticleEvidenceStats(evidenceItems);
   const hookCoverageReady = evidenceStats.hookTagCoverageCount >= 2;
   const missingHookTags = EVIDENCE_HOOK_TAG_OPTIONS.filter((tag) => !evidenceStats.hookTagCoverage.includes(tag));
@@ -329,8 +439,8 @@ export async function evaluatePublishGuard(input: {
     aiNoise: localAiNoise,
     languageGuardHitsCount: languageGuardHits.length,
     humanSignalScore,
-    hasRealScene: Boolean(String(strategyCard?.firstHandObservation || "").trim() || String(strategyCard?.realSceneOrDialogue || "").trim()),
-    hasNonDelegableTruth: Boolean(String(strategyCard?.nonDelegableTruth || "").trim()),
+    hasRealScene: effectiveHumanSignalState.hasRealScene,
+    hasNonDelegableTruth: effectiveHumanSignalState.hasNonDelegableTruth,
     materialReadiness,
     evidenceStats: {
       ready: evidenceStats.ready,

@@ -1,4 +1,5 @@
 import { Button } from "@huoziwriter/ui";
+import { getOutlineOpeningOptionCardClassName } from "@/lib/outline-opening-option-tone";
 
 type OutlineTitleElement = {
   label: string;
@@ -176,9 +177,10 @@ export function OutlineSelectionArtifactPanel({
                 variant="secondary"
                 fullWidth
                 className={`h-auto whitespace-normal px-4 py-4 text-left [&>span]:flex [&>span]:w-full [&>span]:flex-col [&>span]:items-start ${
-                  item.isSelected
-                    ? "border-cinnabar bg-surfaceWarning hover:border-cinnabar hover:bg-surfaceWarning"
-                    : "border-lineStrong bg-surface"
+                  getOutlineOpeningOptionCardClassName({
+                    isSelected: item.isSelected,
+                    forbiddenHits: item.forbiddenHits,
+                  })
                 }`}
               >
                 <span className="flex flex-wrap items-center gap-2">

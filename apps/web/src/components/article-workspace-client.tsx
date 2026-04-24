@@ -8,60 +8,24 @@ import {
   selectCoverCandidateAction,
   upsertWechatConnectionAction,
 } from "@/app/(writer)/writer-actions";
-import { Button, Input, Select, Textarea } from "@huoziwriter/ui";
-import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { startTransition, useMemo } from "react";
-import { formatArticleStatusLabel } from "@/lib/article-status-label";
-import {
-  FOUR_POINT_AUDIT_DIMENSIONS,
-  STRATEGY_ARCHETYPE_OPTIONS,
-} from "@/lib/article-strategy";
-import type { LanguageGuardRule } from "@/lib/language-guard-core";
+import { resolveArticleMainStepNavigationAccess } from "@/lib/article-workspace-step-navigation";
 import { formatPlanDisplayName } from "@/lib/plan-labels";
-import { buildPublishMethodologyGates } from "@/lib/publish-methodology-gates";
-import {
-  getPayloadRecord,
-  getPayloadRecordArray,
-  getPayloadStringArray,
-} from "@/lib/article-workspace-helpers";
 import {
   isArticleMainStepCode,
   type ArticleMainStepCode,
 } from "@/lib/article-workflow-registry";
-import { buildWritingDiversityReport } from "@/lib/writing-diversity";
-import { buildWritingQualityPanel } from "@/lib/writing-quality";
 import type { ArticleStatus } from "@/lib/domain";
 import {
   formatWorkspaceViewLabel,
 } from "./article-workspace/authoring-phase";
 import {
-  getFactCheckActionOptions,
-  getFactCheckDecision,
-} from "./article-workspace/stage-selection-drafts";
-import {
-  ARTICLE_MAIN_STEPS,
   buildEvidenceItemSignature,
-  buildHighlightedKnowledgeCard,
-  buildStrategyCardItem,
-  getArticleMainStepByStageCode,
   getStageApplyButtonLabel,
-  isResearchGuardCheckKey,
-  markExternalFetchIssueRecovered,
-  normalizeExternalFetchIssueRecord,
-  normalizeOutlineMaterialNode,
-  parseResponseMessage,
-  prependExternalFetchIssue,
-  reorderKnowledgeCards,
-  removeExternalFetchIssue,
-  type ArticleFragmentItem,
-  type KnowledgeCardPanelItem,
-  type OutlineMaterialNodeItem,
   type StageArtifactItem,
   type StrategyCardItem,
-  upsertKnowledgeCard,
   upsertStageArtifact,
-  writeExternalFetchIssues,
 } from "./article-workspace/article-workspace-client-data";
 import { createArticleWorkspaceEvidenceActions } from "./article-workspace/article-workspace-evidence-actions";
 import { buildArticleWorkspaceActionBundle } from "./article-workspace/article-workspace-action-bundle";
@@ -78,7 +42,6 @@ import {
   type RecentSyncLogItem,
   type WechatConnectionItem,
 } from "./article-workspace/article-workspace-publish-actions";
-import { OutlineMaterialsArtifactPanel } from "./article-workspace/outline-materials-artifact-panel";
 import { buildArticleWorkspaceShellBundle } from "./article-workspace/article-workspace-shell-bundle";
 import { useArticleWorkspaceClientState } from "./article-workspace/article-workspace-client-state";
 import { createArticleWorkspaceStrategyActions } from "./article-workspace/article-workspace-strategy-actions";
@@ -594,6 +557,7 @@ export function ArticleEditorClient({
     imageAssetStorageLimitReached,
     canShowWechatControls,
     hasUnsavedWechatRenderInputs,
+    currentArticleTask,
     coverImageButtonDisabled,
     coverImageButtonLabel,
     nodeVisualSuggestions,
@@ -611,6 +575,7 @@ export function ArticleEditorClient({
         deepWritingArtifact,
         researchArtifact,
         selectedConnection,
+        latestSyncLog,
         canPublishToWechat,
         canUseHistoryReferences,
         canGenerateCoverImage,
@@ -626,6 +591,8 @@ export function ArticleEditorClient({
         researchInsightCountForGuide,
         researchTimelineCountForGuide,
         researchComparisonCountForGuide,
+        generateBlockedByResearch,
+        generateBlockedMessage,
         outlineGapHintsForGuide,
         outlineMaterialReadiness,
         evidenceDraftStats,
@@ -675,10 +642,13 @@ export function ArticleEditorClient({
       factCheckReady,
       fragmentPool,
       generatingCover,
+      generateBlockedByResearch,
+      generateBlockedMessage,
       historyPlanCount,
       htmlPreview,
       imageAssetQuota,
       isFocusMode,
+      latestSyncLog,
       liveLanguageGuardHits.length,
       markdown,
       nodes,
@@ -705,6 +675,23 @@ export function ArticleEditorClient({
       workflow.currentStageCode,
     ],
   );
+  const resolveMainStepAccess = useMemo(
+    () =>
+      (stepCode: string) =>
+        resolveArticleMainStepNavigationAccess({
+          targetStepCode: isArticleMainStepCode(stepCode) ? stepCode : currentArticleMainStep.code,
+          currentStepCode: currentArticleMainStep.code,
+          canOpenResultStep: status === "published",
+          generateBlockedByResearch,
+          generateBlockedMessage,
+        }),
+    [
+      currentArticleMainStep.code,
+      generateBlockedByResearch,
+      generateBlockedMessage,
+      status,
+    ],
+  );
   const {
     updateWorkflow,
     handleArticleMainStepSelect,
@@ -716,7 +703,32 @@ export function ArticleEditorClient({
     setWorkflow,
     setView,
     setMessage,
+    resolveMainStepAccess,
   });
+  const guardedArticleMainSteps = useMemo(
+    () =>
+      articleMainSteps.map((step) => {
+        const access = resolveArticleMainStepNavigationAccess({
+          targetStepCode: step.code,
+          currentStepCode: currentArticleMainStep.code,
+          canOpenResultStep: status === "published",
+          generateBlockedByResearch,
+          generateBlockedMessage,
+        });
+        return {
+          ...step,
+          disabled: access.disabled,
+          disabledReason: access.reason,
+        };
+      }),
+    [
+      articleMainSteps,
+      currentArticleMainStep.code,
+      generateBlockedByResearch,
+      generateBlockedMessage,
+      status,
+    ],
+  );
   const handleOutlineMaterialScreenshotFileChange = createDataUrlFileChangeHandler({
     onEmpty: () => {
       setOutlineMaterialImageDataUrl(null);
@@ -1087,6 +1099,7 @@ export function ArticleEditorClient({
     requestedMainStepHandledRef,
     currentArticleMainStepCode: currentArticleMainStep.code,
     updateWorkflow: (stageCode, mode, silent) => updateWorkflow(stageCode, mode as never, silent),
+    resolveRequestedMainStepAccess: resolveMainStepAccess,
     setMessage,
     generating,
     title,
@@ -1190,6 +1203,21 @@ export function ArticleEditorClient({
       onSuccess: () => setMessage("Markdown 已复制到剪贴板"),
       onError: () => setMessage("复制 Markdown 失败"),
     });
+  const deleteCurrentArticle = async () => {
+    if (!window.confirm("确定删除这篇稿件吗？相关快照与阶段产物会一并移除。")) {
+      return;
+    }
+    const response = await fetch(`/api/articles/${article.id}`, { method: "DELETE" });
+    const json = await response.json();
+    if (!response.ok || !json.success) {
+      setMessage(json.error || "稿件删除失败");
+      return;
+    }
+    startTransition(() => {
+      router.push("/articles");
+      router.refresh();
+    });
+  };
 
   const {
     workspaceLeftRailProps,
@@ -1394,7 +1422,8 @@ export function ArticleEditorClient({
     toggleFocusMode,
     researchStepSummary,
     researchCoverageRibbon,
-    articleMainSteps,
+    currentArticleTask,
+    articleMainSteps: guardedArticleMainSteps,
     authoringPhases,
     currentAuthoringPhaseHint,
     view,
@@ -1438,6 +1467,7 @@ export function ArticleEditorClient({
     setShowMobileInspector,
     canExportPdf,
     copyMarkdown,
+    deleteCurrentArticle,
     canShowWechatControls,
     publishing,
     publish,

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { AppFeedbackProvider } from "@/components/app-feedback";
 import { CommandMenuProvider } from "@/components/command-menu";
 
 export const metadata: Metadata = {
@@ -18,7 +19,9 @@ export default function RootLayout({
   return (
     <html lang="zh-CN" className="h-full">
       <body className="min-h-dvh bg-paper text-ink antialiased">
-        <CommandMenuProvider>{children}</CommandMenuProvider>
+        <AppFeedbackProvider>
+          <CommandMenuProvider>{children}</CommandMenuProvider>
+        </AppFeedbackProvider>
       </body>
     </html>
   );

@@ -1,10 +1,10 @@
 import { AdminFinanceClient } from "@/components/admin-client";
 import { requireAdminSession } from "@/lib/page-auth";
-import { getAdminSubscriptions, getResolvedPlans } from "@/lib/repositories";
+import { getAdminFinanceOverview, getAdminSubscriptions, getResolvedPlans } from "@/lib/repositories";
 
 export default async function AdminFinancePage() {
   await requireAdminSession();
-  const [plans, subscriptions] = await Promise.all([getResolvedPlans(), getAdminSubscriptions()]);
+  const [plans, subscriptions, overview] = await Promise.all([getResolvedPlans(), getAdminSubscriptions(), getAdminFinanceOverview()]);
   return (
     <AdminFinanceClient
       plans={plans}
@@ -19,6 +19,7 @@ export default async function AdminFinancePage() {
         startAt: subscription.start_at,
         endAt: subscription.end_at,
       }))}
+      overview={overview}
     />
   );
 }

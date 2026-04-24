@@ -14,6 +14,7 @@ import {
 import { SettingsSubpageShell } from "../shell";
 
 const assetSummaryCardClassName = surfaceCardStyles({ padding: "md" });
+const assetQueueCardClassName = cn(surfaceCardStyles({ tone: "highlight", padding: "sm", interactive: true }), "block shadow-none hover:border-cinnabar/40 hover:bg-surface");
 const templateSectionClassName = surfaceCardStyles({ padding: "md" });
 const templateCardClassName = cn(surfaceCardStyles({ tone: "warm", padding: "md" }), "shadow-none");
 const templateSummaryCardClassName = cn(surfaceCardStyles({ tone: "highlight", padding: "sm" }), "shadow-none");
@@ -38,11 +39,11 @@ export default async function SettingsAssetsPage() {
   const officialTemplateCount = Math.max(templates.length - ownedTemplates.length, 0);
   const activatedTemplateCount = ownedTemplates.filter((template) => (template.usageCount ?? 0) > 0).length;
   const recentlyUsedTemplateCount = ownedTemplates.filter((template) => Boolean(template.lastUsedAt)).length;
-  const recentFragments = fragments.slice(0, 6);
-  const recentKnowledgeCards = knowledgeCards.slice(0, 6);
-  const recentImageAssets = assetFiles
-    .filter((item) => item.assetType === "cover_image" || String(item.mimeType || "").startsWith("image/"))
-    .slice(0, 6);
+  const imageAssets = assetFiles
+    .filter((item) => item.assetType === "cover_image" || String(item.mimeType || "").startsWith("image/"));
+  const conflictedKnowledgeCards = knowledgeCards.filter((card) => card.status === "conflicted");
+  const staleKnowledgeCards = knowledgeCards.filter((card) => card.status === "stale");
+  const problematicImageAssets = imageAssets.filter((asset) => asset.status !== "ready");
 
   return (
     <SettingsSubpageShell
@@ -92,8 +93,48 @@ export default async function SettingsAssetsPage() {
           ))}
         </div>
 
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          {[
+            {
+              label: "冲突背景卡",
+              value: String(conflictedKnowledgeCards.length),
+              note: conflictedKnowledgeCards.length > 0 ? "优先处理相互冲突或结论过旧的背景卡。" : "当前没有冲突背景卡。",
+              href: "#asset-queue-conflicted-knowledge",
+              actionLabel: "去处理冲突",
+            },
+            {
+              label: "待刷新背景卡",
+              value: String(staleKnowledgeCards.length),
+              note: staleKnowledgeCards.length > 0 ? "这些背景卡的结论或素材依赖已经变旧。" : "当前没有待刷新的背景卡。",
+              href: "#asset-queue-stale-knowledge",
+              actionLabel: "去看待刷新",
+            },
+            {
+              label: "待处理图片",
+              value: String(problematicImageAssets.length),
+              note: problematicImageAssets.length > 0 ? "封面候选处理中或失败时，先回到对应稿件发布步。" : "当前图片资产状态稳定。",
+              href: "#asset-queue-problematic-images",
+              actionLabel: "去看图片队列",
+            },
+            {
+              label: "模板库存",
+              value: String(ownedTemplates.length),
+              note: ownedTemplates.length > 0 ? "最近可复用的私有模板直接在下方继续管理。" : "还没有形成私有模板库存。",
+              href: "#template-assets",
+              actionLabel: "去看模板资产",
+            },
+          ].map((item) => (
+            <Link key={item.label} href={item.href} className={assetQueueCardClassName}>
+              <div className="text-xs uppercase tracking-[0.18em] text-inkMuted">{item.label}</div>
+              <div className="mt-2 font-serifCn text-3xl text-ink text-balance">{item.value}</div>
+              <div className="mt-2 text-sm leading-6 text-inkSoft">{item.note}</div>
+              <div className="mt-3 text-xs font-medium uppercase tracking-[0.18em] text-cinnabar">{item.actionLabel}</div>
+            </Link>
+          ))}
+        </div>
+
         <WriterAssetCenterClient
-          fragments={recentFragments.map((fragment) => ({
+          fragments={fragments.map((fragment) => ({
             id: fragment.id,
             title: fragment.title,
             distilledContent: fragment.distilled_content,
@@ -103,7 +144,7 @@ export default async function SettingsAssetsPage() {
             createdAt: fragment.created_at,
             shared: fragment.user_id !== session.userId,
           }))}
-          knowledgeCards={recentKnowledgeCards.map((card) => ({
+          knowledgeCards={knowledgeCards.map((card) => ({
             id: card.id,
             title: card.title,
             cardType: card.card_type,
@@ -116,7 +157,7 @@ export default async function SettingsAssetsPage() {
             lastCompiledAt: card.last_compiled_at,
             shared: Boolean(card.shared),
           }))}
-          imageAssets={recentImageAssets.map((asset) => ({
+          imageAssets={imageAssets.map((asset) => ({
             id: asset.id,
             articleId: asset.articleId,
             articleTitle: asset.articleTitle,

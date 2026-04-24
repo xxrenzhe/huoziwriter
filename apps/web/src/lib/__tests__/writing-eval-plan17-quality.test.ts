@@ -9,11 +9,14 @@ import {
   autoFillWritingEvalDatasetImports,
   buildWritingEvalTopicCaseVariants,
   createWritingEvalCase,
+  dispatchWritingEvalRunSchedule,
   getPlan17QualityReport,
   getWritingEvalCaseQualityLabels,
   getWritingEvalCases,
   getWritingEvalDatasetImportRecommendations,
   getWritingEvalDatasets,
+  getWritingEvalPrimaryShadowComparison,
+  getWritingEvalRunSchedules,
   getWritingEvalTopicImportOptions,
   importWritingEvalCaseFromTopicItem,
   queuePlan17TopicFissionBenchmarkRuns,
@@ -253,6 +256,24 @@ test("plan17 writing eval presets are seeded and exposed in the quality report",
     assert.equal(datasetCodes.has("plan17-rhythm-consistency-v1"), true);
     assert.equal(datasetCodes.has("plan21-opening-optimizer-v1"), true);
 
+    const openingDataset = datasets.find((item) => item.code === "plan21-opening-optimizer-v1");
+    assert.ok(openingDataset);
+    assert.equal(openingDataset.status, "active");
+    assert.equal(openingDataset.sampleCount >= 30, true);
+    assert.notEqual(openingDataset.readiness.status, "blocked");
+
+    const schedules = await getWritingEvalRunSchedules();
+    const openingSchedule = schedules.find((item) => item.datasetId === openingDataset.id && item.experimentMode === "lead_only");
+    assert.ok(openingSchedule);
+    assert.equal(openingSchedule.isEnabled, true);
+    assert.equal(openingSchedule.triggerMode, "scheduled");
+    assert.equal(openingSchedule.agentStrategy, "lead_template");
+    await getPromptVersions();
+    const dispatched = await dispatchWritingEvalRunSchedule({ scheduleId: openingSchedule.id, force: true });
+    assert.equal(dispatched.run.datasetId, openingDataset.id);
+    assert.equal(dispatched.run.experimentMode, "lead_only");
+    assert.equal(dispatched.run.status, "queued");
+
     const report = await getPlan17QualityReport();
     const focusKeys = new Set<string>(report.focuses.map((item) => item.key));
     assert.equal(focusKeys.has("topic_fission"), true);
@@ -261,6 +282,68 @@ test("plan17 writing eval presets are seeded and exposed in the quality report",
     assert.equal(focusKeys.has("rhythm_consistency"), true);
     assert.equal(focusKeys.has("opening_optimizer"), false);
     assert.equal(report.totalDatasetCount, 4);
+  });
+});
+
+test("writing eval compares primary and shadow run quality scores on paired cases", async () => {
+  await withTempDatabase("primary-shadow-comparison", async () => {
+    const datasets = await getWritingEvalDatasets();
+    const dataset = datasets.find((item) => item.code === "plan21-opening-optimizer-v1");
+    assert.ok(dataset);
+    const cases = await getWritingEvalCases(dataset.id);
+    const firstCase = cases[0];
+    const secondCase = cases[1];
+    assert.ok(firstCase);
+    assert.ok(secondCase);
+
+    const primaryOne = await createRunResultPair({
+      datasetId: dataset.id,
+      caseId: firstCase.id,
+      totalScore: 72,
+      runCode: "primary-shadow-baseline-1",
+      baseVersionRef: "primary-model",
+      candidateVersionRef: "primary-model",
+    });
+    const primaryTwo = await createRunResultPair({
+      datasetId: dataset.id,
+      caseId: secondCase.id,
+      totalScore: 78,
+      runCode: "primary-shadow-baseline-2",
+      baseVersionRef: "primary-model",
+      candidateVersionRef: "primary-model",
+    });
+    const shadowOne = await createRunResultPair({
+      datasetId: dataset.id,
+      caseId: firstCase.id,
+      totalScore: 82,
+      runCode: "primary-shadow-candidate-1",
+      baseVersionRef: "shadow-model",
+      candidateVersionRef: "shadow-model",
+    });
+    const shadowTwo = await createRunResultPair({
+      datasetId: dataset.id,
+      caseId: secondCase.id,
+      totalScore: 88,
+      runCode: "primary-shadow-candidate-2",
+      baseVersionRef: "shadow-model",
+      candidateVersionRef: "shadow-model",
+    });
+
+    const db = getDatabase();
+    await db.exec("UPDATE writing_optimization_results SET run_id = ? WHERE run_id = ?", [primaryOne.runId, primaryTwo.runId]);
+    await db.exec("DELETE FROM writing_optimization_runs WHERE id = ?", [primaryTwo.runId]);
+    await db.exec("UPDATE writing_optimization_results SET run_id = ? WHERE run_id = ?", [shadowOne.runId, shadowTwo.runId]);
+    await db.exec("DELETE FROM writing_optimization_runs WHERE id = ?", [shadowTwo.runId]);
+
+    const comparison = await getWritingEvalPrimaryShadowComparison({
+      primaryRunId: primaryOne.runId,
+      shadowRunId: shadowOne.runId,
+    });
+    assert.equal(comparison.pairedCaseCount, 2);
+    assert.equal(comparison.primary.averageTotalScore, 75);
+    assert.equal(comparison.shadow.averageTotalScore, 85);
+    assert.equal(comparison.delta.totalScore, 10);
+    assert.equal(comparison.delta.qualityScore, 10);
   });
 });
 
@@ -752,9 +835,15 @@ test("quality report only counts the latest manual label version for each case",
 
     assert.equal(strategyFocus?.reporting.strategyManualScoreSampleCount, 3);
     assert.equal(strategyFocus?.reporting.strategyManualScoreSpearman, 1);
+    assert.deepEqual(strategyFocus?.observationGaps, [
+      { key: "manual-score-gap", label: "距 20 条人工判分样本仍差", count: 17 },
+    ]);
     assert.equal(evidenceFocus?.reporting.evidenceLabelSampleCount, 2);
     assert.equal(Number((evidenceFocus?.reporting.evidenceLabelPrecision ?? 0).toFixed(4)), 1);
     assert.equal(Number((evidenceFocus?.reporting.evidenceLabelRecall ?? 0).toFixed(4)), 0.5);
+    assert.deepEqual(evidenceFocus?.observationGaps, [
+      { key: "manual-label-gap", label: "距 20 条人工标签样本仍差", count: 18 },
+    ]);
   });
 });
 
@@ -1174,6 +1263,7 @@ test("quality report exposes rhythm correlation p-value when paired samples are 
     assert.equal(rhythmFocus?.reporting.rhythmDeviationVsReadCompletionSampleCount, 20);
     assert.ok((rhythmFocus?.reporting.rhythmDeviationVsReadCompletionCorrelation ?? 0) < 0);
     assert.ok((rhythmFocus?.reporting.rhythmDeviationVsReadCompletionPValue ?? 1) < 0.05);
+    assert.deepEqual(rhythmFocus?.observationGaps, []);
   });
 });
 
@@ -1235,6 +1325,9 @@ test("quality report exposes topicFission scene breakdown and stable hit rate by
     assert.equal(Number((contrast?.stableHitRate ?? 0).toFixed(4)), 0.6667);
     assert.equal(crossDomain?.evaluatedCaseCount, 24);
     assert.equal(Number((crossDomain?.stableHitRate ?? 0).toFixed(4)), 0.7083);
+    assert.deepEqual(topicFocus.observationGaps, [
+      { key: "below-hit-threshold", label: "stable 命中率仍低于 70% 的场景数", count: 1 },
+    ]);
   });
 });
 

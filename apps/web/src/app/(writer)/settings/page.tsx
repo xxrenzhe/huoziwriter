@@ -8,6 +8,7 @@ import {
   ShieldAlert,
   WalletCards,
 } from "lucide-react";
+import { AppBanner } from "@/components/app-feedback";
 import { SettingsOverviewCards } from "@/components/settings-overview-cards";
 import { formatPlanDisplayName } from "@/lib/plan-labels";
 import { formatBytes, formatConnectionStatus, getSettingsHubData } from "./data";
@@ -30,13 +31,13 @@ const setupQueueCardClassName = cn(
   surfaceCardStyles({ tone: "warning", padding: "md", interactive: true }),
   "text-warning",
 );
-const settingsReadyBannerClassName = cn(
-  surfaceCardStyles({ tone: "success", padding: "sm" }),
-  "text-sm leading-7 text-emerald-700",
-);
 const detailPanelClassName = surfaceCardStyles({ padding: "md" });
 const detailCardClassName = cn(surfaceCardStyles({ tone: "highlight", padding: "sm" }), "shadow-none");
 const recentItemClassName = cn(surfaceCardStyles({ tone: "warm", padding: "sm" }), "shadow-none");
+const recentItemLinkClassName = cn(
+  surfaceCardStyles({ tone: "warm", padding: "sm", interactive: true }),
+  "block shadow-none hover:border-cinnabar/40 hover:bg-surface",
+);
 
 export default async function SettingsPage() {
   const data = await getSettingsHubData();
@@ -189,26 +190,36 @@ export default async function SettingsPage() {
       label: "背景卡",
       title: card.title,
       note: card.summary || card.latest_change_summary || "已进入资产中心",
+      href: "/settings/assets#asset-center",
+      actionLabel: "去看资产中心",
     })),
     ...recentImageAssets.map((asset) => ({
       label: "图片资产",
       title: asset.articleTitle || `图片资产 #${asset.id}`,
       note: `${asset.variantLabel || "封面候选"} · ${formatBytes(asset.byteLength)}`,
+      href: asset.articleId ? `/articles/${asset.articleId}` : "/settings/assets#asset-center",
+      actionLabel: asset.articleId ? "打开关联稿件" : "去看资产中心",
     })),
     ...recentArticles.map((article) => ({
       label: "稿件",
       title: article.title,
       note: `最近状态：${article.status}`,
+      href: `/articles/${article.id}`,
+      actionLabel: "打开稿件",
     })),
     ...recentFragments.map((fragment) => ({
       label: "碎片资产",
       title: fragment.title || `素材 #${fragment.id}`,
       note: fragment.distilled_content,
+      href: "/settings/assets#asset-center",
+      actionLabel: "去看资产中心",
     })),
     ...recentConnections.map((connection) => ({
       label: "发布连接",
       title: connection.account_name || "未命名公众号",
       note: formatConnectionStatus(connection.status),
+      href: "/settings/publish#publishing-connections",
+      actionLabel: "去看发布连接",
     })),
   ].slice(0, 8);
 
@@ -277,9 +288,10 @@ export default async function SettingsPage() {
             ))}
           </div>
         ) : (
-          <div className={settingsReadyBannerClassName}>
-            当前个人空间资产已经形成基本闭环，可以直接进入高频写作和发布阶段。
-          </div>
+          <AppBanner
+            tone="success"
+            description="当前个人空间资产已经形成基本闭环，可以直接进入高频写作和发布阶段。"
+          />
         )}
       </section>
 
@@ -325,11 +337,12 @@ export default async function SettingsPage() {
           <div className="mt-4 space-y-3">
             {recentSettlements.length > 0 ? (
               recentSettlements.map((item) => (
-                <div key={`${item.label}-${item.title}`} className={recentItemClassName}>
+                <Link key={`${item.label}-${item.title}`} href={item.href} className={recentItemLinkClassName}>
                   <div className="text-xs uppercase tracking-[0.18em] text-inkMuted">{item.label}</div>
                   <div className="mt-2 text-base font-medium text-ink">{item.title}</div>
                   <div className="mt-2 text-sm leading-6 text-inkSoft">{item.note}</div>
-                </div>
+                  <div className="mt-3 text-xs font-medium uppercase tracking-[0.18em] text-cinnabar">{item.actionLabel}</div>
+                </Link>
               ))
             ) : (
               <div className={recentItemClassName}>

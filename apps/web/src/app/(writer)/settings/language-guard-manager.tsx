@@ -69,6 +69,11 @@ export function LanguageGuardManager({
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingRuleKind, setEditingRuleKind] = useState<"token" | "pattern">("token");
+  const [editingPatternText, setEditingPatternText] = useState("");
+  const [editingRewriteHint, setEditingRewriteHint] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
 
   const systemRules = useMemo(
     () => rules.filter((rule) => rule.scope === "system"),
@@ -82,6 +87,17 @@ export function LanguageGuardManager({
   const patternRules = userRules.filter((rule) => rule.ruleKind === "pattern");
   const reachedLimit = limit != null && userRules.length >= limit;
   const remainingSlots = limit == null ? null : Math.max(limit - userRules.length, 0);
+  const normalizedEditingPattern = normalizePattern(editingRuleKind, editingPatternText);
+  const duplicateEditingRule = useMemo(
+    () =>
+      userRules.find(
+        (rule) =>
+          rule.id !== editingId
+          && rule.ruleKind === editingRuleKind
+          && rule.patternText.trim() === normalizedEditingPattern,
+      ) ?? null,
+    [editingId, editingRuleKind, normalizedEditingPattern, userRules],
+  );
 
   async function handleCreate(event: FormEvent) {
     event.preventDefault();
@@ -145,6 +161,56 @@ export function LanguageGuardManager({
 
     setRules((current) => current.filter((rule) => rule.id !== id));
     setMessage("语言守卫规则已删除。");
+    startTransition(() => router.refresh());
+  }
+
+  function startEdit(rule: LanguageGuardRule) {
+    setEditingId(rule.id);
+    setEditingRuleKind(rule.ruleKind);
+    setEditingPatternText(rule.patternText);
+    setEditingRewriteHint(rule.rewriteHint || "");
+    setMessage("");
+  }
+
+  function stopEdit() {
+    setEditingId(null);
+    setEditingPatternText("");
+    setEditingRewriteHint("");
+    setEditingRuleKind("token");
+  }
+
+  async function handleSaveEdit(rule: LanguageGuardRule) {
+    const nextPatternText = normalizePattern(editingRuleKind, editingPatternText);
+    if (!nextPatternText) {
+      setMessage("规则内容不能为空。");
+      return;
+    }
+    if (duplicateEditingRule) {
+      setMessage("已存在相同规则，无需重复保存。");
+      return;
+    }
+    setSavingEdit(true);
+    setMessage("");
+    const response = await fetch(`/api/language-guard-rules/${encodeURIComponent(rule.id)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ruleKind: editingRuleKind,
+        matchMode: editingRuleKind === "pattern" ? "template" : "contains",
+        patternText: nextPatternText,
+        rewriteHint: editingRewriteHint.trim() || null,
+      }),
+    });
+    const json = await response.json().catch(() => ({}));
+    setSavingEdit(false);
+    if (!response.ok || !json.success) {
+      setMessage(json.error || "更新语言守卫规则失败");
+      return;
+    }
+    const updated = json.data as LanguageGuardRule;
+    setRules((current) => current.map((currentRule) => (currentRule.id === rule.id ? updated : currentRule)));
+    stopEdit();
+    setMessage("语言守卫规则已更新。");
     startTransition(() => router.refresh());
   }
 
@@ -298,21 +364,79 @@ export function LanguageGuardManager({
                       <span className={metaChipClassName}>{formatRuleKindLabel(rule.ruleKind)}</span>
                       <span className={mutedChipClassName}>{formatMatchModeLabel(rule.matchMode)}</span>
                     </div>
-                    <div className="mt-2 font-medium text-ink">{rule.patternText}</div>
-                    <div className="mt-2 text-sm leading-7 text-inkSoft">
-                      {rule.rewriteHint || "未提供替代建议。"}
-                    </div>
+                    {editingId === rule.id ? (
+                      <div className="mt-3 space-y-3">
+                        <div className="grid gap-3 md:grid-cols-[160px_minmax(0,1fr)]">
+                          <Select
+                            aria-label="编辑规则类型"
+                            value={editingRuleKind}
+                            onChange={(event) => setEditingRuleKind(event.target.value as "token" | "pattern")}
+                            className="bg-paperStrong"
+                          >
+                            <option value="token">禁词</option>
+                            <option value="pattern">句式模板</option>
+                          </Select>
+                          <Input
+                            aria-label="编辑规则内容"
+                            value={editingPatternText}
+                            onChange={(event) => setEditingPatternText(event.target.value)}
+                            placeholder={editingRuleKind === "pattern" ? "例如：不是...而是..." : "例如：颠覆性"}
+                            className="bg-paperStrong"
+                          />
+                        </div>
+                        <Textarea
+                          value={editingRewriteHint}
+                          onChange={(event) => setEditingRewriteHint(event.target.value)}
+                          placeholder="替代建议，例如：改成更具体的动作、事实或判断。"
+                          className="min-h-[96px] bg-paperStrong"
+                        />
+                        {duplicateEditingRule ? (
+                          <div className="text-sm text-danger">
+                            已存在同类规则“{duplicateEditingRule.patternText}”，不建议重复保存。
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : (
+                      <>
+                        <div className="mt-2 font-medium text-ink">{rule.patternText}</div>
+                        <div className="mt-2 text-sm leading-7 text-inkSoft">
+                          {rule.rewriteHint || "未提供替代建议。"}
+                        </div>
+                      </>
+                    )}
                   </div>
-                  <Button
-                    type="button"
-                    onClick={() => void handleDelete(rule.id)}
-                    disabled={deletingId === rule.id}
-                    variant="secondary"
-                    size="sm"
-                    className={deleteButtonClassName}
-                  >
-                    {deletingId === rule.id ? "删除中…" : "删除"}
-                  </Button>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {editingId === rule.id ? (
+                      <>
+                        <Button
+                          type="button"
+                          onClick={() => void handleSaveEdit(rule)}
+                          disabled={savingEdit}
+                          variant="secondary"
+                          size="sm"
+                        >
+                          {savingEdit ? "保存中…" : "保存"}
+                        </Button>
+                        <Button type="button" onClick={stopEdit} disabled={savingEdit} variant="secondary" size="sm">
+                          取消
+                        </Button>
+                      </>
+                    ) : (
+                      <Button type="button" onClick={() => startEdit(rule)} variant="secondary" size="sm">
+                        编辑
+                      </Button>
+                    )}
+                    <Button
+                      type="button"
+                      onClick={() => void handleDelete(rule.id)}
+                      disabled={deletingId === rule.id || editingId === rule.id}
+                      variant="secondary"
+                      size="sm"
+                      className={deleteButtonClassName}
+                    >
+                      {deletingId === rule.id ? "删除中…" : "删除"}
+                    </Button>
+                  </div>
                 </div>
               </article>
             ))}

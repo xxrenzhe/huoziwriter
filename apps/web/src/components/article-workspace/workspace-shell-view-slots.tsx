@@ -4,8 +4,11 @@ import { DraftEditorView } from "./draft-editor-view";
 import { EditorialAuditView } from "./editorial-audit-view";
 import { WorkspacePreviewView } from "./workspace-preview-view";
 import { WorkspaceSeriesNotice } from "./workspace-series-notice";
+import { WorkspaceTopbarActions } from "./workspace-topbar-actions";
+
 type BuildWorkspaceShellViewSlotsInput = {
   controlsBarProps: ComponentProps<typeof WorkspaceControlsBar>;
+  topbarActionsProps: ComponentProps<typeof WorkspaceTopbarActions>;
   editViewProps: ComponentProps<typeof DraftEditorView>;
   previewViewProps: ComponentProps<typeof WorkspacePreviewView>;
   auditViewProps: ComponentProps<typeof EditorialAuditView>;
@@ -14,6 +17,7 @@ type BuildWorkspaceShellViewSlotsInput = {
 };
 
 type WorkspaceShellViewSlots = {
+  topbarActions: ReactNode;
   controlsBar: ReactNode;
   editView: ReactNode;
   previewView: ReactNode;
@@ -24,6 +28,7 @@ type WorkspaceShellViewSlots = {
 
 export function buildWorkspaceShellViewSlots({
   controlsBarProps,
+  topbarActionsProps,
   editViewProps,
   previewViewProps,
   auditViewProps,
@@ -31,6 +36,7 @@ export function buildWorkspaceShellViewSlots({
   message,
 }: BuildWorkspaceShellViewSlotsInput): WorkspaceShellViewSlots {
   return {
+    topbarActions: <WorkspaceTopbarActions {...topbarActionsProps} />,
     controlsBar: <WorkspaceControlsBar {...controlsBarProps} />,
     editView: <DraftEditorView {...editViewProps} />,
     previewView: <WorkspacePreviewView {...previewViewProps} />,

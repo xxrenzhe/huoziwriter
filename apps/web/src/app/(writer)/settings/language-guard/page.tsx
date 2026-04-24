@@ -1,10 +1,15 @@
-import { cn, surfaceCardStyles } from "@huoziwriter/ui";
+import { buttonStyles, cn, surfaceCardStyles } from "@huoziwriter/ui";
+import Link from "next/link";
 import { getLanguageGuardSettingsData } from "../data";
 import { LanguageGuardManager } from "../language-guard-manager";
 import { SettingsSubpageShell } from "../shell";
 
 const introCardClassName = surfaceCardStyles({ tone: "warm", padding: "md" });
 const summaryCardClassName = cn(surfaceCardStyles({ tone: "highlight", padding: "sm" }), "shadow-none");
+const queueCardClassName = cn(surfaceCardStyles({ tone: "warning", padding: "md" }), "shadow-none");
+const insightCardClassName = cn(surfaceCardStyles({ padding: "sm" }), "shadow-none");
+const sectionCardClassName = surfaceCardStyles({ padding: "md" });
+const chipClassName = cn(surfaceCardStyles({ padding: "sm" }), "px-3 py-1 text-xs text-inkSoft shadow-none");
 
 export default async function SettingsLanguageGuardPage() {
   const data = await getLanguageGuardSettingsData();
@@ -12,7 +17,7 @@ export default async function SettingsLanguageGuardPage() {
     return null;
   }
 
-  const { planContext, languageGuardRules } = data;
+  const { planContext, languageGuardRules, languageGuardInsights } = data;
   const systemRules = languageGuardRules.filter((rule) => rule.scope === "system");
   const userRules = languageGuardRules.filter((rule) => rule.scope === "user");
   const patternRules = userRules.filter((rule) => rule.ruleKind === "pattern");
@@ -76,6 +81,115 @@ export default async function SettingsLanguageGuardPage() {
             </article>
           ))}
         </div>
+
+        <section className={sectionCardClassName}>
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <div className="text-xs uppercase tracking-[0.24em] text-cinnabar">近 30 天命中扫描</div>
+              <div className="mt-2 font-serifCn text-2xl text-ink text-balance">先处理最近反复出现的机器腔，再扩规则库。</div>
+              <div className="mt-2 max-w-3xl text-sm leading-7 text-inkSoft">
+                这里直接扫描近 30 天有正文的稿件，帮助你判断哪些禁词和句式已经反复出现，应该优先回到稿件里清理或继续补规则。
+              </div>
+            </div>
+            <div className="text-sm text-inkMuted">
+              {languageGuardInsights.scannedArticleCount > 0
+                ? `已扫描 ${languageGuardInsights.scannedArticleCount} 篇近 30 天稿件`
+                : "近 30 天还没有可扫描稿件"}
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            {[
+              {
+                label: "扫描稿件",
+                value: String(languageGuardInsights.scannedArticleCount),
+                note: "近 30 天内有正文内容的稿件数。",
+              },
+              {
+                label: "命中稿件",
+                value: String(languageGuardInsights.articleHitCount),
+                note: "至少命中 1 条语言守卫规则的稿件数。",
+              },
+              {
+                label: "命中记录",
+                value: String(languageGuardInsights.totalHitRecords),
+                note: "按「规则 × 稿件」累计的命中记录数。",
+              },
+              {
+                label: "最高频规则",
+                value: String(languageGuardInsights.topRuleHitCount),
+                note: languageGuardInsights.topRuleHitCount > 0 ? "最常出现的一条规则命中了这么多篇稿件。" : "还没有形成反复命中的规则热点。",
+              },
+            ].map((item) => (
+              <article key={item.label} className={insightCardClassName}>
+                <div className="text-xs uppercase tracking-[0.18em] text-inkMuted">{item.label}</div>
+                <div className="mt-2 font-serifCn text-3xl text-ink text-balance">{item.value}</div>
+                <div className="mt-2 text-sm leading-6 text-inkSoft">{item.note}</div>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <section className={sectionCardClassName}>
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <div className="text-xs uppercase tracking-[0.24em] text-cinnabar">待处理高频规则</div>
+              <div className="mt-2 font-serifCn text-2xl text-ink text-balance">把最常命中的词和句式先收口成处理队列。</div>
+            </div>
+            <div className="text-sm text-inkMuted">
+              {languageGuardInsights.topRules.length > 0 ? `当前展示前 ${languageGuardInsights.topRules.length} 条` : "当前没有高频命中"}
+            </div>
+          </div>
+          {languageGuardInsights.topRules.length > 0 ? (
+            <div className="mt-4 grid gap-3 xl:grid-cols-2">
+              {languageGuardInsights.topRules.map((rule, index) => (
+                <article key={rule.ruleId} className={queueCardClassName}>
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <div className="flex flex-wrap gap-2">
+                        <span className={chipClassName}>优先级 {String(index + 1).padStart(2, "0")}</span>
+                        <span className={chipClassName}>{rule.ruleKind === "pattern" ? "句式模板" : "禁词"}</span>
+                        <span className={chipClassName}>命中 {rule.hitArticleCount} 篇</span>
+                      </div>
+                      <div className="mt-3 font-medium text-ink">{rule.patternText}</div>
+                      <div className="mt-2 text-sm leading-7 text-inkSoft">
+                        {rule.rewriteHint || "还没有替代建议，建议先补一条更具体的改写方向。"}
+                      </div>
+                    </div>
+                    {rule.latestArticleId ? (
+                      <Link
+                        href={`/articles/${rule.latestArticleId}?view=audit`}
+                        className={buttonStyles({ variant: "secondary", size: "sm" })}
+                      >
+                        打开最近稿件
+                      </Link>
+                    ) : null}
+                  </div>
+                  <div className="mt-4 grid gap-3 md:grid-cols-2">
+                    <div className={insightCardClassName}>
+                      <div className="text-xs uppercase tracking-[0.18em] text-inkMuted">最近命中片段</div>
+                      <div className="mt-2 text-sm leading-7 text-inkSoft">
+                        {rule.latestMatchedText || "最近一次命中未保留片段。"}
+                      </div>
+                    </div>
+                    <div className={insightCardClassName}>
+                      <div className="text-xs uppercase tracking-[0.18em] text-inkMuted">最近命中稿件</div>
+                      <div className="mt-2 text-sm leading-7 text-inkSoft">
+                        {rule.latestArticleTitle || "暂无关联稿件"}
+                      </div>
+                    </div>
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className={cn("mt-4", summaryCardClassName)}>
+              <div className="text-sm leading-7 text-inkSoft">
+                近 30 天扫描里还没有高频命中的语言守卫规则。可以继续补规则，或直接去稿件区检查最近正文的机器腔风险。
+              </div>
+            </div>
+          )}
+        </section>
 
         <LanguageGuardManager
           initialRules={languageGuardRules}

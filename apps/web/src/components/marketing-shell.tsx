@@ -1,10 +1,10 @@
 "use client";
 
 import { Button, buttonStyles, cn } from "@huoziwriter/ui";
-import { Command } from "lucide-react";
+import { Command, Menu, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useCommandMenu } from "@/components/command-menu";
 
 type NavItem = {
@@ -19,9 +19,18 @@ const marketingCommandTriggerClassName = cn(
   buttonStyles({ variant: "secondary", size: "sm" }),
   "hidden min-h-0 border-lineStrong px-3 py-2 text-inkSoft md:flex",
 );
+const marketingMobileMenuButtonClassName = cn(
+  buttonStyles({ variant: "secondary", size: "sm" }),
+  "h-10 w-10 min-h-0 border-lineStrong px-0 py-0 text-inkSoft md:hidden",
+);
 const marketingPrimaryActionClassName = cn(
   buttonStyles({ variant: "primary", size: "sm" }),
   "min-h-0 px-4 py-2",
+);
+const marketingMobilePanelOverlayClassName = "fixed inset-0 z-50 bg-[rgba(27,28,26,0.34)] backdrop-blur-sm md:hidden";
+const marketingMobilePanelClassName = cn(
+  "fixed inset-x-0 top-0 z-[51] border-b px-6 pb-6 pt-5 shadow-[0_20px_60px_rgba(27,28,26,0.18)] md:hidden",
+  marketingChromeClassName,
 );
 const marketingFooterLinkClassName = "transition-colors hover:text-ink";
 const marketingFooterLinks = [
@@ -100,6 +109,23 @@ export function MarketingShell({
   items: NavItem[];
   children: ReactNode;
 }) {
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  useEffect(() => {
+    if (!mobileMenuOpen) {
+      return;
+    }
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setMobileMenuOpen(false);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [mobileMenuOpen]);
+
   return (
     <div className="min-h-screen bg-paper text-ink">
       <header
@@ -123,15 +149,86 @@ export function MarketingShell({
               label="搜索命令"
               className={marketingCommandTriggerClassName}
             />
+            <button
+              type="button"
+              aria-label={mobileMenuOpen ? "关闭导航菜单" : "打开导航菜单"}
+              aria-expanded={mobileMenuOpen}
+              onClick={() => setMobileMenuOpen((current) => !current)}
+              className={marketingMobileMenuButtonClassName}
+            >
+              {mobileMenuOpen ? <X size={18} /> : <Menu size={18} />}
+            </button>
             <Link
               href="/support?type=business"
-              className={marketingPrimaryActionClassName}
+              className={cn(marketingPrimaryActionClassName, "hidden sm:inline-flex")}
             >
               申请试用资格
             </Link>
           </div>
         </div>
       </header>
+      {mobileMenuOpen ? (
+        <>
+          <button
+            type="button"
+            aria-label="关闭导航菜单"
+            className={marketingMobilePanelOverlayClassName}
+            onClick={() => setMobileMenuOpen(false)}
+          />
+          <div className={marketingMobilePanelClassName}>
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <div className="font-sansCn text-lg font-semibold tracking-[0.16em] text-cinnabar">HuoZi Writer</div>
+                <div className="mt-2 text-sm leading-7 text-inkSoft">
+                  公开站导航、支持入口和命令检索都集中在这里，手机上不再缺失主导航。
+                </div>
+              </div>
+              <button
+                type="button"
+                aria-label="关闭导航菜单"
+                onClick={() => setMobileMenuOpen(false)}
+                className={marketingMobileMenuButtonClassName}
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="mt-5 grid gap-3">
+              {items.map((item) => {
+                const href = normalizeShellHref(item.href);
+                return (
+                  <Link
+                    key={item.href}
+                    href={href}
+                    onClick={() => setMobileMenuOpen(false)}
+                    className={cn(
+                      buttonStyles({ variant: "secondary", size: "md", fullWidth: true }),
+                      "justify-start border-lineStrong bg-surface text-ink",
+                    )}
+                  >
+                    {item.label}
+                  </Link>
+                );
+              })}
+            </div>
+            <div className="mt-5 grid gap-3 sm:grid-cols-2">
+              <CommandTrigger
+                label="搜索命令"
+                className={cn(
+                  buttonStyles({ variant: "secondary", size: "md", fullWidth: true }),
+                  "justify-center border-lineStrong text-inkSoft",
+                )}
+              />
+              <Link
+                href="/support?type=business"
+                onClick={() => setMobileMenuOpen(false)}
+                className={cn(marketingPrimaryActionClassName, "justify-center")}
+              >
+                申请试用资格
+              </Link>
+            </div>
+          </div>
+        </>
+      ) : null}
       <main className="mx-auto max-w-7xl px-6 py-10 md:py-14">{children}</main>
       <footer
         data-command-chrome="true"

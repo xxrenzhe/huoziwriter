@@ -29,7 +29,7 @@ import {
   upsertWechatConnection,
 } from "@/lib/repositories";
 import { ensureExtendedProductSchema } from "@/lib/schema-bootstrap";
-import { createTopicSource, disableTopicSource, updateTopicSource } from "@/lib/topic-signals";
+import { createTopicSource, disableTopicSource, enableTopicSource, updateTopicSource } from "@/lib/topic-signals";
 import { encryptWechatConnection, verifyWechatCredential } from "@/lib/wechat";
 import { getArticleAuthoringStyleContext } from "@/lib/article-authoring-style-context";
 
@@ -109,6 +109,17 @@ export async function disableTopicSourceAction(sourceId: number) {
   });
   revalidateWriterSurface();
   return { deleted: true };
+}
+
+export async function restoreTopicSourceAction(sourceId: number) {
+  const session = requireSession(await ensureUserSession());
+  await assertTopicSourceManageAllowed(session.userId);
+  await enableTopicSource({
+    userId: session.userId,
+    sourceId,
+  });
+  revalidateWriterSurface();
+  return { restored: true };
 }
 
 export async function refreshKnowledgeCardAction(cardId: number) {

@@ -115,6 +115,24 @@ const PADDING_PATTERNS = [
   /^(?:最近|这几年|这些年|在.+时代|随着.+发展|众所周知|大家都知道|一直以来|不得不说|今天(?:想)?聊|先来聊聊|说到)/,
 ] as const;
 
+const GRAND_BACKGROUND_PATTERNS = [
+  /^(?:在当今|在这个|当下|新时代).{0,12}时代/,
+  /^(?:随着|伴随).{0,12}(?:飞速)?发展/,
+  /^(?:面临|迎来).{0,12}(?:前所未有|空前)/,
+  /^(?:众所周知|不可否认|值得思考)/,
+] as const;
+
+const SELF_INTRO_PATTERNS = [
+  /^(?:大家好|各位好|hi\s*大家|嗨(?:，|,)?大家|老规矩|继续上次).{0,30}(?:我是|这里是|今天聊聊|今天想聊|分享)/i,
+  /^(?:大家好|各位好).{0,20}(?:今天聊聊|今天想聊|这一篇聊)/,
+  /^(?:我是[^，。,：:\n]{1,12}[，,。 ]).{0,24}(?:今天聊聊|今天想聊|继续聊|先聊聊)/,
+] as const;
+
+const STRONG_SCENE_PATTERNS = [
+  /^(?:上周|昨晚|前几天|那天|这次|刚开始|刚上手|第一次)/,
+  /^(?:我帮|我试了|我后来|我当时|我把|我在)/,
+] as const;
+
 const READER_PATTERNS = [
   /你/,
   /如果你/,
@@ -300,33 +318,43 @@ function buildOpeningDiagnose(opening: string): OpeningDiagnose {
   const firstSentenceHookHits = countPatternHits(firstSentence, HOOK_PATTERNS);
   const firstHookIndex = getFirstPatternIndex(normalized, HOOK_PATTERNS);
   const startsWithPadding = includesPattern(firstSentence, PADDING_PATTERNS);
+  const isGrandBackground = includesPattern(firstSentence, GRAND_BACKGROUND_PATTERNS);
+  const isStrongScene = includesPattern(firstSentence, STRONG_SCENE_PATTERNS) && concreteHits >= 1;
   const frontLoaded = includesPattern(firstSentence, FRONTLOAD_PATTERNS) || firstSentenceHookHits > 0;
 
   const abstractLevel: OpeningDiagnoseLevel =
-    (abstractHits >= 2 && concreteHits === 0) || (/^(?:在|随着).+时代/.test(firstSentence) && concreteHits === 0)
+    isGrandBackground || ((abstractHits >= 2 && concreteHits === 0) || (/^(?:在|随着).+时代/.test(firstSentence) && concreteHits === 0))
       ? "danger"
       : abstractHits >= 1 && concreteHits <= 1
         ? "warn"
         : "pass";
 
   const paddingLevel: OpeningDiagnoseLevel =
-    startsWithPadding || (normalized.length >= 48 && (firstHookIndex === null || firstHookIndex > 28))
+    isStrongScene
+      ? "pass"
+      : startsWithPadding || (normalized.length >= 48 && (firstHookIndex === null || firstHookIndex > 28))
       ? "danger"
       : normalized.length >= 36 && (firstHookIndex === null || firstHookIndex > 18)
         ? "warn"
         : "pass";
 
   const hookDensity: OpeningDiagnoseLevel =
-    hookHits >= 2 || (hookHits >= 1 && concreteHits >= 1)
+    isStrongScene
+      ? "pass"
+      : (isGrandBackground && hookHits === 0)
+      ? "danger"
+      : hookHits >= 2 || (hookHits >= 1 && concreteHits >= 1)
       ? "pass"
       : hookHits >= 1 || concreteHits >= 1
         ? "warn"
         : "danger";
 
   const informationFrontLoading: OpeningDiagnoseLevel =
-    frontLoaded || (firstHookIndex !== null && firstHookIndex <= 12)
+    isStrongScene
       ? "pass"
-      : (firstHookIndex !== null && firstHookIndex <= 24) || concreteHits >= 1
+      : frontLoaded || (firstHookIndex !== null && firstHookIndex <= 12)
+      ? "pass"
+      : (isGrandBackground ? false : (firstHookIndex !== null && firstHookIndex <= 24) || concreteHits >= 1)
         ? "warn"
         : "danger";
 
@@ -357,7 +385,12 @@ function detectOpeningForbiddenHitsByDiagnose(diagnose: OpeningDiagnose) {
 }
 
 export function detectOpeningForbiddenHits(opening: string, diagnoseInput?: OpeningDiagnose) {
-  return detectOpeningForbiddenHitsByDiagnose(diagnoseInput ?? inferOpeningDiagnose(opening));
+  const normalized = String(opening || "").replace(/\s+/g, " ").trim();
+  const hits = detectOpeningForbiddenHitsByDiagnose(diagnoseInput ?? inferOpeningDiagnose(normalized));
+  if (normalized && includesPattern(normalized, SELF_INTRO_PATTERNS)) {
+    hits.push("D2 自我介绍开场");
+  }
+  return Array.from(new Set(hits));
 }
 
 function estimateOpeningHookScore(

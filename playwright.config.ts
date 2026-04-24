@@ -18,7 +18,7 @@ export default defineConfig({
   },
   webServer: {
     command:
-      "zsh -lc 'set -euo pipefail && pnpm db:init && cd apps/web && NEXT_OUTPUT_MODE=standalone NEXT_DIST_DIR=.next-e2e pnpm build && test -f .next-e2e/standalone/apps/web/server.js && cd .next-e2e/standalone/apps/web && PORT=3101 HOSTNAME=127.0.0.1 node server.js'",
+      "zsh -lc 'set -euo pipefail && pnpm db:init && cd apps/web && pnpm build && PORT=3101 HOSTNAME=127.0.0.1 pnpm start'",
     url: "http://127.0.0.1:3101/login",
     reuseExistingServer: false,
     timeout: 900_000,

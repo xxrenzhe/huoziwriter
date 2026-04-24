@@ -4,7 +4,7 @@ import { normalizeArticleStatus } from "@/lib/article-status-label";
 import { ensureUserSession } from "@/lib/auth";
 import { buildArticlePublicWorkflow, getArticleWorkflow } from "@/lib/article-workflows";
 import { fail, ok } from "@/lib/http";
-import { getArticleById } from "@/lib/repositories";
+import { deleteArticle, getArticleById } from "@/lib/repositories";
 
 export async function GET(_: Request, { params }: { params: { id: string } }) {
   const session = await ensureUserSession();
@@ -57,5 +57,18 @@ export async function PATCH(request: Request, { params }: { params: { id: string
     return ok(serializeArticleDraft(savedArticle));
   } catch (error) {
     return fail(error instanceof Error ? error.message : "稿件保存失败", 400);
+  }
+}
+
+export async function DELETE(_request: Request, { params }: { params: { id: string } }) {
+  const session = await ensureUserSession();
+  if (!session) {
+    return fail("未登录", 401);
+  }
+  try {
+    await deleteArticle(session.userId, Number(params.id));
+    return ok({ deleted: true });
+  } catch (error) {
+    return fail(error instanceof Error ? error.message : "稿件删除失败", 400);
   }
 }

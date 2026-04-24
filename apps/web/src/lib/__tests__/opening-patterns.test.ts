@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   buildFallbackOpeningOptions,
   evaluateOpeningGuardChecks,
+  inferOpeningDiagnose,
   normalizeOpeningOptions,
 } from "../opening-patterns";
 
@@ -91,4 +92,33 @@ test("evaluateOpeningGuardChecks warns on weak opening strength and outdated aud
   assert.equal(result.warnings.length, 2);
   assert.match(result.warnings[0] ?? "", /开头钩子分/);
   assert.match(result.warnings[1] ?? "", /开头还没有按最新大纲做体检/);
+});
+
+test("evaluateOpeningGuardChecks blocks self-intro openings before publish", () => {
+  const result = evaluateOpeningGuardChecks({
+    selectedOpening: "大家好，我是老王，今天聊聊为什么很多团队把 AI 写作用错了。",
+  });
+
+  assert.equal(result.openingConfirmed, true);
+  assert(result.openingForbiddenHits.includes("D2 自我介绍开场"));
+  assert.equal(result.checks.find((item) => item.key === "opening_forbidden")?.status, "blocked");
+  assert.equal(result.blockers.length, 1);
+});
+
+test("inferOpeningDiagnose marks grand-background openings with at least two danger dimensions", () => {
+  const diagnose = inferOpeningDiagnose("在当今 AI 时代，内容创作正在发生深刻变化，我们每个人都面临新的挑战。");
+  const dangerCount = Object.values(diagnose).filter((item) => item === "danger").length;
+
+  assert.ok(dangerCount >= 2);
+});
+
+test("inferOpeningDiagnose keeps strong scene openings in pass state", () => {
+  const diagnose = inferOpeningDiagnose("上周我帮朋友改稿，改到一半我把电脑关了，因为我发现问题根本不在标题，而在第一段没有冲突。");
+
+  assert.deepEqual(diagnose, {
+    abstractLevel: "pass",
+    paddingLevel: "pass",
+    hookDensity: "pass",
+    informationFrontLoading: "pass",
+  });
 });

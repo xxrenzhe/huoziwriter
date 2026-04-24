@@ -49,6 +49,26 @@ function pickDefaultWindowCode(
   return "24h";
 }
 
+function shouldRequireClosureReview(
+  missingWindowCodes: string[],
+  currentHitStatus: OutcomeHitStatus,
+) {
+  return missingWindowCodes.length <= 1 || (missingWindowCodes.length === 0 && currentHitStatus === "pending");
+}
+
+function buildClosureHint(
+  missingWindowCodes: string[],
+  currentHitStatus: OutcomeHitStatus,
+) {
+  if (missingWindowCodes.length === 0 && currentHitStatus === "pending") {
+    return "这篇已经没有缺失时间窗，下一步只剩命中判定、复盘结论和下一步动作。";
+  }
+  if (missingWindowCodes.length === 1) {
+    return `当前只剩 ${formatWindowSummary(missingWindowCodes)} 这个缺口，建议这次顺手补齐命中判定和复盘结论。`;
+  }
+  return "先录核心数字，再按需要补完复盘字段。";
+}
+
 export function ArticleOutcomeQuickCaptureButton({
   articleId,
   articleTitle,
@@ -82,6 +102,7 @@ export function ArticleOutcomeQuickCaptureButton({
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [allowWindowOverride, setAllowWindowOverride] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [windowCode, setWindowCode] = useState<OutcomeWindowCode>(
     pickDefaultWindowCode(nextWindowCode, missingWindowCodes),
@@ -95,13 +116,21 @@ export function ArticleOutcomeQuickCaptureButton({
   const [reviewSummary, setReviewSummary] = useState(currentReviewSummary ?? "");
   const [nextAction, setNextAction] = useState(currentNextAction ?? "");
   const [playbookTags, setPlaybookTags] = useState(currentPlaybookTags.join("，"));
+  const requiresClosureReview = shouldRequireClosureReview(missingWindowCodes, currentHitStatus);
+  const closureReady =
+    hitStatus !== "pending"
+    && Boolean(reviewSummary.trim())
+    && Boolean(nextAction.trim());
+  const saveOutcomeLabel = requiresClosureReview && !closureReady ? "保存并继续待回流" : "保存并完成回流";
+  const closureHint = buildClosureHint(missingWindowCodes, currentHitStatus);
 
   useEffect(() => {
     if (!open) {
       return;
     }
     setError(null);
-    setShowAdvanced(false);
+    setShowAdvanced(shouldRequireClosureReview(missingWindowCodes, currentHitStatus));
+    setAllowWindowOverride(false);
     setWindowCode(pickDefaultWindowCode(nextWindowCode, missingWindowCodes));
     setReadCount("");
     setShareCount("");
@@ -208,22 +237,36 @@ export function ArticleOutcomeQuickCaptureButton({
 
             <div className="flex-1 space-y-5 overflow-y-auto px-5 py-5">
               <div className={cn(surfaceCardStyles({ tone: "warm", padding: "sm" }), "px-4 py-4 text-sm leading-7 text-inkSoft shadow-none")}>
-                先录 3 个核心数字就能完成一次结果回流。目标包、命中判定和复盘字段可以按需展开补。
+                {closureHint}
               </div>
 
-              <label className={fieldLabelClassName}>
-                <div className={fieldEyebrowClassName}>时间窗</div>
-                <Select
-                  value={windowCode}
-                  onChange={(event) => setWindowCode(event.target.value as OutcomeWindowCode)}
-                >
-                  {(Object.keys(outcomeWindowLabelMap) as OutcomeWindowCode[]).map((item) => (
-                    <option key={item} value={item}>
-                      {outcomeWindowLabelMap[item]}
-                    </option>
-                  ))}
-                </Select>
-              </label>
+              {allowWindowOverride ? (
+                <label className={fieldLabelClassName}>
+                  <div className={fieldEyebrowClassName}>时间窗</div>
+                  <Select
+                    value={windowCode}
+                    onChange={(event) => setWindowCode(event.target.value as OutcomeWindowCode)}
+                  >
+                    {(Object.keys(outcomeWindowLabelMap) as OutcomeWindowCode[]).map((item) => (
+                      <option key={item} value={item}>
+                        {outcomeWindowLabelMap[item]}
+                      </option>
+                    ))}
+                  </Select>
+                </label>
+              ) : (
+                <div className={fieldLabelClassName}>
+                  <div className={fieldEyebrowClassName}>时间窗</div>
+                  <div className={cn(surfaceCardStyles({ tone: "subtle", padding: "sm" }), "flex flex-wrap items-center justify-between gap-3 px-4 py-3 shadow-none")}>
+                    <div className="text-sm leading-7 text-inkSoft">
+                      本次默认录入 {outcomeWindowLabelMap[windowCode]}，对应当前下一缺口。
+                    </div>
+                    <Button type="button" variant="secondary" size="sm" onClick={() => setAllowWindowOverride(true)}>
+                      改填其他时间窗
+                    </Button>
+                  </div>
+                </div>
+              )}
 
               <div className="grid gap-3 md:grid-cols-3">
                 <label className={fieldLabelClassName}>
@@ -330,6 +373,12 @@ export function ArticleOutcomeQuickCaptureButton({
                   {error}
                 </div>
               ) : null}
+
+              {requiresClosureReview && !closureReady ? (
+                <div className={cn(surfaceCardStyles({ tone: "warning", padding: "sm" }), "px-4 py-3 text-sm leading-6 text-warning shadow-none")}>
+                  如果现在直接保存，这篇仍会留在待回流。请尽量补齐命中判定、复盘结论和下一步动作。
+                </div>
+              ) : null}
             </div>
 
             <div className="flex flex-wrap justify-end gap-3 border-t border-lineStrong px-5 py-4">
@@ -337,7 +386,7 @@ export function ArticleOutcomeQuickCaptureButton({
                 取消
               </Button>
               <Button type="button" variant="primary" size="sm" loading={saving} onClick={() => void handleSave()}>
-                保存结果快照
+                {saveOutcomeLabel}
               </Button>
             </div>
           </div>

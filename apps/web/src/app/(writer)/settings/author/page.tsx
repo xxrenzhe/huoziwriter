@@ -13,6 +13,10 @@ const introCardClassName = surfaceCardStyles({ tone: "warm", padding: "md" });
 const sectionCardClassName = surfaceCardStyles({ padding: "md" });
 const summaryCardClassName = cn(surfaceCardStyles({ tone: "highlight", padding: "sm" }), "shadow-none");
 const managerSectionClassName = cn(surfaceCardStyles({ padding: "md" }), "space-y-4");
+const queueCardClassName = cn(
+  surfaceCardStyles({ tone: "warm", padding: "md" }),
+  "flex h-full flex-col shadow-none",
+);
 const unavailableStyleCardClassName = cn(
   surfaceCardStyles({ tone: "highlight", padding: "md" }),
   "text-sm leading-7 text-inkSoft",
@@ -20,6 +24,14 @@ const unavailableStyleCardClassName = cn(
 const formulaCardClassName = cn(
   surfaceCardStyles({ tone: "highlight", padding: "md" }),
   "grid gap-3 md:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]",
+);
+const metaChipClassName = cn(
+  surfaceCardStyles({ padding: "sm" }),
+  "px-3 py-1 text-xs text-inkSoft shadow-none",
+);
+const mutedChipClassName = cn(
+  surfaceCardStyles({ tone: "subtle", padding: "sm" }),
+  "px-3 py-1 text-xs text-inkMuted shadow-none",
 );
 
 export default async function SettingsAuthorPage({
@@ -38,6 +50,18 @@ export default async function SettingsAuthorPage({
   const writingStyleSampleLimit = effectivePlanCode === "ultra" ? 10 : effectivePlanCode === "pro" ? 5 : 3;
   const resolvedSearchParams = (await searchParams) ?? {};
   const activePanel = typeof resolvedSearchParams.panel === "string" ? resolvedSearchParams.panel : Array.isArray(resolvedSearchParams.panel) ? resolvedSearchParams.panel[0] : "";
+  const activeSeriesCount = series.filter((item) => item.activeStatus === "active").length;
+  const seriesWithoutPersonaCount = series.filter((item) => item.personaId == null).length;
+  const emptyBacklogCount = topicBacklogs.filter((item) => item.itemCount <= 0).length;
+  const untouchedBacklogCount = topicBacklogs.filter((item) => !item.lastGeneratedAt).length;
+  const authorIssueCount =
+    (defaultPersona ? 0 : 1) +
+    (series.length === 0 ? 1 : 0) +
+    (activeSeriesCount === 0 && series.length > 0 ? 1 : 0) +
+    seriesWithoutPersonaCount +
+    (topicBacklogs.length === 0 ? 1 : 0) +
+    emptyBacklogCount +
+    (planSnapshot.writingStyleProfileLimit > 0 && writingStyleProfiles.length === 0 ? 1 : 0);
   const backlogSectionClassName = cn(
     managerSectionClassName,
     activePanel === "backlogs" ? "border-cinnabar/50 bg-surfaceWarm shadow-[0_0_0_1px_rgba(167,48,50,0.14)]" : "",
@@ -116,6 +140,171 @@ export default async function SettingsAuthorPage({
               <div className="mt-2 text-sm leading-6 text-inkSoft">{item.note}</div>
             </article>
           ))}
+        </div>
+
+        <div className={sectionCardClassName}>
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <div className="text-xs uppercase tracking-[0.24em] text-cinnabar">待处理作者经营任务</div>
+              <div className="mt-2 font-serifCn text-3xl text-ink text-balance">
+                先把默认人设、长期系列和选题库存补齐，再让稿件稳定继承作者资产。
+              </div>
+              <div className="mt-3 text-sm leading-7 text-inkSoft">
+                这里优先列出真正会影响起稿、系列继承和批量生产的缺口。先补这些，再去作战台或稿件区推进具体文章。
+              </div>
+            </div>
+            <div className={summaryCardClassName}>
+              <div className="text-xs uppercase tracking-[0.18em] text-inkMuted">当前待处理</div>
+              <div className="mt-2 font-serifCn text-3xl text-ink text-balance">{String(authorIssueCount)}</div>
+              <div className="mt-2 text-sm leading-6 text-inkSoft">
+                {authorIssueCount > 0 ? "先把作者资产补成可继承状态。" : "当前作者经营链路已经具备稳定起稿条件。"}
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-6 grid gap-4 xl:grid-cols-2">
+            {!defaultPersona ? (
+              <article className={queueCardClassName}>
+                <div className="text-xs uppercase tracking-[0.18em] text-inkMuted">默认人设缺失</div>
+                <div className="mt-2 font-medium text-ink">当前还没有默认作者人设</div>
+                <div className="mt-3 text-sm leading-7 text-inkSoft">
+                  没有默认人设时，新稿件和系列继承都缺少稳定的写作身份。先补 1 个默认人设，再继续批量开稿。
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <span className={metaChipClassName}>影响：起稿继承</span>
+                  <span className={mutedChipClassName}>建议优先处理</span>
+                </div>
+                <div className="mt-4 flex flex-wrap gap-3">
+                  <Link href="#personas-series" className={actionLinkClassName}>
+                    去补人设
+                  </Link>
+                </div>
+              </article>
+            ) : null}
+
+            {series.length === 0 ? (
+              <article className={queueCardClassName}>
+                <div className="text-xs uppercase tracking-[0.18em] text-inkMuted">长期系列缺失</div>
+                <div className="mt-2 font-medium text-ink">当前还没有任何内容系列</div>
+                <div className="mt-3 text-sm leading-7 text-inkSoft">
+                  系列为空时，作战台裂变和稿件推进都缺少长期判断线。至少先补 1 个长期经营系列，再把选题挂到正确口径里。
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <span className={metaChipClassName}>影响：系列继承</span>
+                  <span className={mutedChipClassName}>建议优先处理</span>
+                </div>
+                <div className="mt-4 flex flex-wrap gap-3">
+                  <Link href="#personas-series" className={actionLinkClassName}>
+                    去建系列
+                  </Link>
+                </div>
+              </article>
+            ) : null}
+
+            {activeSeriesCount === 0 && series.length > 0 ? (
+              <article className={queueCardClassName}>
+                <div className="text-xs uppercase tracking-[0.18em] text-inkMuted">无活跃系列</div>
+                <div className="mt-2 font-medium text-ink">已有系列，但当前没有一条处于活跃状态</div>
+                <div className="mt-3 text-sm leading-7 text-inkSoft">
+                  所有系列都停用时，选题和新稿很容易失去长期经营主轴。先恢复至少 1 条活跃系列，作为接下来起稿的默认落点。
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <span className={metaChipClassName}>当前系列 {series.length} 条</span>
+                </div>
+                <div className="mt-4 flex flex-wrap gap-3">
+                  <Link href="#personas-series" className={actionLinkClassName}>
+                    去调整系列状态
+                  </Link>
+                </div>
+              </article>
+            ) : null}
+
+            {seriesWithoutPersonaCount > 0 ? (
+              <article className={queueCardClassName}>
+                <div className="text-xs uppercase tracking-[0.18em] text-inkMuted">系列未绑定人设</div>
+                <div className="mt-2 font-medium text-ink">有 {seriesWithoutPersonaCount} 条系列还没有绑定作者人设</div>
+                <div className="mt-3 text-sm leading-7 text-inkSoft">
+                  系列没有绑定人设时，稿件继承只剩下空壳标题，无法稳定承接表达方式与判断位置。建议逐条补齐绑定。
+                </div>
+                <div className="mt-4 flex flex-wrap gap-3">
+                  <Link href="#personas-series" className={actionLinkClassName}>
+                    去补系列绑定
+                  </Link>
+                </div>
+              </article>
+            ) : null}
+
+            {topicBacklogs.length === 0 ? (
+              <article className={queueCardClassName}>
+                <div className="text-xs uppercase tracking-[0.18em] text-inkMuted">选题库存为空</div>
+                <div className="mt-2 font-medium text-ink">当前还没有任何选题库</div>
+                <div className="mt-3 text-sm leading-7 text-inkSoft">
+                  没有选题库存时，周末备题和工作日批量转稿都无法成立。先建 1 个 backlog，把散落题目收成库存。
+                </div>
+                <div className="mt-4 flex flex-wrap gap-3">
+                  <Link href="#topic-backlogs" className={actionLinkClassName}>
+                    去建选题库
+                  </Link>
+                  <Link href="/warroom" className={actionLinkClassName}>
+                    回作战台看裂变
+                  </Link>
+                </div>
+              </article>
+            ) : null}
+
+            {emptyBacklogCount > 0 ? (
+              <article className={queueCardClassName}>
+                <div className="text-xs uppercase tracking-[0.18em] text-inkMuted">空选题库待补货</div>
+                <div className="mt-2 font-medium text-ink">有 {emptyBacklogCount} 个选题库还没有题目</div>
+                <div className="mt-3 text-sm leading-7 text-inkSoft">
+                  选题库已创建但没有库存时，批量生成入口无法发挥作用。先把题目、目标读者和核心判断补进去，再统一生成稿件。
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {untouchedBacklogCount > 0 ? (
+                    <span className={metaChipClassName}>其中 {untouchedBacklogCount} 个还未生成过</span>
+                  ) : null}
+                </div>
+                <div className="mt-4 flex flex-wrap gap-3">
+                  <Link href="#topic-backlogs" className={actionLinkClassName}>
+                    去补选题库存
+                  </Link>
+                </div>
+              </article>
+            ) : null}
+
+            {planSnapshot.writingStyleProfileLimit > 0 && writingStyleProfiles.length === 0 ? (
+              <article className={queueCardClassName}>
+                <div className="text-xs uppercase tracking-[0.18em] text-inkMuted">风格资产待沉淀</div>
+                <div className="mt-2 font-medium text-ink">当前套餐已开放，但还没有任何写作风格资产</div>
+                <div className="mt-3 text-sm leading-7 text-inkSoft">
+                  先沉淀 1 份可复用的语感与节奏模板，后续系列、人设和稿件才能更稳定地继承你的表达方式。
+                </div>
+                <div className="mt-4 flex flex-wrap gap-3">
+                  <Link href="#style-assets" className={actionLinkClassName}>
+                    去建风格资产
+                  </Link>
+                </div>
+              </article>
+            ) : null}
+
+            {authorIssueCount === 0 ? (
+              <article className={queueCardClassName}>
+                <div className="text-xs uppercase tracking-[0.18em] text-inkMuted">经营链路健康</div>
+                <div className="mt-2 font-medium text-ink">默认人设、系列、选题库存和风格资产都已具备基础条件</div>
+                <div className="mt-3 text-sm leading-7 text-inkSoft">
+                  当前作者经营链路没有明显阻塞。可以直接回到作战台推进裂变，或在稿件区继续从系列继承资产开稿。
+                </div>
+                <div className="mt-4 flex flex-wrap gap-3">
+                  <Link href="/warroom" className={actionLinkClassName}>
+                    去作战台
+                  </Link>
+                  <Link href="/articles" className={actionLinkClassName}>
+                    去稿件区
+                  </Link>
+                </div>
+              </article>
+            ) : null}
+          </div>
         </div>
 
         <div className={formulaCardClassName}>

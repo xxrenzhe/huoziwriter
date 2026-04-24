@@ -1,9 +1,17 @@
 #!/usr/bin/env tsx
+import { existsSync } from "node:fs";
+import { resolve } from "node:path";
+import process from "node:process";
 import { createUser, findUserByUsername, syncUserSubscription } from "../apps/web/src/lib/auth";
 import { closeDatabase, getDatabase } from "../apps/web/src/lib/db";
 import { ensureBootstrapData } from "../apps/web/src/lib/repositories";
 import { hashPassword, verifyPassword } from "../apps/web/src/lib/security";
 import { runPendingMigrations } from "./db-flow";
+
+const envPath = resolve(process.cwd(), ".env");
+if (existsSync(envPath)) {
+  process.loadEnvFile(envPath);
+}
 
 async function ensureAdminUser() {
   const password = String(process.env.DEFAULT_ADMIN_PASSWORD || "").trim();

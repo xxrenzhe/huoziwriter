@@ -1,6 +1,6 @@
 "use client";
 
-import { Button, buttonStyles, cn, surfaceCardStyles } from "@huoziwriter/ui";
+import { buttonStyles, cn, surfaceCardStyles } from "@huoziwriter/ui";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
@@ -31,6 +31,10 @@ const workspaceMobileTabBarClassName = cn(
 const workspaceUtilityIconButtonClassName = cn(
   buttonStyles({ variant: "secondary", size: "sm" }),
   "h-10 w-10 border-lineStrong bg-surface px-0 py-0 text-inkMuted hover:border-lineStrong hover:bg-surface hover:text-ink",
+);
+const workspaceAccountChipClassName = cn(
+  surfaceCardStyles({ tone: "warm", padding: "sm" }),
+  "hidden min-w-[124px] border-lineStrong bg-surfaceWarm px-3 py-2 text-left shadow-none sm:block",
 );
 const workspaceMobileNavIcons: Record<string, LucideIcon> = {
   "/warroom": LayoutDashboard,
@@ -73,83 +77,16 @@ function workspaceMobileTabLinkClassName(active: boolean) {
   );
 }
 
-function describeUsageStatus(currentUsage: number, usageLimit: number | null) {
-  if (usageLimit == null) {
-    return {
-      tone: "success" as const,
-      title: `当前套餐今日生成不限额，已使用 ${currentUsage} 次。`,
-      badge: "不限额",
-    };
-  }
-
-  const remaining = Math.max(usageLimit - currentUsage, 0);
-  if (currentUsage >= usageLimit) {
-    return {
-      tone: "warning" as const,
-      title: `今日配额已经用满，当前 ${currentUsage} / ${usageLimit}。`,
-      badge: "需节流",
-    };
-  }
-
-  if (currentUsage / Math.max(usageLimit, 1) >= 0.75) {
-    return {
-      tone: "highlight" as const,
-      title: `今日配额进入高水位，剩余 ${remaining} 次可生成。`,
-      badge: "高水位",
-    };
-  }
-
-  return {
-    tone: "default" as const,
-    title: `今日配额余量充足，剩余 ${remaining} / ${usageLimit}。`,
-    badge: "正常",
-  };
-}
-
 function buildWorkspaceNotificationItems({
-  currentUsage,
-  usageLimit,
-  currentSectionHref,
-  currentSectionLabel,
-  statusHeadline,
-  statusDetail,
   openMenu,
   toggleTheme,
   toggleFocusMode,
 }: {
-  currentUsage: number;
-  usageLimit: number | null;
-  currentSectionHref: string;
-  currentSectionLabel: string;
-  statusHeadline: string;
-  statusDetail: string;
   openMenu: () => void;
   toggleTheme: () => void;
   toggleFocusMode: () => void;
 }): NotificationCenterItem[] {
-  const usageStatus = describeUsageStatus(currentUsage, usageLimit);
-
   return [
-    {
-      id: "workspace-usage",
-      title: "今日写作配额",
-      description: usageStatus.title,
-      badge: usageStatus.badge,
-      kind: "billing",
-      tone: usageStatus.tone,
-      timestampLabel: "实时同步",
-    },
-    {
-      id: "workspace-current",
-      title: `当前主链路：${currentSectionLabel}`,
-      description: `${statusHeadline} ${statusDetail}`.trim(),
-      kind: "article",
-      tone: "highlight",
-      unread: true,
-      meta: "写作区",
-      timestampLabel: "需要关注",
-      href: currentSectionHref,
-    },
     {
       id: "workspace-quick-actions",
       title: "常用入口已集中",
@@ -194,9 +131,10 @@ function CommandTrigger({
   const { openMenu } = useCommandMenu();
 
   return (
-    <Button type="button" onClick={openMenu} className={className} iconLeft={icon}>
+    <button type="button" onClick={openMenu} className={cn(className, "inline-flex items-center justify-center gap-2")}>
+      <span aria-hidden="true">{icon}</span>
       <span className={labelClassName}>{label}</span>
-    </Button>
+    </button>
   );
 }
 
@@ -204,39 +142,41 @@ export function WriterShell({
   items,
   children,
   currentPlanName,
+  accountLabel,
   currentUsage,
   usageLimit,
   statusHeadline,
   statusDetail,
+  notificationItems = [],
 }: {
   items: NavItem[];
   children: ReactNode;
   currentPlanName: string;
+  accountLabel: string;
   currentUsage: number;
   usageLimit: number | null;
   statusHeadline: string;
   statusDetail: string;
+  notificationItems?: NotificationCenterItem[];
 }) {
   const pathname = usePathname();
   const { openMenu, toggleTheme, toggleFocusMode } = useCommandMenu();
   const normalizedItems = normalizeShellItems(items);
   const displayPlanName = formatPlanDisplayName(currentPlanName);
+  const accountInitial = accountLabel.trim().slice(0, 1).toUpperCase() || "H";
   const usageText = usageLimit == null ? `${currentUsage} / 不限` : `${currentUsage} / ${usageLimit}`;
   const usageWidth = usageLimit == null ? 40 : Math.max(8, Math.min(100, Math.round((currentUsage / Math.max(usageLimit, 1)) * 100)));
   const currentSectionItem =
     normalizedItems.find((item) => isShellPathActive(pathname, item.href)) ?? normalizedItems[0] ?? { href: "/warroom", label: "作战台" };
   const currentSection = currentSectionItem.label;
-  const workspaceNotificationItems = buildWorkspaceNotificationItems({
-    currentUsage,
-    usageLimit,
-    currentSectionHref: currentSectionItem.href,
-    currentSectionLabel: currentSectionItem.label,
-    statusHeadline,
-    statusDetail,
+  const workspaceNotificationItems = [
+    ...notificationItems,
+    ...buildWorkspaceNotificationItems({
     openMenu,
     toggleTheme,
     toggleFocusMode,
-  });
+    }),
+  ];
 
   return (
     <div className="min-h-screen bg-surfaceAlt text-ink">
@@ -268,7 +208,7 @@ export function WriterShell({
             </div>
           </div>
         </aside>
-        <aside data-command-chrome="true" className="border-b border-line bg-surfaceMuted px-5 py-8 md:border-b-0 lg:border-r">
+        <aside data-command-chrome="true" className="hidden border-b border-line bg-surfaceMuted px-5 py-8 md:block md:border-b-0 lg:border-r">
           <div className="mb-8 border-b border-line pb-6">
             <div className="font-sansCn text-xs uppercase tracking-[0.3em] text-inkMuted">主工作流</div>
             <div className="mt-3 font-serifCn text-3xl font-semibold text-balance">公众号爆款写作系统</div>
@@ -328,6 +268,17 @@ export function WriterShell({
                   <div>命令面板、主题切换和沉浸模式都可通过当前页显式入口直接打开。</div>
                 }
               />
+              <div className={workspaceAccountChipClassName} aria-label={`当前账号 ${accountLabel}，套餐 ${displayPlanName}`}>
+                <div className="flex items-center gap-3">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-lineStrong bg-surface text-sm font-medium text-cinnabar">
+                    {accountInitial}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-medium text-ink">{accountLabel}</div>
+                    <div className="truncate text-xs text-inkMuted">{displayPlanName}</div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
           {children}

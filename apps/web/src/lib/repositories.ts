@@ -670,55 +670,279 @@ export async function getArticleImagePrompts(userId: number, articleId: number) 
 
 export async function getUsers() {
   const db = getDatabase();
-  return db.query<{
-    id: number;
-    username: string;
-    email: string | null;
-    display_name: string | null;
-    role: string;
-    plan_code: string;
-    is_active: number | boolean;
-    must_change_password: number | boolean;
-    last_login_at: string | null;
-    created_at: string;
-  }>(
-    `SELECT
-       u.id,
-       u.username,
-       u.email,
-       u.display_name,
-       u.role,
-       u.plan_code,
-       u.is_active,
-       u.must_change_password,
-       u.last_login_at,
-       u.created_at
-     FROM users u
-     ORDER BY u.id DESC`,
-  );
-}
-
-export async function getAdminBusinessOverview() {
-  const db = getDatabase();
-  const [users, activeUsers, articles, publishedArticles, fragments, logs, series] = await Promise.all([
-    db.queryOne<{ count: number }>("SELECT COUNT(*) as count FROM users"),
-    db.queryOne<{ count: number }>("SELECT COUNT(*) as count FROM users WHERE is_active = ?", [true]),
-    db.queryOne<{ count: number }>("SELECT COUNT(*) as count FROM articles"),
-    db.queryOne<{ count: number }>("SELECT COUNT(*) as count FROM articles WHERE status = ?", ["published"]),
-    db.queryOne<{ count: number }>("SELECT COUNT(*) as count FROM fragments"),
-    db.queryOne<{ count: number }>("SELECT COUNT(*) as count FROM wechat_sync_logs WHERE status = ?", ["success"]),
-    db.queryOne<{ count: number }>("SELECT COUNT(*) as count FROM series"),
+  const [users, articleStats, usageStats, subscriptionRows] = await Promise.all([
+    db.query<{
+      id: number;
+      username: string;
+      email: string | null;
+      display_name: string | null;
+      role: string;
+      plan_code: string;
+      is_active: number | boolean;
+      must_change_password: number | boolean;
+      last_login_at: string | null;
+      created_at: string;
+    }>(
+      `SELECT
+         u.id,
+         u.username,
+         u.email,
+         u.display_name,
+         u.role,
+         u.plan_code,
+         u.is_active,
+         u.must_change_password,
+         u.last_login_at,
+         u.created_at
+       FROM users u
+       ORDER BY u.id DESC`,
+    ),
+    db.query<{
+      user_id: number;
+      article_count: number;
+      published_article_count: number;
+    }>(
+      `SELECT
+         user_id,
+         COUNT(*) as article_count,
+         SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) as published_article_count
+       FROM articles
+       GROUP BY user_id`,
+      ["published"],
+    ),
+    db.query<{
+      user_id: number;
+      total_usage: number;
+      last_usage_at: string | null;
+    }>(
+      `SELECT
+         user_id,
+         COALESCE(SUM(value), 0) as total_usage,
+         MAX(counter_date) as last_usage_at
+       FROM usage_counters
+       GROUP BY user_id`,
+    ),
+    db.query<{
+      id: number | null;
+      user_id: number;
+      plan_code: string;
+      status: string;
+      start_at: string | null;
+      end_at: string | null;
+      source: string | null;
+      updated_at: string | null;
+    }>(
+      `SELECT
+         id,
+         user_id,
+         plan_code,
+         status,
+         start_at,
+         end_at,
+         source,
+         updated_at
+       FROM subscriptions
+       ORDER BY COALESCE(updated_at, created_at) DESC, id DESC`,
+    ),
   ]);
 
+  const articleStatsByUserId = new Map(articleStats.map((row) => [row.user_id, row]));
+  const usageStatsByUserId = new Map(usageStats.map((row) => [row.user_id, row]));
+  const subscriptionHistoryByUserId = new Map<number, Array<{
+    id: number | null;
+    plan_code: string;
+    status: string;
+    start_at: string | null;
+    end_at: string | null;
+    source: string | null;
+    updated_at: string | null;
+  }>>();
+
+  subscriptionRows.forEach((row) => {
+    const history = subscriptionHistoryByUserId.get(row.user_id) ?? [];
+    history.push({
+      id: row.id,
+      plan_code: row.plan_code,
+      status: row.status,
+      start_at: row.start_at,
+      end_at: row.end_at,
+      source: row.source,
+      updated_at: row.updated_at,
+    });
+    subscriptionHistoryByUserId.set(row.user_id, history);
+  });
+
+  return users.map((user) => {
+    const articleOverview = articleStatsByUserId.get(user.id);
+    const usageOverview = usageStatsByUserId.get(user.id);
+    return {
+      ...user,
+      article_count: articleOverview?.article_count ?? 0,
+      published_article_count: articleOverview?.published_article_count ?? 0,
+      total_usage: usageOverview?.total_usage ?? 0,
+      last_usage_at: usageOverview?.last_usage_at ?? null,
+      subscription_history: subscriptionHistoryByUserId.get(user.id) ?? [],
+    };
+  });
+}
+
+function toMonthKey(value: string) {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+  return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function isCurrentActiveSubscription(input: { status: string; end_at: string | null }) {
+  if (input.status !== "active") {
+    return false;
+  }
+  if (!input.end_at) {
+    return true;
+  }
+  const endTime = new Date(input.end_at).getTime();
+  return !Number.isNaN(endTime) && endTime >= Date.now();
+}
+
+function buildRecentMonthBuckets(monthCount: number) {
+  const cursor = new Date();
+  cursor.setDate(1);
+  cursor.setHours(0, 0, 0, 0);
+
+  const buckets: Array<{ monthKey: string; label: string }> = [];
+  for (let index = monthCount - 1; index >= 0; index -= 1) {
+    const bucketDate = new Date(cursor);
+    bucketDate.setMonth(cursor.getMonth() - index);
+    const monthKey = `${bucketDate.getFullYear()}-${String(bucketDate.getMonth() + 1).padStart(2, "0")}`;
+    buckets.push({
+      monthKey,
+      label: `${bucketDate.getMonth() + 1}月`,
+    });
+  }
+  return buckets;
+}
+
+export async function getAdminFinanceOverview() {
+  const db = getDatabase();
+  const [plans, subscriptions, usageTopUsers, subscriptionEvents] = await Promise.all([
+    getResolvedPlans(),
+    getAdminSubscriptions(),
+    db.query<{
+      user_id: number;
+      username: string;
+      display_name: string | null;
+      plan_code: string;
+      total_usage: number;
+      active_days: number;
+      last_usage_at: string | null;
+    }>(
+      `SELECT
+         u.id as user_id,
+         u.username,
+         u.display_name,
+         u.plan_code,
+         COALESCE(SUM(uc.value), 0) as total_usage,
+         COUNT(DISTINCT uc.counter_date) as active_days,
+         MAX(uc.counter_date) as last_usage_at
+       FROM usage_counters uc
+       INNER JOIN users u ON u.id = uc.user_id
+       GROUP BY u.id, u.username, u.display_name, u.plan_code
+       ORDER BY total_usage DESC, active_days DESC, u.id DESC
+       LIMIT 10`,
+    ),
+    db.query<{
+      start_at: string | null;
+      end_at: string | null;
+      created_at: string;
+    }>(
+      `SELECT start_at, end_at, created_at
+       FROM subscriptions
+       ORDER BY id DESC`,
+    ),
+  ]);
+
+  const planMetaByCode = new Map(plans.map((plan) => [plan.code, plan]));
+  const activeSubscriptions = subscriptions.filter((subscription) => isCurrentActiveSubscription(subscription));
+  const now = Date.now();
+  const endingSoonBoundary = now + 30 * 24 * 60 * 60 * 1000;
+  const endingSoonCount = activeSubscriptions.filter((subscription) => {
+    if (!subscription.end_at) {
+      return false;
+    }
+    const endTime = new Date(subscription.end_at).getTime();
+    return !Number.isNaN(endTime) && endTime >= now && endTime <= endingSoonBoundary;
+  }).length;
+
+  const planDistributionCounts = new Map<string, number>();
+  activeSubscriptions.forEach((subscription) => {
+    planDistributionCounts.set(subscription.plan_code, (planDistributionCounts.get(subscription.plan_code) ?? 0) + 1);
+  });
+
+  const totalSubscriptionCount = activeSubscriptions.length;
+  const planDistribution = Array.from(planDistributionCounts.entries())
+    .map(([planCode, subscriberCount]) => {
+      const planMeta = planMetaByCode.get(planCode);
+      const priceCny = Number(planMeta?.priceCny ?? 0);
+      return {
+        planCode,
+        planName: planMeta?.name ?? subscriptionPlanName(planCode),
+        subscriberCount,
+        sharePercent: totalSubscriptionCount > 0 ? (subscriberCount / totalSubscriptionCount) * 100 : 0,
+        revenueEstimate: subscriberCount * priceCny,
+      };
+    })
+    .sort((left, right) => right.subscriberCount - left.subscriberCount || right.revenueEstimate - left.revenueEstimate || left.planCode.localeCompare(right.planCode));
+
+  const trendBuckets = buildRecentMonthBuckets(6);
+  const trendByMonth = new Map(
+    trendBuckets.map((bucket) => [
+      bucket.monthKey,
+      { monthKey: bucket.monthKey, label: bucket.label, startedCount: 0, endedCount: 0 },
+    ]),
+  );
+
+  subscriptionEvents.forEach((event) => {
+    const startedMonthKey = toMonthKey(event.start_at ?? event.created_at);
+    if (startedMonthKey && trendByMonth.has(startedMonthKey)) {
+      trendByMonth.get(startedMonthKey)!.startedCount += 1;
+    }
+
+    const endedMonthKey = event.end_at ? toMonthKey(event.end_at) : null;
+    if (endedMonthKey && trendByMonth.has(endedMonthKey)) {
+      trendByMonth.get(endedMonthKey)!.endedCount += 1;
+    }
+  });
+
   return {
-    userCount: users?.count ?? 0,
-    activeUserCount: activeUsers?.count ?? 0,
-    articleCount: articles?.count ?? 0,
-    publishedArticleCount: publishedArticles?.count ?? 0,
-    fragmentCount: fragments?.count ?? 0,
-    successSyncCount: logs?.count ?? 0,
-    seriesCount: series?.count ?? 0,
+    activeSubscriptionCount: activeSubscriptions.length,
+    endingSoonCount,
+    monthlyRevenueEstimate: activeSubscriptions.reduce((sum, subscription) => sum + Number(planMetaByCode.get(subscription.plan_code)?.priceCny ?? 0), 0),
+    planDistribution,
+    subscriptionTrend: trendBuckets.map((bucket) => trendByMonth.get(bucket.monthKey)!),
+    usageTopUsers: usageTopUsers.map((user) => ({
+      userId: user.user_id,
+      username: user.username,
+      displayName: user.display_name,
+      planCode: user.plan_code,
+      totalUsage: user.total_usage,
+      activeDays: user.active_days,
+      lastUsageAt: user.last_usage_at,
+    })),
   };
+}
+
+function subscriptionPlanName(planCode: string) {
+  if (planCode === "pro") {
+    return "Pro";
+  }
+  if (planCode === "team") {
+    return "Team";
+  }
+  if (planCode === "enterprise") {
+    return "Enterprise";
+  }
+  return planCode === "free" ? "Free" : planCode;
 }
 
 export async function getAdminSubscriptions() {
@@ -755,6 +979,29 @@ export async function getAdminSubscriptions() {
      LEFT JOIN plans p ON p.code = COALESCE(s.plan_code, u.plan_code)
      ORDER BY COALESCE(s.id, 0) DESC, u.id DESC`,
   );
+}
+
+export async function getAdminBusinessOverview() {
+  const db = getDatabase();
+  const [users, activeUsers, articles, publishedArticles, fragments, logs, series] = await Promise.all([
+    db.queryOne<{ count: number }>("SELECT COUNT(*) as count FROM users"),
+    db.queryOne<{ count: number }>("SELECT COUNT(*) as count FROM users WHERE is_active = ?", [true]),
+    db.queryOne<{ count: number }>("SELECT COUNT(*) as count FROM articles"),
+    db.queryOne<{ count: number }>("SELECT COUNT(*) as count FROM articles WHERE status = ?", ["published"]),
+    db.queryOne<{ count: number }>("SELECT COUNT(*) as count FROM fragments"),
+    db.queryOne<{ count: number }>("SELECT COUNT(*) as count FROM wechat_sync_logs WHERE status = ?", ["success"]),
+    db.queryOne<{ count: number }>("SELECT COUNT(*) as count FROM series"),
+  ]);
+
+  return {
+    userCount: users?.count ?? 0,
+    activeUserCount: activeUsers?.count ?? 0,
+    articleCount: articles?.count ?? 0,
+    publishedArticleCount: publishedArticles?.count ?? 0,
+    fragmentCount: fragments?.count ?? 0,
+    successSyncCount: logs?.count ?? 0,
+    seriesCount: series?.count ?? 0,
+  };
 }
 
 export async function getArticlesByUser(userId: number) {
@@ -935,6 +1182,36 @@ export async function saveArticle(input: {
     payload: { title, status, seriesId, wechatTemplateId },
   });
   return getArticleById(input.articleId, input.userId);
+}
+
+export async function deleteArticle(userId: number, articleId: number) {
+  await ensureExtendedProductSchema();
+  const current = await getArticleById(articleId, userId);
+  if (!current) {
+    throw new Error("稿件不存在");
+  }
+  const db = getDatabase();
+  await db.transaction(async () => {
+    await db.exec("DELETE FROM article_reference_articles WHERE article_id = ? OR referenced_article_id = ?", [articleId, articleId]);
+    await db.exec("UPDATE topic_backlog_items SET generated_article_id = NULL WHERE generated_article_id = ?", [articleId]);
+    await db.exec("UPDATE topic_leads SET adopted_article_id = NULL WHERE adopted_article_id = ?", [articleId]);
+    await db.exec("UPDATE ai_call_observations SET article_id = NULL WHERE article_id = ?", [articleId]);
+    const deleted = await db.exec("DELETE FROM articles WHERE id = ? AND user_id = ?", [articleId, userId]);
+    if ((deleted.changes ?? 0) <= 0) {
+      throw new Error("稿件删除失败");
+    }
+    await appendAuditLog({
+      userId,
+      action: "article.delete",
+      targetType: "article",
+      targetId: articleId,
+      payload: {
+        title: current.title,
+        status: current.status,
+        seriesId: current.series_id,
+      },
+    });
+  });
 }
 
 export async function createArticleSnapshot(articleId: number, note?: string) {
@@ -2117,8 +2394,39 @@ export async function getWechatConnections(userId: number) {
 }
 
 export async function getWechatConnectionRaw(connectionId: number, userId?: number) {
+  async function withWechatDbRetry<T>(operation: () => Promise<T>) {
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      try {
+        return await operation();
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (!/database is locked/i.test(message) || attempt === 4) {
+          throw error;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 50 * (attempt + 1)));
+      }
+    }
+    throw new Error("微信连接读取失败");
+  }
+
   const db = getDatabase();
   if (userId) {
+    return withWechatDbRetry(async () => {
+      return db.queryOne<{
+        id: number;
+        user_id: number;
+        account_name: string | null;
+        original_id: string | null;
+        app_id_encrypted: string;
+        app_secret_encrypted: string;
+        access_token_encrypted: string | null;
+        access_token_expires_at: string | null;
+        status: "valid" | "invalid" | "expired" | "disabled";
+        is_default: number | boolean;
+      }>("SELECT * FROM wechat_connections WHERE id = ? AND user_id = ?", [connectionId, userId]);
+    });
+  }
+  return withWechatDbRetry(async () => {
     return db.queryOne<{
       id: number;
       user_id: number;
@@ -2130,20 +2438,8 @@ export async function getWechatConnectionRaw(connectionId: number, userId?: numb
       access_token_expires_at: string | null;
       status: "valid" | "invalid" | "expired" | "disabled";
       is_default: number | boolean;
-    }>("SELECT * FROM wechat_connections WHERE id = ? AND user_id = ?", [connectionId, userId]);
-  }
-  return db.queryOne<{
-    id: number;
-    user_id: number;
-    account_name: string | null;
-    original_id: string | null;
-    app_id_encrypted: string;
-    app_secret_encrypted: string;
-    access_token_encrypted: string | null;
-    access_token_expires_at: string | null;
-    status: "valid" | "invalid" | "expired" | "disabled";
-    is_default: number | boolean;
-  }>("SELECT * FROM wechat_connections WHERE id = ?", [connectionId]);
+    }>("SELECT * FROM wechat_connections WHERE id = ?", [connectionId]);
+  });
 }
 
 export async function upsertWechatConnection(input: {
@@ -2158,13 +2454,28 @@ export async function upsertWechatConnection(input: {
   status: string;
   isDefault?: boolean;
 }) {
+  async function withWechatDbRetry<T>(operation: () => Promise<T>) {
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      try {
+        return await operation();
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (!/database is locked/i.test(message) || attempt === 4) {
+          throw error;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 50 * (attempt + 1)));
+      }
+    }
+    throw new Error("微信公众号连接保存失败");
+  }
+
   const db = getDatabase();
   const now = new Date().toISOString();
   if (input.isDefault) {
-    await db.exec("UPDATE wechat_connections SET is_default = ? WHERE user_id = ?", [false, input.userId]);
+    await withWechatDbRetry(() => db.exec("UPDATE wechat_connections SET is_default = ? WHERE user_id = ?", [false, input.userId]));
   }
   if (input.connectionId) {
-    await db.exec(
+    await withWechatDbRetry(() => db.exec(
       `UPDATE wechat_connections
        SET account_name = ?, original_id = ?, app_id_encrypted = ?, app_secret_encrypted = ?, access_token_encrypted = ?,
            access_token_expires_at = ?, status = ?, is_default = ?, updated_at = ?, last_verified_at = ?
@@ -2183,11 +2494,11 @@ export async function upsertWechatConnection(input: {
         input.connectionId,
         input.userId,
       ],
-    );
+    ));
     return;
   }
 
-  await db.exec(
+  await withWechatDbRetry(() => db.exec(
     `INSERT INTO wechat_connections (
       user_id, account_name, original_id, app_id_encrypted, app_secret_encrypted, access_token_encrypted,
       access_token_expires_at, status, last_verified_at, is_default, created_at, updated_at
@@ -2206,7 +2517,7 @@ export async function upsertWechatConnection(input: {
       now,
       now,
     ],
-  );
+  ));
 }
 
 export async function disableWechatConnection(connectionId: number, userId: number) {
@@ -2226,9 +2537,24 @@ export async function updateWechatConnectionToken(input: {
   accessTokenExpiresAt: string;
   status?: "valid" | "expired" | "invalid";
 }) {
+  async function withWechatDbRetry<T>(operation: () => Promise<T>) {
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      try {
+        return await operation();
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (!/database is locked/i.test(message) || attempt === 4) {
+          throw error;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 50 * (attempt + 1)));
+      }
+    }
+    throw new Error("微信公众号连接令牌更新失败");
+  }
+
   const db = getDatabase();
   const now = new Date().toISOString();
-  await db.exec(
+  await withWechatDbRetry(() => db.exec(
     `UPDATE wechat_connections
      SET access_token_encrypted = ?, access_token_expires_at = ?, status = ?, last_verified_at = ?, updated_at = ?
      WHERE id = ? AND user_id = ?`,
@@ -2241,7 +2567,7 @@ export async function updateWechatConnectionToken(input: {
       input.connectionId,
       input.userId,
     ],
-  );
+  ));
 }
 
 export async function createWechatSyncLog(input: {
@@ -2259,9 +2585,24 @@ export async function createWechatSyncLog(input: {
   templateId?: string | null;
   idempotencyKey?: string | null;
 }) {
+  async function withWechatDbRetry<T>(operation: () => Promise<T>) {
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      try {
+        return await operation();
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (!/database is locked/i.test(message) || attempt === 4) {
+          throw error;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 50 * (attempt + 1)));
+      }
+    }
+    throw new Error("微信发布日志写入失败");
+  }
+
   await ensureExtendedProductSchema();
   const db = getDatabase();
-  await db.exec(
+  await withWechatDbRetry(() => db.exec(
     `INSERT INTO wechat_sync_logs (
       user_id, article_id, wechat_connection_id, media_id, status, request_summary, response_summary, failure_reason, failure_code, retry_count, article_version_hash, template_id, idempotency_key, created_at, updated_at
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -2282,7 +2623,7 @@ export async function createWechatSyncLog(input: {
       new Date().toISOString(),
       new Date().toISOString(),
     ],
-  );
+  ));
 }
 
 export async function getWechatSyncLogs(userId: number) {
@@ -2353,6 +2694,21 @@ export async function getLatestWechatSyncLogForArticle(input: {
   wechatConnectionId?: number | null;
   articleVersionHash?: string | null;
 }) {
+  async function withWechatDbRetry<T>(operation: () => Promise<T>) {
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      try {
+        return await operation();
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (!/database is locked/i.test(message) || attempt === 4) {
+          throw error;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 50 * (attempt + 1)));
+      }
+    }
+    throw new Error("微信发布记录读取失败");
+  }
+
   await ensureExtendedProductSchema();
   const db = getDatabase();
   const clauses = ["user_id = ?", "article_id = ?"];
@@ -2365,25 +2721,27 @@ export async function getLatestWechatSyncLogForArticle(input: {
     clauses.push("article_version_hash = ?");
     params.push(input.articleVersionHash);
   }
-  return db.queryOne<{
-    id: number;
-    media_id: string | null;
-    status: string;
-    failure_reason: string | null;
-    failure_code: string | null;
-    retry_count: number;
-    article_version_hash: string | null;
-    template_id: string | null;
-    idempotency_key: string | null;
-    created_at: string;
-  }>(
-    `SELECT id, media_id, status, failure_reason, failure_code, retry_count, article_version_hash, template_id, idempotency_key, created_at
-     FROM wechat_sync_logs
-     WHERE ${clauses.join(" AND ")}
-     ORDER BY id DESC
-     LIMIT 1`,
-    params,
-  );
+  return withWechatDbRetry(async () => {
+    return db.queryOne<{
+      id: number;
+      media_id: string | null;
+      status: string;
+      failure_reason: string | null;
+      failure_code: string | null;
+      retry_count: number;
+      article_version_hash: string | null;
+      template_id: string | null;
+      idempotency_key: string | null;
+      created_at: string;
+    }>(
+      `SELECT id, media_id, status, failure_reason, failure_code, retry_count, article_version_hash, template_id, idempotency_key, created_at
+       FROM wechat_sync_logs
+       WHERE ${clauses.join(" AND ")}
+       ORDER BY id DESC
+       LIMIT 1`,
+      params,
+    );
+  });
 }
 
 export async function getArticleOutcome(articleId: number, userId: number) {

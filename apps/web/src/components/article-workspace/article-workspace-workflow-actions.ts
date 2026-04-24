@@ -30,6 +30,7 @@ type ArticleWorkspaceWorkflowActionsDeps = {
   setWorkflow: (value: WorkflowRuntimeState) => void;
   setView: (value: WorkspaceView) => void;
   setMessage: (value: string) => void;
+  resolveMainStepAccess: (stepCode: string) => { disabled: boolean; reason: string | null };
 };
 
 export function createArticleWorkspaceWorkflowActions({
@@ -39,6 +40,7 @@ export function createArticleWorkspaceWorkflowActions({
   setWorkflow,
   setView,
   setMessage,
+  resolveMainStepAccess,
 }: ArticleWorkspaceWorkflowActionsDeps) {
   async function updateWorkflow(stageCode: string, action: WorkflowAction = "set", silent = false) {
     setUpdatingWorkflowCode(stageCode);
@@ -66,6 +68,11 @@ export function createArticleWorkspaceWorkflowActions({
   }
 
   function handleArticleMainStepSelect(step: ArticleMainStepLike) {
+    const access = resolveMainStepAccess(step.code);
+    if (access.disabled) {
+      setMessage(access.reason || "当前步骤暂时不可进入。");
+      return;
+    }
     if (step.code === "result") {
       if (status !== "published") {
         return;

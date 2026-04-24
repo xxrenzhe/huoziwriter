@@ -17,6 +17,8 @@ export type WorkspaceShellMainStep = {
   primaryStageCode: string;
   supportLabel: string;
   statusLabel: ArticleMainStepStatus | string;
+  disabled?: boolean;
+  disabledReason?: string | null;
 };
 
 export type WorkspaceShellAuthoringPhase = {
@@ -46,6 +48,16 @@ export type WorkspaceResearchStepSummary = {
   title: string;
   detail: string;
   status: PublishStageStatus;
+};
+
+export type WorkspaceCurrentTask = {
+  title: string;
+  detail: string;
+  badge: string;
+  tone: "danger" | "warning" | "ready";
+  actionLabel: string;
+  actionKind: "goto-step" | "goto-research";
+  targetStepCode?: ArticleMainStepCode;
 };
 
 export type WorkspacePublishPreviewState = {

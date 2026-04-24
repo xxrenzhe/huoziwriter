@@ -7,6 +7,7 @@ type UseArticleWorkspaceLocalEffectsInput = {
   requestedMainStepHandledRef: MutableRefObject<string | null>;
   currentArticleMainStepCode: string;
   updateWorkflow: (stageCode: string, mode?: string, silent?: boolean) => Promise<void>;
+  resolveRequestedMainStepAccess: (stepCode: string) => { disabled: boolean; reason: string | null };
   setMessage: (value: string) => void;
   generating: boolean;
   title: string;
@@ -35,6 +36,7 @@ export function useArticleWorkspaceLocalEffects({
   requestedMainStepHandledRef,
   currentArticleMainStepCode,
   updateWorkflow,
+  resolveRequestedMainStepAccess,
   setMessage,
   generating,
   title,
@@ -105,6 +107,11 @@ export function useArticleWorkspaceLocalEffects({
       return;
     }
     requestedMainStepHandledRef.current = requestKey;
+    const access = resolveRequestedMainStepAccess(requestedMainStepCode);
+    if (access.disabled) {
+      setMessage(access.reason || "当前步骤暂时不可进入。");
+      return;
+    }
     void updateWorkflow(targetStep.primaryStageCode, "set", true);
     setMessage(`已切换到「${targetStep.title}」步骤。`);
   }, [
@@ -112,6 +119,7 @@ export function useArticleWorkspaceLocalEffects({
     currentArticleMainStepCode,
     requestedMainStepCode,
     requestedMainStepHandledRef,
+    resolveRequestedMainStepAccess,
     setMessage,
     updateWorkflow,
   ]);

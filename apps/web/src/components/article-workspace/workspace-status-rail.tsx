@@ -104,10 +104,11 @@ export function WorkspaceStatusRail({
                 key={step.code}
                 type="button"
                 onClick={() => onSelectMainStep(step.code)}
-                disabled={updatingWorkflow || (step.code === "result" && !canOpenResultStep)}
+                disabled={updatingWorkflow || Boolean(step.disabled) || (step.code === "result" && !canOpenResultStep)}
                 variant="secondary"
                 size="sm"
                 fullWidth
+                title={step.disabledReason ?? undefined}
                 iconRight={<span className="text-xs">{formatArticleMainStepStatus(step.statusLabel as ArticleMainStepStatus)}</span>}
                 className={`justify-between px-3 py-3 text-left text-sm ${getMainStepButtonClass(step.statusLabel)}`}
               >

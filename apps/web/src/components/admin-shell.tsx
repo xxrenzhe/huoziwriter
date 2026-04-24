@@ -62,13 +62,11 @@ function buildAdminNotificationItems({
 }): NotificationCenterItem[] {
   return [
     {
-      id: "admin-release",
-      title: "命令中心已覆盖管理后台",
-      description: "可直接通过顶部入口搜索模块、跳转页面和触发常用动作。",
-      kind: "release",
-      tone: "highlight",
-      unread: true,
-      meta: "后台体验",
+      id: "admin-command-utility",
+      title: "后台命令中心",
+      description: "顶部入口可直接搜索模块、跳转页面并触发常用动作。",
+      kind: "system",
+      meta: "效率入口",
       actions: [
         {
           id: "admin-open-command",
@@ -77,23 +75,6 @@ function buildAdminNotificationItems({
           onSelect: openMenu,
         },
       ],
-    },
-    {
-      id: "admin-writing-eval",
-      title: "写作评测与业务总览已并入主导航",
-      description: "评测、财务和业务总览都已进入统一后台信息架构，适合继续补移动端卡片 fallback。",
-      kind: "review",
-      meta: "结构升级",
-      href: "/admin/writing-eval",
-    },
-    {
-      id: "admin-security",
-      title: "默认管理员账号需要上线前确认",
-      description: "启动前仍需配置 `DEFAULT_ADMIN_PASSWORD`，避免默认口令进入可部署环境。",
-      kind: "security",
-      tone: "warning",
-      meta: "上线检查",
-      href: "/admin/audit",
     },
   ];
 }
@@ -119,14 +100,16 @@ function CommandTrigger({
 export function AdminShell({
   items,
   children,
+  notificationItems = [],
 }: {
   items: NavItem[];
   children: ReactNode;
+  notificationItems?: NotificationCenterItem[];
 }) {
   const pathname = usePathname();
   const { openMenu } = useCommandMenu();
   const normalizedItems = normalizeShellItems(items);
-  const adminNotificationItems = buildAdminNotificationItems({ openMenu });
+  const adminNotificationItems = [...notificationItems, ...buildAdminNotificationItems({ openMenu })];
 
   return (
     <div className="min-h-screen bg-adminBg text-adminInk">

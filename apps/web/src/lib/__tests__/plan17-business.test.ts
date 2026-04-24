@@ -52,6 +52,11 @@ test("buildPlan17BusinessReportFromFacts computes author lift, matrix output, an
   assert.equal(report.authorLiftDrilldown.length, 2);
   assert.equal(report.authorLiftDrilldown.find((item) => item.userId === 1)?.comparable, true);
   assert.equal(report.authorLiftDrilldown.find((item) => item.userId === 2)?.comparable, false);
+  assert.deepEqual(report.authorLiftDrilldown.find((item) => item.userId === 2)?.gapReasons, ["前窗样本不足", "后窗样本不足"]);
+  assert.deepEqual(report.observationGaps.authorLift, [
+    { key: "baseline-window", label: "前窗仍少于 3 篇复盘", count: 1 },
+    { key: "current-window", label: "后窗仍少于 3 篇复盘", count: 1 },
+  ]);
 
   assert.equal(report.fissionVsRadar.fissionReviewedCount, 3);
   assert.equal(report.fissionVsRadar.radarReviewedCount, 3);
@@ -69,6 +74,7 @@ test("buildPlan17BusinessReportFromFacts computes author lift, matrix output, an
   assert.equal(report.matrixWeeklyOutput.hitRateMedianAfter, 100);
   assert.equal(report.matrixAuthorDrilldown.length, 1);
   assert.equal(report.matrixAuthorDrilldown[0]?.comparableOutput, true);
+  assert.deepEqual(report.matrixAuthorDrilldown[0]?.gapReasons, []);
 
   assert.equal(report.styleHeatmapUsage.totalUsageEventCount, 2);
   assert.equal(report.styleHeatmapUsage.multiSampleUsageEventCount, 1);
@@ -76,6 +82,9 @@ test("buildPlan17BusinessReportFromFacts computes author lift, matrix output, an
   assert.equal(report.styleHeatmapUsage.recent30dMultiSampleUsageShare, 50);
   assert.equal(report.styleUsageDrilldown.length, 2);
   assert.equal(report.styleUsageDrilldown[0]?.isRecent30d, true);
+  assert.deepEqual(report.observationGaps.styleUsage, [
+    { key: "recent-single-sample", label: "近 30 天仍是单篇画像使用", count: 1 },
+  ]);
 
   assert.equal(report.batchDrilldown.batchCount, 3);
   assert.equal(report.batchDrilldown.linkedArticleCount, 3);
@@ -114,6 +123,10 @@ test("buildPlan17BusinessReportFromFacts keeps sparse business data truthful", (
   assert.equal(report.batchDrilldown.linkedArticleCount, 0);
   assert.equal(report.batchDrilldown.reviewedArticleCount, 0);
   assert.equal(report.batchDrilldown.reviewCoverage, null);
+  assert.deepEqual(report.observationGaps.fissionVsRadar, [
+    { key: "radar-reviewed-gap", label: "radar 7 天回收样本仍不足 3 篇", count: 3 },
+    { key: "fission-reviewed-gap", label: "裂变 7 天回收样本仍不足 3 篇", count: 2 },
+  ]);
 });
 
 test("buildPlan17BusinessReportFromFacts de-duplicates tokenized style usage and treats it as activation evidence", () => {
@@ -161,21 +174,25 @@ test("plan17 business route view contracts keep the expected summary and drilldo
   const authorLiftView = buildPlan17BusinessViewPayload(report, "author-lift") as {
     generatedAt: string;
     authorLiftVsBaseline: typeof report.authorLiftVsBaseline;
+    observationGaps: typeof report.observationGaps.authorLift;
     authorLiftDrilldown: typeof report.authorLiftDrilldown;
   };
   const fissionView = buildPlan17BusinessViewPayload(report, "fission-vs-radar") as {
     generatedAt: string;
     fissionVsRadar: typeof report.fissionVsRadar;
+    observationGaps: typeof report.observationGaps.fissionVsRadar;
     fissionVsRadarDrilldown: typeof report.fissionVsRadarDrilldown;
   };
   const matrixView = buildPlan17BusinessViewPayload(report, "matrix-output") as {
     generatedAt: string;
     matrixWeeklyOutput: typeof report.matrixWeeklyOutput;
+    observationGaps: typeof report.observationGaps.matrixOutput;
     matrixAuthorDrilldown: typeof report.matrixAuthorDrilldown;
   };
   const styleUsageView = buildPlan17BusinessViewPayload(report, "style-usage") as {
     generatedAt: string;
     styleHeatmapUsage: typeof report.styleHeatmapUsage;
+    observationGaps: typeof report.observationGaps.styleUsage;
     styleUsageDrilldown: typeof report.styleUsageDrilldown;
   };
   const legacyStyleUsageView = buildPlan17BusinessViewPayload(report, "style-save-proxy");
@@ -212,7 +229,7 @@ test("plan17 business route view contracts keep the expected summary and drilldo
     "fissionModeBreakdown",
   ]);
 
-  assert.deepEqual(Object.keys(authorLiftView), ["generatedAt", "authorLiftVsBaseline", "authorLiftDrilldown"]);
+  assert.deepEqual(Object.keys(authorLiftView), ["generatedAt", "authorLiftVsBaseline", "observationGaps", "authorLiftDrilldown"]);
   assert.deepEqual(Object.keys(authorLiftView.authorLiftVsBaseline), [
     "activatedAuthorCount",
     "comparableAuthorCount",
@@ -234,9 +251,10 @@ test("plan17 business route view contracts keep the expected summary and drilldo
     "currentHitRate",
     "liftPp",
     "comparable",
+    "gapReasons",
   ]);
 
-  assert.deepEqual(Object.keys(fissionView), ["generatedAt", "fissionVsRadar", "fissionVsRadarDrilldown"]);
+  assert.deepEqual(Object.keys(fissionView), ["generatedAt", "fissionVsRadar", "observationGaps", "fissionVsRadarDrilldown"]);
   assert.deepEqual(Object.keys(fissionView.fissionVsRadar), [
     "fissionReviewedCount",
     "fissionHitCount",
@@ -256,7 +274,7 @@ test("plan17 business route view contracts keep the expected summary and drilldo
     "hitStatus",
   ]);
 
-  assert.deepEqual(Object.keys(matrixView), ["generatedAt", "matrixWeeklyOutput", "matrixAuthorDrilldown"]);
+  assert.deepEqual(Object.keys(matrixView), ["generatedAt", "matrixWeeklyOutput", "observationGaps", "matrixAuthorDrilldown"]);
   assert.deepEqual(Object.keys(matrixView.matrixWeeklyOutput), [
     "matrixAuthorCount",
     "comparableAuthorCount",
@@ -285,11 +303,12 @@ test("plan17 business route view contracts keep the expected summary and drilldo
     "qualityDeltaPp",
     "comparableOutput",
     "comparableQuality",
+    "gapReasons",
   ]);
 
   assert.equal(normalizePlan17BusinessView("style-save-proxy"), "style-usage");
   assert.equal(normalizePlan17BusinessView("style-usage"), "style-usage");
-  assert.deepEqual(Object.keys(styleUsageView), ["generatedAt", "styleHeatmapUsage", "styleUsageDrilldown"]);
+  assert.deepEqual(Object.keys(styleUsageView), ["generatedAt", "styleHeatmapUsage", "observationGaps", "styleUsageDrilldown"]);
   assert.deepEqual(Object.keys(styleUsageView.styleHeatmapUsage), [
     "totalUsageEventCount",
     "multiSampleUsageEventCount",
@@ -332,7 +351,7 @@ test("plan17 business export scope contracts keep the expected csv headers", () 
   );
   assert.equal(
     csvByScope["author-lift"].split("\n")[0],
-    "user_id,activation_at,baseline_reviewed_count,current_reviewed_count,baseline_hit_rate_pct,current_hit_rate_pct,lift_pp,comparable",
+    "user_id,activation_at,baseline_reviewed_count,current_reviewed_count,baseline_hit_rate_pct,current_hit_rate_pct,lift_pp,comparable,gap_reasons",
   );
   assert.equal(
     csvByScope["fission-vs-radar"].split("\n")[0],
@@ -340,7 +359,7 @@ test("plan17 business export scope contracts keep the expected csv headers", () 
   );
   assert.equal(
     csvByScope["matrix-output"].split("\n")[0],
-    "user_id,activation_at,before_article_count,after_article_count,before_weekly_median,after_weekly_median,output_growth_pct,before_hit_rate_pct,after_hit_rate_pct,quality_delta_pp,comparable_output,comparable_quality",
+    "user_id,activation_at,before_article_count,after_article_count,before_weekly_median,after_weekly_median,output_growth_pct,before_hit_rate_pct,after_hit_rate_pct,quality_delta_pp,comparable_output,comparable_quality,gap_reasons",
   );
   assert.equal(
     csvByScope["style-usage"].split("\n")[0],
@@ -351,8 +370,8 @@ test("plan17 business export scope contracts keep the expected csv headers", () 
   assert.equal(csvByScope["style-save-proxy"], csvByScope["style-usage"]);
 
   assert.equal(csvByScope["batch-drilldown"].split("\n")[1]?.split(",").length, 16);
-  assert.equal(csvByScope["author-lift"].split("\n")[1]?.split(",").length, 8);
+  assert.equal(csvByScope["author-lift"].split("\n")[1]?.split(",").length, 9);
   assert.equal(csvByScope["fission-vs-radar"].split("\n")[1]?.split(",").length, 6);
-  assert.equal(csvByScope["matrix-output"].split("\n")[1]?.split(",").length, 12);
+  assert.equal(csvByScope["matrix-output"].split("\n")[1]?.split(",").length, 13);
   assert.equal(csvByScope["style-usage"].split("\n")[1]?.split(",").length, 8);
 });

@@ -5,6 +5,8 @@ import { buttonStyles, cn, surfaceCardStyles } from "@huoziwriter/ui";
 
 const panelClassName = cn(surfaceCardStyles(), "border-adminLineStrong bg-adminSurface p-6 text-adminInk shadow-none");
 const mutedPanelClassName = cn(surfaceCardStyles(), "border-adminLineStrong bg-adminSurfaceMuted p-5 text-adminInk shadow-none");
+const mobileListClassName = "mt-4 grid gap-3 md:hidden";
+const mobileCardClassName = cn(surfaceCardStyles({ padding: "md" }), "border-adminLineStrong bg-adminSurfaceMuted text-adminInk shadow-none");
 const actionClassName = buttonStyles({ variant: "secondary", size: "sm" });
 const eyebrowClassName = "text-xs uppercase tracking-[0.24em] text-adminInkMuted";
 const accentEyebrowClassName = "text-xs uppercase tracking-[0.24em] text-adminAccent";
@@ -91,7 +93,37 @@ export default async function AdminAiRoutingObservationsPage() {
       <div className="grid gap-6 xl:grid-cols-2">
         <article className={panelClassName}>
           <div className={eyebrowClassName}>按 Scene 聚合</div>
-          <div className="mt-4 overflow-x-auto">
+          <div className={mobileListClassName}>
+            {dashboard.byScene.map((item) => (
+              <div key={item.label} className={mobileCardClassName}>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className={eyebrowClassName}>Scene</div>
+                    <div className="mt-2 text-base text-adminInk">{item.label}</div>
+                  </div>
+                  <div className="text-right">
+                    <div className={eyebrowClassName}>调用</div>
+                    <div className="mt-2 font-serifCn text-2xl text-adminInk">{item.callCount}</div>
+                  </div>
+                </div>
+                <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                  <div>
+                    <div className={eyebrowClassName}>失败率</div>
+                    <div className="mt-1 text-sm text-adminInkSoft">{formatPercent(item.failureRate)}</div>
+                  </div>
+                  <div>
+                    <div className={eyebrowClassName}>重试</div>
+                    <div className="mt-1 text-sm text-adminInkSoft">{item.retriedCount}</div>
+                  </div>
+                  <div>
+                    <div className={eyebrowClassName}>缓存读</div>
+                    <div className="mt-1 text-sm text-adminInkSoft">{formatPercent(item.cacheHitRate)}</div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="mt-4 hidden overflow-x-auto md:block">
             <table className="min-w-full text-left text-sm">
               <thead className="border-b border-adminLineStrong text-adminInkMuted">
                 <tr>
@@ -119,7 +151,36 @@ export default async function AdminAiRoutingObservationsPage() {
 
         <article className={panelClassName}>
           <div className={eyebrowClassName}>按 Model 聚合</div>
-          <div className="mt-4 overflow-x-auto">
+          <div className={mobileListClassName}>
+            {dashboard.byModel.map((item) => (
+              <div key={`${item.provider || "na"}:${item.label}`} className={mobileCardClassName}>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className={eyebrowClassName}>Model</div>
+                    <div className="mt-2 text-base text-adminInk">{item.label}</div>
+                  </div>
+                  <div className="text-right">
+                    <div className={eyebrowClassName}>调用</div>
+                    <div className="mt-2 font-serifCn text-2xl text-adminInk">{item.callCount}</div>
+                  </div>
+                </div>
+                <div className="mt-3 text-sm leading-6 text-adminInkSoft">
+                  {(item.provider || "--")} · {(item.callMode || "--")}
+                </div>
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  <div>
+                    <div className={eyebrowClassName}>平均时延</div>
+                    <div className="mt-1 text-sm text-adminInkSoft">{formatLatency(item.averageLatencyMs)}</div>
+                  </div>
+                  <div>
+                    <div className={eyebrowClassName}>缓存读</div>
+                    <div className="mt-1 text-sm text-adminInkSoft">{formatPercent(item.cacheHitRate)}</div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="mt-4 hidden overflow-x-auto md:block">
             <table className="min-w-full text-left text-sm">
               <thead className="border-b border-adminLineStrong text-adminInkMuted">
                 <tr>

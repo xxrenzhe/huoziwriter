@@ -4,6 +4,17 @@ import { closeDatabase, getDatabase } from "./db";
 
 type DatabaseType = "sqlite" | "postgres";
 
+const MIGRATION_DIR_CANDIDATES: Record<DatabaseType, string[]> = {
+  sqlite: [
+    path.join("apps", "web", "src", "lib", "migrations"),
+    "migrations",
+  ],
+  postgres: [
+    path.join("apps", "web", "src", "lib", "pg_migrations"),
+    "pg_migrations",
+  ],
+};
+
 const BASELINE_TABLES = [
   "users",
   "plans",
@@ -15,10 +26,7 @@ const BASELINE_TABLES = [
 function findRepoRoot(startDir: string) {
   let current = path.resolve(startDir);
   while (true) {
-    if (
-      fs.existsSync(path.join(current, "migrations"))
-      || fs.existsSync(path.join(current, "pg_migrations"))
-    ) {
+    if (Object.values(MIGRATION_DIR_CANDIDATES).flat().some((dir) => fs.existsSync(path.join(current, dir)))) {
       return current;
     }
     const parent = path.dirname(current);
@@ -40,7 +48,13 @@ function getDatabaseType(): DatabaseType {
 
 function getMigrationDir(type: DatabaseType) {
   const repoRoot = resolveRepoRoot();
-  return path.resolve(repoRoot, type === "postgres" ? "pg_migrations" : "migrations");
+  for (const relativeDir of MIGRATION_DIR_CANDIDATES[type]) {
+    const resolvedDir = path.resolve(repoRoot, relativeDir);
+    if (fs.existsSync(resolvedDir)) {
+      return resolvedDir;
+    }
+  }
+  throw new Error(`Migration directory not found for ${type}`);
 }
 
 function splitSqlStatements(sql: string) {

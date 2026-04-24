@@ -14,6 +14,21 @@ import { encryptSecret } from "./security";
 import { resolveTemplateRenderConfig } from "./template-rendering";
 import { publishWechatDraft } from "./wechat";
 
+async function withWechatPersistenceRetry<T>(operation: () => Promise<T>) {
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    try {
+      return await operation();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (!/database is locked/i.test(message) || attempt === 4) {
+        throw error;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 50 * (attempt + 1)));
+    }
+  }
+  throw new Error("微信发布状态持久化失败");
+}
+
 export class WechatPublishError extends Error {
   code: string;
   retryable: boolean;
@@ -87,11 +102,11 @@ export async function publishArticleToWechat(input: {
   const templateId = input.templateId ?? article.wechat_template_id;
 
   try {
-    await setArticleWorkflowCurrentStage({
+    await withWechatPersistenceRetry(() => setArticleWorkflowCurrentStage({
       articleId: article.id,
       userId: input.userId,
       stageCode: "publish",
-    });
+    }));
 
     await assertWechatTemplateAllowed(input.userId, templateId);
     const articleVersionHash = buildArticleVersionHash({
@@ -122,21 +137,21 @@ export async function publishArticleToWechat(input: {
       articleVersionHash,
     });
     if (latestVersionLog?.status === "success" && latestVersionLog.media_id) {
-      await saveArticle({
+      await withWechatPersistenceRetry(() => saveArticle({
         articleId: article.id,
         userId: input.userId,
         status: "published",
         wechatTemplateId: templateId ?? null,
-      });
-      await clearArticleWorkflowPendingPublishIntent({
+      }));
+      await withWechatPersistenceRetry(() => clearArticleWorkflowPendingPublishIntent({
         articleId: article.id,
         userId: input.userId,
-      });
-      await completeArticleWorkflowStage({
+      }));
+      await withWechatPersistenceRetry(() => completeArticleWorkflowStage({
         articleId: article.id,
         userId: input.userId,
         stageCode: "publish",
-      });
+      }));
       return {
         mediaId: latestVersionLog.media_id,
         reused: true,
@@ -154,14 +169,14 @@ export async function publishArticleToWechat(input: {
       author: input.author ?? undefined,
       templateConfig: resolveTemplateRenderConfig(template),
     });
-    await updateWechatConnectionToken({
+    await withWechatPersistenceRetry(() => updateWechatConnectionToken({
       connectionId: connection.id,
       userId: input.userId,
       accessTokenEncrypted: encryptSecret(result.accessToken),
       accessTokenExpiresAt: new Date(Date.now() + result.expiresIn * 1000).toISOString(),
       status: "valid",
-    });
-    await createWechatSyncLog({
+    }));
+    await withWechatPersistenceRetry(() => createWechatSyncLog({
       userId: input.userId,
       articleId: article.id,
       wechatConnectionId: connection.id,
@@ -173,22 +188,22 @@ export async function publishArticleToWechat(input: {
       templateId: templateId ?? null,
       idempotencyKey,
       retryCount: latestVersionLog?.status === "failed" ? (latestVersionLog.retry_count ?? 0) + 1 : 0,
-    });
-    await saveArticle({
+    }));
+    await withWechatPersistenceRetry(() => saveArticle({
       articleId: article.id,
       userId: input.userId,
       status: "published",
       wechatTemplateId: templateId ?? null,
-    });
-    await clearArticleWorkflowPendingPublishIntent({
+    }));
+    await withWechatPersistenceRetry(() => clearArticleWorkflowPendingPublishIntent({
       articleId: article.id,
       userId: input.userId,
-    });
-    await completeArticleWorkflowStage({
+    }));
+    await withWechatPersistenceRetry(() => completeArticleWorkflowStage({
       articleId: article.id,
       userId: input.userId,
       stageCode: "publish",
-    });
+    }));
     return {
       mediaId: result.mediaId,
       reused: false,
@@ -212,7 +227,7 @@ export async function publishArticleToWechat(input: {
       templateId: templateId ?? null,
       wechatConnectionId: connection.id,
     });
-    await createWechatSyncLog({
+    await withWechatPersistenceRetry(() => createWechatSyncLog({
       userId: input.userId,
       articleId: article.id,
       wechatConnectionId: connection.id,
@@ -223,27 +238,27 @@ export async function publishArticleToWechat(input: {
       templateId: templateId ?? null,
       idempotencyKey: `wechat:${article.id}:${connection.id}:${articleVersionHash}`,
       retryCount: (latestVersionLog?.retry_count ?? 0) + 1,
-    });
-    await saveArticle({
+    }));
+    await withWechatPersistenceRetry(() => saveArticle({
       articleId: article.id,
       userId: input.userId,
       status: "publish_failed",
-    });
+    }));
     if (failure.code === "auth_failed") {
-      await setArticleWorkflowPendingPublishIntent({
+      await withWechatPersistenceRetry(() => setArticleWorkflowPendingPublishIntent({
         articleId: article.id,
         userId: input.userId,
         intent: {
           templateId: templateId ?? null,
           reason: "auth_failed",
         },
-      });
+      }));
     }
-    await failArticleWorkflowStage({
+    await withWechatPersistenceRetry(() => failArticleWorkflowStage({
       articleId: article.id,
       userId: input.userId,
       stageCode: "publish",
-    });
+    }));
     throw new WechatPublishError(failure.message, {
       code: failure.code,
       retryable: !["auth_failed", "content_invalid"].includes(failure.code),

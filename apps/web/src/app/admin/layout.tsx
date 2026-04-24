@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { adminNav } from "@/config/navigation";
 import { requireWriterSession } from "@/lib/page-auth";
+import { getAdminShellNotificationItems } from "@/lib/shell-notifications";
 import { AdminShell } from "@/components/admin-shell";
 import { AdminRouteForbiddenState } from "@/components/admin-route-state";
 
@@ -9,5 +10,6 @@ export default async function AdminLayout({ children }: { children: ReactNode })
   if (session.role !== "admin") {
     return <AdminRouteForbiddenState />;
   }
-  return <AdminShell items={adminNav}>{children}</AdminShell>;
+  const notificationItems = await getAdminShellNotificationItems();
+  return <AdminShell items={adminNav} notificationItems={notificationItems}>{children}</AdminShell>;
 }

@@ -12,7 +12,15 @@ import {
 } from "react";
 import { Command, Search } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
+import { useToast } from "@/components/app-feedback";
 import { filterCommandItems, getStaticCommandItems, searchRemoteCommandSources, type CommandAction, type CommandItem } from "@/lib/command-registry";
+import {
+  mergeRecentCommandItems,
+  parseRecentCommandItems,
+  RECENT_COMMAND_STORAGE_KEY,
+  toRecentCommandItem,
+  type RecentCommandItem,
+} from "@/lib/command-menu-recent";
 
 export type ThemeMode = "day" | "night";
 
@@ -112,6 +120,28 @@ function buildGroupedItems(items: CommandItem[]) {
   return groups;
 }
 
+function buildRecentCommandItems(items: RecentCommandItem[], query: string) {
+  return filterCommandItems(
+    items.map((item) => ({
+      ...item,
+      group: "最近",
+      subtitle: item.subtitle || item.originGroup,
+    })),
+    query,
+  );
+}
+
+function dedupeCommandItems(items: CommandItem[]) {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    if (seen.has(item.id)) {
+      return false;
+    }
+    seen.add(item.id);
+    return true;
+  });
+}
+
 function applyTheme(mode: ThemeMode) {
   document.documentElement.dataset.uiTheme = mode;
 }
@@ -131,11 +161,13 @@ export function useCommandMenu() {
 export function CommandMenuProvider({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
+  const { pushToast } = useToast();
   const inputRef = useRef<HTMLInputElement>(null);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const deferredQuery = useDeferredValue(query);
   const [remoteItems, setRemoteItems] = useState<CommandItem[]>([]);
+  const [recentItems, setRecentItems] = useState<RecentCommandItem[]>([]);
   const [remotePending, setRemotePending] = useState(false);
   const [remoteError, setRemoteError] = useState<string | null>(null);
   const [activeIndex, setActiveIndex] = useState(-1);
@@ -143,7 +175,8 @@ export function CommandMenuProvider({ children }: { children: React.ReactNode })
   const [focusMode, setFocusMode] = useState(false);
 
   const staticItems = filterCommandItems(getStaticCommandItems(pathname), query);
-  const visibleItems = [...staticItems, ...remoteItems];
+  const recentCommandItems = buildRecentCommandItems(recentItems, query);
+  const visibleItems = dedupeCommandItems([...recentCommandItems, ...staticItems, ...remoteItems]);
   const groupedItems = buildGroupedItems(visibleItems);
 
   function closeMenu() {
@@ -164,6 +197,11 @@ export function CommandMenuProvider({ children }: { children: React.ReactNode })
     setTheme(nextTheme);
     applyTheme(nextTheme);
     localStorage.setItem(THEME_STORAGE_KEY, nextTheme);
+    pushToast({
+      tone: "success",
+      title: nextTheme === "night" ? "已切到夜读模式" : "已切到日间模式",
+      description: "主题切换已生效，后续页面会沿用当前阅读模式。",
+    });
   }
 
   function toggleFocusMode() {
@@ -171,10 +209,21 @@ export function CommandMenuProvider({ children }: { children: React.ReactNode })
     setFocusMode(nextValue);
     applyFocusMode(nextValue);
     localStorage.setItem(FOCUS_STORAGE_KEY, nextValue ? "1" : "0");
+    pushToast({
+      tone: nextValue ? "info" : "success",
+      title: nextValue ? "已进入专注模式" : "已退出专注模式",
+      description: nextValue ? "页面 chrome 已收起，适合继续沉浸编辑。" : "导航与辅助入口已恢复显示。",
+    });
     if (nextValue) {
       const requestFullscreen = document.documentElement.requestFullscreen;
       if (requestFullscreen) {
-        requestFullscreen.call(document.documentElement).catch(() => {});
+        requestFullscreen.call(document.documentElement).catch(() => {
+          pushToast({
+            tone: "warning",
+            title: "浏览器未进入全屏",
+            description: "专注模式已开启，但当前环境拒绝了全屏请求。",
+          });
+        });
       }
     } else if (document.fullscreenElement) {
       const exitFullscreen = document.exitFullscreen;
@@ -203,16 +252,40 @@ export function CommandMenuProvider({ children }: { children: React.ReactNode })
     if (!item) {
       return;
     }
+    try {
+      const nextRecentItems = mergeRecentCommandItems(recentItems, toRecentCommandItem(item));
+      setRecentItems(nextRecentItems);
+      localStorage.setItem(RECENT_COMMAND_STORAGE_KEY, JSON.stringify(nextRecentItems));
+    } catch {}
     executeAction(item.action);
   }
 
   useEffect(() => {
     const initialTheme = localStorage.getItem(THEME_STORAGE_KEY) === "night" ? "night" : "day";
     const initialFocusMode = localStorage.getItem(FOCUS_STORAGE_KEY) === "1";
+    const initialRecentItems = parseRecentCommandItems(localStorage.getItem(RECENT_COMMAND_STORAGE_KEY));
     setTheme(initialTheme);
     setFocusMode(initialFocusMode);
+    setRecentItems(initialRecentItems);
     applyTheme(initialTheme);
     applyFocusMode(initialFocusMode);
+  }, []);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setOpen((current) => !current);
+        return;
+      }
+      if (event.key === "Escape") {
+        setOpen(false);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
   }, []);
 
   useEffect(() => {
@@ -298,11 +371,32 @@ export function CommandMenuProvider({ children }: { children: React.ReactNode })
                   ref={inputRef}
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "ArrowDown") {
+                      event.preventDefault();
+                      setActiveIndex((current) => clampIndex(current + 1, visibleItems.length));
+                      return;
+                    }
+                    if (event.key === "ArrowUp") {
+                      event.preventDefault();
+                      setActiveIndex((current) => clampIndex(current - 1, visibleItems.length));
+                      return;
+                    }
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      activateItem(visibleItems[activeIndex] ?? visibleItems[0]);
+                      return;
+                    }
+                    if (event.key === "Escape") {
+                      event.preventDefault();
+                      closeMenu();
+                    }
+                  }}
                   placeholder="搜索命令、稿件、素材、打法"
                   className={commandMenuInputClassName}
                 />
                 <div className={commandMenuHeaderHintClassName}>
-                  先输入稿件标题、素材关键词或打法标签，也可以直接执行导航和主题命令。
+                  ⌘/Ctrl + K 打开；支持最近访问、稿件标题、素材关键词、打法标签和主题命令。
                 </div>
               </div>
             </div>
@@ -355,7 +449,7 @@ export function CommandMenuProvider({ children }: { children: React.ReactNode })
               ) : null}
             </div>
             <div className={commandMenuFooterClassName}>
-              <div>点击结果即可跳转、切换主题或进入沉浸模式。</div>
+              <div>支持点击或键盘上下选择，回车执行当前结果。</div>
               <div>{theme === "night" ? "当前主题：夜读" : "当前主题：日间"} · {focusMode ? "沉浸模式：已开启" : "沉浸模式：未开启"}</div>
             </div>
           </div>

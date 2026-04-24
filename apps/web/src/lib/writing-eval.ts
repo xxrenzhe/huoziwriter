@@ -35,6 +35,10 @@ type WritingEvalDatasetRow = {
   updated_at: string;
 };
 
+const PLAN21_OPENING_OPTIMIZER_DATASET_CODE = "plan21-opening-optimizer-v1";
+const PLAN21_OPENING_OPTIMIZER_SEED_CASE_COUNT = 30;
+const PLAN21_OPENING_OPTIMIZER_SCHEDULE_NAME = "Plan21 · Opening Optimizer 自动评测";
+
 type WritingEvalDatasetReadiness = {
   status: "ready" | "warning" | "blocked";
   enabledCaseCount: number;
@@ -107,6 +111,11 @@ type WritingEvalPlan17QualityFocusReport = {
     rhythmDeviationVsReadCompletionSampleCount: number;
     rhythmDeviationVsReadCompletionPValue: number | null;
   };
+  observationGaps: Array<{
+    key: string;
+    label: string;
+    count: number;
+  }>;
 };
 
 type WritingEvalPlan17QualityReport = {
@@ -2047,6 +2056,12 @@ function computeCorrelationPValue(correlation: number | null, sampleSize: number
   return 2 * (1 - computeNormalCdf(zScore));
 }
 
+function summarizeQualityObservationGaps(items: Array<{ key: string; label: string; count: number }>) {
+  return items
+    .filter((item) => item.count > 0)
+    .sort((left, right) => right.count - left.count || left.label.localeCompare(right.label));
+}
+
 function computeRank(values: number[]) {
   const sorted = values
     .map((value, index) => ({ value, index }))
@@ -2359,8 +2374,213 @@ async function ensureWritingEvalDatasetPresets() {
     existingCodes.add(preset.code);
   }
 
+  await ensurePlan21OpeningOptimizerEvaluationSeed();
   await normalizePlan17TopicItemCaseTaskTypes(presets.map((preset) => preset.code));
   return { createdCodes };
+}
+
+function buildPlan21OpeningOptimizerSeedCase(index: number) {
+  const taskTypes = ["tech_commentary", "business_breakdown", "experience_recap", "series_observation"] as const;
+  const difficultyLevels = ["light", "medium", "hard"] as const;
+  const patternSeeds = [
+    {
+      title: "AI 写作第一屏为什么留不住人",
+      badOpening: "在当今 AI 时代，内容创作正在经历深刻变化。",
+      goodOpening: "上周我帮朋友改稿，改到一半我把电脑关了。",
+      forbiddenPattern: "D1 大而空背景铺垫",
+    },
+    {
+      title: "公众号团队为什么总在发布前返工",
+      badOpening: "大家好，我是内容团队负责人，今天聊聊公众号发布效率。",
+      goodOpening: "周二晚上十点，编辑把稿子退回来，只留了一句：草稿箱又卡住了。",
+      forbiddenPattern: "D2 自我介绍开场",
+    },
+    {
+      title: "标题合格但完读率不动的真实原因",
+      badOpening: "某份报告显示，用户注意力正在快速下降。",
+      goodOpening: "标题点开率涨了以后，我们反而更快看见了另一个问题：读者三秒就走。",
+      forbiddenPattern: "D3 引用 / 数据诱饵",
+    },
+    {
+      title: "把好故事埋在第三段会发生什么",
+      badOpening: "最近很多作者都在复盘自己的写作流程，试图找到新的增长方式。",
+      goodOpening: "我把原稿第三段挪到第一句后，那篇文章的开头终于像人在说话了。",
+      forbiddenPattern: "D4 钩子后置",
+    },
+  ];
+  const seed = patternSeeds[index % patternSeeds.length];
+  const caseNo = index + 1;
+  return {
+    taskCode: `plan21-opening-${String(caseNo).padStart(2, "0")}`,
+    taskType: taskTypes[index % taskTypes.length],
+    topicTitle: `${seed.title} · 样本 ${caseNo}`,
+    difficultyLevel: difficultyLevels[index % difficultyLevels.length],
+    inputPayload: {
+      readerProfile: "月发文 >=4 篇的公众号作者，熟悉 AI 辅助写作但反感 AI 腔。",
+      targetEmotion: index % 2 === 0 ? "先被现场抓住，再接受判断" : "先看到冲突，再愿意继续读",
+      sourceFacts: [
+        "公众号读者注意力窗口集中在前 200 字。",
+        "开头禁区会显著增加 AI 腔和跳出风险。",
+        `样本 ${caseNo} 用于 opening_optimizer 诊断与改写回归。`,
+      ],
+      knowledgeCards: [
+        "四种死法：大背景、自我介绍、引用数据诱饵、钩子后置。",
+        "高上限开头优先选择具体场景、冲突反差或判断前置。",
+      ],
+      historyReferences: [
+        "plan19 标题闸门",
+        "plan21 开头模式学习",
+      ],
+      draftOpening: seed.badOpening,
+    },
+    expectedConstraints: {
+      forbiddenPattern: seed.forbiddenPattern,
+      mustReturnRewriteDirections: 2,
+      diagnoseDimensions: ["abstractLevel", "paddingLevel", "hookDensity", "informationFrontLoading"],
+      preferredPatterns: ["scene_entry", "conflict_entry", "judgement_first"],
+    },
+    viralTargets: {
+      titleGoal: "标题承诺必须在前 200 字兑现一部分。",
+      hookGoal: "第一句必须避开禁区，并给出具体场景、冲突或判断。",
+      shareTriggerGoal: "改写后应让读者愿意把这篇转给同样卡在开头的人。",
+    },
+    stageArtifactPayloads: {
+      outlinePlanning: {
+        workingTitle: seed.title,
+        openingHook: seed.badOpening,
+        openingOptions: [
+          {
+            text: seed.goodOpening,
+            patternCode: "scene_entry",
+            patternLabel: "场景切入",
+            hookScore: 86,
+            qualityCeiling: "A",
+            forbiddenHits: [],
+            isRecommended: true,
+            recommendReason: "具体动作先行，能快速压住 AI 腔。",
+          },
+        ],
+      },
+      deepWriting: {
+        openingStrategy: seed.badOpening,
+        openingPatternLabel: "现象信号",
+        mustUseFacts: [
+          "前 200 字决定读者是否继续读。",
+          "禁区开头需要改为具体场景、冲突反差或判断前置。",
+        ],
+      },
+    },
+    referenceGoodOutput: seed.goodOpening,
+    referenceBadPatterns: [seed.badOpening, seed.forbiddenPattern],
+  };
+}
+
+async function ensurePlan21OpeningOptimizerEvaluationSeed() {
+  const db = getDatabase();
+  const dataset = await db.queryOne<{ id: number; status: string }>(
+    "SELECT id, status FROM writing_eval_datasets WHERE code = ?",
+    [PLAN21_OPENING_OPTIMIZER_DATASET_CODE],
+  );
+  if (!dataset) {
+    return;
+  }
+
+  const now = new Date().toISOString();
+  for (let index = 0; index < PLAN21_OPENING_OPTIMIZER_SEED_CASE_COUNT; index += 1) {
+    const spec = buildPlan21OpeningOptimizerSeedCase(index);
+    const exists = await db.queryOne<{ id: number }>(
+      "SELECT id FROM writing_eval_cases WHERE dataset_id = ? AND task_code = ?",
+      [dataset.id, spec.taskCode],
+    );
+    if (exists) {
+      continue;
+    }
+    await db.exec(
+      `INSERT INTO writing_eval_cases (
+        dataset_id, task_code, task_type, topic_title, source_type, source_ref, source_label, input_payload_json, expected_constraints_json,
+        viral_targets_json, stage_artifact_payloads_json, reference_good_output, reference_bad_patterns_json, difficulty_level, is_enabled, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        dataset.id,
+        spec.taskCode,
+        spec.taskType,
+        spec.topicTitle,
+        "seed",
+        PLAN21_OPENING_OPTIMIZER_DATASET_CODE,
+        "Plan21 开头专项默认样本",
+        spec.inputPayload,
+        spec.expectedConstraints,
+        spec.viralTargets,
+        spec.stageArtifactPayloads,
+        spec.referenceGoodOutput,
+        spec.referenceBadPatterns,
+        spec.difficultyLevel,
+        true,
+        now,
+        now,
+      ],
+    );
+  }
+
+  const sampleCount = await db.queryOne<{ count: number }>(
+    "SELECT COUNT(*) AS count FROM writing_eval_cases WHERE dataset_id = ?",
+    [dataset.id],
+  );
+  await db.exec(
+    "UPDATE writing_eval_datasets SET sample_count = ?, status = ?, updated_at = ? WHERE id = ?",
+    [sampleCount?.count ?? 0, "active", now, dataset.id],
+  );
+
+  const promptVersions = await db.query<{ prompt_id: string; version: string; is_active: number | boolean }>(
+    `SELECT prompt_id, version, is_active
+     FROM prompt_versions
+     WHERE prompt_id = ?
+     ORDER BY is_active DESC, created_at DESC`,
+    ["opening_optimizer"],
+  );
+  const activeOpeningPrompt = promptVersions.find((item) => Boolean(item.is_active))
+    ?? promptVersions[0]
+    ?? null;
+  const promptRef = activeOpeningPrompt
+    ? `${activeOpeningPrompt.prompt_id}@${activeOpeningPrompt.version}`
+    : "opening_optimizer@v1.0.0";
+  const scheduleExists = await db.queryOne<{ id: number }>(
+    "SELECT id FROM writing_eval_run_schedules WHERE dataset_id = ? AND name = ?",
+    [dataset.id, PLAN21_OPENING_OPTIMIZER_SCHEDULE_NAME],
+  );
+  if (scheduleExists) {
+    return;
+  }
+  await db.exec(
+    `INSERT INTO writing_eval_run_schedules (
+      name, dataset_id, base_version_type, base_version_ref, candidate_version_type, candidate_version_ref,
+      experiment_mode, trigger_mode, agent_strategy, decision_mode, priority, cadence_hours, next_run_at, last_dispatched_at, last_run_id, last_error,
+      is_enabled, summary, created_by, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      PLAN21_OPENING_OPTIMIZER_SCHEDULE_NAME,
+      dataset.id,
+      "prompt_version",
+      promptRef,
+      "prompt_version",
+      promptRef,
+      "lead_only",
+      "scheduled",
+      "lead_template",
+      "manual_review",
+      90,
+      24,
+      now,
+      null,
+      null,
+      null,
+      true,
+      "plan21 opening_optimizer 默认自动评测闭环；人工审核决议，先验证闭环可触发。",
+      null,
+      now,
+      now,
+    ],
+  );
 }
 
 async function normalizePlan17TopicItemCaseTaskTypes(datasetCodes: string[]) {
@@ -6076,7 +6296,11 @@ export async function queuePlan17TopicFissionBenchmarkRuns(input?: {
       })
       .filter((item): item is string => Boolean(item));
     if (missingProviderScenes.length > 0) {
-      throw new Error(`topicFission benchmark 无法执行：${missingProviderScenes.join("；")}`);
+      throw new Error(
+        `topicFission benchmark 无法执行：${missingProviderScenes.join("；")}。`
+        + "请先补齐 provider 凭据，或先运行 `pnpm plan17:acceptance-blockers` 查看当前阻塞明细。"
+        + "`--skip-provider-preflight` 只会跳过预检，不会绕过真实 provider 调用。",
+      );
     }
   }
   const existingRuns = await db.query<{
@@ -6974,6 +7198,103 @@ export async function getWritingEvalRuns() {
      ORDER BY r.created_at DESC, r.id DESC`,
   );
   return rows.map(mapRun);
+}
+
+function summarizeRunScoreComparison(results: ReturnType<typeof mapRunResult>[]) {
+  return {
+    caseCount: results.length,
+    averageTotalScore: averageNumbers(results.map((item) => item.totalScore)),
+    averageQualityScore: averageNumbers(results.map((item) => item.qualityScore)),
+    averageViralScore: averageNumbers(results.map((item) => item.viralScore)),
+    averageHookScore: averageNumbers(results.map((item) => item.hookScore)),
+  };
+}
+
+function deltaNumber(left: number | null, right: number | null) {
+  return left == null || right == null ? null : Number((right - left).toFixed(4));
+}
+
+export async function getWritingEvalPrimaryShadowComparison(input: {
+  primaryRunId: number;
+  shadowRunId: number;
+}) {
+  await ensureExtendedProductSchema();
+  if (!Number.isInteger(input.primaryRunId) || input.primaryRunId <= 0) throw new Error("primary run 无效");
+  if (!Number.isInteger(input.shadowRunId) || input.shadowRunId <= 0) throw new Error("shadow run 无效");
+  const db = getDatabase();
+  const runs = await db.query<WritingOptimizationRunRow>(
+    `SELECT r.id, r.run_code, r.dataset_id, r.source_schedule_id, r.base_version_type, r.base_version_ref, r.candidate_version_type,
+            r.candidate_version_ref, r.experiment_mode, r.trigger_mode, r.decision_mode, r.resolution_status, r.status, r.summary, r.score_summary_json, r.error_message,
+            r.started_at, r.finished_at, r.resolved_at, r.created_by, r.created_at, d.name AS dataset_name, s.name AS source_schedule_name
+     FROM writing_optimization_runs r
+     INNER JOIN writing_eval_datasets d ON d.id = r.dataset_id
+     LEFT JOIN writing_eval_run_schedules s ON s.id = r.source_schedule_id
+     WHERE r.id IN (?, ?)
+     ORDER BY r.id ASC`,
+    [input.primaryRunId, input.shadowRunId],
+  );
+  const primaryRun = runs.find((item) => item.id === input.primaryRunId);
+  const shadowRun = runs.find((item) => item.id === input.shadowRunId);
+  if (!primaryRun || !shadowRun) throw new Error("primary/shadow run 不存在");
+  if (primaryRun.dataset_id !== shadowRun.dataset_id) throw new Error("primary/shadow run 必须来自同一评测集");
+
+  const resultRows = await db.query<WritingOptimizationResultRow>(
+    `SELECT r.id, r.run_id, r.case_id, r.generated_title, r.generated_lead, r.generated_markdown,
+            r.style_score, r.language_score, r.density_score, r.emotion_score, r.structure_score,
+            r.topic_momentum_score, r.headline_score, r.hook_score, r.shareability_score, r.reader_value_score,
+            r.novelty_score, r.platform_fit_score, r.quality_score, r.viral_score, r.factual_risk_penalty,
+            r.ai_noise_penalty, r.total_score, r.judge_payload_json, r.created_at,
+            c.task_code, c.task_type, c.topic_title, c.difficulty_level
+     FROM writing_optimization_results r
+     INNER JOIN writing_eval_cases c ON c.id = r.case_id
+     WHERE r.run_id IN (?, ?)
+     ORDER BY c.task_code ASC, r.id ASC`,
+    [input.primaryRunId, input.shadowRunId],
+  );
+  const primaryResults = resultRows.filter((item) => item.run_id === input.primaryRunId).map(mapRunResult);
+  const shadowResults = resultRows.filter((item) => item.run_id === input.shadowRunId).map(mapRunResult);
+  const primaryByCaseId = new Map(primaryResults.map((item) => [item.caseId, item]));
+  const pairedCases = shadowResults
+    .map((shadow) => {
+      const primary = primaryByCaseId.get(shadow.caseId);
+      if (!primary) return null;
+      return {
+        caseId: shadow.caseId,
+        taskCode: shadow.taskCode,
+        topicTitle: shadow.topicTitle,
+        primaryTotalScore: primary.totalScore,
+        shadowTotalScore: shadow.totalScore,
+        deltaTotalScore: deltaNumber(primary.totalScore, shadow.totalScore),
+        primaryQualityScore: primary.qualityScore,
+        shadowQualityScore: shadow.qualityScore,
+        deltaQualityScore: deltaNumber(primary.qualityScore, shadow.qualityScore),
+        primaryViralScore: primary.viralScore,
+        shadowViralScore: shadow.viralScore,
+        deltaViralScore: deltaNumber(primary.viralScore, shadow.viralScore),
+        primaryHookScore: primary.hookScore,
+        shadowHookScore: shadow.hookScore,
+        deltaHookScore: deltaNumber(primary.hookScore, shadow.hookScore),
+      };
+    })
+    .filter((item): item is NonNullable<typeof item> => item != null);
+
+  const primarySummary = summarizeRunScoreComparison(primaryResults);
+  const shadowSummary = summarizeRunScoreComparison(shadowResults);
+  return {
+    datasetId: primaryRun.dataset_id,
+    primaryRun: mapRun(primaryRun),
+    shadowRun: mapRun(shadowRun),
+    primary: primarySummary,
+    shadow: shadowSummary,
+    delta: {
+      totalScore: deltaNumber(primarySummary.averageTotalScore, shadowSummary.averageTotalScore),
+      qualityScore: deltaNumber(primarySummary.averageQualityScore, shadowSummary.averageQualityScore),
+      viralScore: deltaNumber(primarySummary.averageViralScore, shadowSummary.averageViralScore),
+      hookScore: deltaNumber(primarySummary.averageHookScore, shadowSummary.averageHookScore),
+    },
+    pairedCaseCount: pairedCases.length,
+    pairedCases,
+  };
 }
 
 async function getLatestWritingEvalVersionLedgerByRef(
@@ -8616,12 +8937,27 @@ export async function getPlan17QualityReport(): Promise<WritingEvalPlan17Quality
     const evidenceExpectedTagCount = evidenceLabelItems.reduce((sum, item) => sum + item.expectedTags.length, 0);
     const evidenceDetectedTagCount = evidenceLabelItems.reduce((sum, item) => sum + item.detectedTags.length, 0);
     const evidenceOverlapTagCount = evidenceLabelItems.reduce((sum, item) => sum + item.overlapCount, 0);
+    const strategyManualScoreSpearman = strategyManualPairs.length >= 3
+      ? computeSpearmanCorrelation(
+          strategyManualPairs.map((item) => item.strategyStrengthScore),
+          strategyManualPairs.map((item) => item.manualScore),
+        )
+      : null;
+    const evidenceLabelPrecision =
+      evidenceDetectedTagCount > 0
+        ? evidenceOverlapTagCount / evidenceDetectedTagCount
+        : null;
+    const evidenceLabelRecall =
+      evidenceExpectedTagCount > 0
+        ? evidenceOverlapTagCount / evidenceExpectedTagCount
+        : null;
     const rhythmDeviationCorrelation = rhythmDeviationPairs.length >= 3
       ? computePearsonCorrelation(
           rhythmDeviationPairs.map((item) => item.rhythmDeviation),
           rhythmDeviationPairs.map((item) => item.readCompletionRate),
         )
       : null;
+    const rhythmDeviationPValue = computeCorrelationPValue(rhythmDeviationCorrelation, rhythmDeviationPairs.length);
     const topicFissionSceneBreakdown = focusKey === "topic_fission"
       ? (focusMeta?.promptIds ?? [])
           .map((promptId) => {
@@ -8692,6 +9028,102 @@ export async function getPlan17QualityReport(): Promise<WritingEvalPlan17Quality
             };
           })
       : [];
+    const topicFissionStableCaseGap = topicFissionSceneBreakdown.reduce(
+      (sum, item) => sum + Math.max(20 - Number(item.stableCaseCount || 0), 0),
+      0,
+    );
+    const topicFissionHitRateGapCount = topicFissionSceneBreakdown.filter(
+      (item) => item.stableHitRate != null && item.stableHitRate < 0.7,
+    ).length;
+    const topicFissionMissingStableRateCount = topicFissionSceneBreakdown.filter((item) => item.stableHitRate == null).length;
+    const strategyManualGap = Math.max(20 - strategyManualPairs.length, 0);
+    const evidenceLabelGap = Math.max(20 - evidenceLabelItems.length, 0);
+    const rhythmPairGap = Math.max(20 - rhythmDeviationPairs.length, 0);
+    const observationGaps = summarizeQualityObservationGaps(
+      focusKey === "topic_fission"
+        ? [
+            {
+              key: "stable-case-gap",
+              label: "三场景距每场景 20 个 stable case 仍差",
+              count: topicFissionStableCaseGap,
+            },
+            {
+              key: "missing-stable-hit-rate",
+              label: "还没有 stable 命中率的场景数",
+              count: topicFissionMissingStableRateCount,
+            },
+            {
+              key: "below-hit-threshold",
+              label: "stable 命中率仍低于 70% 的场景数",
+              count: topicFissionHitRateGapCount,
+            },
+          ]
+        : focusKey === "strategy_strength"
+          ? [
+              {
+                key: "manual-score-gap",
+                label: "距 20 条人工判分样本仍差",
+                count: strategyManualGap,
+              },
+              {
+                key: "spearman-threshold-gap",
+                label: "Spearman 仍未达到 0.7",
+                count:
+                  strategyManualPairs.length >= 20
+                  && (strategyManualScoreSpearman ?? Number.NEGATIVE_INFINITY) < 0.7
+                    ? 1
+                    : 0,
+              },
+            ]
+          : focusKey === "evidence_hook"
+            ? [
+                {
+                  key: "manual-label-gap",
+                  label: "距 20 条人工标签样本仍差",
+                  count: evidenceLabelGap,
+                },
+                {
+                key: "precision-threshold-gap",
+                label: "precision 仍未达到 75%",
+                count:
+                  evidenceLabelItems.length >= 20
+                    && (evidenceLabelPrecision ?? Number.NEGATIVE_INFINITY) < 0.75
+                      ? 1
+                      : 0,
+                },
+                {
+                key: "recall-threshold-gap",
+                label: "recall 仍未达到 80%",
+                count:
+                  evidenceLabelItems.length >= 20
+                    && (evidenceLabelRecall ?? Number.NEGATIVE_INFINITY) < 0.8
+                      ? 1
+                      : 0,
+                },
+              ]
+            : focusKey === "rhythm_consistency"
+              ? [
+                  {
+                    key: "paired-sample-gap",
+                    label: "距 20 条节奏-完读率配对样本仍差",
+                    count: rhythmPairGap,
+                  },
+                  {
+                    key: "significance-gap",
+                    label: "节奏负相关显著性仍未达标",
+                    count:
+                      rhythmDeviationPairs.length >= 20
+                      && !(
+                        rhythmDeviationCorrelation != null
+                        && rhythmDeviationCorrelation < 0
+                        && (rhythmDeviationPValue ?? Number.POSITIVE_INFINITY) < 0.05
+                      )
+                        ? 1
+                        : 0,
+                  },
+                ]
+              : [],
+    );
 
     return {
       key: focusKey,
@@ -8723,27 +9155,16 @@ export async function getPlan17QualityReport(): Promise<WritingEvalPlan17Quality
               )
             : null,
         proxyScoreVsObservedSampleCount: scoreVsObservedPairs.length,
-        strategyManualScoreSpearman:
-          strategyManualPairs.length >= 3
-            ? computeSpearmanCorrelation(
-                strategyManualPairs.map((item) => item.strategyStrengthScore),
-                strategyManualPairs.map((item) => item.manualScore),
-              )
-            : null,
+        strategyManualScoreSpearman,
         strategyManualScoreSampleCount: strategyManualPairs.length,
-        evidenceLabelPrecision:
-          evidenceDetectedTagCount > 0
-            ? evidenceOverlapTagCount / evidenceDetectedTagCount
-            : null,
-        evidenceLabelRecall:
-          evidenceExpectedTagCount > 0
-            ? evidenceOverlapTagCount / evidenceExpectedTagCount
-            : null,
+        evidenceLabelPrecision,
+        evidenceLabelRecall,
         evidenceLabelSampleCount: evidenceLabelItems.length,
         rhythmDeviationVsReadCompletionCorrelation: rhythmDeviationCorrelation,
         rhythmDeviationVsReadCompletionSampleCount: rhythmDeviationPairs.length,
-        rhythmDeviationVsReadCompletionPValue: computeCorrelationPValue(rhythmDeviationCorrelation, rhythmDeviationPairs.length),
+        rhythmDeviationVsReadCompletionPValue: rhythmDeviationPValue,
       },
+      observationGaps,
     } satisfies WritingEvalPlan17QualityFocusReport;
   });
 

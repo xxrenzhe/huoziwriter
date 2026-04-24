@@ -3318,6 +3318,9 @@ async function generateWithPrompt(input: {
       systemPrompt: promptMeta.content,
       systemSegments,
       userPrompt: input.userPrompt,
+      observationMeta: {
+        articleId: input.context.article.id,
+      },
       temperature: 0.2,
       rolloutUserId: input.context.userId,
     });

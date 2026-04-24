@@ -1,7 +1,7 @@
 import { Button, Input } from "@huoziwriter/ui";
 import Link from "next/link";
 import { formatArticleStatusLabel } from "@/lib/article-status-label";
-import { formatKnowledgeStatus } from "@/lib/article-workspace-formatters";
+import { formatArticleMainStepStatus, formatKnowledgeStatus } from "@/lib/article-workspace-formatters";
 import type { ArticleStatus } from "@/lib/domain";
 import type { LanguageGuardHit } from "@/lib/language-guard-core";
 
@@ -21,7 +21,9 @@ type KnowledgeCardPanelItemLike = {
 };
 
 type MainStepLike = {
+  code: string;
   title: string;
+  statusLabel: string;
 };
 
 type StageLike = {
@@ -31,6 +33,7 @@ type StageLike = {
 type MobileInspectorSheetProps = {
   open: boolean;
   currentArticleMainStep: MainStepLike;
+  articleMainSteps: MainStepLike[];
   currentStage: StageLike;
   status: ArticleStatus | "generating";
   showLeftWorkspaceRail: boolean;
@@ -61,6 +64,7 @@ type MobileInspectorSheetProps = {
 export function MobileInspectorSheet({
   open,
   currentArticleMainStep,
+  articleMainSteps,
   currentStage,
   status,
   showLeftWorkspaceRail,
@@ -132,6 +136,27 @@ export function MobileInspectorSheet({
               <span className="border border-lineStrong bg-surface px-3 py-2 text-xs text-inkMuted">
                 {status === "generating" ? "生成中" : formatArticleStatusLabel(status)}
               </span>
+            </div>
+          </section>
+
+          <section className="border border-lineStrong/40 bg-surfaceWarm p-4">
+            <div className="text-xs uppercase tracking-[0.18em] text-inkMuted">稿件六步链路</div>
+            <div className="mt-3 space-y-2">
+              {articleMainSteps.map((step, index) => (
+                <div key={step.code} className="flex items-center justify-between gap-3 border border-lineStrong bg-surface px-4 py-3">
+                  <div className="min-w-0">
+                    <div className="text-[11px] uppercase tracking-[0.18em] text-inkMuted">
+                      步骤 {String(index + 1).padStart(2, "0")}
+                    </div>
+                    <div className="mt-1 text-sm text-ink">{step.title}</div>
+                  </div>
+                  <span className="shrink-0 text-xs text-inkSoft">
+                    {formatArticleMainStepStatus(
+                      (step.statusLabel || "pending") as "pending" | "current" | "completed" | "needs_attention",
+                    )}
+                  </span>
+                </div>
+              ))}
             </div>
           </section>
 

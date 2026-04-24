@@ -3,7 +3,7 @@
 import { Button, Input, Select, buttonStyles, cn, surfaceCardStyles } from "@huoziwriter/ui";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FormEvent, useState } from "react";
+import { type FormEvent, type KeyboardEvent, useState } from "react";
 import { formatArticleStatusLabel } from "@/lib/article-status-label";
 
 const writerPaperEmptyStateSurfaceClassName =
@@ -12,7 +12,72 @@ const writerPaperPromptCardClassName = cn(surfaceCardStyles({ padding: "sm" }), 
 const writerPaperPrimaryActionClassName = buttonStyles({ variant: "primary" });
 const writerPaperSecondaryActionClassName = buttonStyles({ variant: "secondary" });
 const createArticleMessageClassName = "text-sm text-cinnabar";
-const articleListCardClassName = cn("block", surfaceCardStyles({ padding: "md", interactive: true }));
+const articleTableShellClassName = cn(surfaceCardStyles(), "overflow-hidden border-lineStrong bg-surface shadow-none");
+const articleTableDesktopClassName = "hidden overflow-x-auto lg:block";
+const articleTableMobileListClassName = "grid gap-3 p-4 lg:hidden";
+const articleTableHeadCellClassName = "px-5 py-4 text-left text-xs uppercase tracking-[0.2em] text-inkMuted";
+const articleTableBodyCellClassName = "px-5 py-4 align-top";
+const articleTableRowBaseClassName = "border-t border-line transition-colors";
+const articleListMetaChipClassName = cn(surfaceCardStyles({ tone: "subtle", padding: "sm" }), "px-2.5 py-1 text-[11px] text-inkSoft shadow-none");
+const articleListStatusChipBaseClassName = "inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-medium";
+const articleListOpenLinkClassName = buttonStyles({ variant: "secondary" });
+const articleListCreateLinkClassName = buttonStyles({ variant: "primary" });
+const articleListMobileCardClassName = cn(surfaceCardStyles({ padding: "md", interactive: true }), "border-lineStrong bg-surface shadow-none");
+
+function formatArticleUpdatedAt(value: string) {
+  const timestamp = new Date(value).getTime();
+  if (!Number.isFinite(timestamp)) {
+    return {
+      shortLabel: "更新时间未知",
+      fullLabel: value,
+    };
+  }
+  const diffMs = Date.now() - timestamp;
+  const minute = 60_000;
+  const hour = 60 * minute;
+  const day = 24 * hour;
+  const fullLabel = new Date(value).toLocaleString("zh-CN");
+  if (diffMs < hour) {
+    const minutes = Math.max(1, Math.floor(diffMs / minute));
+    return {
+      shortLabel: `${minutes} 分钟前`,
+      fullLabel,
+    };
+  }
+  if (diffMs < day) {
+    const hours = Math.max(1, Math.floor(diffMs / hour));
+    return {
+      shortLabel: `${hours} 小时前`,
+      fullLabel,
+    };
+  }
+  const days = Math.max(1, Math.floor(diffMs / day));
+  return {
+    shortLabel: `${days} 天前`,
+    fullLabel,
+  };
+}
+
+function getArticleStatusChipClassName(status: string) {
+  if (status === "published" || status === "published_synced" || status === "result_reviewed") {
+    return cn(articleListStatusChipBaseClassName, "border-emerald-200 bg-emerald-50 text-emerald-700");
+  }
+  if (status === "draft" || status === "writing") {
+    return cn(articleListStatusChipBaseClassName, "border-amber-200 bg-amber-50 text-amber-700");
+  }
+  if (status === "archived") {
+    return cn(articleListStatusChipBaseClassName, "border-slate-200 bg-slate-100 text-slate-600");
+  }
+  return cn(articleListStatusChipBaseClassName, "border-cinnabar/20 bg-cinnabar/5 text-cinnabar");
+}
+
+function handleSelectableArticleKeyDown(event: KeyboardEvent<HTMLElement>, onOpen: () => void) {
+  if (event.key !== "Enter" && event.key !== " ") {
+    return;
+  }
+  event.preventDefault();
+  onOpen();
+}
 
 type WriterPaperEmptyStateProps = {
   eyebrow: string;
@@ -112,19 +177,19 @@ export function CreateArticleForm({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-3">
-      <div className="flex flex-wrap gap-3">
+      <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(220px,260px)_auto]">
         <Input
           aria-label="输入稿件标题"
           value={title}
           onChange={(event) => setTitle(event.target.value)}
           placeholder="输入稿件标题"
-          className="min-w-[240px] flex-1"
+          className="min-w-0 w-full"
         />
         <Select
           aria-label="select control"
           value={seriesId}
           onChange={(event) => setSeriesId(event.target.value)}
-          className="min-w-[240px]"
+          className="min-w-0 w-full"
         >
           <option value="">{seriesOptions.length > 0 ? "选择稿件归属系列" : "请先创建系列"}</option>
           {seriesOptions.map((item) => (
@@ -133,7 +198,7 @@ export function CreateArticleForm({
             </option>
           ))}
         </Select>
-        <Button disabled={loading || seriesOptions.length === 0} type="submit" variant="primary">
+        <Button disabled={loading || seriesOptions.length === 0} type="submit" variant="primary" className="w-full md:w-auto">
           {loading ? "创建中…" : "新建稿件"}
         </Button>
       </div>
@@ -189,21 +254,129 @@ export function ArticleList({
     );
   }
 
+  const router = useRouter();
+
   return (
-    <div className="space-y-3">
-      {articles.map((article) => (
-        <Link key={article.id} href={`/articles/${article.id}`} className={articleListCardClassName}>
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="font-serifCn text-2xl text-ink text-balance">{article.title}</div>
-            <div className="text-xs uppercase tracking-[0.2em] text-inkMuted">{formatArticleStatusLabel(article.status)}</div>
-          </div>
-          {article.seriesName ? <div className="mt-3 text-sm text-inkSoft">归属系列：{article.seriesName}</div> : null}
-          {article.targetPackage ? <div className="mt-2 text-sm text-inkSoft">目标包：{article.targetPackage}</div> : null}
-          {article.topicBacklogName ? <div className="mt-2 text-sm text-inkSoft">选题库：{article.topicBacklogName}</div> : null}
-          {article.topicBacklogBatchId ? <div className="mt-2 text-sm text-inkSoft">生成批次：{article.topicBacklogBatchId}</div> : null}
-          <div className="mt-3 text-sm text-inkMuted">最后更新：{new Date(article.updatedAt).toLocaleString("zh-CN")}</div>
+    <div className={articleTableShellClassName}>
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-4 py-4">
+        <div className="min-w-0">
+          <div className="text-xs uppercase tracking-[0.24em] text-inkMuted">DataTable</div>
+          <div className="mt-2 text-sm text-inkSoft">桌面端优先扫读标题、系列、状态与更新时间；移动端自动切成紧凑稿件卡片。</div>
+        </div>
+        <Link href="/articles#create-article" className={articleListCreateLinkClassName}>
+          新建稿件
         </Link>
-      ))}
+      </div>
+
+      <div className={articleTableDesktopClassName}>
+        <table className="w-full min-w-[980px] text-left text-sm">
+          <thead className="bg-paper/70">
+            <tr>
+              <th className={articleTableHeadCellClassName}>标题</th>
+              <th className={articleTableHeadCellClassName}>系列</th>
+              <th className={articleTableHeadCellClassName}>状态</th>
+              <th className={articleTableHeadCellClassName}>目标 / 选题</th>
+              <th className={articleTableHeadCellClassName}>更新时间</th>
+              <th className={articleTableHeadCellClassName}>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            {articles.map((article) => {
+              const href = `/articles/${article.id}`;
+              const updatedAt = formatArticleUpdatedAt(article.updatedAt);
+              return (
+                <tr
+                  key={article.id}
+                  role="link"
+                  tabIndex={0}
+                  className={cn(articleTableRowBaseClassName, "cursor-pointer hover:bg-paper/70 focus-visible:bg-paper/70")}
+                  onClick={() => router.push(href)}
+                  onDoubleClick={() => window.open(href, "_blank", "noopener,noreferrer")}
+                  onKeyDown={(event) => handleSelectableArticleKeyDown(event, () => router.push(href))}
+                >
+                  <td className={articleTableBodyCellClassName}>
+                    <div className="max-w-[360px]">
+                      <div className="font-serifCn text-xl text-ink text-balance">{article.title}</div>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {article.topicBacklogName ? <span className={articleListMetaChipClassName}>选题库：{article.topicBacklogName}</span> : null}
+                        {article.topicBacklogBatchId ? <span className={articleListMetaChipClassName}>批次：{article.topicBacklogBatchId}</span> : null}
+                      </div>
+                    </div>
+                  </td>
+                  <td className={articleTableBodyCellClassName}>
+                    <div className="text-sm text-ink">{article.seriesName || "未归属系列"}</div>
+                  </td>
+                  <td className={articleTableBodyCellClassName}>
+                    <span className={getArticleStatusChipClassName(article.status)}>{formatArticleStatusLabel(article.status)}</span>
+                  </td>
+                  <td className={articleTableBodyCellClassName}>
+                    <div className="space-y-2">
+                      <div className="text-sm text-ink">{article.targetPackage || "未设置目标包"}</div>
+                      <div className="text-xs text-inkMuted">优先从这里判断这篇稿当前服务的结果目标。</div>
+                    </div>
+                  </td>
+                  <td className={articleTableBodyCellClassName}>
+                    <time dateTime={article.updatedAt} title={updatedAt.fullLabel} className="block text-sm text-ink">
+                      {updatedAt.shortLabel}
+                    </time>
+                    <div className="mt-1 text-xs text-inkMuted">{updatedAt.fullLabel}</div>
+                  </td>
+                  <td className={articleTableBodyCellClassName}>
+                    <div className="flex flex-wrap gap-2" onClick={(event) => event.stopPropagation()}>
+                      <Link href={href} className={articleListOpenLinkClassName}>
+                        打开
+                      </Link>
+                      <Link href={`${href}?step=strategy`} className={articleListOpenLinkClassName}>
+                        继续推进
+                      </Link>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      <div className={articleTableMobileListClassName}>
+        {articles.map((article) => {
+          const href = `/articles/${article.id}`;
+          const updatedAt = formatArticleUpdatedAt(article.updatedAt);
+          return (
+            <article
+              key={article.id}
+              role="link"
+              tabIndex={0}
+              onClick={() => router.push(href)}
+              onKeyDown={(event) => handleSelectableArticleKeyDown(event, () => router.push(href))}
+              className={articleListMobileCardClassName}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="font-serifCn text-2xl text-ink text-balance">{article.title}</div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <span className={articleListMetaChipClassName}>{article.seriesName || "未归属系列"}</span>
+                    <span className={getArticleStatusChipClassName(article.status)}>{formatArticleStatusLabel(article.status)}</span>
+                    {article.targetPackage ? <span className={articleListMetaChipClassName}>{article.targetPackage}</span> : null}
+                  </div>
+                  <div className="mt-3 text-sm text-inkSoft">
+                    {article.topicBacklogName ? `选题库：${article.topicBacklogName}` : "还没挂到选题库"}
+                    {article.topicBacklogBatchId ? ` · 批次：${article.topicBacklogBatchId}` : ""}
+                  </div>
+                  <time dateTime={article.updatedAt} title={updatedAt.fullLabel} className="mt-3 block text-xs text-inkMuted">
+                    更新于 {updatedAt.shortLabel}
+                  </time>
+                </div>
+                <div className="shrink-0" onClick={(event) => event.stopPropagation()}>
+                  <Link href={href} className={articleListOpenLinkClassName}>
+                    打开
+                  </Link>
+                </div>
+              </div>
+            </article>
+          );
+        })}
+      </div>
     </div>
   );
 }

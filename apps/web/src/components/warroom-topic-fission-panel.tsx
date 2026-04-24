@@ -12,11 +12,13 @@ const signalCardClassName = cn(surfaceCardStyles({ tone: "highlight", padding: "
 const candidateCardClassName = cn(surfaceCardStyles({ padding: "sm" }), "border-lineStrong bg-surface shadow-none");
 const weakCandidateCardClassName = cn(candidateCardClassName, "opacity-70");
 const engineToggleClassName = "min-h-0 px-3 py-2 text-xs";
+const destinationCardClassName = cn(surfaceCardStyles({ tone: "highlight", padding: "sm" }), "border-lineStrong bg-surface shadow-none");
 
 type WarroomTopicLite = {
   id: number;
   title: string;
   suggestedSeriesId: number | null;
+  suggestedSeriesName?: string | null;
 };
 
 type SeriesOptionLite = {
@@ -126,6 +128,17 @@ export function WarroomTopicFissionPanel({
   );
   const hasImaKnowledgeBase = imaKnowledgeBases.length > 0;
   const defaultImaKnowledgeBase = imaKnowledgeBases.find((item) => item.isDefault) ?? imaKnowledgeBases[0] ?? null;
+  const selectedSeriesId = seriesId ? Number(seriesId) : null;
+  const selectedSeries = selectedSeriesId ? seriesOptions.find((item) => item.id === selectedSeriesId) ?? null : null;
+  const filteredBacklogOptions = useMemo(() => {
+    if (!selectedSeriesId) {
+      return backlogOptions;
+    }
+    const matched = backlogOptions.filter((item) => item.seriesId === selectedSeriesId);
+    return matched.length > 0 ? matched : backlogOptions;
+  }, [backlogOptions, selectedSeriesId]);
+  const selectedBacklogId = backlogId ? Number(backlogId) : null;
+  const selectedBacklog = selectedBacklogId ? backlogOptions.find((item) => item.id === selectedBacklogId) ?? null : null;
 
   async function runFission(nextMode: TopicFissionMode) {
     const nextEngine = engine === "ima" && hasImaKnowledgeBase ? "ima" : "local";
@@ -139,7 +152,7 @@ export function WarroomTopicFissionPanel({
     const response = await fetch(`/api/topic-recommendations/${topic.id}/fission`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mode: nextMode, engine: nextEngine }),
+      body: JSON.stringify({ mode: nextMode, engine: nextEngine, stream: true }),
     });
     if (!response.ok || !response.body) {
       const json = await response.json().catch(() => ({}));
@@ -293,6 +306,28 @@ export function WarroomTopicFissionPanel({
     setMessage(json.error || "原题入库失败");
   }
 
+  useEffect(() => {
+    if (topic.suggestedSeriesId && !seriesId) {
+      setSeriesId(String(topic.suggestedSeriesId));
+    }
+  }, [seriesId, topic.suggestedSeriesId]);
+
+  useEffect(() => {
+    if (filteredBacklogOptions.length === 0) {
+      if (backlogId) {
+        setBacklogId("");
+      }
+      return;
+    }
+    if (!backlogId && filteredBacklogOptions.length === 1) {
+      setBacklogId(String(filteredBacklogOptions[0].id));
+      return;
+    }
+    if (backlogId && !filteredBacklogOptions.some((item) => String(item.id) === backlogId)) {
+      setBacklogId(filteredBacklogOptions.length === 1 ? String(filteredBacklogOptions[0].id) : "");
+    }
+  }, [backlogId, filteredBacklogOptions]);
+
   return (
     <div className={panelClassName}>
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -301,6 +336,11 @@ export function WarroomTopicFissionPanel({
           <p className="mt-2 text-sm leading-7 text-inkSoft">
             不改原始优先位，先沿当前题目做强度加工，再决定是不是直接起稿。
           </p>
+          {topic.suggestedSeriesId ? (
+            <p className="mt-2 text-xs leading-6 text-inkMuted">
+              当前建议系列：{topic.suggestedSeriesName || `#${topic.suggestedSeriesId}`}。优先沿这个系列起稿或入库，避免把题目放错容器。
+            </p>
+          ) : null}
         </div>
         <div className="grid gap-2 sm:min-w-[220px]">
           <Select
@@ -322,13 +362,48 @@ export function WarroomTopicFissionPanel({
             onChange={(event) => setBacklogId(event.target.value)}
             className="min-w-[220px] bg-surface"
           >
-            <option value="">{backlogOptions.length > 0 ? "选择原题或裂变候选入库选题库" : "请先创建选题库"}</option>
-            {backlogOptions.map((item) => (
+            <option value="">{filteredBacklogOptions.length > 0 ? "选择原题或裂变候选入库选题库" : "请先创建选题库"}</option>
+            {filteredBacklogOptions.map((item) => (
               <option key={item.id} value={item.id}>
-                {item.name} · {item.itemCount} 条
+                {item.name} · {item.itemCount} 条{selectedSeriesId && item.seriesId === selectedSeriesId ? " · 当前系列" : ""}
               </option>
             ))}
           </Select>
+        </div>
+      </div>
+
+      <div className="mt-3 grid gap-3 lg:grid-cols-2">
+        <div className={destinationCardClassName}>
+          <div className="text-[11px] uppercase tracking-[0.18em] text-inkMuted">当前起稿落点</div>
+          <div className="mt-2 text-sm leading-7 text-ink">
+            {selectedSeries
+              ? `裂变候选会直接起到「${selectedSeries.name}」系列。`
+              : seriesOptions.length > 0
+                ? "还没选系列，当前不能安全起稿。"
+                : "当前没有可用系列，先去设置创建系列。"}
+          </div>
+          {selectedSeries ? (
+            <div className="mt-2 text-xs leading-6 text-inkMuted">
+              关联人设：{selectedSeries.personaName} · {selectedSeries.activeStatus !== "active" ? "非经营中系列" : "经营中系列"}
+            </div>
+          ) : null}
+        </div>
+        <div className={destinationCardClassName}>
+          <div className="text-[11px] uppercase tracking-[0.18em] text-inkMuted">当前入库落点</div>
+          <div className="mt-2 text-sm leading-7 text-ink">
+            {selectedBacklog
+              ? `原题或裂变候选会入到「${selectedBacklog.name}」选题库。`
+              : filteredBacklogOptions.length > 0
+                ? "还没选选题库，当前不能直接入库。"
+                : selectedSeriesId
+                  ? "当前系列下还没有选题库，先去设置页补一个。"
+                  : "先选系列，再决定对应的选题库存放点。"}
+          </div>
+          {selectedSeriesId && filteredBacklogOptions.length > 0 ? (
+            <div className="mt-2 text-xs leading-6 text-inkMuted">
+              当前优先展示与所选系列匹配的选题库，避免把候选放错库存。
+            </div>
+          ) : null}
         </div>
       </div>
 
@@ -346,7 +421,7 @@ export function WarroomTopicFissionPanel({
           type="button"
           onClick={addOriginalTopicToBacklog}
           variant="secondary"
-          disabled={backloggingRadar || backlogOptions.length === 0}
+          disabled={backloggingRadar || filteredBacklogOptions.length === 0}
           className={modeButtonClassName}
         >
           {backloggingRadar ? "入库中…" : "原题加入选题库"}
@@ -449,7 +524,7 @@ export function WarroomTopicFissionPanel({
                       <Button
                         type="button"
                         onClick={() => addCandidateToBacklog(candidate)}
-                        disabled={backloggingId === candidate.id || backlogOptions.length === 0}
+                        disabled={backloggingId === candidate.id || filteredBacklogOptions.length === 0}
                         variant="secondary"
                       >
                         {backloggingId === candidate.id ? "入库中…" : "加入选题库"}

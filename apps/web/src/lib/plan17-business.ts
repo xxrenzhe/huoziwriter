@@ -104,6 +104,7 @@ export type Plan17BusinessAuthorLiftDrilldownItem = {
   currentHitRate: number | null;
   liftPp: number | null;
   comparable: boolean;
+  gapReasons: string[];
 };
 
 export type Plan17BusinessMatrixAuthorDrilldownItem = {
@@ -119,6 +120,7 @@ export type Plan17BusinessMatrixAuthorDrilldownItem = {
   qualityDeltaPp: number | null;
   comparableOutput: boolean;
   comparableQuality: boolean;
+  gapReasons: string[];
 };
 
 export type Plan17BusinessStyleUsageDrilldownItem = {
@@ -193,6 +195,12 @@ export type Plan17BusinessReport = {
     recent30dAuthorCount: number;
   };
   batchDrilldown: Plan17BusinessBatchDrilldown;
+  observationGaps: {
+    authorLift: Array<{ key: string; label: string; count: number }>;
+    fissionVsRadar: Array<{ key: string; label: string; count: number }>;
+    matrixOutput: Array<{ key: string; label: string; count: number }>;
+    styleUsage: Array<{ key: string; label: string; count: number }>;
+  };
   authorLiftDrilldown: Plan17BusinessAuthorLiftDrilldownItem[];
   matrixAuthorDrilldown: Plan17BusinessMatrixAuthorDrilldownItem[];
   styleUsageDrilldown: Plan17BusinessStyleUsageDrilldownItem[];
@@ -251,6 +259,53 @@ function toIsoString(timestamp: number | null) {
 
 function uniqueSortedNumbers(values: Iterable<number>) {
   return [...new Set(values)].sort((left, right) => left - right);
+}
+
+function summarizeGapItems(items: Array<{ key: string; label: string; count: number }>) {
+  return items
+    .filter((item) => item.count > 0)
+    .sort((left, right) => right.count - left.count || left.label.localeCompare(right.label));
+}
+
+function getAuthorLiftGapReasons(input: {
+  baselineReviewedCount: number;
+  currentReviewedCount: number;
+  liftPp: number | null;
+}) {
+  const reasons: string[] = [];
+  if (input.baselineReviewedCount < AUTHOR_BASELINE_MIN_REVIEWED_COUNT) {
+    reasons.push("前窗样本不足");
+  }
+  if (input.currentReviewedCount < AUTHOR_BASELINE_MIN_REVIEWED_COUNT) {
+    reasons.push("后窗样本不足");
+  }
+  if (
+    input.baselineReviewedCount >= AUTHOR_BASELINE_MIN_REVIEWED_COUNT
+    && input.currentReviewedCount >= AUTHOR_BASELINE_MIN_REVIEWED_COUNT
+    && input.liftPp == null
+  ) {
+    reasons.push("命中率对照缺失");
+  }
+  return reasons;
+}
+
+function getMatrixGapReasons(input: {
+  beforeArticleCount: number;
+  afterArticleCount: number;
+  comparableOutput: boolean;
+  comparableQuality: boolean;
+}) {
+  const reasons: string[] = [];
+  if (input.beforeArticleCount <= 0) {
+    reasons.push("前窗产能样本不足");
+  }
+  if (input.afterArticleCount <= 0) {
+    reasons.push("后窗产能样本不足");
+  }
+  if (input.comparableOutput && !input.comparableQuality) {
+    reasons.push("质量回流样本不足");
+  }
+  return reasons;
 }
 
 function escapeCsvValue(value: boolean | number | string | null | undefined) {
@@ -589,6 +644,7 @@ export function buildPlan17BusinessViewPayload(report: Plan17BusinessReport, vie
     return {
       generatedAt: report.generatedAt,
       authorLiftVsBaseline: report.authorLiftVsBaseline,
+      observationGaps: report.observationGaps.authorLift,
       authorLiftDrilldown: report.authorLiftDrilldown,
     };
   }
@@ -596,6 +652,7 @@ export function buildPlan17BusinessViewPayload(report: Plan17BusinessReport, vie
     return {
       generatedAt: report.generatedAt,
       fissionVsRadar: report.fissionVsRadar,
+      observationGaps: report.observationGaps.fissionVsRadar,
       fissionVsRadarDrilldown: report.fissionVsRadarDrilldown,
     };
   }
@@ -603,6 +660,7 @@ export function buildPlan17BusinessViewPayload(report: Plan17BusinessReport, vie
     return {
       generatedAt: report.generatedAt,
       matrixWeeklyOutput: report.matrixWeeklyOutput,
+      observationGaps: report.observationGaps.matrixOutput,
       matrixAuthorDrilldown: report.matrixAuthorDrilldown,
     };
   }
@@ -610,6 +668,7 @@ export function buildPlan17BusinessViewPayload(report: Plan17BusinessReport, vie
     return {
       generatedAt: report.generatedAt,
       styleHeatmapUsage: report.styleHeatmapUsage,
+      observationGaps: report.observationGaps.styleUsage,
       styleUsageDrilldown: report.styleUsageDrilldown,
     };
   }
@@ -626,6 +685,7 @@ export function buildPlan17BusinessAuthorLiftCsv(items: Plan17BusinessAuthorLift
     "current_hit_rate_pct",
     "lift_pp",
     "comparable",
+    "gap_reasons",
   ];
   const rows = items.map((item) => [
     item.userId,
@@ -636,6 +696,7 @@ export function buildPlan17BusinessAuthorLiftCsv(items: Plan17BusinessAuthorLift
     item.currentHitRate,
     item.liftPp,
     item.comparable,
+    item.gapReasons.join("|"),
   ]);
   return [header, ...rows].map((row) => row.map((cell) => escapeCsvValue(cell)).join(",")).join("\n");
 }
@@ -654,6 +715,7 @@ export function buildPlan17BusinessMatrixAuthorCsv(items: Plan17BusinessMatrixAu
     "quality_delta_pp",
     "comparable_output",
     "comparable_quality",
+    "gap_reasons",
   ];
   const rows = items.map((item) => [
     item.userId,
@@ -668,6 +730,7 @@ export function buildPlan17BusinessMatrixAuthorCsv(items: Plan17BusinessMatrixAu
     item.qualityDeltaPp,
     item.comparableOutput,
     item.comparableQuality,
+    item.gapReasons.join("|"),
   ]);
   return [header, ...rows].map((row) => row.map((cell) => escapeCsvValue(cell)).join(",")).join("\n");
 }
@@ -880,44 +943,71 @@ export function buildPlan17BusinessReportFromFacts(input: Plan17BusinessFacts): 
       hitStatus: item.hitStatus,
     } satisfies Plan17BusinessFissionVsRadarDrilldownItem));
   const authorLiftDrilldown = authorLiftPairs
-    .map((item) => ({
-      userId: item.userId,
-      activationAt: toIsoString(item.activationTimestamp),
-      baselineReviewedCount: item.baselineReviewedCount,
-      currentReviewedCount: item.currentReviewedCount,
-      baselineHitRate: roundMetric(item.baselineHitRate != null ? item.baselineHitRate * 100 : null),
-      currentHitRate: roundMetric(item.currentHitRate != null ? item.currentHitRate * 100 : null),
-      liftPp: roundMetric(item.liftPp),
-      comparable:
+    .map((item) => {
+      const comparable =
         item.baselineReviewedCount >= AUTHOR_BASELINE_MIN_REVIEWED_COUNT
         && item.currentReviewedCount >= AUTHOR_BASELINE_MIN_REVIEWED_COUNT
-        && item.liftPp != null,
-    } satisfies Plan17BusinessAuthorLiftDrilldownItem))
+        && item.liftPp != null;
+      return {
+        userId: item.userId,
+        activationAt: toIsoString(item.activationTimestamp),
+        baselineReviewedCount: item.baselineReviewedCount,
+        currentReviewedCount: item.currentReviewedCount,
+        baselineHitRate: roundMetric(item.baselineHitRate != null ? item.baselineHitRate * 100 : null),
+        currentHitRate: roundMetric(item.currentHitRate != null ? item.currentHitRate * 100 : null),
+        liftPp: roundMetric(item.liftPp),
+        comparable,
+        gapReasons: comparable
+          ? []
+          : getAuthorLiftGapReasons({
+              baselineReviewedCount: item.baselineReviewedCount,
+              currentReviewedCount: item.currentReviewedCount,
+              liftPp: item.liftPp,
+            }),
+      } satisfies Plan17BusinessAuthorLiftDrilldownItem;
+    })
     .sort((left, right) => {
+      const comparableDelta = Number(left.comparable) - Number(right.comparable);
+      if (comparableDelta !== 0) return comparableDelta;
       const activationDelta = (toTimestamp(right.activationAt) ?? Number.NEGATIVE_INFINITY) - (toTimestamp(left.activationAt) ?? Number.NEGATIVE_INFINITY);
       if (activationDelta !== 0) return activationDelta;
       return left.userId - right.userId;
     });
   const matrixAuthorDrilldown = matrixPairs
-    .map((item) => ({
-      userId: item.userId,
-      activationAt: toIsoString(item.activationTimestamp),
-      beforeArticleCount: item.beforeArticleCount,
-      afterArticleCount: item.afterArticleCount,
-      beforeMedian: roundMetric(item.beforeMedian),
-      afterMedian: roundMetric(item.afterMedian),
-      outputGrowthPp: roundMetric(item.outputGrowthPp),
-      beforeHitRate: roundMetric(item.beforeHitRate != null ? item.beforeHitRate * 100 : null),
-      afterHitRate: roundMetric(item.afterHitRate != null ? item.afterHitRate * 100 : null),
-      qualityDeltaPp: roundMetric(item.qualityDeltaPp),
-      comparableOutput:
+    .map((item) => {
+      const comparableOutput =
         typeof item.beforeMedian === "number"
         && typeof item.afterMedian === "number"
         && item.beforeMedian > 0
-        && item.afterArticleCount > 0,
-      comparableQuality: item.beforeHitRate != null && item.afterHitRate != null,
-    } satisfies Plan17BusinessMatrixAuthorDrilldownItem))
+        && item.afterArticleCount > 0;
+      const comparableQuality = item.beforeHitRate != null && item.afterHitRate != null;
+      return {
+        userId: item.userId,
+        activationAt: toIsoString(item.activationTimestamp),
+        beforeArticleCount: item.beforeArticleCount,
+        afterArticleCount: item.afterArticleCount,
+        beforeMedian: roundMetric(item.beforeMedian),
+        afterMedian: roundMetric(item.afterMedian),
+        outputGrowthPp: roundMetric(item.outputGrowthPp),
+        beforeHitRate: roundMetric(item.beforeHitRate != null ? item.beforeHitRate * 100 : null),
+        afterHitRate: roundMetric(item.afterHitRate != null ? item.afterHitRate * 100 : null),
+        qualityDeltaPp: roundMetric(item.qualityDeltaPp),
+        comparableOutput,
+        comparableQuality,
+        gapReasons:
+          comparableOutput && comparableQuality
+            ? []
+            : getMatrixGapReasons({
+                beforeArticleCount: item.beforeArticleCount,
+                afterArticleCount: item.afterArticleCount,
+                comparableOutput,
+                comparableQuality,
+              }),
+      } satisfies Plan17BusinessMatrixAuthorDrilldownItem;
+    })
     .sort((left, right) => {
+      const gapDelta = Number(left.gapReasons.length === 0) - Number(right.gapReasons.length === 0);
+      if (gapDelta !== 0) return gapDelta;
       const activationDelta = (toTimestamp(right.activationAt) ?? Number.NEGATIVE_INFINITY) - (toTimestamp(left.activationAt) ?? Number.NEGATIVE_INFINITY);
       if (activationDelta !== 0) return activationDelta;
       return left.userId - right.userId;
@@ -950,6 +1040,65 @@ export function buildPlan17BusinessReportFromFacts(input: Plan17BusinessFacts): 
     generatedItems: input.generatedItems,
     articles: articlesDeduped,
   });
+  const recent30dSingleSampleUsageEventCount = recentStyleUsageEvents.filter((item) => item.sampleCount < 3).length;
+  const authorLiftGapSummary = summarizeGapItems([
+    {
+      key: "baseline-window",
+      label: `前窗仍少于 ${AUTHOR_BASELINE_MIN_REVIEWED_COUNT} 篇复盘`,
+      count: authorLiftDrilldown.filter((item) => item.gapReasons.includes("前窗样本不足")).length,
+    },
+    {
+      key: "current-window",
+      label: `后窗仍少于 ${AUTHOR_BASELINE_MIN_REVIEWED_COUNT} 篇复盘`,
+      count: authorLiftDrilldown.filter((item) => item.gapReasons.includes("后窗样本不足")).length,
+    },
+    {
+      key: "missing-hit-compare",
+      label: "命中率前后对照仍不成立",
+      count: authorLiftDrilldown.filter((item) => item.gapReasons.includes("命中率对照缺失")).length,
+    },
+  ]);
+  const matrixGapSummary = summarizeGapItems([
+    {
+      key: "before-output-window",
+      label: `前 ${MATRIX_WINDOW_WEEKS} 周产能样本不足`,
+      count: matrixAuthorDrilldown.filter((item) => item.gapReasons.includes("前窗产能样本不足")).length,
+    },
+    {
+      key: "after-output-window",
+      label: `后 ${MATRIX_WINDOW_WEEKS} 周产能样本不足`,
+      count: matrixAuthorDrilldown.filter((item) => item.gapReasons.includes("后窗产能样本不足")).length,
+    },
+    {
+      key: "quality-window",
+      label: "质量回流对照仍不足",
+      count: matrixAuthorDrilldown.filter((item) => item.gapReasons.includes("质量回流样本不足")).length,
+    },
+  ]);
+  const fissionVsRadarGapSummary = summarizeGapItems([
+    {
+      key: "fission-reviewed-gap",
+      label: "裂变 7 天回收样本仍不足 3 篇",
+      count: Math.max(3 - fissionItems.length, 0),
+    },
+    {
+      key: "radar-reviewed-gap",
+      label: "radar 7 天回收样本仍不足 3 篇",
+      count: Math.max(3 - radarItems.length, 0),
+    },
+  ]);
+  const styleUsageGapSummary = summarizeGapItems([
+    {
+      key: "recent-single-sample",
+      label: "近 30 天仍是单篇画像使用",
+      count: recent30dSingleSampleUsageEventCount,
+    },
+    {
+      key: "recent-multi-sample-gap",
+      label: "达到 50% 目标仍缺的 3+ 样本使用次数",
+      count: Math.max(Math.ceil(recentStyleUsageEvents.length * 0.5) - recentMultiSampleUsageEvents.length, 0),
+    },
+  ]);
 
   return {
     generatedAt,
@@ -1050,6 +1199,12 @@ export function buildPlan17BusinessReportFromFacts(input: Plan17BusinessFacts): 
       recent30dAuthorCount: new Set(recentStyleUsageEvents.map((item) => item.userId)).size,
     },
     batchDrilldown,
+    observationGaps: {
+      authorLift: authorLiftGapSummary,
+      fissionVsRadar: fissionVsRadarGapSummary,
+      matrixOutput: matrixGapSummary,
+      styleUsage: styleUsageGapSummary,
+    },
     authorLiftDrilldown,
     matrixAuthorDrilldown,
     styleUsageDrilldown,

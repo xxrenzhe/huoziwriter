@@ -6,6 +6,7 @@ import { requireWriterSession } from "@/lib/page-auth";
 import { isPlan17WritingEvalFocusKey } from "@/lib/writing-eval-plan17";
 import { getWritingEvalCases, getWritingEvalCaseQualityLabels, getWritingEvalDatasets } from "@/lib/writing-eval";
 import { ReviewPlan17QualityLabelingButton } from "@/components/review-plan17-quality-labeling-button";
+import { ReviewOpeningCheckButton } from "@/components/review-opening-check-button";
 import { ReviewOutcomeTaggingButton } from "@/components/review-outcome-tagging-button";
 import { ReviewsTabShell } from "@/components/reviews-tab-shell";
 
@@ -49,6 +50,10 @@ const warmSurfaceClassName = cn(
 );
 const compactHighlightSurfaceClassName = cn(
   surfaceCardStyles({ tone: "highlight", padding: "sm" }),
+  reviewCardBaseClassName,
+);
+const queueSurfaceClassName = cn(
+  surfaceCardStyles({ tone: "warm", padding: "md" }),
   reviewCardBaseClassName,
 );
 const secondaryActionClassName = cn("mt-5 inline-flex self-start", buttonStyles({ variant: "secondary", size: "sm" }));
@@ -325,6 +330,18 @@ export default async function ReviewsPage({
     .filter((item) => item.label != null)
     .sort((left, right) => String(right.label?.updatedAt || "").localeCompare(String(left.label?.updatedAt || "")));
   const visiblePlan17QualityItems = (unlabeledPlan17Items.length > 0 ? unlabeledPlan17Items : labeledPlan17Items).slice(0, 6);
+  const outcomesMissingSnapshots = outcomeArticles.filter(({ bundle }) => bundle.missingWindowCodes.length > 0);
+  const outcomesMissingTags = outcomeArticles.filter(
+    ({ bundle }) =>
+      !bundle.outcome.targetPackage
+      || bundle.outcome.playbookTags.length === 0
+      || !String(bundle.outcome.reviewSummary || bundle.outcome.nextAction || "").trim(),
+  );
+  const reviewQueueCount =
+    (unlabeledPlan17Items.length > 0 ? 1 : 0) +
+    (outcomesMissingSnapshots.length > 0 ? 1 : 0) +
+    (outcomesMissingTags.length > 0 ? 1 : 0) +
+    (nearMisses.length > 0 ? 1 : 0);
   const reviewStats = [
     {
       label: "命中结果",
@@ -370,6 +387,117 @@ export default async function ReviewsPage({
               tone={stat.tone}
             />
           ))}
+        </div>
+      </section>
+
+      <section className={standardSurfaceClassName}>
+        <SectionHeader
+          eyebrow="待处理复盘任务"
+          title="先决定这次复盘先补数据、补标签，还是直接回到稿件改开头。"
+          summary={`当前 ${reviewQueueCount} 类待处理入口`}
+        />
+        <div className="mt-6 grid gap-4 xl:grid-cols-2">
+          {unlabeledPlan17Items.length > 0 ? (
+            <article className={queueSurfaceClassName}>
+              <div className="flex flex-wrap gap-2">
+                <span className={metricChipClassName}>质量补桶</span>
+                <span className={mutedMetricChipClassName}>待补 {unlabeledPlan17Items.length} 条</span>
+              </div>
+              <div className="mt-4">
+                <div className={cardTitleClassName}>先把 plan17 的人工标注补完整</div>
+              </div>
+              <div className={cn("mt-3 flex-1", bodyCopyClassName)}>
+                这些样本还缺策略人工分或证据标签。先补齐，后面的 strategy / evidence 观察和复盘结论才不会空转。
+              </div>
+              <div className="mt-5 flex flex-wrap gap-3">
+                <Link href="/reviews?section=quality-labeling" className={secondaryActionClassName}>
+                  去补质量标注
+                </Link>
+              </div>
+            </article>
+          ) : null}
+
+          {outcomesMissingSnapshots.length > 0 ? (
+            <article className={queueSurfaceClassName}>
+              <div className="flex flex-wrap gap-2">
+                <span className={metricChipClassName}>结果快照</span>
+                <span className={mutedMetricChipClassName}>待补 {outcomesMissingSnapshots.length} 篇</span>
+              </div>
+              <div className="mt-4">
+                <div className={cardTitleClassName}>有些稿件还没补齐 24h / 72h / 7d 结果窗口</div>
+              </div>
+              <div className={cn("mt-3 flex-1", bodyCopyClassName)}>
+                结果窗口缺失时，命中判定和打法归因都不完整。先回结果打标签区，把缺的窗口补齐。
+              </div>
+              <div className="mt-5 flex flex-wrap gap-3">
+                <Link href="/reviews?section=outcome-tagging" className={secondaryActionClassName}>
+                  去补结果快照
+                </Link>
+              </div>
+            </article>
+          ) : null}
+
+          {outcomesMissingTags.length > 0 ? (
+            <article className={queueSurfaceClassName}>
+              <div className="flex flex-wrap gap-2">
+                <span className={metricChipClassName}>结果标签</span>
+                <span className={mutedMetricChipClassName}>待补 {outcomesMissingTags.length} 篇</span>
+              </div>
+              <div className="mt-4">
+                <div className={cardTitleClassName}>有些结果稿件还没补完整目标包、摘要或打法标签</div>
+              </div>
+              <div className={cn("mt-3 flex-1", bodyCopyClassName)}>
+                没有目标包、复盘摘要或打法标签时，这些结果还不能真正进入系列打法和全局打法沉淀。
+              </div>
+              <div className="mt-5 flex flex-wrap gap-3">
+                <Link href="/reviews?section=outcome-tagging" className={secondaryActionClassName}>
+                  去补结果标签
+                </Link>
+              </div>
+            </article>
+          ) : null}
+
+          {nearMisses.length > 0 ? (
+            <article className={queueSurfaceClassName}>
+              <div className="flex flex-wrap gap-2">
+                <span className={metricChipClassName}>差一点命中</span>
+                <span className={mutedMetricChipClassName}>当前 {nearMisses.length} 篇</span>
+              </div>
+              <div className="mt-4">
+                <div className={cardTitleClassName}>先复盘最接近命中的稿件，优先找可复制的差距</div>
+              </div>
+              <div className={cn("mt-3 flex-1", bodyCopyClassName)}>
+                差一点命中的稿件最适合提炼“再往前推一步”的动作，通常比完全失误样本更适合直接转成下一篇打法。
+              </div>
+              <div className="mt-5 flex flex-wrap gap-3">
+                <Link href="/reviews?tab=near-miss&section=review-tab-near-miss" className={secondaryActionClassName}>
+                  去看差一点命中
+                </Link>
+              </div>
+            </article>
+          ) : null}
+
+          {reviewQueueCount === 0 ? (
+            <article className={queueSurfaceClassName}>
+              <div className="flex flex-wrap gap-2">
+                <span className={metricChipClassName}>复盘入口健康</span>
+              </div>
+              <div className="mt-4">
+                <div className={cardTitleClassName}>当前没有明显待处理的复盘阻塞</div>
+              </div>
+              <div className={cn("mt-3 flex-1", bodyCopyClassName)}>
+                质量标注、结果快照和结果标签都处于已补状态。可以直接切到命中、差一点或打法分区继续沉淀经验。
+              </div>
+              <div className="mt-5 flex flex-wrap gap-3">
+                <Link href="/reviews?tab=hits&section=review-tab-hits" className={secondaryActionClassName}>
+                  去看命中结果
+                </Link>
+                <Link href="/reviews?tab=global&section=review-tab-global" className={secondaryActionClassName}>
+                  去看全局打法
+                </Link>
+              </div>
+            </article>
+          ) : null}
         </div>
       </section>
 
@@ -512,6 +640,7 @@ export default async function ReviewsPage({
                   missingWindowCodes={bundle.missingWindowCodes}
                   buttonVariant="primary"
                 />
+                <ReviewOpeningCheckButton articleId={article.id} className="mt-5" />
                 <Link href={buildOpeningWorkspaceHref(article.id)} className={secondaryActionClassName}>
                   回工作区看开头
                 </Link>
@@ -603,6 +732,7 @@ export default async function ReviewsPage({
                                 missingWindowCodes={bundle.missingWindowCodes}
                               />
                             ) : null}
+                            <ReviewOpeningCheckButton articleId={article.id} className="mt-5" />
                             <Link href={buildOpeningWorkspaceHref(article.id)} className={secondaryActionClassName}>
                               回工作区看开头
                             </Link>
@@ -685,6 +815,7 @@ export default async function ReviewsPage({
                                 missingWindowCodes={bundle.missingWindowCodes}
                               />
                             ) : null}
+                            <ReviewOpeningCheckButton articleId={article.id} className="mt-5" />
                             <Link href={buildOpeningWorkspaceHref(article.id)} className={secondaryActionClassName}>
                               回工作区看开头
                             </Link>

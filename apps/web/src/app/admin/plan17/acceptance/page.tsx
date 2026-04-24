@@ -11,6 +11,10 @@ const titleClassName = "mt-4 font-serifCn text-4xl text-adminInk text-balance";
 const descriptionClassName = "mt-4 text-sm leading-7 text-adminInkSoft";
 const actionClassName = "inline-flex items-center justify-center rounded-full border border-adminLineStrong bg-adminSurfaceAlt px-4 py-2 text-sm text-adminInk transition hover:border-adminAccent hover:text-adminAccent";
 const tableCellClassName = "px-4 py-4 align-top";
+const detailMobileListClassName = "mt-6 grid gap-3 md:hidden";
+const detailMobileCardClassName = cn(surfaceCardStyles({ padding: "md" }), "border-adminLineStrong bg-adminSurfaceMuted text-adminInk shadow-none");
+const detailMetaLabelClassName = "text-xs uppercase tracking-[0.18em] text-adminInkMuted";
+const detailMetaValueClassName = "mt-2 text-sm leading-7 text-adminInkSoft";
 
 function formatDateTime(value: string | null) {
   if (!value) {
@@ -179,8 +183,37 @@ export default async function AdminPlan17AcceptancePage() {
               {getStatusLabel(section.status)}
             </span>
           </div>
+          <div className={detailMobileListClassName}>
+            {section.items.map((item) => (
+              <article key={`mobile-${section.key}-${item.key}`} className={detailMobileCardClassName}>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className={eyebrowClassName}>{item.label}</div>
+                    <div className={detailMetaValueClassName}>{item.detail}</div>
+                  </div>
+                  <span className={cn("rounded-full px-3 py-1 text-xs uppercase tracking-[0.18em]", getStatusBadgeClassName(item.status))}>
+                    {getStatusLabel(item.status)}
+                  </span>
+                </div>
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  <div>
+                    <div className={detailMetaLabelClassName}>关键指标</div>
+                    <div className={detailMetaValueClassName}>
+                      {item.metrics && Object.keys(item.metrics).length > 0
+                        ? Object.entries(item.metrics).map(([key, value]) => `${key}: ${formatMetricValue(value)}`).join(" · ")
+                        : "--"}
+                    </div>
+                  </div>
+                  <div>
+                    <div className={detailMetaLabelClassName}>所属章节</div>
+                    <div className={detailMetaValueClassName}>{section.label}</div>
+                  </div>
+                </div>
+              </article>
+            ))}
+          </div>
           <div className="mt-6 overflow-x-auto">
-            <table className="w-full min-w-[920px] text-left text-sm">
+            <table className="hidden w-full min-w-[920px] text-left text-sm md:table">
               <thead className="bg-adminBg text-adminInkMuted">
                 <tr>
                   {["子项", "状态", "说明", "关键指标"].map((head) => (

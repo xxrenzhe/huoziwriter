@@ -42,7 +42,13 @@ type Plan17QualityReport = {
       evidenceLabelSampleCount: number;
       rhythmDeviationVsReadCompletionCorrelation: number | null;
       rhythmDeviationVsReadCompletionSampleCount: number;
+      rhythmDeviationVsReadCompletionPValue: number | null;
     };
+    observationGaps: Array<{
+      key: string;
+      label: string;
+      count: number;
+    }>;
   }>;
 };
 
@@ -198,6 +204,16 @@ function getFocusMetricLine(focus: Plan17QualityReport["focuses"][number] | null
     return `rhythmDeviation vs readCompletion ${formatMetric(focus.reporting.rhythmDeviationVsReadCompletionCorrelation)} · 样本 ${focus.reporting.rhythmDeviationVsReadCompletionSampleCount}`;
   }
   return `代理 Spearman ${formatMetric(focus.reporting.proxyScoreVsObservedSpearman)} · 样本 ${focus.reporting.proxyScoreVsObservedSampleCount}`;
+}
+
+function getFocusGapLine(focus: Plan17QualityReport["focuses"][number] | null) {
+  if (!focus || focus.observationGaps.length === 0) {
+    return "当前没有额外 gap。";
+  }
+  return focus.observationGaps
+    .slice(0, 2)
+    .map((item) => `${item.label} ${item.count}`)
+    .join(" · ");
 }
 
 function pickFirstCaseId(queue: Plan17QualityQueue | null | undefined) {
@@ -424,6 +440,7 @@ export function AdminPlan17QualityClient({
                   run {focus.runCount} · feedback {focus.linkedFeedbackCount}
                 </div>
                 <div className="mt-3 text-xs leading-6 text-adminInkMuted">{getFocusMetricLine(focus)}</div>
+                <div className="mt-2 text-xs leading-6 text-adminAccent">{getFocusGapLine(focus)}</div>
                 {focus.key === "topic_fission" && focus.reporting.topicFissionSceneBreakdown.length > 0 ? (
                   <div className="mt-3 space-y-1 text-xs leading-6 text-adminInkMuted">
                     {focus.reporting.topicFissionSceneBreakdown.map((item) => (
@@ -467,6 +484,9 @@ export function AdminPlan17QualityClient({
             <>
               <div className="mt-4 text-sm leading-7 text-adminInkSoft">
                 {selectedQueue.dataset.code} · {selectedQueue.dataset.focus.label} · readiness {selectedQueue.dataset.readiness.status} · {getFocusMetricLine(selectedFocus)}
+              </div>
+              <div className="mt-2 text-sm leading-7 text-adminAccent">
+                {getFocusGapLine(selectedFocus)}
               </div>
               <div className="mt-6 grid gap-3">
                 {selectedQueue.cases.length === 0 ? (

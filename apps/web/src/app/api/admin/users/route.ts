@@ -19,6 +19,19 @@ export async function GET() {
         mustChangePassword: Boolean(user.must_change_password),
         lastLoginAt: user.last_login_at,
         createdAt: user.created_at,
+        articleCount: user.article_count,
+        publishedArticleCount: user.published_article_count,
+        totalUsage: user.total_usage,
+        lastUsageAt: user.last_usage_at,
+        subscriptionHistory: user.subscription_history.map((item) => ({
+          id: item.id,
+          planCode: item.plan_code,
+          status: item.status,
+          startAt: item.start_at,
+          endAt: item.end_at,
+          source: item.source,
+          updatedAt: item.updated_at,
+        })),
       })),
     );
   } catch {
