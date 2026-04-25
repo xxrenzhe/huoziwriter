@@ -719,7 +719,7 @@ export function PromptManagerClient({
           <div>
             <div className="text-xs uppercase tracking-[0.18em] text-cinnabar">Plan 17 Prompt Scenes</div>
             <div className="mt-2 text-sm leading-7 text-adminInkSoft">
-              按 `§7.1` 清单集中查看三层分离与爆点结构化相关场景。当前已入库 {surfacedPlan17PromptCount}/{PLAN17_PROMPT_SCENE_DEFINITIONS.length} 个 scene。
+              集中查看三层分离与爆点结构化相关场景。当前已入库 {surfacedPlan17PromptCount}/{PLAN17_PROMPT_SCENE_DEFINITIONS.length} 个场景。
             </div>
           </div>
         </div>
@@ -874,7 +874,7 @@ export function PromptManagerClient({
                 <div className="border border-adminLineStrong bg-adminBg p-4">
                   <div className="flex items-center justify-between gap-3">
                     <div className="text-xs uppercase tracking-[0.18em] text-adminInkSoft">自动治理时间线</div>
-                    <div className="text-[11px] text-adminInkSoft">只展示 scheduler 写入的 prompt_rollout_auto_manage 审计</div>
+                    <div className="text-[11px] text-adminInkSoft">只展示自动治理写入的 Prompt 灰度审计</div>
                   </div>
                   <div className="mt-4 space-y-3">
                     {prompt.rolloutAuditTrail.length > 0 ? (

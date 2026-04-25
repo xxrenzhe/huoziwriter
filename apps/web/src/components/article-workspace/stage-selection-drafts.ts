@@ -2,7 +2,7 @@ import {
   getPayloadRecord,
   getPayloadRecordArray,
   getPayloadStringArray,
-} from "@/lib/article-workspace-helpers";
+} from "../../lib/article-workspace-helpers";
 
 export type AudienceSelectionDraft = {
   selectedReaderLabel: string;

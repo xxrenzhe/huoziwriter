@@ -51,6 +51,7 @@ export type CoverImageEngineConfig = {
   updatedBy: number | null;
   updatedAt: string | null;
   configSource?: "env" | "database";
+  secretWarning?: string | null;
 };
 
 export type CoverImageEngineSecret = {
@@ -64,7 +65,10 @@ export type CoverImageEngineSecret = {
   lastError: string | null;
   updatedBy: number | null;
   configSource?: "env" | "database";
+  secretWarning?: string | null;
 };
+
+const COVER_IMAGE_SECRET_WARNING = "数据库兜底 API Key 无法在当前环境解密，请重新输入并保存一次。";
 
 function normalizeBaseUrl(value: string) {
   const trimmed = value.trim();
@@ -78,6 +82,27 @@ function maskSecret(value: string | null) {
   if (!value) return null;
   if (value.length <= 8) return "********";
   return `${value.slice(0, 4)}********${value.slice(-4)}`;
+}
+
+function readStoredApiKey(payload: string | null | undefined) {
+  if (!payload) {
+    return {
+      apiKey: null,
+      secretWarning: null,
+    };
+  }
+
+  try {
+    return {
+      apiKey: decryptSecret(payload),
+      secretWarning: null,
+    };
+  } catch {
+    return {
+      apiKey: null,
+      secretWarning: COVER_IMAGE_SECRET_WARNING,
+    };
+  }
 }
 
 function getCoverImageEnvOverride(): {
@@ -183,10 +208,11 @@ function buildCoverImageEngineConfigFromRecord(record: DbGlobalImageEngine | nul
       updatedBy: null,
       updatedAt: null,
       configSource: "database",
+      secretWarning: null,
     };
   }
 
-  const apiKey = decryptSecret(record.api_key_encrypted);
+  const { apiKey, secretWarning } = readStoredApiKey(record.api_key_encrypted);
   return {
     providerName: record.provider_name,
     baseUrl: record.base_url,
@@ -199,6 +225,7 @@ function buildCoverImageEngineConfigFromRecord(record: DbGlobalImageEngine | nul
     updatedBy: record.updated_by,
     updatedAt: record.updated_at,
     configSource: "database",
+    secretWarning,
   };
 }
 
@@ -253,17 +280,19 @@ export async function getGlobalCoverImageEngineSecret(): Promise<CoverImageEngin
   if (!record) {
     return null;
   }
+  const { apiKey, secretWarning } = readStoredApiKey(record.api_key_encrypted);
   return {
     id: record.id,
     providerName: record.provider_name,
     baseUrl: record.base_url,
-    apiKey: decryptSecret(record.api_key_encrypted) || "",
+    apiKey: apiKey || "",
     model: record.model || DEFAULT_COVER_IMAGE_MODEL,
     isEnabled: Boolean(record.is_enabled),
     lastCheckedAt: record.last_checked_at,
     lastError: record.last_error,
     updatedBy: record.updated_by,
     configSource: "database",
+    secretWarning,
   } satisfies CoverImageEngineSecret;
 }
 
@@ -285,12 +314,17 @@ export async function upsertGlobalCoverImageEngine(input: {
   const normalizedBaseUrl = normalizeBaseUrl(input.baseUrl);
   const model = (input.model || DEFAULT_COVER_IMAGE_MODEL).trim() || DEFAULT_COVER_IMAGE_MODEL;
   const providerName = inferCoverImageProviderName(normalizedBaseUrl, model);
-  const apiKeyEncrypted = input.apiKey?.trim()
-    ? encryptSecret(input.apiKey.trim())
+  const nextApiKey = input.apiKey?.trim() || "";
+  const existingStoredApiKey = readStoredApiKey(existing?.api_key_encrypted);
+  const apiKeyEncrypted = nextApiKey
+    ? encryptSecret(nextApiKey)
     : existing?.api_key_encrypted;
 
   if (!apiKeyEncrypted) {
     throw new Error("API Key 不能为空");
+  }
+  if (!nextApiKey && existingStoredApiKey.secretWarning) {
+    throw new Error(COVER_IMAGE_SECRET_WARNING);
   }
 
   if (existing) {

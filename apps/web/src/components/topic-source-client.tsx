@@ -224,7 +224,7 @@ export function TopicSourceManagerClient({
         </form>
       ) : (
         <div className={cn(surfaceCardStyles({ tone: "warm", padding: "sm" }), "text-sm leading-7 text-inkSoft")}>
-          当前套餐只能读取系统信息源。升级到 `pro` 或 `ultra` 后，才可新增自己的外部源。
+          当前套餐只能读取系统信息源。升级到 Pro 或 Ultra 后，才可新增自己的外部源。
         </div>
       )}
       <div className="space-y-3">

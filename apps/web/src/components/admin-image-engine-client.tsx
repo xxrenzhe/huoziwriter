@@ -69,6 +69,13 @@ export function GlobalCoverImageEngineSettings({
   const [apiKey, setApiKey] = useState("");
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
+  const isEnvOverride = config.configSource === "env";
+  const submitLabel = isEnvOverride ? "保存备用配置" : "保存全局生图引擎";
+  const apiKeyPlaceholder = config.hasApiKey
+    ? `访问凭据已保存：${config.apiKeyPreview}`
+    : config.secretWarning
+      ? "当前访问凭据不可读，请重新输入"
+      : "输入访问凭据";
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -86,7 +93,11 @@ export function GlobalCoverImageEngineSettings({
       return;
     }
     setApiKey("");
-    setMessage("全局生图 AI 引擎已保存，所有用户的封面图都会走这套配置。");
+    setMessage(
+      isEnvOverride
+        ? "备用配置已保存；当前仍优先使用部署侧配置。"
+        : "全局生图 AI 引擎已保存，所有用户的封面图都会走这套配置。",
+    );
     router.refresh();
   }
 
@@ -95,14 +106,14 @@ export function GlobalCoverImageEngineSettings({
       <div className={adminEyebrowClassName}>Global Image Engine</div>
       <h2 className={adminTitleClassName}>全局生图 AI 引擎</h2>
       <p className={adminDescriptionClassName}>
-        这是运营后台统一维护的封面图生成引擎。推荐直接接 OpenAI Image API：Base_URL 填 https://api.openai.com/v1，模型填 gpt-image-2。纯文生图会走 generations，带参考图时会自动切到 edits。
+        这是平台统一维护的封面图生成引擎。请填写服务地址、模型名称和访问凭据；纯文生图与参考图编辑会自动选择对应能力。
       </p>
       <form onSubmit={handleSubmit} className={adminFormClassName}>
         <input
-          aria-label="Base_URL，例如 https://api.openai.com/v1"
+          aria-label="服务地址，例如 https://api.openai.com/v1"
           value={baseUrl}
           onChange={(event) => setBaseUrl(event.target.value)}
-          placeholder="Base_URL，例如 https://api.openai.com/v1"
+          placeholder="服务地址，例如 https://api.openai.com/v1"
           className={uiPrimitives.adminInput}
         />
         <input
@@ -113,21 +124,23 @@ export function GlobalCoverImageEngineSettings({
           className={uiPrimitives.adminInput}
         />
         <input
-          aria-label="input control"
+          aria-label="图片引擎访问凭据"
+          type="password"
+          autoComplete="off"
           value={apiKey}
           onChange={(event) => setApiKey(event.target.value)}
-          placeholder={config.hasApiKey ? `API Key 已保存：${config.apiKeyPreview}` : "输入 API Key"}
+          placeholder={apiKeyPlaceholder}
           className={uiPrimitives.adminInput}
         />
         <button disabled={saving} className={uiPrimitives.primaryButton}>
-          {saving ? "保存中…" : "保存全局生图引擎"}
+          {saving ? "保存中…" : submitLabel}
         </button>
       </form>
       <div className={adminStatusGridClassName}>
         <div className={adminInsetCardClassName}>
           当前状态：{config.hasApiKey ? "已配置" : "未配置"}
           <br />
-          配置来源：{config.configSource === "env" ? ".env 本地覆盖" : "后台数据库"}
+          配置来源：{config.configSource === "env" ? "部署侧配置" : "管理后台配置"}
           <br />
           最近检查：{config.lastCheckedAt ? new Date(config.lastCheckedAt).toLocaleString("zh-CN") : "尚未调用"}
         </div>
@@ -139,7 +152,14 @@ export function GlobalCoverImageEngineSettings({
       </div>
       {config.configSource === "env" ? (
         <div className={adminWarningNoticeClassName}>
-          当前运行时优先读取 `.env` 中的图片引擎配置。这里保存到后台的值仍会保留，但本地开发时不会覆盖 env。
+          当前优先使用部署侧图片引擎配置，上方显示的是实际生效的服务地址、模型和凭据状态。
+          这里继续保存只会更新备用配置，方便后续切回管理后台配置。
+        </div>
+      ) : null}
+      {config.secretWarning ? (
+        <div className={adminDangerNoticeClassName}>
+          {config.secretWarning}
+          {config.configSource === "env" ? " 当前仍会优先使用部署侧配置，但备用配置已经失效。" : ""}
         </div>
       ) : null}
       {message ? (
@@ -343,10 +363,10 @@ export function GlobalObjectStorageSettings({
               className={uiPrimitives.adminInput}
             />
             <input
-              aria-label="input control"
+              aria-label="公开访问地址"
               value={publicBaseUrl}
               onChange={(event) => setPublicBaseUrl(event.target.value)}
-              placeholder={`Public Base URL，可选，例如 ${selectedPreset.publicBaseUrlPlaceholder || "https://cdn.example.com"}`}
+              placeholder={`公开访问地址，可选，例如 ${selectedPreset.publicBaseUrlPlaceholder || "https://cdn.example.com"}`}
               className={uiPrimitives.adminInput}
             />
           </>
@@ -379,7 +399,7 @@ export function GlobalObjectStorageSettings({
       </div>
       {providerName === "s3-compatible" ? (
         <div className={adminWarningNoticeClassName}>
-          `publicBaseUrl` 可选；不填时系统会按 `endpoint/bucket/objectKey` 生成地址，但是否可公网访问取决于 {selectedPreset.label} 的桶策略或 CDN 配置。
+          公开访问地址可选；不填时系统会按存储服务地址、桶名和对象路径生成地址，但是否可公网访问取决于 {selectedPreset.label} 的桶策略或 CDN 配置。
         </div>
       ) : null}
       <div
@@ -392,10 +412,10 @@ export function GlobalObjectStorageSettings({
         }
       >
         {providerName === "local"
-          ? "当前运行时直接使用 local 存储，新增图片资产会写到本地 generated-assets 目录。"
+          ? "当前直接使用本地存储，新增图片资产会写入本地资源目录。"
           : !isEnabled
-            ? `当前 ${selectedPreset.label} 配置未启用，测试可以验证远端可用性，但运行时仍会继续回退到 local。`
-            : `当前 ${selectedPreset.label} 已启用。注意：后续真实上传若失败，会直接报错并记录健康状态，不会静默回退到 local。`}
+            ? `当前 ${selectedPreset.label} 配置未启用，测试可以验证远端可用性，但正式写入仍会继续使用本地存储。`
+            : `当前 ${selectedPreset.label} 已启用。后续真实上传若失败，会直接报错并记录健康状态。`}
       </div>
       {testMessage ? (
         <div aria-live="polite" className={getFeedbackNoticeClassName(testMessage)}>

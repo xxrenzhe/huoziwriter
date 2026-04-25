@@ -77,9 +77,9 @@ export default async function AdminAiRoutingHealthPage() {
       <article className={cn(panelClassName, "grid gap-6 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-end")}>
         <div>
           <div className={accentEyebrowClassName}>AI Routing Health</div>
-          <h1 className="mt-4 font-serifCn text-4xl text-adminInk text-balance">Provider 凭据与探针健康矩阵</h1>
+          <h1 className="mt-4 font-serifCn text-4xl text-adminInk text-balance">模型服务凭据与探针健康矩阵</h1>
           <p className="mt-4 max-w-4xl text-sm leading-7 text-adminInkSoft">
-            按 `ai_model_routes` 去重 scene / model，按 provider 聚合后做最小探针请求。结果缓存 {matrix.ttlSeconds} 秒，避免后台频繁刷新时重复打三家 provider。
+            按场景和模型去重后，聚合各模型服务并发起最小探针请求。结果缓存 {matrix.ttlSeconds} 秒，避免后台频繁刷新时重复触发探针。
           </p>
           <p className="mt-4 text-xs uppercase tracking-[0.24em] text-adminInkMuted">
             最近生成 {formatDateTime(matrix.generatedAt)}
@@ -97,9 +97,9 @@ export default async function AdminAiRoutingHealthPage() {
 
       <div className="grid gap-4 md:grid-cols-3">
         <article className={mutedPanelClassName}>
-          <div className={eyebrowClassName}>健康 provider</div>
+          <div className={eyebrowClassName}>健康服务</div>
           <div className="mt-3 font-serifCn text-4xl text-adminInk">{healthyCount}</div>
-          <p className="mt-3 text-sm leading-7 text-adminInkSoft">当前三家 provider 中，有 {healthyCount} 家通过最小探针。</p>
+          <p className="mt-3 text-sm leading-7 text-adminInkSoft">当前模型服务中，有 {healthyCount} 家通过最小探针。</p>
         </article>
         <article className={mutedPanelClassName}>
           <div className={eyebrowClassName}>受影响 scene</div>
@@ -144,7 +144,7 @@ export default async function AdminAiRoutingHealthPage() {
               <div className={mutedPanelClassName}>
                 <div className={eyebrowClassName}>凭据</div>
                 <div className="mt-2 text-sm text-adminInk">
-                  {entry.envConfigured ? "已配置" : "缺失"} · {entry.envKeyLabel}
+                  {entry.envConfigured ? "平台凭据已配置" : "平台凭据缺失"}
                 </div>
               </div>
             </div>
@@ -152,7 +152,7 @@ export default async function AdminAiRoutingHealthPage() {
             <div className="mt-4">
               <div className={eyebrowClassName}>状态细节</div>
               <div className="mt-2 rounded-2xl border border-adminLineStrong bg-adminSurfaceMuted px-4 py-3 text-sm leading-7 text-adminInkSoft">
-                {entry.error || (entry.status === "healthy" ? "探针返回正常。" : entry.status === "unused" ? "当前 ai_model_routes 没有使用该 provider。" : "未返回错误信息。")}
+                {entry.error || (entry.status === "healthy" ? "探针返回正常。" : entry.status === "unused" ? "当前路由没有使用该模型服务。" : "未返回错误信息。")}
               </div>
             </div>
 

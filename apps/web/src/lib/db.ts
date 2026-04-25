@@ -51,6 +51,8 @@ function sqliteDbPath() {
 class SQLiteAdapter implements DatabaseAdapter {
   type: DatabaseType = "sqlite";
   private db: Database.Database;
+  private operationQueue: Promise<void> = Promise.resolve();
+  private txStorage = new AsyncLocalStorage<boolean>();
 
   constructor(dbPath: string) {
     ensureSqliteDir(dbPath);
@@ -60,36 +62,59 @@ class SQLiteAdapter implements DatabaseAdapter {
     this.db.pragma("synchronous = NORMAL");
   }
 
+  private async runSerialized<T>(run: () => T | Promise<T>) {
+    if (this.txStorage.getStore()) {
+      return await run();
+    }
+
+    const previous = this.operationQueue;
+    let release: () => void = () => undefined;
+    this.operationQueue = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+
+    await previous;
+    try {
+      return await run();
+    } finally {
+      release();
+    }
+  }
+
   async query<T>(sql: string, params: unknown[] = []) {
-    return this.db.prepare(sql).all(...normalizeSqlParams(params)) as T[];
+    return await this.runSerialized(() => this.db.prepare(sql).all(...normalizeSqlParams(params)) as T[]);
   }
 
   async queryOne<T>(sql: string, params: unknown[] = []) {
-    return this.db.prepare(sql).get(...normalizeSqlParams(params)) as T | undefined;
+    return await this.runSerialized(() => this.db.prepare(sql).get(...normalizeSqlParams(params)) as T | undefined);
   }
 
   async exec(sql: string, params: unknown[] = []) {
-    const info = this.db.prepare(sql).run(...normalizeSqlParams(params));
-    return {
-      changes: info.changes,
-      lastInsertRowid: Number(info.lastInsertRowid),
-    };
+    return await this.runSerialized(() => {
+      const info = this.db.prepare(sql).run(...normalizeSqlParams(params));
+      return {
+        changes: info.changes,
+        lastInsertRowid: Number(info.lastInsertRowid),
+      };
+    });
   }
 
   async transaction<T>(fn: () => Promise<T>) {
-    this.db.exec("BEGIN");
-    try {
-      const result = await fn();
-      this.db.exec("COMMIT");
-      return result;
-    } catch (error) {
+    return await this.runSerialized(async () => {
+      this.db.exec("BEGIN");
       try {
-        this.db.exec("ROLLBACK");
-      } catch {
-        // Ignore rollback failures when SQLite has already aborted the transaction.
+        const result = await this.txStorage.run(true, async () => await fn());
+        this.db.exec("COMMIT");
+        return result;
+      } catch (error) {
+        try {
+          this.db.exec("ROLLBACK");
+        } catch {
+          // Ignore rollback failures when SQLite has already aborted the transaction.
+        }
+        throw error;
       }
-      throw error;
-    }
+    });
   }
 
   async close() {

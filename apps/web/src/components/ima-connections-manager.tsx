@@ -173,7 +173,7 @@ export function ImaConnectionsManager({
         <div className="border border-lineStrong/40 bg-paperStrong p-5">
           <div className="text-xs uppercase tracking-[0.24em] text-inkMuted">接入说明</div>
           <div className="mt-3 space-y-2 text-sm leading-7 text-inkSoft">
-            <div>先到 `https://ima.qq.com/agent-interface` 获取 Client ID 和 API Key，再在这里录入。</div>
+            <div>先到 IMA 开放接口页面获取 Client ID 和 API Key，再在这里录入。</div>
             <div>系统只保存加密后的凭证；前端只会看到标签、状态和知识库列表，不回传明文。</div>
             <div>默认知识库会被 Warroom 裂变和证据检索优先使用。</div>
           </div>

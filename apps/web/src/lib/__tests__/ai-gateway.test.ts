@@ -15,6 +15,21 @@ import {
 import { closeDatabase, getDatabase } from "../db";
 import { runPendingMigrations } from "../../../../../scripts/db-flow";
 
+async function waitFor(assertion: () => Promise<void> | void, timeoutMs = 5_000) {
+  const startedAt = Date.now();
+  let lastError: unknown = null;
+  while (Date.now() - startedAt < timeoutMs) {
+    try {
+      await assertion();
+      return;
+    } catch (error) {
+      lastError = error;
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error("Timed out waiting for assertion");
+}
+
 async function withTempDatabase<T>(name: string, run: () => Promise<T>) {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), `huoziwriter-ai-gateway-${name}-`));
   const tempDbPath = path.join(tempDir, "fresh.db");
@@ -424,24 +439,25 @@ test("generateSceneText sends eligible shadow traffic without changing the prima
         userPrompt: "user",
         rolloutUserId: 9,
       });
-      await new Promise((resolve) => setTimeout(resolve, 0));
 
       assert.equal(result.model, "gpt-4o-mini");
       assert.equal(result.text, "primary output");
-      assert.deepEqual(calledModels.sort(), ["gpt-4.1-mini", "gpt-4o-mini"].sort());
+      await waitFor(async () => {
+        assert.deepEqual(calledModels.sort(), ["gpt-4.1-mini", "gpt-4o-mini"].sort());
 
-      const observations = await getDatabase().query<{ model: string; call_mode: string; status: string }>(
-        "SELECT model, call_mode, status FROM ai_call_observations ORDER BY id ASC",
-      );
-      assert.deepEqual(
-        observations
-          .filter((item) => item.model === "gpt-4o-mini" || item.model === "gpt-4.1-mini")
-          .map((item) => [item.model, item.call_mode, item.status]),
-        [
-          ["gpt-4o-mini", "primary", "success"],
-          ["gpt-4.1-mini", "shadow", "success"],
-        ],
-      );
+        const observations = await getDatabase().query<{ model: string; call_mode: string; status: string }>(
+          "SELECT model, call_mode, status FROM ai_call_observations ORDER BY id ASC",
+        );
+        assert.deepEqual(
+          observations
+            .filter((item) => item.model === "gpt-4o-mini" || item.model === "gpt-4.1-mini")
+            .map((item) => [item.model, item.call_mode, item.status]),
+          [
+            ["gpt-4o-mini", "primary", "success"],
+            ["gpt-4.1-mini", "shadow", "success"],
+          ],
+        );
+      });
     } finally {
       globalThis.fetch = originalFetch;
       if (previousApiKey == null) {

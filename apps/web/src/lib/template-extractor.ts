@@ -184,6 +184,18 @@ function normalizeTemplateConfig(value: unknown, fallback: ReturnType<typeof der
   };
 }
 
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string) {
+  let timeout: NodeJS.Timeout | null = null;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeout = setTimeout(() => reject(new Error(message)), timeoutMs);
+  });
+  return Promise.race([promise, timeoutPromise]).finally(() => {
+    if (timeout) {
+      clearTimeout(timeout);
+    }
+  });
+}
+
 async function deriveTemplateConfigWithAi(input: {
   title: string;
   finalUrl: string;
@@ -232,6 +244,10 @@ function extractTitle(html: string) {
   return match ? stripHtml(match[1]) : "";
 }
 
+function isLocalTemplateSource(url: URL) {
+  return ["localhost", "127.0.0.1", "::1"].includes(url.hostname);
+}
+
 export async function extractTemplateFromUrl(url: string, userId?: number) {
   await ensureExtendedProductSchema();
   const normalizedUrl = url.trim();
@@ -256,14 +272,21 @@ export async function extractTemplateFromUrl(url: string, userId?: number) {
   const title = extractTitle(html);
   const heuristicConfig = deriveTemplateConfig(html);
   const config = await (async () => {
+    if (isLocalTemplateSource(pageUrl)) {
+      return heuristicConfig;
+    }
     try {
-      return await deriveTemplateConfigWithAi({
-        title,
-        finalUrl: response.finalUrl || normalizedUrl,
-        html,
-        fallback: heuristicConfig,
-        userId,
-      });
+      return await withTimeout(
+        deriveTemplateConfigWithAi({
+          title,
+          finalUrl: response.finalUrl || normalizedUrl,
+          html,
+          fallback: heuristicConfig,
+          userId,
+        }),
+        8_000,
+        "AI 模板分析超时",
+      );
     } catch {
       return heuristicConfig;
     }

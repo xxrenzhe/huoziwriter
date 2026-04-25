@@ -235,7 +235,7 @@ export function MarketingShell({
         className={marketingFooterClassName}
       >
         <div className="mx-auto flex max-w-7xl flex-col gap-4 px-6 py-6 text-sm text-inkMuted md:flex-row md:items-center md:justify-between">
-          <div>HuoZi Writer · 运营后台发号制写作 SaaS</div>
+          <div>HuoZi Writer · 邀请开通制写作 SaaS</div>
           <div className="flex flex-wrap gap-4">
             {marketingFooterLinks.map((item) => (
               <Link key={item.href} href={item.href} className={marketingFooterLinkClassName}>

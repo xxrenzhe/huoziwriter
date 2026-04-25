@@ -1838,7 +1838,7 @@ export function AdminWritingEvalDatasetsClient({
                             </div>
                             <div className="mt-1 text-xs text-inkMuted">
                               readiness {readinessStatus} · importedItems {importedItems} · skipped {skippedCount}
-                              {log.username ? ` · by ${log.username}` : " · by scheduler/service"}
+                              {log.username ? ` · 操作人 ${log.username}` : " · 自动补桶"}
                             </div>
                           </div>
                           <Link
@@ -1863,7 +1863,7 @@ export function AdminWritingEvalDatasetsClient({
                 </div>
               ) : (
                 <div className={adminEmptyStateClassName}>
-                  当前评测集还没有自动补桶记录。后续由 scheduler/service 或管理员触发自动补桶后，会在这里沉淀最近台账。
+                  当前评测集还没有自动补桶记录。后续由自动任务或管理员触发自动补桶后，会在这里沉淀最近台账。
                 </div>
               )
             ) : (

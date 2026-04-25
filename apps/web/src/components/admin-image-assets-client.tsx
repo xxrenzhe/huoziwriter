@@ -67,7 +67,7 @@ export function AdminImageAssetMaintenance() {
     <form onSubmit={handleSubmit} className={adminMaintenanceFormClassName}>
       <div className="text-xs uppercase tracking-[0.18em] text-adminInkMuted">Image Maintenance</div>
       <div className="mt-2 text-sm leading-7 text-adminInkSoft">
-        对历史 `passthrough` / `passthrough-fallback` 资产执行一次重建，补齐真实压缩图和缩略图。单次建议先跑小批量。
+        对历史待补齐图片资产执行一次重建，补齐真实压缩图和缩略图。单次建议先跑小批量。
       </div>
       <div className="mt-4 flex flex-wrap items-center gap-3">
         <Input

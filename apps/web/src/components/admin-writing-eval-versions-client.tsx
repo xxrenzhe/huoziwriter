@@ -1876,7 +1876,7 @@ export function AdminWritingEvalVersionsClient({
                           className={adminVersionsTextareaClassName}
                         />
                         <div className="mt-2 text-xs leading-6 text-inkMuted">
-                          `recommendation` 会允许 scheduler 按线上回流自动收缩、限流或谨慎扩量；`manual` 只保留提示，不自动改配置。
+                          推荐模式会允许系统按线上回流自动收缩、限流或谨慎扩量；手动模式只保留提示，不自动改配置。
                         </div>
                       </>
                     ) : (
@@ -1911,15 +1911,15 @@ export function AdminWritingEvalVersionsClient({
                   title="自动放量审计"
                   description={
                     selectedVersion?.versionType === "prompt_version"
-                      ? "只展示 scheduler 针对当前 Prompt 版本写入的 `prompt_rollout_auto_manage` 审计，用于追踪自动收缩、限流和扩量原因。"
-                      : "只展示 scheduler 针对当前资产写入的 `writing_asset_rollout_auto_manage` 审计，用于追踪自动收缩、限流和扩量原因。"
+                      ? "只展示当前 Prompt 版本的自动治理审计，用于追踪自动收缩、限流和扩量原因。"
+                      : "只展示当前资产的自动治理审计，用于追踪自动收缩、限流和扩量原因。"
                   }
                   logs={selectedRolloutAuditLogs}
                   actionLinks={selectedRolloutAuditActionLinks}
                   emptyState={
                     selectedVersion?.versionType === "prompt_version"
-                      ? "当前 Prompt 版本还没有自动放量审计记录。若 `autoMode=recommendation` 且 scheduler 已运行，后续会在这里显示每次自动调整。"
-                      : "当前资产还没有自动放量审计记录。若 `autoMode=recommendation` 且 scheduler 已运行，后续会在这里显示每次自动调整。"
+                      ? "当前 Prompt 版本还没有自动放量审计记录。开启推荐模式后，后续会在这里显示每次自动调整。"
+                      : "当前资产还没有自动放量审计记录。开启推荐模式后，后续会在这里显示每次自动调整。"
                   }
                   emptyReasonFallback="本次自动放量未写入原因。"
                   showTimeline
@@ -1945,7 +1945,7 @@ export function AdminWritingEvalVersionsClient({
               <div>
                 <SectionEyebrow tone="cinnabar">Prompt 灰度治理</SectionEyebrow>
                 <div className="mt-3 text-sm leading-7 text-inkSoft">
-                  聚焦当前 prompt 版本的自动灰度配置、账本判断和 scheduler 审计，不和通用写作资产治理混在一起看。
+                  聚焦当前 Prompt 版本的自动灰度配置、账本判断和治理审计，不和通用写作资产治理混在一起看。
                 </div>
               </div>
               <SecondaryActionLinks items={selectedPromptGovernanceActionLinks} />
@@ -2011,10 +2011,10 @@ export function AdminWritingEvalVersionsClient({
 
             <RolloutAuditSection
               title="Prompt 自动治理审计"
-              description="这里单独展示 `prompt_rollout_auto_manage` 审计，便于核对 prompt scheduler 何时收缩、维持或扩量。"
+              description="这里单独展示 Prompt 自动治理审计，便于核对何时收缩、维持或扩量。"
               logs={selectedPromptRolloutAuditLogs}
               actionLinks={selectedPromptRolloutAuditActionLinks}
-              emptyState="当前 prompt 版本还没有自动治理审计记录。若 `autoMode=recommendation` 且 scheduler 已运行，后续会在这里显示治理轨迹。"
+              emptyState="当前 Prompt 版本还没有自动治理审计记录。开启推荐模式后，后续会在这里显示治理轨迹。"
               emptyReasonFallback="本次 prompt 自动治理未写入原因。"
             />
           </div>

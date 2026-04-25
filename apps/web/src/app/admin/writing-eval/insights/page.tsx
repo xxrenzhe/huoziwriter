@@ -360,7 +360,7 @@ export default async function AdminWritingEvalInsightsPage() {
   ];
   const executionKpis = [
     {
-      label: "近 7 天 stage job",
+      label: "近 7 天评测任务",
       current: executionInsights.currentWindow.jobCount,
       previous: executionInsights.previousWindow.jobCount,
       delta: executionInsights.currentWindow.jobCount - executionInsights.previousWindow.jobCount,
@@ -668,10 +668,10 @@ export default async function AdminWritingEvalInsightsPage() {
             <div>
               <div className="text-xs uppercase tracking-[0.24em] text-inkMuted">执行监控</div>
               <div className="mt-2 text-sm leading-7 text-inkMuted">
-                这里聚合所有 `writingEvalRun / writingEvalScore / writingEvalPromote` stage job，直接看跨 run 的失败趋势、重试压力和阶段耗时，不再只靠单条 run 详情排查。
+                这里聚合所有写作评测任务，直接看跨实验的失败趋势、重试压力和阶段耗时，不再只靠单次详情排查。
               </div>
             </div>
-            <div className="text-sm text-inkMuted">cross-run stage jobs</div>
+            <div className="text-sm text-inkMuted">跨实验任务</div>
           </div>
 
           <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -699,15 +699,15 @@ export default async function AdminWritingEvalInsightsPage() {
 
           <div className="mt-5 grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
             <section className={adminInsightsInsetCardClassName}>
-              <div className="text-xs uppercase tracking-[0.18em] text-inkMuted">6 周 stage job 趋势</div>
+              <div className="text-xs uppercase tracking-[0.18em] text-inkMuted">6 周任务趋势</div>
               <div className="mt-2 text-sm leading-7 text-inkMuted">
-                看 job 总量、失败数、retry 和三段阶段的失败分布，判断问题主要卡在生成、评分还是决议。
+                看任务总量、失败数、重试次数和三段阶段的失败分布，判断问题主要卡在生成、评分还是决议。
               </div>
               <div className={adminInsightsDesktopTableShellClassName}>
                 <table className="w-full min-w-[820px] text-left text-sm">
                   <thead className="text-inkMuted">
                     <tr>
-                      {["窗口", "Job 数", "失败", "Retry", "均耗时", "生成失败", "评分失败", "决议失败"].map((head) => (
+                      {["窗口", "任务数", "失败", "重试", "均耗时", "生成失败", "评分失败", "决议失败"].map((head) => (
                         <th key={head} className="pb-4 font-medium">
                           {head}
                         </th>
@@ -742,7 +742,7 @@ export default async function AdminWritingEvalInsightsPage() {
                     </div>
                     <AdminInsightsMobileMetricGrid
                       items={[
-                        { label: "Job 数", value: item.jobCount },
+                        { label: "任务数", value: item.jobCount },
                         { label: "均耗时", value: formatDurationHours(item.averageDurationSeconds), tone: "text-inkSoft" },
                         { label: "生成失败", value: item.generationFailedCount, tone: "text-inkSoft" },
                         { label: "评分失败", value: item.scoringFailedCount, tone: "text-inkSoft" },
@@ -760,7 +760,7 @@ export default async function AdminWritingEvalInsightsPage() {
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <div className="text-sm uppercase tracking-[0.18em] text-inkMuted">{item.stageLabel}</div>
-                      <div className="mt-2 text-xl text-ink">{item.jobCount} 个 job</div>
+                      <div className="mt-2 text-xl text-ink">{item.jobCount} 个任务</div>
                     </div>
                     <div className={`text-sm ${getDeltaTone(item.failedDelta, true)}`}>
                       失败 {item.failedJobCount}
@@ -783,7 +783,7 @@ export default async function AdminWritingEvalInsightsPage() {
             <section className={adminInsightsInsetCardClassName}>
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <div className="text-xs uppercase tracking-[0.18em] text-inkMuted">最近失败 stage job</div>
+                  <div className="text-xs uppercase tracking-[0.18em] text-inkMuted">最近失败任务</div>
                   <div className="mt-2 text-sm leading-7 text-inkMuted">
                     优先拉出最近失败的生成 / 评分 / 决议任务，快速定位当前最值得排查的 run。
                   </div>
@@ -796,7 +796,7 @@ export default async function AdminWritingEvalInsightsPage() {
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div>
                         <div className="font-mono text-xs text-inkSoft">
-                          {item.stageLabel} · job #{item.jobId}
+                          {item.stageLabel} · 任务 #{item.jobId}
                           {item.runCode ? ` · ${item.runCode}` : ""}
                         </div>
                         <div className="mt-2 text-xs text-inkMuted">
@@ -813,7 +813,7 @@ export default async function AdminWritingEvalInsightsPage() {
                     {item.lastError ? <div className="mt-2 text-sm leading-7 text-cinnabar">{item.lastError}</div> : null}
                   </article>
                 ))}
-                {executionInsights.recentFailures.length === 0 ? <div className="text-sm text-inkMuted">最近没有失败 stage job。</div> : null}
+                {executionInsights.recentFailures.length === 0 ? <div className="text-sm text-inkMuted">最近没有失败任务。</div> : null}
               </div>
             </section>
 
@@ -1170,7 +1170,7 @@ export default async function AdminWritingEvalInsightsPage() {
           <div>
             <div className="text-xs uppercase tracking-[0.24em] text-inkMuted">自动放量按天趋势</div>
             <div className="mt-2 text-sm leading-7 text-inkMuted">
-              观察近 7 天自动放量的日节奏，判断 scheduler 是否连续收缩、是否出现扩量停滞，或是否在短时间内集中触发高风险动作。
+              观察近 7 天自动放量的日节奏，判断系统是否连续收缩、是否出现扩量停滞，或是否在短时间内集中触发高风险动作。
             </div>
           </div>
           <div className="text-sm text-inkMuted">最近 7 天</div>
@@ -1283,7 +1283,7 @@ export default async function AdminWritingEvalInsightsPage() {
           <div>
             <div className="text-xs uppercase tracking-[0.24em] text-inkMuted">自动放量动作明细</div>
             <div className="mt-2 text-sm leading-7 text-inkMuted">
-              这里聚合 scheduler 产生的 `writing_asset_rollout_auto_manage` 与 `prompt_rollout_auto_manage` 审计，帮助运营从长期视角判断自动扩量是否过快、自动收缩是否过于频繁。
+              这里聚合自动治理动作审计，帮助运营从长期视角判断自动扩量是否过快、自动收缩是否过于频繁。
             </div>
           </div>
           <div className="text-sm text-inkMuted">最近 7 天 {recentAutoRolloutTrend.length} 条</div>

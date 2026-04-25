@@ -52,7 +52,7 @@ export function WechatConnectModal({
               {continuePublishAfterWechatConnect ? "补录凭证后继续发布" : "新增公众号连接"}
             </div>
             <div className="mt-3 text-sm leading-7 text-inkSoft">
-              这里直接录入公众号 `AppID / AppSecret`，系统会立即向微信校验并换取访问令牌。
+              这里直接录入公众号 AppID 与 AppSecret，系统会立即向微信校验并换取访问令牌。
             </div>
           </div>
           <Button onClick={onClose} variant="secondary" size="sm">

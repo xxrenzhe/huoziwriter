@@ -349,21 +349,21 @@ export default async function AdminOverviewPage() {
     <div className="space-y-8">
       <AdminOverview
         title="后台既要看经营指标，也要看写作主链路有没有真的跑起来。"
-        description="当前后台已经接入用户管理、套餐结构、Prompt 版本、模型路由和微信草稿箱发布统计，默认管理账号固定为 huozi。"
+        description="当前后台已经接入用户管理、套餐结构、Prompt 版本、模型路由和微信草稿箱发布统计。"
         metrics={[
-          { label: "激活用户", value: String(activeUsers), note: `总用户 ${users.length} 个，全部由后台手动创建。` },
+          { label: "激活用户", value: String(activeUsers), note: `总用户 ${users.length} 个，当前由管理端统一开通。` },
           { label: "写作资产", value: String((articles?.count ?? 0) + (fragments?.count ?? 0)), note: `稿件 ${(articles?.count ?? 0)} 篇，碎片 ${(fragments?.count ?? 0)} 条。` },
           { label: "背景卡", value: String(knowledgeCards?.count ?? 0), note: "系统已沉淀的结构化背景卡数量。" },
           { label: "微信成功推送", value: String(syncSuccess?.count ?? 0), note: "这里统计真实写入公众号草稿箱成功的次数。" },
           { label: "审计事件", value: String(auditLogs?.count ?? 0), note: "配置变更、灰度切换、资产调整等关键动作都会写入审计日志。" },
           { label: "经营系列", value: String(business.seriesCount), note: `启用用户 ${business.activeUserCount} 个，已发布稿件 ${business.publishedArticleCount} 篇。` },
-          { label: "生图引擎", value: imageEngine.hasApiKey ? "已配置" : "未配置", note: imageEngine.baseUrl ? `${imageEngine.model} · ${imageEngine.baseUrl}` : "封面图生成仍需运营后台补充 Base_URL 与 API Key。" },
+          { label: "生图引擎", value: imageEngine.hasApiKey ? "已配置" : "未配置", note: imageEngine.baseUrl ? `${imageEngine.model} · ${imageEngine.baseUrl}` : "封面图生成仍需补充服务地址与访问凭据。" },
           { label: "图片资产", value: String(imageAssetTotal), note: `已固化封面 ${(coverImages?.count ?? 0)} 张，候选 ${(coverImageCandidates?.count ?? 0)} 张。` },
           { label: "支持单", value: String(supportCount?.count ?? 0), note: "来自 /support 页的联系与问题提交。" },
           { label: "外采异常", value: String(recentExternalIncidents.length), note: `降级抓取 ${degradedCaptureJobs.length} 条，热点抓取失败 ${failedTopicFetchJobs.length} 条。` },
         ]}
         panels={[
-          { title: "用户与权限", description: "默认管理账号固定为 huozi，普通用户不开放自助注册，所有账号都走后台发放。", meta: "Users" },
+          { title: "用户与权限", description: "账号、角色、套餐和启停状态都在这里统一管理。", meta: "Users" },
           { title: "背景卡治理", description: "冲突、过期、低置信度背景卡可以在后台统一重编译和调整状态。", meta: "Knowledge" },
           { title: "审计日志", description: "后台可以按动作、目标类型和操作人回看关键改动，避免把配置治理和业务动作混在口头描述里。", meta: "Audit" },
           { title: "Prompt 版本", description: `当前共 ${prompts.length} 条 Prompt 版本记录，正在生效的版本 ${activePromptVersions} 条。`, meta: "Prompts" },
@@ -608,7 +608,7 @@ export default async function AdminOverviewPage() {
                       <span>source {asset.manifest?.sourceKind || "unknown"}</span>
                     </div>
                     <div className="mt-3 text-xs leading-6 text-adminInkSoft">
-                      {asset.compressed_object_key || asset.manifest?.compressed?.objectKey || "未记录 compressed object key"}
+                      {asset.compressed_object_key || asset.manifest?.compressed?.objectKey || "未记录压缩图存储路径"}
                     </div>
                     <div className="mt-2 text-xs leading-6 text-adminInkSoft">
                       {asset.image_url}
@@ -629,7 +629,7 @@ export default async function AdminOverviewPage() {
         <div className={adminSectionEyebrowClassName}>Default Sources</div>
         <h2 className={adminSectionTitleClassName}>系统默认信息源</h2>
         <div className={adminSectionDescriptionClassName}>
-          运营后台在这里维护全局默认信源，新增后会立即尝试同步一轮热点；普通作者只能在此基础上叠加自己的自定义源。
+          在这里维护全局默认信源，新增后会立即尝试同步一轮热点；普通作者可在此基础上叠加自己的自定义源。
         </div>
         <div className="mt-5">
           <AdminTopicSourcesClient

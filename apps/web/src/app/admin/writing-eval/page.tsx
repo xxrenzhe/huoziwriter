@@ -514,7 +514,7 @@ export default async function AdminWritingEvalPage() {
             <div className={adminInsetCardClassName}>
               <div className="text-xs uppercase tracking-[0.18em] text-adminInkMuted">到点未处理</div>
               <div className="mt-3 text-adminInk">{scheduleStats.dueCount} 条启用中的 schedule 已到派发时间</div>
-              <div className="mt-2 text-sm text-adminInkMuted">如果这个数字持续累积，优先排查 scheduler 心跳和 service token。</div>
+              <div className="mt-2 text-sm text-adminInkMuted">如果这个数字持续累积，优先检查自动派发服务与服务授权状态。</div>
               {dueSchedules.length > 0 ? (
                 <div className="mt-3 space-y-2">
                   {dueSchedules.map((item) => (
@@ -809,7 +809,7 @@ export default async function AdminWritingEvalPage() {
                 <div className="mt-2 text-sm text-adminInkMuted">
                   {latestAutoRolloutAction
                     ? `${formatWritingEvalDateTime(latestAutoRolloutAction.createdAt)} · 风险 ${latestAutoRolloutAction.riskLevel} · ${latestAutoRolloutAction.reason || "无原因"}`
-                    : "scheduler 写入自动放量审计后，这里会显示最近一次自动收缩或扩量。"}
+                    : "自动放量审计写入后，这里会显示最近一次自动收缩或扩量。"}
                 </div>
                 {latestAutoRolloutAction ? (
                   <>

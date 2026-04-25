@@ -8,6 +8,17 @@ import { getVisibleTopicRecommendationsForUser } from "./topic-recommendations";
 
 const ACTIVE_SERIES_STATUSES = new Set(["active", "running"]);
 
+function uniquePendingOutcomeArticles<T extends { article: { id: number } }>(items: T[]) {
+  const seen = new Set<number>();
+  return items.filter((item) => {
+    if (seen.has(item.article.id)) {
+      return false;
+    }
+    seen.add(item.article.id);
+    return true;
+  });
+}
+
 function normalizeSeriesStatus(value: string | null | undefined) {
   return String(value || "").trim().toLowerCase();
 }
@@ -195,7 +206,12 @@ export async function getWarroomData(userId: number) {
   const overdueOutcomeCount = pendingOutcomeArticles.filter((item) => item.isOverdue).length;
   const failedPublishCount = failedPublishArticles.length;
   const visibleTopics = topicPool.slice(0, 3);
-  const visiblePendingOutcomeArticles = pendingOutcomeArticles.slice(0, 3);
+  const latestPendingOutcomeArticle = [...pendingOutcomeArticles]
+    .sort((left, right) => right.article.id - left.article.id)[0];
+  const visiblePendingOutcomeArticles = uniquePendingOutcomeArticles([
+    ...pendingOutcomeArticles.slice(0, 3),
+    ...(latestPendingOutcomeArticle ? [latestPendingOutcomeArticle] : []),
+  ]);
   const focus =
     failedPublishCount > 0
       ? {

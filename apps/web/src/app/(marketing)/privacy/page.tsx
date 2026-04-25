@@ -7,7 +7,7 @@ export default function PrivacyPage() {
         <div className="text-xs uppercase tracking-[0.3em] text-cinnabar">Privacy Policy</div>
         <h1 className="mt-4 font-serifCn text-4xl font-semibold text-ink md:text-5xl text-balance">隐私协议</h1>
         <p className="mt-4 text-base leading-8 text-inkSoft">
-          活字处理的是素材、草稿、模板资产和公众号连接，这些都属于高敏感写作资产。v1 的原则很简单：只处理完成写作链路所必需的数据，不把你的内容偷渡成训练燃料。
+          活字处理的是素材、草稿、模板资产和公众号连接，这些都属于高敏感写作资产。我们的原则很简单：只处理完成写作链路所必需的数据，不把你的内容偷渡成训练燃料。
         </p>
       </section>
       <section className="grid gap-4 md:grid-cols-2">
@@ -26,7 +26,7 @@ export default function PrivacyPage() {
           </div>
           <h2 className="mt-5 font-serifCn text-3xl text-ink text-balance">微信授权说明。</h2>
           <p className="mt-4 text-sm leading-7 text-inkSoft">
-            v1 使用用户手动填写的公众号 appId 与 appSecret 建立连接，仅用于 access token 获取、素材上传和草稿箱推送。系统不会自动群发，不会接管你的公众号运营行为。
+            你可以填写公众号 AppID 与 AppSecret 建立连接，仅用于获取访问令牌、上传素材和推送草稿。系统不会自动群发，不会接管你的公众号运营行为。
           </p>
         </article>
       </section>
@@ -45,13 +45,13 @@ export default function PrivacyPage() {
           <section>
             <h2 className="font-serifCn text-2xl font-semibold text-ink text-balance">日志与审计</h2>
             <p className="mt-4 text-base leading-9 text-inkSoft">
-              后台保留必要的登录、账号管理、Prompt 版本切换与同步日志，用于安全审计和故障排查。日志展示给运营后台时统一使用 camelCase API 字段，并区分业务数据与系统审计数据。
+              平台保留必要的登录、账号管理、Prompt 版本切换与同步日志，用于安全审计和故障排查。日志仅展示必要摘要，并区分业务数据与系统审计数据。
             </p>
           </section>
           <section>
             <h2 className="font-serifCn text-2xl font-semibold text-ink text-balance">凭证与密钥</h2>
             <p className="mt-4 text-base leading-9 text-inkSoft">
-              公众号凭证与全局 AI 引擎密钥均以加密形式持久化，接口不会回传明文。即使运营后台查看配置，也只能看到状态、更新时间和是否已配置，不能直接读取密钥原值。
+              公众号凭证与全局 AI 引擎密钥均以加密形式持久化，界面不会回传明文。管理员查看配置时只能看到状态、更新时间和是否已配置，不能直接读取密钥原值。
             </p>
           </section>
         </div>

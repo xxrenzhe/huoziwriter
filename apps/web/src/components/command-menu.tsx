@@ -273,11 +273,6 @@ export function CommandMenuProvider({ children }: { children: React.ReactNode })
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
-        event.preventDefault();
-        setOpen((current) => !current);
-        return;
-      }
       if (event.key === "Escape") {
         setOpen(false);
       }
@@ -396,7 +391,7 @@ export function CommandMenuProvider({ children }: { children: React.ReactNode })
                   className={commandMenuInputClassName}
                 />
                 <div className={commandMenuHeaderHintClassName}>
-                  ⌘/Ctrl + K 打开；支持最近访问、稿件标题、素材关键词、打法标签和主题命令。
+                  通过当前页显式入口打开；支持最近访问、稿件标题、素材关键词、打法标签和主题命令。
                 </div>
               </div>
             </div>

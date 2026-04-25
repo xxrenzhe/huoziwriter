@@ -92,10 +92,10 @@ export function MarketingHero() {
             </p>
           </div>
           <div className={heroCapabilityPanelClassName}>
-            <div className={mutedCardEyebrowClassName}>v1 真实能力</div>
+            <div className={mutedCardEyebrowClassName}>核心能力</div>
             <ul className="space-y-2 text-sm text-inkSoft">
               <li>微信草稿箱真实推送</li>
-              <li>运营后台发号，不开放自助注册</li>
+              <li>邀请开通，账号安全可控</li>
               <li>Prompt 版本化管理</li>
             </ul>
           </div>

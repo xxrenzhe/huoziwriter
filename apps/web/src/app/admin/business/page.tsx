@@ -22,7 +22,7 @@ export default async function AdminBusinessPage() {
   await requireAdminSession();
   const overview = await getAdminBusinessOverview();
   const businessMetrics = [
-    ["总用户数", String(overview.userCount), "后台手动发号的总量"],
+    ["总用户数", String(overview.userCount), "已开通账号总量"],
     ["激活用户", String(overview.activeUserCount), "当前仍处于启用状态的账号数"],
     ["稿件总数", String(overview.articleCount), "当前库中已创建稿件数"],
     ["已发布稿件", String(overview.publishedArticleCount), "已经完成发布的稿件数"],

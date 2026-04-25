@@ -19,6 +19,18 @@ export type GenerationBuildResult = {
   promptVersionRefs: string[];
 };
 
+function withGenerationTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string) {
+  let timeout: NodeJS.Timeout | null = null;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeout = setTimeout(() => reject(new Error(message)), timeoutMs);
+  });
+  return Promise.race([promise, timeoutPromise]).finally(() => {
+    if (timeout) {
+      clearTimeout(timeout);
+    }
+  });
+}
+
 type LayoutStrategyConfig = {
   name?: string;
   tone?: string;
@@ -842,14 +854,18 @@ export async function buildGeneratedArticleDraft(input: {
   ].join("\n");
 
   try {
-    const drafted = await generateSceneText({
-      sceneCode: "articleWrite",
-      systemPrompt: "",
-      systemSegments: writerSystemSegments,
-      userPrompt: writerUserPrompt,
-      temperature: 0.5,
-      rolloutUserId: input.promptContext?.userId ?? null,
-    });
+    const drafted = await withGenerationTimeout(
+      generateSceneText({
+        sceneCode: "articleWrite",
+        systemPrompt: "",
+        systemSegments: writerSystemSegments,
+        userPrompt: writerUserPrompt,
+        temperature: 0.5,
+        rolloutUserId: input.promptContext?.userId ?? null,
+      }),
+      12_000,
+      "正文生成 AI 超时",
+    );
 
     const auditUserPrompt = [
       promptBlock("原始事实：", formatPromptTemplate("- {{fragmentText}}", { fragmentText })),
@@ -860,14 +876,18 @@ export async function buildGeneratedArticleDraft(input: {
       "请输出净化后的最终 Markdown 正文，不要解释。",
     ].join("\n");
 
-    const audited = await generateSceneText({
-      sceneCode: "languageGuardAudit",
-      systemPrompt: "",
-      systemSegments: auditSystemSegments,
-      userPrompt: auditUserPrompt,
-      temperature: 0.2,
-      rolloutUserId: input.promptContext?.userId ?? null,
-    });
+    const audited = await withGenerationTimeout(
+      generateSceneText({
+        sceneCode: "languageGuardAudit",
+        systemPrompt: "",
+        systemSegments: auditSystemSegments,
+        userPrompt: auditUserPrompt,
+        temperature: 0.2,
+        rolloutUserId: input.promptContext?.userId ?? null,
+      }),
+      8_000,
+      "正文审校 AI 超时",
+    );
 
     return {
       markdown: sanitizeBannedWords(audited.text.trim(), input.bannedWords),
@@ -997,14 +1017,18 @@ export async function buildGeneratedOpeningPreview(input: {
   ].join("\n");
 
   try {
-    const drafted = await generateSceneText({
-      sceneCode: "articleWrite",
-      systemPrompt: "",
-      systemSegments: writerSystemSegments,
-      userPrompt: writerUserPrompt,
-      temperature: 0.6,
-      rolloutUserId: input.promptContext?.userId ?? null,
-    });
+    const drafted = await withGenerationTimeout(
+      generateSceneText({
+        sceneCode: "articleWrite",
+        systemPrompt: "",
+        systemSegments: writerSystemSegments,
+        userPrompt: writerUserPrompt,
+        temperature: 0.6,
+        rolloutUserId: input.promptContext?.userId ?? null,
+      }),
+      12_000,
+      "开头预览 AI 超时",
+    );
 
     const auditUserPrompt = [
       promptBlock("原始事实：", formatPromptTemplate("- {{fragmentText}}", { fragmentText })),
@@ -1015,14 +1039,18 @@ export async function buildGeneratedOpeningPreview(input: {
       "请输出净化后的最终开头预览，不要解释，不要补完整文。",
     ].join("\n");
 
-    const audited = await generateSceneText({
-      sceneCode: "languageGuardAudit",
-      systemPrompt: "",
-      systemSegments: auditSystemSegments,
-      userPrompt: auditUserPrompt,
-      temperature: 0.2,
-      rolloutUserId: input.promptContext?.userId ?? null,
-    });
+    const audited = await withGenerationTimeout(
+      generateSceneText({
+        sceneCode: "languageGuardAudit",
+        systemPrompt: "",
+        systemSegments: auditSystemSegments,
+        userPrompt: auditUserPrompt,
+        temperature: 0.2,
+        rolloutUserId: input.promptContext?.userId ?? null,
+      }),
+      8_000,
+      "开头审校 AI 超时",
+    );
 
     return {
       markdown: sanitizeBannedWords(audited.text.trim(), input.bannedWords),
@@ -1188,14 +1216,18 @@ export async function buildCommandRewrite(input: {
   ].join("\n");
 
   try {
-    const drafted = await generateSceneText({
-      sceneCode: "articleWrite",
-      systemPrompt: "",
-      systemSegments: writerSystemSegments,
-      userPrompt: writerUserPrompt,
-      temperature: 0.4,
-      rolloutUserId: input.promptContext?.userId ?? null,
-    });
+    const drafted = await withGenerationTimeout(
+      generateSceneText({
+        sceneCode: "articleWrite",
+        systemPrompt: "",
+        systemSegments: writerSystemSegments,
+        userPrompt: writerUserPrompt,
+        temperature: 0.4,
+        rolloutUserId: input.promptContext?.userId ?? null,
+      }),
+      12_000,
+      "文章改写 AI 超时",
+    );
 
     const auditUserPrompt = [
       promptBlock("原始事实：", formatPromptTemplate("- {{fragmentText}}", { fragmentText })),
@@ -1208,14 +1240,18 @@ export async function buildCommandRewrite(input: {
       "请输出净化后的最终 Markdown 正文，不要解释。",
     ].join("\n");
 
-    const audited = await generateSceneText({
-      sceneCode: "languageGuardAudit",
-      systemPrompt: "",
-      systemSegments: auditSystemSegments,
-      userPrompt: auditUserPrompt,
-      temperature: 0.2,
-      rolloutUserId: input.promptContext?.userId ?? null,
-    });
+    const audited = await withGenerationTimeout(
+      generateSceneText({
+        sceneCode: "languageGuardAudit",
+        systemPrompt: "",
+        systemSegments: auditSystemSegments,
+        userPrompt: auditUserPrompt,
+        temperature: 0.2,
+        rolloutUserId: input.promptContext?.userId ?? null,
+      }),
+      8_000,
+      "语言守卫 AI 超时",
+    );
 
     return {
       markdown: sanitizeBannedWords(audited.text.trim(), input.bannedWords),

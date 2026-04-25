@@ -34,6 +34,18 @@ import { getActiveWritingEvalScoringProfile } from "./writing-eval";
 import { buildWritingDiversityReport } from "./writing-diversity";
 import { buildWritingStateKernel, type ArticlePrototypeCode, type WritingStateVariantCode } from "./writing-state";
 
+function withStageGenerationTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string) {
+  let timeout: NodeJS.Timeout | null = null;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeout = setTimeout(() => reject(new Error(message)), timeoutMs);
+  });
+  return Promise.race([promise, timeoutPromise]).finally(() => {
+    if (timeout) {
+      clearTimeout(timeout);
+    }
+  });
+}
+
 export type ArticleStageArtifactStatus = "ready" | "failed";
 
 export type ArticleStageArtifact = {
@@ -3313,17 +3325,21 @@ async function generateWithPrompt(input: {
       planCode: input.context.planCode,
     });
     const systemSegments = buildArticleArtifactPromptSystemSegments(promptMeta.content);
-    const result = await generateSceneText({
-      sceneCode: input.sceneCode,
-      systemPrompt: promptMeta.content,
-      systemSegments,
-      userPrompt: input.userPrompt,
-      observationMeta: {
-        articleId: input.context.article.id,
-      },
-      temperature: 0.2,
-      rolloutUserId: input.context.userId,
-    });
+    const result = await withStageGenerationTimeout(
+      generateSceneText({
+        sceneCode: input.sceneCode,
+        systemPrompt: promptMeta.content,
+        systemSegments,
+        userPrompt: input.userPrompt,
+        observationMeta: {
+          articleId: input.context.article.id,
+        },
+        temperature: 0.2,
+        rolloutUserId: input.context.userId,
+      }),
+      12_000,
+      `${input.stageCode} AI 生成超时`,
+    );
     const normalized = input.normalize(extractJsonObject(result.text), input.fallback);
     const basePayload = preservedSelection ? { ...normalized, selection: preservedSelection } : normalized;
     return upsertArtifact({
@@ -3538,14 +3554,18 @@ async function runTitleOptimizer(context: GenerationContext, outlinePayload: Rec
       planCode: context.planCode,
     });
     const systemSegments = buildTitleOptimizerSystemSegments(promptMeta.content);
-    const result = await generateSceneText({
-      sceneCode: "titleOptimizer",
-      systemPrompt: promptMeta.content,
-      systemSegments,
-      userPrompt,
-      temperature: 0.2,
-      rolloutUserId: context.userId,
-    });
+    const result = await withStageGenerationTimeout(
+      generateSceneText({
+        sceneCode: "titleOptimizer",
+        systemPrompt: promptMeta.content,
+        systemSegments,
+        userPrompt,
+        temperature: 0.2,
+        rolloutUserId: context.userId,
+      }),
+      8_000,
+      "标题优化 AI 超时",
+    );
     const titleOptimizerRuntimeMeta = buildArticleArtifactRuntimeMetaPatch({
       promptVersionRefs: [String(promptMeta.promptId) + "@" + String(promptMeta.version)],
     }).runtimeMeta as Record<string, unknown> | undefined;
@@ -3647,14 +3667,18 @@ async function runOpeningOptimizer(context: GenerationContext, outlinePayload: R
       planCode: context.planCode,
     });
     const systemSegments = buildOpeningOptimizerSystemSegments(promptMeta.content);
-    const result = await generateSceneText({
-      sceneCode: "openingOptimizer",
-      systemPrompt: promptMeta.content,
-      systemSegments,
-      userPrompt,
-      temperature: 0.2,
-      rolloutUserId: context.userId,
-    });
+    const result = await withStageGenerationTimeout(
+      generateSceneText({
+        sceneCode: "openingOptimizer",
+        systemPrompt: promptMeta.content,
+        systemSegments,
+        userPrompt,
+        temperature: 0.2,
+        rolloutUserId: context.userId,
+      }),
+      8_000,
+      "开头优化 AI 超时",
+    );
     const openingOptimizerRuntimeMeta = buildArticleArtifactRuntimeMetaPatch({
       promptVersionRefs: [String(promptMeta.promptId) + "@" + String(promptMeta.version)],
     }).runtimeMeta as Record<string, unknown> | undefined;

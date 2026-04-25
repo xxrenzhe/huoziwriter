@@ -97,7 +97,7 @@ export default async function AdminPlan17BusinessPage() {
   const topStyleItems = report.styleUsageDrilldown.slice(0, 8);
 
   const batchMetrics = [
-    ["批次数", String(batchDrilldown.batchCount), "已写入 generated_batch_id 的真实批次总数"],
+    ["批次数", String(batchDrilldown.batchCount), "已形成真实生成批次的总数"],
     ["关联稿件", String(batchDrilldown.linkedArticleCount), "批次内已经绑定到稿件的去重文章数"],
     ["回收覆盖率", formatPercent(batchDrilldown.reviewCoverage), "已回收结果稿件 / 已关联稿件"],
     ["回收命中率", formatPercent(batchDrilldown.hitRate), "命中稿件 / 已回收稿件"],
@@ -193,7 +193,7 @@ export default async function AdminPlan17BusinessPage() {
         <div className={eyebrowClassName}>Observation Gaps</div>
         <h2 className="mt-4 font-serifCn text-3xl text-adminInk text-balance">下一步补样方向</h2>
         <p className="mt-3 text-sm leading-7 text-adminInkSoft">
-          这里把 `11.3` 业务验收的阻塞拆成可执行的样本缺口：先补前后窗复盘，再补 radar / 裂变对照，最后补 3+ 样本文风真实使用。
+          这里把业务验收阻塞拆成可执行的样本缺口：先补前后窗复盘，再补雷达与裂变对照，最后补 3 个以上文风真实使用样本。
         </p>
         <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <div className={mutedPanelClassName}>
@@ -539,7 +539,7 @@ export default async function AdminPlan17BusinessPage() {
 
         {batchDrilldown.items.length === 0 ? (
           <div className="mt-6 rounded-3xl border border-dashed border-adminLineStrong bg-adminBg px-5 py-10 text-sm leading-7 text-adminInkSoft">
-            当前没有带 `generated_batch_id` 的真实批次数据，页面不会补造空行。可以先通过业务链路产出 batch，再回来查看 drilldown 或导出。
+            当前还没有真实批次数据，页面不会补造空行。可以先通过业务链路产出批次，再回来查看明细或导出。
           </div>
         ) : (
           <>

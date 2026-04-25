@@ -26,8 +26,8 @@
     "verify:title-eval:local": "tsx scripts/verify-title-eval-local.ts",
     "verify:ui": "pnpm test-storybook && pnpm build-storybook && pnpm test:ui:a11y",
     "lighthouse:ci": "lhci autorun --config=./lighthouserc.json",
-    "test:e2e": "rm -rf apps/web/.next apps/web/.next-e2e && playwright test",
-    "test:e2e:smoke": "rm -rf apps/web/.next apps/web/.next-e2e && playwright test tests/e2e/smoke.spec.ts"
+    "test:e2e": "rm -rf apps/web/.next-e2e && playwright test",
+    "test:e2e:smoke": "rm -rf apps/web/.next-e2e && playwright test tests/e2e/smoke.spec.ts"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

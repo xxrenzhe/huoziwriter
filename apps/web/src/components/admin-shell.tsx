@@ -144,7 +144,7 @@ export function AdminShell({
             <div className="text-xs uppercase tracking-[0.24em] text-adminInkMuted">默认管理账号</div>
             <div className="mt-3 font-serifCn text-2xl text-adminInk text-balance">huozi</div>
             <p className="mt-2 text-sm leading-6 text-adminInkSoft">
-              首次启动由初始化脚本注入，启动前需先配置 `DEFAULT_ADMIN_PASSWORD`。
+              用于完成首次管理配置；上线前请确保初始密码已安全设置并妥善交接。
             </p>
           </div>
         </aside>
@@ -152,7 +152,7 @@ export function AdminShell({
           <div className="mb-6 flex flex-wrap items-center justify-between gap-4 border-b border-adminLineStrong pb-4">
             <div>
               <div className="text-xs uppercase tracking-[0.28em] text-adminInkMuted">Admin Console</div>
-              <div className="mt-2 font-serifCn text-2xl text-adminInk text-balance">系统当前处于可上线骨架阶段</div>
+              <div className="mt-2 font-serifCn text-2xl text-adminInk text-balance">关键运营能力已接入</div>
             </div>
             <div className="flex items-center gap-3">
               <NotificationCenter
@@ -161,7 +161,7 @@ export function AdminShell({
                 triggerAriaLabel="打开后台通知中心"
                 triggerIcon={<Bell size={16} />}
                 title="后台通知中心"
-                description="汇总当前后台骨架阶段最需要跟进的能力接线和上线检查。"
+                description="汇总当前后台最需要跟进的能力状态和上线检查。"
               />
               <CommandTrigger
                 label="搜索命令"
@@ -169,7 +169,7 @@ export function AdminShell({
                 className={adminCommandTriggerClassName}
               />
               <div className={adminStatusPillClassName}>
-                微信草稿箱真实推送已纳入 v1
+                微信草稿箱推送已接入
               </div>
             </div>
           </div>

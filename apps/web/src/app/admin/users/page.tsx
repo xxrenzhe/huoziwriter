@@ -31,7 +31,7 @@ export default async function AdminUsersPage() {
           updatedAt: item.updated_at,
         })),
       }))}
-      initialPasswordHint="新建用户可手动输入密码；留空时会读取服务端 DEFAULT_ADMIN_PASSWORD。首次登录后仍会强制改密。"
+      initialPasswordHint="新建用户可手动输入初始密码；留空时会使用平台预设初始密码。首次登录后仍会强制改密。"
     />
   );
 }

@@ -55,12 +55,11 @@ export function LoginForm() {
   }
 
   return (
-    <form onSubmit={handleSubmit} className={authFormClassName}>
+    <form method="post" onSubmit={handleSubmit} className={authFormClassName}>
       <div className={authFieldClassName}>
         <label htmlFor="login-username" className={authLabelClassName}>用户名</label>
         <Input
           id="login-username"
-          name="username"
           value={username}
           onChange={(event) => setUsername(event.target.value)}
           placeholder="输入用户名"
@@ -76,7 +75,6 @@ export function LoginForm() {
         <label htmlFor="login-password" className={authLabelClassName}>密码</label>
         <Input
           id="login-password"
-          name="current-password"
           type="password"
           value={password}
           onChange={(event) => setPassword(event.target.value)}
@@ -132,15 +130,14 @@ export function ChangePasswordForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} className={authFormClassName}>
+    <form method="post" onSubmit={handleSubmit} className={authFormClassName}>
       <div className={authDescriptionClassName}>
-        {mustChange ? "这是运营后台发放的初始密码，首次登录后必须立即修改。" : "为了账号安全，建议定期轮换密码。"}
+        {mustChange ? "当前仍在使用初始密码，首次登录后必须立即修改。" : "为了账号安全，建议定期轮换密码。"}
       </div>
       <div className={authFieldClassName}>
         <label htmlFor="current-password" className={authLabelClassName}>当前密码</label>
         <Input
           id="current-password"
-          name="currentPassword"
           type="password"
           value={currentPassword}
           onChange={(event) => setCurrentPassword(event.target.value)}
@@ -153,7 +150,6 @@ export function ChangePasswordForm({
         <label htmlFor="next-password" className={authLabelClassName}>新密码</label>
         <Input
           id="next-password"
-          name="nextPassword"
           type="password"
           value={nextPassword}
           onChange={(event) => setNextPassword(event.target.value)}
@@ -166,7 +162,6 @@ export function ChangePasswordForm({
         <label htmlFor="confirm-password" className={authLabelClassName}>确认新密码</label>
         <Input
           id="confirm-password"
-          name="confirmPassword"
           type="password"
           value={confirmPassword}
           onChange={(event) => setConfirmPassword(event.target.value)}

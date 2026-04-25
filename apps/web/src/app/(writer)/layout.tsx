@@ -143,15 +143,17 @@ export default async function WorkspaceLayout({ children }: { children: ReactNod
           />
         )}
       </WriterShell>
-      <PersonaManager
-        initialPersonas={personas}
-        maxCount={personaLimit}
-        currentPlanName={plan.name}
-        canAnalyzeFromSources={planSnapshot.canAnalyzePersonaFromSources}
-        availableWritingStyles={writingStyleProfiles.map((profile) => ({ id: profile.id, name: profile.name }))}
-        tagCatalog={personaCatalog}
-        mandatory
-      />
+      {!personaReady ? (
+        <PersonaManager
+          initialPersonas={personas}
+          maxCount={personaLimit}
+          currentPlanName={plan.name}
+          canAnalyzeFromSources={planSnapshot.canAnalyzePersonaFromSources}
+          availableWritingStyles={writingStyleProfiles.map((profile) => ({ id: profile.id, name: profile.name }))}
+          tagCatalog={personaCatalog}
+          mandatory
+        />
+      ) : null}
     </>
   );
 }

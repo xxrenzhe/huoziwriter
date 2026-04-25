@@ -1254,6 +1254,7 @@ test("writer shell keeps four primary entries", async ({ request, baseURL }) => 
   expect(html).toContain("稿件");
   expect(html).toContain("复盘");
   expect(html).toContain("设置");
+  expect(html).not.toContain("作者人设名称，例如：长期主义产业观察者");
 });
 
 test("command menu opens only from explicit click trigger", async ({ page, request, baseURL }) => {

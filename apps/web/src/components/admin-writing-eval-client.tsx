@@ -5144,7 +5144,7 @@ export function AdminWritingEvalClient({
                                   执行中 {selectedRunJobHistorySummary.running} · 排队中 {selectedRunJobHistorySummary.queued}
                                 </div>
                               </div>
-                              <div className="text-[11px] text-adminInkMuted">共 {selectedRunJobHistory.length} 条 stage job</div>
+                              <div className="text-[11px] text-adminInkMuted">共 {selectedRunJobHistory.length} 条阶段任务</div>
                             </div>
                             <div className="mt-3 space-y-2">
                               {selectedRunJobHistory.map((item) => (
@@ -5582,7 +5582,7 @@ export function AdminWritingEvalClient({
                         </div>
                       ) : (
                         <div className="mt-3 text-xs leading-6 text-adminInkMuted">
-                          当前运营对象还没有 rollout 审计记录。保存后续配置或等待 scheduler 自动治理后，这里会显示最近轨迹。
+                          当前运营对象还没有灰度审计记录。保存后续配置或等待自动治理后，这里会显示最近轨迹。
                         </div>
                       )}
                     </div>
@@ -5789,7 +5789,7 @@ export function AdminWritingEvalClient({
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <div className="text-xs uppercase tracking-[0.2em] text-adminInkMuted">真实回流主口径</div>
-                    <h3 className="mt-3 text-lg text-adminInk">按运行时归因回看的真实发布结果</h3>
+                    <h3 className="mt-3 text-lg text-adminInk">按实际命中归因回看的真实发布结果</h3>
                   </div>
                   <div className="text-xs text-adminInkMuted">
                     {loadingFeedback ? "加载中…" : `${feedbackState?.realOutcome.items.length ?? 0} 条真实回流`}

@@ -121,7 +121,7 @@ export function ArticleOutcomeQuickCaptureButton({
     hitStatus !== "pending"
     && Boolean(reviewSummary.trim())
     && Boolean(nextAction.trim());
-  const saveOutcomeLabel = requiresClosureReview && !closureReady ? "保存并继续待回流" : "保存并完成回流";
+  const saveOutcomeLabel = "保存结果快照";
   const closureHint = buildClosureHint(missingWindowCodes, currentHitStatus);
 
   useEffect(() => {

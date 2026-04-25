@@ -47,7 +47,7 @@ export async function POST(request: Request) {
     const role = parseManagedRole(body.role, "user");
     const password = String(body.password || process.env.DEFAULT_ADMIN_PASSWORD || "").trim();
     if (!password) {
-      throw new Error("创建用户需要显式提供密码，或在服务端配置 DEFAULT_ADMIN_PASSWORD");
+      throw new Error("创建用户需要填写初始密码，或先完成平台默认初始密码设置");
     }
     const user = await createUser({
       username: body.username,

@@ -37,7 +37,7 @@ export default async function ChangePasswordPage() {
           <h1 className={authHeroTitleClassName}>先改密码，再继续写。</h1>
           <p className={authDescriptionClassName}>
             {user.must_change_password
-              ? "当前仍在使用运营后台发放的初始密码。为确保后台账号与写作资产安全，首次登录后必须先完成密码更新。"
+              ? "当前仍在使用初始密码。为确保账号与写作资产安全，首次登录后必须先完成密码更新。"
               : "你可以在这里主动轮换登录密码，更新完成后会回到当前角色对应的首页。"}
           </p>
         </section>

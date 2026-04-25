@@ -58,7 +58,7 @@ export default async function AdminAiRoutingObservationsPage() {
           <div className={accentEyebrowClassName}>AI Call Observations</div>
           <h1 className="mt-4 font-serifCn text-4xl text-adminInk text-balance">AI 调用观测与缓存命中看板</h1>
           <p className="mt-4 max-w-4xl text-sm leading-7 text-adminInkSoft">
-            每次 `generateSceneText()` 调用都会异步写一条观测，按 scene / model 聚合展示调用量、失败率、重试占比、平均时延和缓存读命中率。
+            每次 AI 生成调用都会写入观测记录，按场景和模型聚合展示调用量、失败率、重试占比、平均时延和缓存命中率。
           </p>
         </div>
         <div className="flex flex-wrap gap-3">

@@ -24,7 +24,7 @@ export default function LoginPage() {
           <div className={authBrandClassName}>HuoZi Writer</div>
           <h1 className={authHeroTitleClassName}>进入排版盘。</h1>
           <p className={authDescriptionClassName}>
-            v1 不提供用户自助注册。账号由后台手动创建，默认管理账号用户名为 `huozi`。首次启动前需要配置 `DEFAULT_ADMIN_PASSWORD`。
+            当前采用邀请开通制。请使用已分配的账号登录；首次登录后需要先完成密码更新。
           </p>
         </section>
         <section className={authFormSectionClassName}>

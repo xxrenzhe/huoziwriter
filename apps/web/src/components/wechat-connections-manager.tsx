@@ -155,7 +155,7 @@ export function WechatConnectionsManager({
         <div className="border border-lineStrong/40 bg-paperStrong p-5">
           <div className="text-xs uppercase tracking-[0.24em] text-inkMuted">授权说明</div>
           <div className="mt-3 space-y-2 text-sm leading-7 text-inkSoft">
-            <div>这里直接录入公众号 `AppID / AppSecret`，系统会立即向微信校验并换取访问令牌。</div>
+            <div>这里直接录入公众号 AppID 与 AppSecret，系统会立即向微信校验并换取访问令牌。</div>
             <div>编辑器发布区默认优先使用“默认连接”，也可以临时切换到其他已授权公众号。</div>
             <div>如果你只是改名称、原始 ID 或默认状态，不必重复填写密钥。</div>
           </div>

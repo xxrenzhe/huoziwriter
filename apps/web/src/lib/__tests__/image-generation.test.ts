@@ -9,7 +9,7 @@ import { closeDatabase } from "../db";
 import { generateCoverImage, generateCoverImageCandidates } from "../image-generation";
 import { encryptSecret } from "../security";
 import { ensureExtendedProductSchema } from "../schema-bootstrap";
-import { getGlobalCoverImageEngine, getGlobalCoverImageEngineSecret } from "../image-engine";
+import { getGlobalCoverImageEngine, getGlobalCoverImageEngineSecret, upsertGlobalCoverImageEngine } from "../image-engine";
 import { runPendingMigrations } from "../../../../../scripts/db-flow";
 
 async function withTempDatabase<T>(name: string, run: () => Promise<T>) {
@@ -72,6 +72,32 @@ async function seedImageEngine(input?: {
       "openai",
       input?.baseUrl || "https://api.openai.com/v1",
       encryptSecret("test-openai-key"),
+      input?.model || "gpt-image-2",
+      1,
+      null,
+      now,
+      now,
+    ],
+  );
+}
+
+async function seedBrokenImageEngine(input?: {
+  baseUrl?: string;
+  model?: string;
+}) {
+  await ensureExtendedProductSchema();
+  const db = getDatabase();
+  const now = new Date().toISOString();
+  await db.exec("DELETE FROM global_ai_engines WHERE engine_code = ?", ["coverImage"]);
+  await db.exec(
+    `INSERT INTO global_ai_engines (
+      engine_code, provider_name, base_url, api_key_encrypted, model, is_enabled, updated_by, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      "coverImage",
+      "openai",
+      input?.baseUrl || "https://api.openai.com/v1",
+      Buffer.from("broken-image-secret", "utf8").toString("base64"),
       input?.model || "gpt-image-2",
       1,
       null,
@@ -207,5 +233,54 @@ test("cover image engine env override can reuse OPENAI_* defaults", async () => 
     assert.equal(config.baseUrl, "https://api.openai.com/v1");
     assert.equal(config.hasApiKey, true);
     assert.equal(secret?.apiKey, "shared-openai-key");
+  });
+});
+
+test("cover image engine tolerates unreadable database fallback secret", async () => {
+  await withTempDatabase("broken-db-secret", async () => {
+    await seedBrokenImageEngine({
+      baseUrl: "https://db.example.com/v1",
+      model: "db-image-model",
+    });
+
+    const databaseConfig = await getGlobalCoverImageEngine();
+    const databaseSecret = await getGlobalCoverImageEngineSecret();
+
+    assert.equal(databaseConfig.configSource, "database");
+    assert.equal(databaseConfig.hasApiKey, false);
+    assert.match(databaseConfig.secretWarning || "", /无法在当前环境解密/);
+    assert.equal(databaseSecret?.apiKey, "");
+    assert.equal(databaseSecret?.secretWarning, databaseConfig.secretWarning);
+
+    process.env.COVER_IMAGE_PROVIDER = "openai";
+    process.env.COVER_IMAGE_MODEL = "gpt-image-2";
+    process.env.OPENAI_BASE_URL = "https://api.openai.com/v1";
+    process.env.OPENAI_API_KEY = "shared-openai-key";
+
+    const envConfig = await getGlobalCoverImageEngine();
+    const envSecret = await getGlobalCoverImageEngineSecret();
+
+    assert.equal(envConfig.configSource, "env");
+    assert.equal(envConfig.providerName, "openai");
+    assert.equal(envConfig.baseUrl, "https://api.openai.com/v1");
+    assert.equal(envConfig.hasApiKey, true);
+    assert.match(envConfig.secretWarning || "", /重新输入并保存一次/);
+    assert.equal(envSecret?.apiKey, "shared-openai-key");
+    assert.equal(envSecret?.configSource, "env");
+  });
+});
+
+test("upsertGlobalCoverImageEngine requires re-entering api key when stored fallback secret is unreadable", async () => {
+  await withTempDatabase("broken-db-secret-upsert", async () => {
+    await seedBrokenImageEngine();
+
+    await assert.rejects(
+      () => upsertGlobalCoverImageEngine({
+        operatorUserId: 1,
+        baseUrl: "https://api.openai.com/v1",
+        model: "gpt-image-2",
+      }),
+      /数据库兜底 API Key 无法在当前环境解密/,
+    );
   });
 });
