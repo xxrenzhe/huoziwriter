@@ -135,10 +135,11 @@ test("generateCoverImage uses OpenAI generations endpoint for gpt-image models",
       assert.equal(new Headers(requestInit?.headers).get("authorization"), "Bearer test-openai-key");
       const payload = JSON.parse(String(requestInit?.body || "{}"));
       assert.equal(payload.model, "gpt-image-2");
-      assert.equal(payload.size, "1536x1024");
+      assert.equal(payload.size, "1024x1024");
       assert.equal(payload.output_format, "png");
       assert.equal(payload.n, 1);
       assert.match(String(payload.prompt || ""), /OpenAI 封面/);
+      assert.equal(result.size, "1024x1024");
       assert.match(result.imageUrl, /^data:image\/png;base64,/);
     } finally {
       globalThis.fetch = originalFetch;
@@ -255,7 +256,7 @@ test("generateCoverImageCandidates switches gpt-image reference calls to OpenAI 
         assert.equal(request.url, "https://api.openai.com/v1/images/edits");
         assert(request.body instanceof FormData);
         assert.equal(request.body.get("model"), "gpt-image-2");
-        assert.equal(request.body.get("size"), "1536x1024");
+        assert.equal(request.body.get("size"), "1024x1024");
         assert.equal(request.body.get("output_format"), "png");
         const imagePart = request.body.get("image");
         assert(imagePart instanceof File);
@@ -263,6 +264,36 @@ test("generateCoverImageCandidates switches gpt-image reference calls to OpenAI 
         assert.equal(imagePart.name, "reference.png");
       }
       assert(results.every((item) => /^data:image\/png;base64,/.test(item.imageUrl)));
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+});
+
+test("generateCoverImage supports explicit output resolution override", async () => {
+  await withTempDatabase("openai-resolution-override", async () => {
+    await seedImageEngine();
+
+    const originalFetch = globalThis.fetch;
+    let payload: Record<string, unknown> | null = null;
+
+    globalThis.fetch = (async (_input, init) => {
+      payload = JSON.parse(String(init?.body || "{}")) as Record<string, unknown>;
+      return new Response(JSON.stringify({
+        data: [{ b64_json: Buffer.from("mock-image", "utf8").toString("base64") }],
+      }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }) as typeof fetch;
+
+    try {
+      const result = await generateCoverImage({
+        title: "高分辨率封面",
+        outputResolution: "1536x1024",
+      });
+      assert.equal(payload?.size, "1536x1024");
+      assert.equal(result.size, "1536x1024");
     } finally {
       globalThis.fetch = originalFetch;
     }

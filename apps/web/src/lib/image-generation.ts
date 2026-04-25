@@ -4,6 +4,26 @@ import { buildVisualAuthoringDirective, type ImageAuthoringStyleContext } from "
 type ImageProvider = "openai" | "custom";
 type ImageRequestMode = "generations" | "edits";
 
+function resolveOutputSize(outputResolution?: string | null) {
+  const normalized = String(outputResolution || process.env.COVER_IMAGE_OUTPUT_RESOLUTION || "1K").trim().toLowerCase();
+  if (!normalized) {
+    return "1024x1024";
+  }
+  if (normalized === "1k" || normalized === "1024" || normalized === "1024x1024") {
+    return "1024x1024";
+  }
+  if (normalized === "1k-landscape" || normalized === "landscape" || normalized === "1536x1024") {
+    return "1536x1024";
+  }
+  if (normalized === "1k-portrait" || normalized === "portrait" || normalized === "1024x1536") {
+    return "1024x1536";
+  }
+  if (/^\d{3,4}x\d{3,4}$/.test(normalized)) {
+    return normalized;
+  }
+  return "1024x1024";
+}
+
 function isOfficialOpenAiBaseUrl(baseUrl: string) {
   return /(^https:\/\/api\.openai\.com(?:\/|$))/i.test(String(baseUrl || "").trim());
 }
@@ -96,12 +116,13 @@ function decodeImageDataUrl(dataUrl: string) {
 function buildLegacyImageRequestPayload(input: {
   model: string;
   prompt: string;
+  size: string;
   referenceImageDataUrl?: string | null;
 }) {
   const requestPayload: Record<string, unknown> = {
     model: input.model,
     prompt: input.prompt,
-    size: "1536x1024",
+    size: input.size,
     n: 1,
     response_format: "b64_json",
   };
@@ -120,6 +141,7 @@ function buildOpenAiImageRequest(input: {
   apiKey: string;
   model: string;
   prompt: string;
+  size: string;
   referenceImageDataUrl?: string | null;
 }) {
   if (!input.referenceImageDataUrl) {
@@ -132,7 +154,7 @@ function buildOpenAiImageRequest(input: {
       body: JSON.stringify({
         model: input.model,
         prompt: input.prompt,
-        size: "1536x1024",
+        size: input.size,
         n: 1,
         output_format: "png",
       }),
@@ -147,7 +169,7 @@ function buildOpenAiImageRequest(input: {
   const formData = new FormData();
   formData.append("model", input.model);
   formData.append("prompt", input.prompt);
-  formData.append("size", "1536x1024");
+  formData.append("size", input.size);
   formData.append("n", "1");
   formData.append("output_format", "png");
   formData.append(
@@ -176,6 +198,7 @@ function buildImageRequest(input: {
   apiKey: string;
   model: string;
   prompt: string;
+  size: string;
   referenceImageDataUrl?: string | null;
 }) {
   if (resolveImageProvider(input) === "openai") {
@@ -191,6 +214,7 @@ function buildImageRequest(input: {
       buildLegacyImageRequestPayload({
         model: input.model,
         prompt: input.prompt,
+        size: input.size,
         referenceImageDataUrl: input.referenceImageDataUrl,
       }),
     ),
@@ -363,6 +387,7 @@ export async function generateCoverImage(input: {
   title: string;
   referenceImageDataUrl?: string | null;
   authoringContext?: ImageAuthoringStyleContext | null;
+  outputResolution?: string | null;
 }) {
   const engine = await getGlobalCoverImageEngineSecret();
   if (!engine || !engine.isEnabled || !engine.baseUrl || !engine.apiKey) {
@@ -375,12 +400,14 @@ export async function generateCoverImage(input: {
     undefined,
     input.authoringContext,
   );
+  const size = resolveOutputSize(input.outputResolution);
   const { endpoint, requestInit } = buildImageRequest({
     providerName: engine.providerName,
     baseUrl: engine.baseUrl,
     apiKey: engine.apiKey,
     model: engine.model,
     prompt,
+    size,
     referenceImageDataUrl: input.referenceImageDataUrl,
   });
   const { response, payload } = await fetchImageWithRetry({
@@ -424,6 +451,7 @@ export async function generateCoverImage(input: {
   return {
     imageUrl,
     prompt,
+    size,
     model: engine.model,
     providerName: engine.providerName,
     endpoint,
@@ -435,6 +463,7 @@ async function requestCoverImage(input: {
   referenceImageDataUrl?: string | null;
   variantLabel: string;
   authoringContext?: ImageAuthoringStyleContext | null;
+  outputResolution?: string | null;
 }) {
   const engine = await getGlobalCoverImageEngineSecret();
   if (!engine || !engine.isEnabled || !engine.baseUrl || !engine.apiKey) {
@@ -447,12 +476,14 @@ async function requestCoverImage(input: {
     input.variantLabel,
     input.authoringContext,
   );
+  const size = resolveOutputSize(input.outputResolution);
   const { endpoint, requestInit } = buildImageRequest({
     providerName: engine.providerName,
     baseUrl: engine.baseUrl,
     apiKey: engine.apiKey,
     model: engine.model,
     prompt,
+    size,
     referenceImageDataUrl: input.referenceImageDataUrl,
   });
   const { response, payload } = await fetchImageWithRetry({
@@ -495,6 +526,7 @@ async function requestCoverImage(input: {
   return {
     imageUrl,
     prompt,
+    size,
     model: engine.model,
     providerName: engine.providerName,
     endpoint,
@@ -505,6 +537,7 @@ export async function generateCoverImageCandidates(input: {
   title: string;
   referenceImageDataUrl?: string | null;
   authoringContext?: ImageAuthoringStyleContext | null;
+  outputResolution?: string | null;
 }) {
   const variants = ["留白商业", "叙事纪实"] as const;
   const results = await Promise.all(
@@ -514,6 +547,7 @@ export async function generateCoverImageCandidates(input: {
         referenceImageDataUrl: input.referenceImageDataUrl,
         variantLabel,
         authoringContext: input.authoringContext,
+        outputResolution: input.outputResolution,
       }).then((result) => ({
         ...result,
         variantLabel,
