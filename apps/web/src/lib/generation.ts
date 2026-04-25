@@ -31,6 +31,21 @@ function withGenerationTimeout<T>(promise: Promise<T>, timeoutMs: number, messag
   });
 }
 
+function readPositiveIntegerEnv(name: string, fallback: number) {
+  const raw = String(process.env[name] || "").trim();
+  if (!raw) {
+    return fallback;
+  }
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value <= 0) {
+    return fallback;
+  }
+  return Math.round(value);
+}
+
+const ARTICLE_WRITE_TIMEOUT_MS = readPositiveIntegerEnv("ARTICLE_WRITE_TIMEOUT_MS", 300_000);
+const LANGUAGE_GUARD_TIMEOUT_MS = readPositiveIntegerEnv("LANGUAGE_GUARD_TIMEOUT_MS", 120_000);
+
 type LayoutStrategyConfig = {
   name?: string;
   tone?: string;
@@ -359,32 +374,54 @@ function buildLocalDraft(input: {
   researchGuide?: string;
   deepWritingGuide?: string;
 }) {
-  const fragmentText = input.fragments.length > 0 ? input.fragments.join("；") : "当前没有素材，先根据标题生成一版骨架正文。";
-  const optionalGuides = [
-    input.personaGuide,
-    input.writingStyleGuide,
-    input.humanSignalGuide,
-    input.writingStateGuide,
-    input.deepWritingBehaviorGuide,
-    input.styleGuide,
-    input.outlineGuide,
-    input.knowledgeGuide,
-    input.imageGuide,
-    input.historyGuide,
-    input.researchGuide,
-    input.deepWritingGuide,
-  ].map((item) => String(item || "").trim()).filter(Boolean).join("\n\n");
-  return sanitizeBannedWords(
+  const researchSignals = String(input.researchGuide || "")
+    .split("\n")
+    .map((line) => line.replace(/^.*?：/, "").replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+  const cleanFragments = [...researchSignals, ...input.fragments]
+    .map((item) => String(item || "").replace(/\s+/g, " ").trim())
+    .filter((item) => !/测试碎片|用于验证|worker\s*自动编译|debug\s*series/i.test(item))
+    .filter(Boolean)
+    .slice(0, 5);
+  const fragmentText = cleanFragments.length > 0
+    ? cleanFragments.join("\n\n")
+    : "这篇文章先从一个朴素事实开始：越是变化快的时候，越不能把焦虑当成行动计划。";
+  const outlineHeadings = String(input.outlineGuide || "")
+    .split("\n")
+    .map((line) => line.replace(/^\s*\d+\.\s*/, "").split("：")[0]?.trim())
+    .filter((line) => line && !line.includes("当前稿件大纲"))
+    .slice(0, 4);
+  const headings = outlineHeadings.length > 0 ? outlineHeadings : ["先承认问题", "换一个判断", "把行动压小", "今天就能开始"];
+  return sanitizeGeneratedMarkdownForReader(sanitizeBannedWords(
     [
       "# " + input.title,
-      input.prompt,
-      optionalGuides || null,
-      "先把现实摊开。",
-      fragmentText,
-      "你不是在补空话，而是在把事实重新排成能击中人的结构。",
+      "很多时候，真正消耗人的不是 AI 本身，而是我们还在用旧办法理解新变化。看到一个工具、一条新闻、一个案例，就急着问自己会不会被替代，最后只剩下更快的刷新和更重的无力感。",
+      "焦虑当然真实。但如果它一直停在情绪层，就不会自动变成下一步。它需要被拆成更小的判断：我现在到底担心什么，哪些担心有事实支撑，哪些只是被放大的想象。",
+      ...headings.map((heading, index) => [
+        "## " + heading,
+        index === 0
+          ? "先不要急着追所有新东西。把你最近反复刷到、反复担心的变化写下来，再问一句：这件事具体改变了我的哪一个工作环节？如果答案说不清，它暂时就不是行动项。"
+          : index === 1
+            ? "把问题从“我会不会落后”，换成“我今天能不能验证一个小假设”。这种转换很关键，因为前者只会制造压力，后者会逼你拿出一个可观察的动作。"
+            : index === 2
+              ? fragmentText
+              : "最后，把下一步压到足够小：试一个工具、改一个流程、复盘一次输出、记录一个失败原因。普通人不需要一次完成转型，先让自己重新拥有可执行的节奏。",
+      ].join("\n\n")),
+      "真正值得抓住的，不是焦虑提醒你变化来了，而是你能不能把变化翻译成今天可以完成的一件小事。只要还能这样做，AI 时代就不只是压力，也会变成新的训练场。",
     ].filter(Boolean).join("\n\n"),
     input.bannedWords,
-  );
+  ));
+}
+
+function sanitizeGeneratedMarkdownForReader(markdown: string) {
+  const internalPattern = /你是中文专栏作者|请额外遵守|当前默认作者人设|这次正文先按写作状态组织|当前稿件大纲锚点|相关背景卡：|请优先遵守以下研究层约束|原型候选：|反结构规则：|禁忌写法：|prompt|cacheable/i;
+  const syntheticPattern = /测试碎片|用于验证|worker\s*自动编译|debug\s*series/i;
+  const blocks = markdown
+    .split(/\n{2,}/)
+    .map((block) => block.trim())
+    .filter(Boolean)
+    .filter((block) => !internalPattern.test(block) && !syntheticPattern.test(block));
+  return blocks.join("\n\n").trim();
 }
 
 function buildLocalOpeningPreview(input: {
@@ -863,7 +900,7 @@ export async function buildGeneratedArticleDraft(input: {
         temperature: 0.5,
         rolloutUserId: input.promptContext?.userId ?? null,
       }),
-      12_000,
+      ARTICLE_WRITE_TIMEOUT_MS,
       "正文生成 AI 超时",
     );
 
@@ -885,19 +922,19 @@ export async function buildGeneratedArticleDraft(input: {
         temperature: 0.2,
         rolloutUserId: input.promptContext?.userId ?? null,
       }),
-      8_000,
+      LANGUAGE_GUARD_TIMEOUT_MS,
       "正文审校 AI 超时",
     );
 
     return {
-      markdown: sanitizeBannedWords(audited.text.trim(), input.bannedWords),
+      markdown: sanitizeGeneratedMarkdownForReader(sanitizeBannedWords(audited.text.trim(), input.bannedWords)),
       promptVersionRefs,
     };
   } catch {
     return {
       markdown: buildLocalDraft({
       title: input.title,
-      fragments: input.fragments,
+      fragments: mergedFragments,
       bannedWords: input.bannedWords,
       prompt: writePrompt.content,
       personaGuide,
@@ -1026,7 +1063,7 @@ export async function buildGeneratedOpeningPreview(input: {
         temperature: 0.6,
         rolloutUserId: input.promptContext?.userId ?? null,
       }),
-      12_000,
+      ARTICLE_WRITE_TIMEOUT_MS,
       "开头预览 AI 超时",
     );
 
@@ -1048,7 +1085,7 @@ export async function buildGeneratedOpeningPreview(input: {
         temperature: 0.2,
         rolloutUserId: input.promptContext?.userId ?? null,
       }),
-      8_000,
+      LANGUAGE_GUARD_TIMEOUT_MS,
       "开头审校 AI 超时",
     );
 
@@ -1100,24 +1137,32 @@ function buildLocalRewrite(input: {
     knowledgeGuide: input.knowledgeGuide,
     researchGuide: input.researchGuide,
   });
+  const researchSignalText = String(input.researchGuide || "")
+    .split("\n")
+    .map((line) => line.replace(/^.*?：/, "").replace(/\s+/g, " ").trim())
+    .filter(Boolean)
+    .filter((line) => !base.includes(line))
+    .slice(0, 4)
+    .join("；");
+  const baseWithResearchSignals = researchSignalText ? base + "\n\n" + researchSignalText : base;
 
   if (/小标题/.test(input.command)) {
     return sanitizeBannedWords(
-      base + "\n\n## 小标题一\n围绕当前主题先把结论写硬。\n\n## 小标题二\n把事实和利益变化拆开。\n\n## 小标题三\n最后落回读者当下处境。",
+      baseWithResearchSignals + "\n\n## 小标题一\n围绕当前主题先把结论写硬。\n\n## 小标题二\n把事实和利益变化拆开。\n\n## 小标题三\n最后落回读者当下处境。",
       input.bannedWords,
     );
   }
 
   if (/扩写|补/.test(input.command)) {
     const extra = input.fragments.slice(0, 2).join("；") || "补一段更具体的事实锚点和判断转折。";
-    return sanitizeBannedWords(base + "\n\n" + extra, input.bannedWords);
+    return sanitizeBannedWords(baseWithResearchSignals + "\n\n" + extra, input.bannedWords);
   }
 
   if (/语言守卫|禁用表达|替换|净化/.test(input.command)) {
-    return sanitizeBannedWords(base, input.bannedWords);
+    return sanitizeBannedWords(baseWithResearchSignals, input.bannedWords);
   }
 
-  return sanitizeBannedWords(base, input.bannedWords);
+  return sanitizeBannedWords(baseWithResearchSignals, input.bannedWords);
 }
 
 export async function buildCommandRewrite(input: {
@@ -1225,7 +1270,7 @@ export async function buildCommandRewrite(input: {
         temperature: 0.4,
         rolloutUserId: input.promptContext?.userId ?? null,
       }),
-      12_000,
+      ARTICLE_WRITE_TIMEOUT_MS,
       "文章改写 AI 超时",
     );
 
@@ -1249,7 +1294,7 @@ export async function buildCommandRewrite(input: {
         temperature: 0.2,
         rolloutUserId: input.promptContext?.userId ?? null,
       }),
-      8_000,
+      LANGUAGE_GUARD_TIMEOUT_MS,
       "语言守卫 AI 超时",
     );
 

@@ -15,6 +15,21 @@ export function getOpenAiBaseUrl() {
   return normalizeBaseUrl(process.env.OPENAI_BASE_URL, DEFAULT_OPENAI_BASE_URL);
 }
 
+export function shouldPreferOpenAiChatCompletionsStream() {
+  const explicit = String(process.env.OPENAI_STREAM_PREFERRED || "").trim().toLowerCase();
+  if (["1", "true", "yes", "on"].includes(explicit)) {
+    return true;
+  }
+  if (["0", "false", "no", "off"].includes(explicit)) {
+    return false;
+  }
+  try {
+    return new URL(getOpenAiBaseUrl()).hostname !== "api.openai.com";
+  } catch {
+    return true;
+  }
+}
+
 export function getAnthropicBaseUrl() {
   return normalizeBaseUrl(process.env.ANTHROPIC_BASE_URL, DEFAULT_ANTHROPIC_BASE_URL);
 }
@@ -25,6 +40,10 @@ export function getGeminiBaseUrl() {
 
 export function getOpenAiResponsesUrl() {
   return joinUrl(getOpenAiBaseUrl(), "responses");
+}
+
+export function getOpenAiChatCompletionsUrl() {
+  return joinUrl(getOpenAiBaseUrl(), "chat/completions");
 }
 
 export function getAnthropicMessagesUrl() {

@@ -28,6 +28,17 @@ type ResearchCoverageItem = {
   signals: string[];
 };
 
+type ExternalResearchDiagnostics = {
+  attempted: boolean;
+  query: string;
+  searchUrl: string;
+  discoveredCount: number;
+  attachedCount: number;
+  skippedCount: number;
+  failed: Array<{ url: string; error: string }>;
+  searchError: string;
+};
+
 type ResearchWorkspacePanelProps = {
   researchArtifact: ResearchArtifactLike;
   researchActionLabel: string;
@@ -39,6 +50,7 @@ type ResearchWorkspacePanelProps = {
   researchSourceCoverageNote: string;
   researchCoverageItems: ResearchCoverageItem[];
   researchCoverageMissing: string[];
+  externalResearchDiagnostics: ExternalResearchDiagnostics | null;
   researchMustCoverAngles: string[];
   researchHypothesesToVerify: string[];
   researchForbiddenConclusions: string[];
@@ -108,6 +120,7 @@ export function ResearchWorkspacePanel({
   researchSourceCoverageNote,
   researchCoverageItems,
   researchCoverageMissing,
+  externalResearchDiagnostics,
   researchMustCoverAngles,
   researchHypothesesToVerify,
   researchForbiddenConclusions,
@@ -167,6 +180,58 @@ export function ResearchWorkspacePanel({
       {researchCoverageMissing.length > 0 ? (
         <div className="border border-warning/40 bg-surface px-4 py-3 text-sm leading-7 text-inkSoft">
           当前仍缺这些研究维度：{researchCoverageMissing.join("、")}。点击上方按钮会先尝试补研究源，再刷新研究简报。
+        </div>
+      ) : null}
+
+      {externalResearchDiagnostics ? (
+        <div className="border border-lineStrong/70 bg-surface px-4 py-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <div className="text-xs uppercase tracking-[0.16em] text-inkMuted">Fetch Diagnostics</div>
+              <div className="mt-2 font-medium text-ink">外部补源诊断</div>
+              <div className="mt-2 text-sm leading-7 text-inkSoft">
+                {externalResearchDiagnostics.attempted
+                  ? `已尝试查询「${externalResearchDiagnostics.query || "未记录查询词"}」，发现 ${externalResearchDiagnostics.discoveredCount} 个候选链接，成功补入 ${externalResearchDiagnostics.attachedCount} 条。`
+                  : "本次没有可用的搜索入口或外部链接线索，因此没有发起外部补源。"}
+              </div>
+              {externalResearchDiagnostics.searchUrl ? (
+                <a href={externalResearchDiagnostics.searchUrl} target="_blank" rel="noreferrer" className="mt-2 inline-block text-xs text-cinnabar underline">
+                  查看本次搜索入口
+                </a>
+              ) : null}
+            </div>
+            <Button
+              type="button"
+              onClick={onGenerateResearchBrief}
+              disabled={disableGenerateResearchBrief}
+              variant="secondary"
+              size="sm"
+            >
+              重新补抓研究源
+            </Button>
+          </div>
+
+          {externalResearchDiagnostics.searchError || externalResearchDiagnostics.failed.length > 0 ? (
+            <div className="mt-3 border border-warning/40 bg-surfaceWarning px-3 py-3 text-sm leading-7 text-warning">
+              <div className="font-medium">抓取未完全成功</div>
+              {externalResearchDiagnostics.searchError ? <div className="mt-1">搜索失败：{externalResearchDiagnostics.searchError}</div> : null}
+              {externalResearchDiagnostics.failed.slice(0, 3).map((item) => (
+                <div key={`${item.url}-${item.error}`} className="mt-1 break-all">
+                  {item.url}：{item.error}
+                </div>
+              ))}
+            </div>
+          ) : null}
+
+          <div className="mt-3 grid gap-2 text-xs leading-6 text-inkMuted md:grid-cols-4">
+            <div className="border border-lineStrong/60 px-3 py-2">候选链接 {externalResearchDiagnostics.discoveredCount}</div>
+            <div className="border border-lineStrong/60 px-3 py-2">已补入 {externalResearchDiagnostics.attachedCount}</div>
+            <div className="border border-lineStrong/60 px-3 py-2">跳过 {externalResearchDiagnostics.skippedCount}</div>
+            <div className="border border-lineStrong/60 px-3 py-2">失败 {externalResearchDiagnostics.failed.length}</div>
+          </div>
+          <div className="mt-3 border border-dashed border-lineStrong px-3 py-3 text-xs leading-6 text-inkMuted">
+            补救动作：重新补抓研究源；手动粘贴网页链接到素材；从 IMA 搜索证据；或先继续写低置信草稿并保留研究待补提示。
+          </div>
         </div>
       ) : null}
 

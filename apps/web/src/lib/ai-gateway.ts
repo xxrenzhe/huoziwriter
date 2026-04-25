@@ -1,10 +1,11 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { recordAiCallObservation } from "./ai-call-observations";
 import { applyModelRouteEnvOverride } from "./ai-model-route-env";
-import { getAnthropicBaseUrl, getAnthropicMessagesUrl, getGeminiGenerateContentUrl, getOpenAiResponsesUrl } from "./ai-provider-config";
+import { getAnthropicBaseUrl, getAnthropicMessagesUrl, getGeminiGenerateContentUrl, getOpenAiChatCompletionsUrl, getOpenAiResponsesUrl, shouldPreferOpenAiChatCompletionsStream } from "./ai-provider-config";
 import { getDatabase } from "./db";
 
 type SupportedSceneCode =
+  | "topicAnalysis"
   | "researchBrief"
   | "fragmentDistill"
   | "visionNote"
@@ -21,6 +22,7 @@ type SupportedSceneCode =
   | "factCheck"
   | "prosePolish"
   | "languageGuardAudit"
+  | "coverImageBrief"
   | "layoutExtract"
   | "publishGuard"
   | "topicFission.regularity"
@@ -100,6 +102,20 @@ export class GatewayProviderError extends Error {
 let anthropicClient: Anthropic | null = null;
 let anthropicClientApiKey: string | null = null;
 let anthropicClientBaseUrl: string | null = null;
+
+function readPositiveIntegerEnv(name: string, fallback: number) {
+  const raw = String(process.env[name] || "").trim();
+  if (!raw) {
+    return fallback;
+  }
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value <= 0) {
+    return fallback;
+  }
+  return Math.round(value);
+}
+
+const OPENAI_REQUEST_TIMEOUT_MS = readPositiveIntegerEnv("OPENAI_REQUEST_TIMEOUT_MS", 300_000);
 
 function inferProvider(model: string): Provider {
   const normalized = model.trim().toLowerCase();
@@ -190,6 +206,129 @@ function extractOpenAIText(payload: any) {
     throw new Error("OpenAI 未返回文本内容");
   }
   return merged;
+}
+
+function extractOpenAiChatCompletionText(payload: any) {
+  const text = Array.isArray(payload?.choices)
+    ? payload.choices
+        .flatMap((choice: any) => {
+          const content = choice?.message?.content;
+          if (typeof content === "string") {
+            return [content];
+          }
+          if (Array.isArray(content)) {
+            return content
+              .map((part: any) => part?.text)
+              .filter((value: unknown) => typeof value === "string" && value.trim());
+          }
+          return [];
+        })
+        .join("\n")
+        .trim()
+    : "";
+  if (!text) {
+    throw new Error("OpenAI chat.completions 未返回文本内容");
+  }
+  return text;
+}
+
+function summarizeOpenAiPayload(payload: any) {
+  if (!payload || typeof payload !== "object") {
+    return "响应不是 JSON 对象";
+  }
+  const status = typeof payload.status === "string" ? payload.status : null;
+  const outputLength = Array.isArray(payload.output) ? payload.output.length : null;
+  const choiceLength = Array.isArray(payload.choices) ? payload.choices.length : null;
+  const parts = [
+    status ? `status=${status}` : null,
+    outputLength != null ? `output=${outputLength}` : null,
+    choiceLength != null ? `choices=${choiceLength}` : null,
+  ].filter(Boolean);
+  return parts.join(", ") || "缺少可识别字段";
+}
+
+async function extractOpenAiChatCompletionStreamText(response: Response) {
+  const reader = response.body?.getReader();
+  if (!reader) {
+    throw new Error("OpenAI chat.completions 流式响应缺少 body");
+  }
+  const decoder = new TextDecoder();
+  let buffer = "";
+  const parts: string[] = [];
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) {
+      break;
+    }
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+    for (const rawLine of lines) {
+      const line = rawLine.trim();
+      if (!line.startsWith("data:")) {
+        continue;
+      }
+      const data = line.slice(5).trim();
+      if (!data || data === "[DONE]") {
+        continue;
+      }
+      const payload = JSON.parse(data);
+      const delta = payload?.choices?.[0]?.delta;
+      if (typeof delta?.content === "string") {
+        parts.push(delta.content);
+      }
+    }
+  }
+  const trailing = buffer.trim();
+  if (trailing.startsWith("data:")) {
+    const data = trailing.slice(5).trim();
+    if (data && data !== "[DONE]") {
+      const payload = JSON.parse(data);
+      const delta = payload?.choices?.[0]?.delta;
+      if (typeof delta?.content === "string") {
+        parts.push(delta.content);
+      }
+    }
+  }
+  const text = parts.join("").trim();
+  if (!text) {
+    throw new Error("OpenAI chat.completions 流式响应未返回文本内容");
+  }
+  return text;
+}
+
+async function callOpenAiChatCompletionStream(model: string, apiKey: string, systemPrompt: string, userPrompt: string, temperature: number): Promise<ProviderCallResult> {
+  const streamResponse = await fetch(getOpenAiChatCompletionsUrl(), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ],
+      temperature,
+      stream: true,
+    }),
+    signal: AbortSignal.timeout(OPENAI_REQUEST_TIMEOUT_MS),
+  });
+  if (!streamResponse.ok) {
+    const streamPayload = await streamResponse.json().catch(() => null);
+    throw createProviderError({
+      provider: "openai",
+      model,
+      status: streamResponse.status,
+      retryAfterMs: parseRetryAfterMs(streamResponse.headers.get("retry-after")),
+      message: streamPayload?.error?.message || `OpenAI stream chat.completions 请求失败，HTTP ${streamResponse.status}`,
+    });
+  }
+  return {
+    text: await extractOpenAiChatCompletionStreamText(streamResponse),
+    usage: undefined,
+  };
 }
 
 function normalizeUsageNumber(value: unknown) {
@@ -296,6 +435,9 @@ async function callOpenAI(model: string, systemPrompt: string, userPrompt: strin
   if (!apiKey) {
     throw new Error("缺少 OPENAI_API_KEY");
   }
+  if (shouldPreferOpenAiChatCompletionsStream()) {
+    return callOpenAiChatCompletionStream(model, apiKey, systemPrompt, userPrompt, temperature);
+  }
   const response = await fetch(getOpenAiResponsesUrl(), {
     method: "POST",
     headers: {
@@ -316,7 +458,7 @@ async function callOpenAI(model: string, systemPrompt: string, userPrompt: strin
       ],
       temperature,
     }),
-    signal: AbortSignal.timeout(90_000),
+    signal: AbortSignal.timeout(OPENAI_REQUEST_TIMEOUT_MS),
   });
   const payload = await response.json().catch(() => null);
   if (!response.ok) {
@@ -328,14 +470,65 @@ async function callOpenAI(model: string, systemPrompt: string, userPrompt: strin
       message: payload?.error?.message || `OpenAI 请求失败，HTTP ${response.status}`,
     });
   }
-  return {
-    text: extractOpenAIText(payload),
-    usage: buildUsage({
-      inputTokens: payload?.usage?.input_tokens ?? payload?.usage?.prompt_tokens,
-      outputTokens: payload?.usage?.output_tokens ?? payload?.usage?.completion_tokens,
-      totalTokens: payload?.usage?.total_tokens,
-    }),
-  };
+  try {
+    return {
+      text: extractOpenAIText(payload),
+      usage: buildUsage({
+        inputTokens: payload?.usage?.input_tokens ?? payload?.usage?.prompt_tokens,
+        outputTokens: payload?.usage?.output_tokens ?? payload?.usage?.completion_tokens,
+        totalTokens: payload?.usage?.total_tokens,
+      }),
+    };
+  } catch (responsesError) {
+    const chatResponse = await fetch(getOpenAiChatCompletionsUrl(), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt },
+        ],
+        temperature,
+      }),
+      signal: AbortSignal.timeout(OPENAI_REQUEST_TIMEOUT_MS),
+    });
+    const chatPayload = await chatResponse.json().catch(() => null);
+    if (!chatResponse.ok) {
+      throw createProviderError({
+        provider: "openai",
+        model,
+        status: chatResponse.status,
+        retryAfterMs: parseRetryAfterMs(chatResponse.headers.get("retry-after")),
+        message: chatPayload?.error?.message || `OpenAI chat.completions 请求失败，HTTP ${chatResponse.status}`,
+        cause: responsesError,
+      });
+    }
+    try {
+      return {
+        text: extractOpenAiChatCompletionText(chatPayload),
+        usage: buildUsage({
+          inputTokens: chatPayload?.usage?.prompt_tokens ?? chatPayload?.usage?.input_tokens,
+          outputTokens: chatPayload?.usage?.completion_tokens ?? chatPayload?.usage?.output_tokens,
+          totalTokens: chatPayload?.usage?.total_tokens,
+        }),
+      };
+    } catch (chatError) {
+      try {
+        return await callOpenAiChatCompletionStream(model, apiKey, systemPrompt, userPrompt, temperature);
+      } catch (streamError) {
+        throw createProviderError({
+          provider: "openai",
+          model,
+          message: `OpenAI 文本响应为空：responses(${summarizeOpenAiPayload(payload)})；chat.completions(${summarizeOpenAiPayload(chatPayload)})；stream(chat.completions) 无正文`,
+          cause: streamError,
+        });
+      }
+    }
+  }
 }
 
 function extractAnthropicText(payload: any) {
@@ -616,16 +809,164 @@ function buildResolvedSystemPrompt(systemPrompt: string, systemSegments?: Gatewa
     .join("\n\n");
 }
 
-export function extractJsonObject(text: string) {
+function findBalancedJsonSlice(text: string, startIndex: number) {
+  const openingChar = text[startIndex];
+  if (openingChar !== "{" && openingChar !== "[") {
+    return null;
+  }
+  const expectedClosingChar = openingChar === "{" ? "}" : "]";
+  const stack: string[] = [expectedClosingChar];
+  let inString = false;
+  let escaped = false;
+
+  for (let index = startIndex + 1; index < text.length; index += 1) {
+    const char = text[index];
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (char === "\\") {
+        escaped = true;
+      } else if (char === "\"") {
+        inString = false;
+      }
+      continue;
+    }
+    if (char === "\"") {
+      inString = true;
+      continue;
+    }
+    if (char === "{") {
+      stack.push("}");
+      continue;
+    }
+    if (char === "[") {
+      stack.push("]");
+      continue;
+    }
+    if (char === "}" || char === "]") {
+      if (stack.length === 0 || stack[stack.length - 1] !== char) {
+        return null;
+      }
+      stack.pop();
+      if (stack.length === 0) {
+        return text.slice(startIndex, index + 1);
+      }
+    }
+  }
+
+  return null;
+}
+
+function collectJsonCandidates(text: string) {
   const trimmed = text.trim();
   const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1]?.trim();
-  const candidate = fenced || trimmed;
-  const firstBrace = candidate.indexOf("{");
-  const lastBrace = candidate.lastIndexOf("}");
-  if (firstBrace < 0 || lastBrace < 0 || lastBrace <= firstBrace) {
+  const sources = [fenced, trimmed].filter((value, index, values): value is string => Boolean(value) && values.indexOf(value) === index);
+  const candidates: string[] = [];
+
+  for (const source of sources) {
+    for (let index = 0; index < source.length; index += 1) {
+      const char = source[index];
+      if (char !== "{" && char !== "[") {
+        continue;
+      }
+      const slice = findBalancedJsonSlice(source, index);
+      if (slice && !candidates.includes(slice)) {
+        candidates.push(slice);
+      }
+    }
+
+    const firstBrace = source.indexOf("{");
+    const lastBrace = source.lastIndexOf("}");
+    if (firstBrace >= 0 && lastBrace > firstBrace) {
+      const candidate = source.slice(firstBrace, lastBrace + 1);
+      if (!candidates.includes(candidate)) {
+        candidates.push(candidate);
+      }
+    }
+
+    const firstBracket = source.indexOf("[");
+    const lastBracket = source.lastIndexOf("]");
+    if (firstBracket >= 0 && lastBracket > firstBracket) {
+      const candidate = source.slice(firstBracket, lastBracket + 1);
+      if (!candidates.includes(candidate)) {
+        candidates.push(candidate);
+      }
+    }
+  }
+
+  return candidates;
+}
+
+function sanitizeJsonCandidate(candidate: string) {
+  const withoutTrailingCommas = candidate.replace(/,\s*([}\]])/g, "$1");
+  let sanitized = "";
+  let inString = false;
+  let escaped = false;
+
+  for (let index = 0; index < withoutTrailingCommas.length; index += 1) {
+    const char = withoutTrailingCommas[index];
+    if (inString) {
+      if (escaped) {
+        sanitized += char;
+        escaped = false;
+        continue;
+      }
+      if (char === "\\") {
+        sanitized += char;
+        escaped = true;
+        continue;
+      }
+      if (char === "\"") {
+        sanitized += char;
+        inString = false;
+        continue;
+      }
+      if (char === "\n") {
+        sanitized += "\\n";
+        continue;
+      }
+      if (char === "\r") {
+        sanitized += "\\r";
+        continue;
+      }
+      if (char === "\t") {
+        sanitized += "\\t";
+        continue;
+      }
+      sanitized += char;
+      continue;
+    }
+
+    if (char === "\"") {
+      inString = true;
+    }
+    sanitized += char;
+  }
+
+  return sanitized;
+}
+
+export function extractJsonObject(text: string) {
+  const candidates = collectJsonCandidates(text);
+  if (candidates.length === 0) {
     throw new Error("模型返回中未找到 JSON 对象");
   }
-  return JSON.parse(candidate.slice(firstBrace, lastBrace + 1));
+
+  let lastError: unknown = null;
+  for (const candidate of candidates) {
+    for (const variant of [candidate, sanitizeJsonCandidate(candidate)]) {
+      try {
+        return JSON.parse(variant);
+      } catch (error) {
+        lastError = error;
+      }
+    }
+  }
+
+  if (lastError instanceof Error) {
+    throw lastError;
+  }
+  throw new Error("模型返回 JSON 解析失败");
 }
 
 export async function generateSceneText(input: {

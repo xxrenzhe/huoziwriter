@@ -1,0 +1,38 @@
+# SearXNG settings for HuoziWriter internal research search.
+
+use_default_settings:
+  engines:
+    keep_only:
+      - bing
+      - bing news
+      - duckduckgo
+      - brave
+
+general:
+  debug: false
+  instance_name: "HuoziWriter Search"
+  enable_metrics: false
+
+search:
+  safe_search: 0
+  default_lang: "zh-CN"
+  formats:
+    - html
+    - json
+
+server:
+  bind_address: "127.0.0.1"
+  port: 8080
+  base_url: "http://127.0.0.1:8080/"
+  limiter: false
+  public_instance: false
+  image_proxy: false
+  method: "GET"
+
+valkey:
+  url: valkey://127.0.0.1:6379/0
+
+outgoing:
+  request_timeout: 8.0
+  max_request_timeout: 12.0
+  enable_http2: true

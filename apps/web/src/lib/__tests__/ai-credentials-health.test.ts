@@ -182,11 +182,17 @@ test("getCredentialHealthMatrix probes provider-specific env base urls", async (
     const originalFetch = globalThis.fetch;
     const calls: string[] = [];
 
-    globalThis.fetch = (async (input: RequestInfo | URL) => {
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       calls.push(url);
       if (url.includes("/openai/")) {
-        return new Response(JSON.stringify({ output_text: "ok" }), { status: 200 });
+        const payload = JSON.parse(String(init?.body || "{}")) as { stream?: boolean };
+        return new Response(
+          payload.stream
+            ? 'data: {"choices":[{"delta":{"content":"ok"},"finish_reason":null}]}\n\ndata: [DONE]\n\n'
+            : JSON.stringify({ output_text: "ok" }),
+          { status: 200, headers: { "content-type": payload.stream ? "text/event-stream" : "application/json" } },
+        );
       }
       if (url.includes("/anthropic/")) {
         return new Response(JSON.stringify({ content: [{ type: "text", text: "ok" }] }), { status: 200 });
@@ -201,7 +207,7 @@ test("getCredentialHealthMatrix probes provider-specific env base urls", async (
       const matrix = await getCredentialHealthMatrix();
 
       assert.deepEqual(matrix.providers.map((item) => item.status), ["healthy", "healthy", "healthy"]);
-      assert(calls.includes("https://ai-gateway.local/openai/v1/responses"));
+      assert(calls.includes("https://ai-gateway.local/openai/v1/chat/completions"));
       assert(calls.includes("https://ai-gateway.local/anthropic/v1/messages"));
       assert(calls.some((url) => url.startsWith("https://ai-gateway.local/gemini/v1beta/models/gemini-2.0-flash:generateContent?key=")));
     } finally {
@@ -242,6 +248,98 @@ test("getCredentialHealthMatrix caches provider probes for 60 seconds", async ()
       assert.equal(callCount, 3);
       assert.equal(second.generatedAt, first.generatedAt);
       assert.deepEqual(second.providers.map((item) => item.status), ["healthy", "healthy", "healthy"]);
+    } finally {
+      globalThis.fetch = originalFetch;
+      restoreEnv();
+    }
+  });
+});
+
+test("getCredentialHealthMatrix marks openai unhealthy when responses and chat completions both return empty text", async () => {
+  await withTempDatabase("openai-empty-output", async () => {
+    await seedRoutes();
+    const restoreEnv = setProviderEnv({
+      OPENAI_API_KEY: "openai-test-key",
+      ANTHROPIC_API_KEY: undefined,
+      GEMINI_API_KEY: undefined,
+      GOOGLE_API_KEY: undefined,
+    });
+    const originalFetch = globalThis.fetch;
+    const calls: string[] = [];
+
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      calls.push(url);
+      if (url.includes("openai.com")) {
+        if (url.endsWith("/responses")) {
+          return new Response(JSON.stringify({ status: "completed", output: [] }), { status: 200 });
+        }
+        return new Response(JSON.stringify({ choices: [{ message: { role: "assistant" } }] }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ error: { message: "unexpected provider" } }), { status: 500 });
+    }) as typeof fetch;
+
+    try {
+      const matrix = await getCredentialHealthMatrix();
+      const openai = matrix.providers.find((item) => item.provider === "openai");
+
+      assert.equal(openai?.status, "probe_failed");
+      assert.match(openai?.error || "", /empty text/i);
+      assert.equal(calls.filter((url) => url.includes("openai.com")).length, 3);
+      assert(calls.some((url) => url.endsWith("/responses")));
+      assert(calls.some((url) => url.endsWith("/chat/completions")));
+    } finally {
+      globalThis.fetch = originalFetch;
+      restoreEnv();
+    }
+  });
+});
+
+test("getCredentialHealthMatrix accepts streamed chat completions when other openai probes are empty", async () => {
+  await withTempDatabase("openai-stream-probe", async () => {
+    await seedRoutes();
+    const restoreEnv = setProviderEnv({
+      OPENAI_API_KEY: "openai-test-key",
+      ANTHROPIC_API_KEY: undefined,
+      GEMINI_API_KEY: undefined,
+      GOOGLE_API_KEY: undefined,
+    });
+    const originalFetch = globalThis.fetch;
+    const calls: Array<{ url: string; stream: boolean }> = [];
+
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const payload = JSON.parse(String(init?.body || "{}")) as { stream?: boolean };
+      calls.push({ url, stream: Boolean(payload.stream) });
+      if (url.includes("openai.com")) {
+        if (url.endsWith("/responses")) {
+          return new Response(JSON.stringify({ status: "completed", output: [] }), { status: 200 });
+        }
+        if (!payload.stream) {
+          return new Response(JSON.stringify({ choices: [{ message: { role: "assistant" } }] }), { status: 200 });
+        }
+        return new Response(
+          [
+            'data: {"choices":[{"delta":{"content":"ok"},"finish_reason":null}]}\n\n',
+            "data: [DONE]\n\n",
+          ].join(""),
+          { status: 200, headers: { "content-type": "text/event-stream" } },
+        );
+      }
+      return new Response(JSON.stringify({ error: { message: "unexpected provider" } }), { status: 500 });
+    }) as typeof fetch;
+
+    try {
+      const matrix = await getCredentialHealthMatrix();
+      const openai = matrix.providers.find((item) => item.provider === "openai");
+
+      assert.equal(openai?.status, "healthy");
+      assert.equal(calls.filter((item) => item.url.includes("openai.com")).length, 3);
+      assert.deepEqual(calls.filter((item) => item.url.includes("openai.com")), [
+        { url: "https://api.openai.com/v1/responses", stream: false },
+        { url: "https://api.openai.com/v1/chat/completions", stream: false },
+        { url: "https://api.openai.com/v1/chat/completions", stream: true },
+      ]);
     } finally {
       globalThis.fetch = originalFetch;
       restoreEnv();

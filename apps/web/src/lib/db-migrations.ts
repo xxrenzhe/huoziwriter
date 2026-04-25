@@ -231,7 +231,11 @@ export async function runPendingMigrations() {
       continue;
     }
 
-    const sql = fs.readFileSync(path.join(getMigrationDir(type), fileName), "utf8");
+    const migrationPath = path.join(getMigrationDir(type), fileName);
+    if (!fs.existsSync(migrationPath)) {
+      continue;
+    }
+    const sql = fs.readFileSync(migrationPath, "utf8");
     const statements = splitSqlStatements(sql);
 
     await db.transaction(async () => {

@@ -45,6 +45,7 @@ async function fetchExternalResponse(input: {
   maxAttempts?: number;
   cache?: RequestCache;
   accept?: string;
+  headers?: HeadersInit;
 }) {
   const timeoutMs = input.timeoutMs ?? 20_000;
   const maxAttempts = Math.max(1, input.maxAttempts ?? 2);
@@ -58,6 +59,7 @@ async function fetchExternalResponse(input: {
         headers: {
           "User-Agent": DEFAULT_USER_AGENT,
           Accept: accept,
+          ...input.headers,
         },
         signal: AbortSignal.timeout(timeoutMs),
         cache,
@@ -97,6 +99,7 @@ export async function fetchExternalText(input: {
   maxAttempts?: number;
   cache?: RequestCache;
   accept?: string;
+  headers?: HeadersInit;
 }) {
   const response = await fetchExternalResponse(input);
 
@@ -116,6 +119,7 @@ export async function fetchExternalBinary(input: {
   maxAttempts?: number;
   cache?: RequestCache;
   accept?: string;
+  headers?: HeadersInit;
 }) {
   const response = await fetchExternalResponse({
     ...input,

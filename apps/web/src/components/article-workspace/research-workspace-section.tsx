@@ -54,6 +54,7 @@ export function ResearchWorkspaceSection({
 }: ResearchWorkspaceSectionProps) {
   const researchAction = GENERATABLE_STAGE_ACTIONS.researchBrief;
   const researchSourceCoverage = getPayloadRecord(researchArtifact?.payload, "sourceCoverage");
+  const externalResearch = getPayloadRecord(researchArtifact?.payload, "externalResearch");
   const researchStrategyWriteback = getPayloadRecord(researchArtifact?.payload, "strategyWriteback");
   const researchTimelineCards = getPayloadRecordArray(researchArtifact?.payload, "timelineCards");
   const researchComparisonCards = getPayloadRecordArray(researchArtifact?.payload, "comparisonCards");
@@ -78,6 +79,22 @@ export function ResearchWorkspaceSection({
     signals: getPayloadStringArray(researchSourceCoverage, item.key),
   }));
   const researchCoverageMissing = getPayloadStringArray(researchSourceCoverage, "missingCategories");
+  const externalResearchFailed = getPayloadRecordArray(externalResearch, "failed").map((item) => ({
+    url: String(item.url || "").trim(),
+    error: String(item.error || "").trim(),
+  })).filter((item) => item.url || item.error);
+  const externalResearchDiagnostics = externalResearch
+    ? {
+        attempted: Boolean(externalResearch.attempted),
+        query: String(externalResearch.query || "").trim(),
+        searchUrl: String(externalResearch.searchUrl || "").trim(),
+        discoveredCount: getPayloadStringArray(externalResearch, "discoveredUrls").length,
+        attachedCount: getPayloadRecordArray(externalResearch, "attached").length,
+        skippedCount: getPayloadStringArray(externalResearch, "skipped").length,
+        failed: externalResearchFailed,
+        searchError: String(externalResearch.searchError || "").trim(),
+      }
+    : null;
   const strategyWritebackFields = [
     {
       key: "targetReader",
@@ -129,6 +146,7 @@ export function ResearchWorkspaceSection({
       researchSourceCoverageNote={String(researchSourceCoverage?.note || "").trim()}
       researchCoverageItems={researchCoverageItems}
       researchCoverageMissing={researchCoverageMissing}
+      externalResearchDiagnostics={externalResearchDiagnostics}
       researchMustCoverAngles={researchMustCoverAngles}
       researchHypothesesToVerify={researchHypothesesToVerify}
       researchForbiddenConclusions={researchForbiddenConclusions}

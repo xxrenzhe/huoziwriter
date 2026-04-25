@@ -25,6 +25,12 @@ export const PLAN_LABELS: Record<UserPlanCode, string> = {
 
 export const DEFAULT_MODEL_ROUTES: readonly ModelRouteDefinition[] = [
   {
+    sceneCode: "topicAnalysis",
+    primaryModel: "claude-sonnet-4-6",
+    fallbackModel: "claude-haiku-4-5",
+    description: "全自动生产线选题价值、读者收益、why now 与风险判断",
+  },
+  {
     sceneCode: "researchBrief",
     primaryModel: "claude-sonnet-4-6",
     fallbackModel: "claude-haiku-4-5",
@@ -179,6 +185,12 @@ export const DEFAULT_MODEL_ROUTES: readonly ModelRouteDefinition[] = [
     primaryModel: "gpt-5.4-mini",
     fallbackModel: "gpt-5.4-nano",
     description: "语言守卫规则与长句审校",
+  },
+  {
+    sceneCode: "coverImageBrief",
+    primaryModel: "gpt-5.4-mini",
+    fallbackModel: "gpt-5.4-nano",
+    description: "封面图视觉 brief、负面提示词、alt text 与风格约束生成",
   },
   {
     sceneCode: "layoutExtract",

@@ -154,6 +154,7 @@ vite.config.ts.timestamp-*
 *.sqlite
 data/
 test-results/
+artifacts/
 __pycache__/
 *.py[cod]
 
@@ -171,5 +172,6 @@ secrets/
 # Local browser automation artifacts
 .playwright-mcp/
 .lighthouseci/
+.runtime/
 /article4.png
 /home.png

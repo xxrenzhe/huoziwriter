@@ -46,6 +46,21 @@ function withStageGenerationTimeout<T>(promise: Promise<T>, timeoutMs: number, m
   });
 }
 
+function readPositiveIntegerEnv(name: string, fallback: number) {
+  const raw = String(process.env[name] || "").trim();
+  if (!raw) {
+    return fallback;
+  }
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value <= 0) {
+    return fallback;
+  }
+  return Math.round(value);
+}
+
+const ARTICLE_STAGE_ARTIFACT_TIMEOUT_MS = readPositiveIntegerEnv("ARTICLE_STAGE_ARTIFACT_TIMEOUT_MS", 300_000);
+const ARTICLE_STAGE_OPTION_TIMEOUT_MS = readPositiveIntegerEnv("ARTICLE_STAGE_OPTION_TIMEOUT_MS", 120_000);
+
 export type ArticleStageArtifactStatus = "ready" | "failed";
 
 export type ArticleStageArtifact = {
@@ -3337,10 +3352,41 @@ async function generateWithPrompt(input: {
         temperature: 0.2,
         rolloutUserId: input.context.userId,
       }),
-      12_000,
+      ARTICLE_STAGE_ARTIFACT_TIMEOUT_MS,
       `${input.stageCode} AI 生成超时`,
     );
-    const normalized = input.normalize(extractJsonObject(result.text), input.fallback);
+    let parsedPayload: unknown;
+    try {
+      parsedPayload = extractJsonObject(result.text);
+    } catch (parseError) {
+      if (input.stageCode !== "prosePolish") {
+        throw parseError;
+      }
+      const repaired = await withStageGenerationTimeout(
+        generateSceneText({
+          sceneCode: input.sceneCode,
+          systemPrompt: [
+            "你是严格的 JSON 修复器。",
+            "你的唯一任务是把用户给出的内容整理为一个合法 JSON 对象。",
+            "不要新增事实，不要补充原文没有的信息，不要解释，不要输出 markdown。",
+            "尽量保留原字段名、数组结构和原意，只修复 JSON 语法问题。",
+          ].join("\n"),
+          userPrompt: [
+            "请把下面内容修复为合法 JSON 对象，只输出 JSON：",
+            result.text,
+          ].join("\n\n"),
+          observationMeta: {
+            articleId: input.context.article.id,
+          },
+          temperature: 0.1,
+          rolloutUserId: input.context.userId,
+        }),
+        ARTICLE_STAGE_OPTION_TIMEOUT_MS,
+        `${input.stageCode} JSON 修复超时`,
+      );
+      parsedPayload = extractJsonObject(repaired.text);
+    }
+    const normalized = input.normalize(parsedPayload, input.fallback);
     const basePayload = preservedSelection ? { ...normalized, selection: preservedSelection } : normalized;
     return upsertArtifact({
       articleId: input.context.article.id,
@@ -3563,7 +3609,7 @@ async function runTitleOptimizer(context: GenerationContext, outlinePayload: Rec
         temperature: 0.2,
         rolloutUserId: context.userId,
       }),
-      8_000,
+      ARTICLE_STAGE_OPTION_TIMEOUT_MS,
       "标题优化 AI 超时",
     );
     const titleOptimizerRuntimeMeta = buildArticleArtifactRuntimeMetaPatch({
@@ -3595,6 +3641,8 @@ async function runTitleOptimizer(context: GenerationContext, outlinePayload: Rec
             ref: String(promptMeta.promptId) + "@" + String(promptMeta.version),
             resolutionMode: promptMeta.resolutionMode,
             resolutionReason: promptMeta.resolutionReason,
+            provider: result.provider,
+            model: result.model,
           },
         },
       },
@@ -3676,7 +3724,7 @@ async function runOpeningOptimizer(context: GenerationContext, outlinePayload: R
         temperature: 0.2,
         rolloutUserId: context.userId,
       }),
-      8_000,
+      ARTICLE_STAGE_OPTION_TIMEOUT_MS,
       "开头优化 AI 超时",
     );
     const openingOptimizerRuntimeMeta = buildArticleArtifactRuntimeMetaPatch({
@@ -3709,6 +3757,8 @@ async function runOpeningOptimizer(context: GenerationContext, outlinePayload: R
             ref: String(promptMeta.promptId) + "@" + String(promptMeta.version),
             resolutionMode: promptMeta.resolutionMode,
             resolutionReason: promptMeta.resolutionReason,
+            provider: result.provider,
+            model: result.model,
           },
         },
       },

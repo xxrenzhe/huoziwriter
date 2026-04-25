@@ -126,11 +126,9 @@ function getCoverImageEnvOverride(): {
   }
 
   const resolvedProviderName = providerFromEnv || inferCoverImageProviderName(baseUrl, model || DEFAULT_COVER_IMAGE_MODEL);
-  const resolvedBaseUrl = baseUrl
-    || (resolvedProviderName === "openai" ? String(process.env.OPENAI_BASE_URL || "").trim() || "https://api.openai.com/v1" : "");
+  const resolvedBaseUrl = baseUrl;
   const resolvedModel = model || DEFAULT_COVER_IMAGE_MODEL;
-  const resolvedApiKey = apiKey
-    || (resolvedProviderName === "openai" ? String(process.env.OPENAI_API_KEY || "").trim() : "");
+  const resolvedApiKey = apiKey;
 
   return {
     providerName: resolvedProviderName,

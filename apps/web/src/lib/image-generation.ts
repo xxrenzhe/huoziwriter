@@ -4,6 +4,14 @@ import { buildVisualAuthoringDirective, type ImageAuthoringStyleContext } from "
 type ImageProvider = "openai" | "custom";
 type ImageRequestMode = "generations" | "edits";
 
+function isOfficialOpenAiBaseUrl(baseUrl: string) {
+  return /(^https:\/\/api\.openai\.com(?:\/|$))/i.test(String(baseUrl || "").trim());
+}
+
+function buildUnsupportedOpenAiImageEndpointMessage(baseUrl: string) {
+  return `当前图片网关不支持 OpenAI 图片接口：${baseUrl}。请单独配置 COVER_IMAGE_BASE_URL / COVER_IMAGE_API_KEY，或改用支持 /images/generations 的图片网关。`;
+}
+
 function buildImagePrompt(
   title: string,
   hasReferenceImage: boolean,
@@ -45,6 +53,22 @@ function resolveImageEndpoint(baseUrl: string, mode: ImageRequestMode) {
     return `${normalizedBaseUrl}/${mode}`;
   }
   return `${normalizedBaseUrl}/images/${mode}`;
+}
+
+function resolveRetryImageEndpoint(baseUrl: string, mode: ImageRequestMode) {
+  const normalizedBaseUrl = baseUrl.trim().replace(/\/+$/, "");
+  if (!normalizedBaseUrl) {
+    return null;
+  }
+  try {
+    const url = new URL(normalizedBaseUrl);
+    if (url.pathname && url.pathname !== "/") {
+      return null;
+    }
+    return resolveImageEndpoint(`${normalizedBaseUrl}/v1`, mode);
+  } catch {
+    return null;
+  }
 }
 
 function detectImageExtension(mimeType: string) {
@@ -245,6 +269,96 @@ function resolveErrorMessage(payload: any, fallbackText: string) {
   return fallbackText;
 }
 
+function resolveImageRequestFailureMessage(input: {
+  providerName?: string | null;
+  baseUrl: string;
+  endpoint: string;
+  response: Response;
+  payload: any;
+}) {
+  if (
+    resolveImageProvider(input) === "openai"
+    && !isOfficialOpenAiBaseUrl(input.baseUrl)
+    && input.endpoint.includes("/images/")
+    && input.response.status === 404
+  ) {
+    return buildUnsupportedOpenAiImageEndpointMessage(input.baseUrl);
+  }
+  return resolveErrorMessage(input.payload, `生图引擎请求失败，HTTP ${input.response.status}`);
+}
+
+async function readImageResponse(response: Response) {
+  const responseText = await response.text();
+  let payload: any = null;
+  try {
+    payload = responseText ? JSON.parse(responseText) : null;
+  } catch {
+    payload = { raw: responseText };
+  }
+  return {
+    responseText,
+    payload,
+    contentType: String(response.headers.get("content-type") || "").toLowerCase(),
+  };
+}
+
+function shouldRetryOpenAiImageRequest(input: {
+  providerName?: string | null;
+  baseUrl: string;
+  endpoint: string;
+  retryEndpoint: string | null;
+  response: Response;
+  contentType: string;
+  payload: any;
+}) {
+  if (resolveImageProvider(input) !== "openai" || !input.retryEndpoint || input.endpoint === input.retryEndpoint) {
+    return false;
+  }
+  if (!input.response.ok) {
+    return input.response.status === 404;
+  }
+  if (input.contentType.includes("text/html")) {
+    return true;
+  }
+  return !extractImageUrl(input.payload) && !extractImageUrls(input.payload).length;
+}
+
+async function fetchImageWithRetry(input: {
+  providerName?: string | null;
+  baseUrl: string;
+  endpoint: string;
+  requestInit: RequestInit;
+  mode: ImageRequestMode;
+}) {
+  const attempt = async (endpoint: string) => {
+    const response = await fetch(endpoint, {
+      ...input.requestInit,
+      signal: AbortSignal.timeout(60_000),
+    });
+    const parsed = await readImageResponse(response);
+    return {
+      endpoint,
+      response,
+      ...parsed,
+    };
+  };
+
+  const first = await attempt(input.endpoint);
+  const retryEndpoint = resolveRetryImageEndpoint(input.baseUrl, input.mode);
+  if (!shouldRetryOpenAiImageRequest({
+    providerName: input.providerName,
+    baseUrl: input.baseUrl,
+    endpoint: input.endpoint,
+    retryEndpoint,
+    response: first.response,
+    contentType: first.contentType,
+    payload: first.payload,
+  })) {
+    return first;
+  }
+  return attempt(retryEndpoint!);
+}
+
 export async function generateCoverImage(input: {
   title: string;
   referenceImageDataUrl?: string | null;
@@ -269,22 +383,23 @@ export async function generateCoverImage(input: {
     prompt,
     referenceImageDataUrl: input.referenceImageDataUrl,
   });
-  const response = await fetch(endpoint, {
-    ...requestInit,
-    signal: AbortSignal.timeout(60_000),
+  const { response, payload } = await fetchImageWithRetry({
+    providerName: engine.providerName,
+    baseUrl: engine.baseUrl,
+    endpoint,
+    requestInit,
+    mode: input.referenceImageDataUrl ? "edits" : "generations",
   });
-
-  const responseText = await response.text();
-  let payload: any = null;
-  try {
-    payload = responseText ? JSON.parse(responseText) : null;
-  } catch {
-    payload = { raw: responseText };
-  }
 
   const checkedAt = new Date().toISOString();
   if (!response.ok) {
-    const message = resolveErrorMessage(payload, `生图引擎请求失败，HTTP ${response.status}`);
+    const message = resolveImageRequestFailureMessage({
+      providerName: engine.providerName,
+      baseUrl: engine.baseUrl,
+      endpoint,
+      response,
+      payload,
+    });
     await updateGlobalCoverImageEngineHealth({
       lastCheckedAt: checkedAt,
       lastError: message,
@@ -340,21 +455,22 @@ async function requestCoverImage(input: {
     prompt,
     referenceImageDataUrl: input.referenceImageDataUrl,
   });
-  const response = await fetch(endpoint, {
-    ...requestInit,
-    signal: AbortSignal.timeout(60_000),
+  const { response, payload } = await fetchImageWithRetry({
+    providerName: engine.providerName,
+    baseUrl: engine.baseUrl,
+    endpoint,
+    requestInit,
+    mode: input.referenceImageDataUrl ? "edits" : "generations",
   });
-
-  const responseText = await response.text();
-  let payload: any = null;
-  try {
-    payload = responseText ? JSON.parse(responseText) : null;
-  } catch {
-    payload = { raw: responseText };
-  }
   const checkedAt = new Date().toISOString();
   if (!response.ok) {
-    const message = resolveErrorMessage(payload, `生图引擎请求失败，HTTP ${response.status}`);
+    const message = resolveImageRequestFailureMessage({
+      providerName: engine.providerName,
+      baseUrl: engine.baseUrl,
+      endpoint,
+      response,
+      payload,
+    });
     await updateGlobalCoverImageEngineHealth({
       lastCheckedAt: checkedAt,
       lastError: message,

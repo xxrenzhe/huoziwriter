@@ -4,7 +4,7 @@ import { buttonStyles, cn, surfaceCardStyles } from "@huoziwriter/ui";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
-import { Bell, Command, FileText, LayoutDashboard, Search, Settings2, Sparkles, ClipboardCheck, type LucideIcon } from "lucide-react";
+import { Bell, Bot, Command, FileText, LayoutDashboard, Search, Settings2, Sparkles, ClipboardCheck, type LucideIcon } from "lucide-react";
 import { useCommandMenu } from "@/components/command-menu";
 import { NotificationCenter, type NotificationCenterItem } from "@/components/notification-center";
 import { formatPlanDisplayName } from "@/lib/plan-labels";
@@ -26,7 +26,7 @@ const workspaceSearchTriggerClassName = cn(
 );
 const workspaceMobileTabBarClassName = cn(
   surfaceCardStyles({ tone: "warm", padding: "sm" }),
-  "mx-auto grid max-w-md grid-cols-4 gap-1 border-lineStrong bg-surfaceWarm p-2 shadow-[0_18px_36px_rgba(88,65,64,0.14)] backdrop-blur-md",
+  "mx-auto grid max-w-xl grid-cols-5 gap-1 border-lineStrong bg-surfaceWarm p-2 shadow-[0_18px_36px_rgba(88,65,64,0.14)] backdrop-blur-md",
 );
 const workspaceUtilityIconButtonClassName = cn(
   buttonStyles({ variant: "secondary", size: "sm" }),
@@ -38,6 +38,7 @@ const workspaceAccountChipClassName = cn(
 );
 const workspaceMobileNavIcons: Record<string, LucideIcon> = {
   "/warroom": LayoutDashboard,
+  "/automation": Bot,
   "/articles": FileText,
   "/reviews": ClipboardCheck,
   "/settings": Settings2,

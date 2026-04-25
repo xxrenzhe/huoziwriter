@@ -1731,7 +1731,7 @@ test("research brief can generate hv-analysis style research scaffolding and fee
   expect(checks.some((item) => item.key === "researchBrief")).toBeTruthy();
 });
 
-test("research brief can auto-supplement external web sources before generation", async ({ request, baseURL }) => {
+test("research brief can auto-supplement external web sources before generation", async ({ page, request, baseURL }) => {
   test.skip(!process.env.RESEARCH_SOURCE_SEARCH_ENDPOINT, "需要显式配置 research search endpoint");
   const cookie = await loginAsAdmin(baseURL!, request);
   await ensurePersona(baseURL!, request, cookie);
@@ -1767,6 +1767,13 @@ test("research brief can auto-supplement external web sources before generation"
     attachedFragments.some((fragment) =>
       fragment.sourceType === "url" && String(fragment.sourceUrl || "").includes("/api/tools/mock-research-source/")),
   ).toBeTruthy();
+
+  await seedPageSession(page, baseURL!, cookie);
+  await page.goto(`${baseURL}/articles/${articleId}?step=strategy`);
+  await expect(page.getByText("外部补源诊断")).toBeVisible();
+  await expect(page.getByText(/成功补入 \d+ 条/)).toBeVisible();
+  await expect(page.getByRole("button", { name: "重新补抓研究源" })).toBeVisible();
+  await expect(page.getByText("补救动作：重新补抓研究源；手动粘贴网页链接到素材；从 IMA 搜索证据；或先继续写低置信草稿并保留研究待补提示。")).toBeVisible();
 });
 
 test("research workspace writeback persists strategy card and evidence package", async ({ request, baseURL }) => {

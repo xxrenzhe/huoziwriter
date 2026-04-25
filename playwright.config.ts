@@ -21,6 +21,7 @@ process.env.COVER_IMAGE_MODEL = "mock-image-engine";
 process.env.COVER_IMAGE_API_KEY = "mock-image-key";
 process.env.COVER_IMAGE_ENABLED = "true";
 process.env.IMA_OPENAPI_BASE_URL = "http://127.0.0.1:3101/api/tools/mock-ima";
+process.env.RESEARCH_SOURCE_SEARCH_ENDPOINT = "http://127.0.0.1:3101/api/tools/mock-research-search";
 
 export default defineConfig({
   testDir: "./tests/e2e",
@@ -57,6 +58,7 @@ export default defineConfig({
       COVER_IMAGE_API_KEY: "mock-image-key",
       COVER_IMAGE_ENABLED: "true",
       IMA_OPENAPI_BASE_URL: "http://127.0.0.1:3101/api/tools/mock-ima",
+      RESEARCH_SOURCE_SEARCH_ENDPOINT: "http://127.0.0.1:3101/api/tools/mock-research-search",
     },
   },
 });

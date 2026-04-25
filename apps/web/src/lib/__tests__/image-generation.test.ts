@@ -146,6 +146,82 @@ test("generateCoverImage uses OpenAI generations endpoint for gpt-image models",
   });
 });
 
+test("generateCoverImage retries OpenAI image endpoint with /v1 when root endpoint returns html shell", async () => {
+  await withTempDatabase("openai-generations-v1-retry", async () => {
+    await seedImageEngine({
+      baseUrl: "https://gateway.example.com",
+    });
+
+    const originalFetch = globalThis.fetch;
+    const requestUrls: string[] = [];
+
+    globalThis.fetch = (async (input) => {
+      requestUrls.push(String(input));
+      if (String(input) === "https://gateway.example.com/images/generations") {
+        return new Response("<!doctype html><html><body>app shell</body></html>", {
+          status: 200,
+          headers: { "Content-Type": "text/html" },
+        });
+      }
+      return new Response(JSON.stringify({
+        data: [{ b64_json: Buffer.from("mock-image", "utf8").toString("base64") }],
+      }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }) as typeof fetch;
+
+    try {
+      const result = await generateCoverImage({ title: "OpenAI 网关根路径封面" });
+      assert.deepEqual(requestUrls, [
+        "https://gateway.example.com/images/generations",
+        "https://gateway.example.com/v1/images/generations",
+      ]);
+      assert.match(result.imageUrl, /^data:image\/png;base64,/);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+});
+
+test("generateCoverImage surfaces unsupported custom OpenAI image gateway clearly", async () => {
+  await withTempDatabase("openai-generations-unsupported-gateway", async () => {
+    await seedImageEngine({
+      baseUrl: "https://gateway.example.com",
+    });
+
+    const originalFetch = globalThis.fetch;
+    const requestUrls: string[] = [];
+
+    globalThis.fetch = (async (input) => {
+      requestUrls.push(String(input));
+      if (String(input) === "https://gateway.example.com/images/generations") {
+        return new Response("<!doctype html><html><body>app shell</body></html>", {
+          status: 200,
+          headers: { "Content-Type": "text/html" },
+        });
+      }
+      return new Response("404 page not found", {
+        status: 404,
+        headers: { "Content-Type": "text/plain" },
+      });
+    }) as typeof fetch;
+
+    try {
+      await assert.rejects(
+        () => generateCoverImage({ title: "自定义网关封面" }),
+        /不支持 OpenAI 图片接口|COVER_IMAGE_BASE_URL/,
+      );
+      assert.deepEqual(requestUrls, [
+        "https://gateway.example.com/images/generations",
+        "https://gateway.example.com/v1/images/generations",
+      ]);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+});
+
 test("generateCoverImageCandidates switches gpt-image reference calls to OpenAI edits endpoint", async () => {
   await withTempDatabase("openai-edits", async () => {
     await seedImageEngine({
@@ -219,8 +295,13 @@ test("cover image engine prefers .env override over database config", async () =
   });
 });
 
-test("cover image engine env override can reuse OPENAI_* defaults", async () => {
-  await withTempDatabase("env-override-openai-fallback", async () => {
+test("cover image engine no longer inherits OPENAI_* defaults implicitly", async () => {
+  await withTempDatabase("env-override-no-openai-fallback", async () => {
+    await seedImageEngine({
+      baseUrl: "https://db.example.com/v1",
+      model: "db-image-model",
+    });
+
     process.env.COVER_IMAGE_MODEL = "gpt-image-2";
     process.env.OPENAI_BASE_URL = "https://api.openai.com/v1";
     process.env.OPENAI_API_KEY = "shared-openai-key";
@@ -230,9 +311,11 @@ test("cover image engine env override can reuse OPENAI_* defaults", async () => 
 
     assert.equal(config.configSource, "env");
     assert.equal(config.providerName, "openai");
-    assert.equal(config.baseUrl, "https://api.openai.com/v1");
-    assert.equal(config.hasApiKey, true);
-    assert.equal(secret?.apiKey, "shared-openai-key");
+    assert.equal(config.baseUrl, "");
+    assert.equal(config.hasApiKey, false);
+    assert.equal(secret?.configSource, "env");
+    assert.equal(secret?.baseUrl, "");
+    assert.equal(secret?.apiKey, "");
   });
 });
 
@@ -262,10 +345,10 @@ test("cover image engine tolerates unreadable database fallback secret", async (
 
     assert.equal(envConfig.configSource, "env");
     assert.equal(envConfig.providerName, "openai");
-    assert.equal(envConfig.baseUrl, "https://api.openai.com/v1");
-    assert.equal(envConfig.hasApiKey, true);
+    assert.equal(envConfig.baseUrl, "");
+    assert.equal(envConfig.hasApiKey, false);
     assert.match(envConfig.secretWarning || "", /重新输入并保存一次/);
-    assert.equal(envSecret?.apiKey, "shared-openai-key");
+    assert.equal(envSecret?.apiKey, "");
     assert.equal(envSecret?.configSource, "env");
   });
 });

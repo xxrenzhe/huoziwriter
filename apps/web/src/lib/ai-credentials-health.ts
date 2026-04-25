@@ -1,5 +1,5 @@
 import { getModelRoutes } from "./repositories";
-import { getAnthropicMessagesUrl, getGeminiGenerateContentUrl, getOpenAiResponsesUrl } from "./ai-provider-config";
+import { getAnthropicMessagesUrl, getGeminiGenerateContentUrl, getOpenAiChatCompletionsUrl, getOpenAiResponsesUrl, shouldPreferOpenAiChatCompletionsStream } from "./ai-provider-config";
 
 export type AiCredentialProvider = "openai" | "anthropic" | "gemini";
 export type AiCredentialHealthStatus = "healthy" | "missing_env" | "probe_failed" | "unused";
@@ -114,7 +114,124 @@ async function parseJsonResponse(response: Response) {
   return response.json().catch(() => null);
 }
 
+function extractOpenAiProbeText(payload: any) {
+  if (typeof payload?.output_text === "string" && payload.output_text.trim()) {
+    return payload.output_text.trim();
+  }
+  const responsesText = Array.isArray(payload?.output)
+    ? payload.output
+        .flatMap((item: any) => (Array.isArray(item?.content) ? item.content : []))
+        .map((part: any) => part?.text)
+        .filter((value: unknown) => typeof value === "string" && value.trim())
+        .join("\n")
+        .trim()
+    : "";
+  if (responsesText) {
+    return responsesText;
+  }
+  const chatText = Array.isArray(payload?.choices)
+    ? payload.choices
+        .flatMap((choice: any) => {
+          const content = choice?.message?.content;
+          if (typeof content === "string") {
+            return [content];
+          }
+          if (Array.isArray(content)) {
+            return content
+              .map((part: any) => part?.text)
+              .filter((value: unknown) => typeof value === "string" && value.trim());
+          }
+          return [];
+        })
+        .join("\n")
+        .trim()
+    : "";
+  if (chatText) {
+    return chatText;
+  }
+  throw new Error("OpenAI probe returned empty text");
+}
+
+async function extractOpenAiProbeStreamText(response: Response) {
+  const reader = response.body?.getReader();
+  if (!reader) {
+    throw new Error("OpenAI probe stream missing body");
+  }
+  const decoder = new TextDecoder();
+  let buffer = "";
+  const parts: string[] = [];
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) {
+      break;
+    }
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+    for (const rawLine of lines) {
+      const line = rawLine.trim();
+      if (!line.startsWith("data:")) {
+        continue;
+      }
+      const data = line.slice(5).trim();
+      if (!data || data === "[DONE]") {
+        continue;
+      }
+      const payload = JSON.parse(data);
+      const delta = payload?.choices?.[0]?.delta;
+      if (typeof delta?.content === "string") {
+        parts.push(delta.content);
+      }
+    }
+  }
+  const text = parts.join("").trim();
+  if (!text) {
+    throw new Error("OpenAI probe stream returned empty text");
+  }
+  return text;
+}
+
 async function probeOpenAI(model: string, apiKey: string): Promise<ProbeResult> {
+  if (shouldPreferOpenAiChatCompletionsStream()) {
+    const streamResponse = await fetch(getOpenAiChatCompletionsUrl(), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        messages: [{ role: "user", content: "health-check" }],
+        max_tokens: 1,
+        temperature: 0,
+        stream: true,
+      }),
+      cache: "no-store",
+      signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
+    });
+    if (!streamResponse.ok) {
+      const streamPayload = await parseJsonResponse(streamResponse);
+      return {
+        ok: false,
+        statusCode: streamResponse.status,
+        error: extractErrorMessage(streamPayload, `OpenAI stream chat.completions probe failed with HTTP ${streamResponse.status}`),
+      };
+    }
+    try {
+      await extractOpenAiProbeStreamText(streamResponse);
+      return {
+        ok: true,
+        statusCode: streamResponse.status,
+        error: null,
+      };
+    } catch {
+      return {
+        ok: false,
+        statusCode: streamResponse.status,
+        error: "OpenAI stream chat.completions probe returned empty text",
+      };
+    }
+  }
   const response = await fetch(getOpenAiResponsesUrl(), {
     method: "POST",
     headers: {
@@ -137,11 +254,85 @@ async function probeOpenAI(model: string, apiKey: string): Promise<ProbeResult> 
       error: extractErrorMessage(payload, `OpenAI probe failed with HTTP ${response.status}`),
     };
   }
-  return {
-    ok: true,
-    statusCode: response.status,
-    error: null,
-  };
+  try {
+    extractOpenAiProbeText(payload);
+    return {
+      ok: true,
+      statusCode: response.status,
+      error: null,
+    };
+  } catch {
+    const chatResponse = await fetch(getOpenAiChatCompletionsUrl(), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        messages: [{ role: "user", content: "health-check" }],
+        max_tokens: 1,
+        temperature: 0,
+      }),
+      cache: "no-store",
+      signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
+    });
+    const chatPayload = await parseJsonResponse(chatResponse);
+    if (!chatResponse.ok) {
+      return {
+        ok: false,
+        statusCode: chatResponse.status,
+        error: extractErrorMessage(chatPayload, `OpenAI chat.completions probe failed with HTTP ${chatResponse.status}`),
+      };
+    }
+    try {
+      extractOpenAiProbeText(chatPayload);
+      return {
+        ok: true,
+        statusCode: chatResponse.status,
+        error: null,
+      };
+    } catch {
+      const streamResponse = await fetch(getOpenAiChatCompletionsUrl(), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model,
+          messages: [{ role: "user", content: "health-check" }],
+          max_tokens: 1,
+          temperature: 0,
+          stream: true,
+        }),
+        cache: "no-store",
+        signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
+      });
+      if (!streamResponse.ok) {
+        const streamPayload = await parseJsonResponse(streamResponse);
+        return {
+          ok: false,
+          statusCode: streamResponse.status,
+          error: extractErrorMessage(streamPayload, `OpenAI stream chat.completions probe failed with HTTP ${streamResponse.status}`),
+        };
+      }
+      try {
+        await extractOpenAiProbeStreamText(streamResponse);
+        return {
+          ok: true,
+          statusCode: streamResponse.status,
+          error: null,
+        };
+      } catch {
+        return {
+          ok: false,
+          statusCode: streamResponse.status,
+          error: "OpenAI probe returned empty text for responses, chat.completions, and stream chat.completions",
+        };
+      }
+    }
+  }
 }
 
 async function sendAnthropicProbe(model: string, apiKey: string, useCacheControl: boolean): Promise<ProbeResult> {

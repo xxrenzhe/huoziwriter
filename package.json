@@ -22,6 +22,8 @@
     "plan17:quality-label-import": "tsx scripts/plan17-quality-label-import.ts",
     "plan17:topic-fission-benchmark": "tsx scripts/plan17-topic-fission-benchmark.ts",
     "plan20:prompt-cache-report": "tsx scripts/plan20-prompt-cache-report.ts",
+    "plan22:real-search": "tsx scripts/plan22-real-search.ts",
+    "plan22:real-automation-run": "tsx scripts/plan22-real-automation-run.ts",
     "verify": "pnpm type-check && NEXT_OUTPUT_MODE=standalone pnpm build && python3 -m py_compile apps/worker-py/main.py apps/worker-py/scheduler.py apps/worker-py/queue_runtime.py && node scripts/check-standalone-runtime-init.mjs && pnpm --filter @huoziwriter/web exec node ../../scripts/check-postgres-runtime-init.mjs && pnpm verify:title-eval:local",
     "verify:title-eval:local": "tsx scripts/verify-title-eval-local.ts",
     "verify:ui": "pnpm test-storybook && pnpm build-storybook && pnpm test:ui:a11y",

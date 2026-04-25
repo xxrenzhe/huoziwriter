@@ -7,6 +7,7 @@ export const marketingNav = [
 
 export const writerNav = [
   { href: "/warroom", label: "作战台" },
+  { href: "/automation", label: "自动驾驶" },
   { href: "/articles", label: "稿件" },
   { href: "/reviews", label: "复盘" },
   { href: "/settings", label: "设置" },

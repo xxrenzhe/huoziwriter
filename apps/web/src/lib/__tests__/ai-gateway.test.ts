@@ -8,6 +8,7 @@ import {
   GatewayProviderError,
   classifyGatewayError,
   executeWithRetry,
+  extractJsonObject,
   generateSceneText,
   getRetryDelayMs,
   shouldRunShadowTraffic,
@@ -179,6 +180,32 @@ test("getRetryDelayMs prefers retry-after over exponential backoff", () => {
     ),
     1_500,
   );
+});
+
+test("extractJsonObject reads fenced JSON with trailing explanation", () => {
+  const payload = extractJsonObject([
+    "这里是结果：",
+    "```json",
+    '{"summary":"ok","items":[{"name":"a"}]}',
+    "```",
+    "补充说明可以忽略。",
+  ].join("\n")) as { summary?: string; items?: Array<{ name?: string }> };
+
+  assert.equal(payload.summary, "ok");
+  assert.equal(payload.items?.[0]?.name, "a");
+});
+
+test("extractJsonObject repairs trailing commas and raw newlines inside strings", () => {
+  const payload = extractJsonObject([
+    "{",
+    '  "summary": "第一行',
+    '第二行",',
+    '  "items": ["a", "b",],',
+    "}",
+  ].join("\n")) as { summary?: string; items?: string[] };
+
+  assert.equal(payload.summary, "第一行\n第二行");
+  assert.deepEqual(payload.items, ["a", "b"]);
 });
 
 test("executeWithRetry waits retry-after once and succeeds on the second attempt", async () => {
@@ -373,13 +400,17 @@ test("generateSceneText supports env base urls and model route overrides", async
     });
 
     const originalFetch = globalThis.fetch;
-    const calls: Array<{ url: string; model: string }> = [];
+    const calls: Array<{ url: string; model: string; stream: boolean }> = [];
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-      const payload = JSON.parse(String(init?.body || "{}")) as { model?: string };
-      calls.push({ url: String(input), model: String(payload.model || "") });
-      return new Response(JSON.stringify({ output_text: "env route ok" }), {
+      const payload = JSON.parse(String(init?.body || "{}")) as { model?: string; stream?: boolean };
+      calls.push({ url: String(input), model: String(payload.model || ""), stream: Boolean(payload.stream) });
+      return new Response(
+        payload.stream
+          ? 'data: {"choices":[{"delta":{"content":"env route ok"},"finish_reason":null}]}\n\ndata: [DONE]\n\n'
+          : JSON.stringify({ output_text: "env route ok" }),
+        {
         status: 200,
-        headers: { "content-type": "application/json" },
+        headers: { "content-type": payload.stream ? "text/event-stream" : "application/json" },
       });
     }) as typeof fetch;
 
@@ -392,7 +423,7 @@ test("generateSceneText supports env base urls and model route overrides", async
 
       assert.equal(result.model, "gpt-4.1-mini");
       assert.equal(result.text, "env route ok");
-      assert.deepEqual(calls, [{ url: "https://ai-gateway.local/openai/v1/responses", model: "gpt-4.1-mini" }]);
+      assert.deepEqual(calls, [{ url: "https://ai-gateway.local/openai/v1/chat/completions", model: "gpt-4.1-mini", stream: true }]);
     } finally {
       globalThis.fetch = originalFetch;
       if (previousApiKey == null) delete process.env.OPENAI_API_KEY;
@@ -401,6 +432,129 @@ test("generateSceneText supports env base urls and model route overrides", async
       else process.env.OPENAI_BASE_URL = previousBaseUrl;
       if (previousModelRoutesJson == null) delete process.env.AI_MODEL_ROUTES_JSON;
       else process.env.AI_MODEL_ROUTES_JSON = previousModelRoutesJson;
+    }
+  });
+});
+
+test("generateSceneText falls back to chat completions when responses returns empty text", async () => {
+  await withTempDatabase("openai-chat-fallback", async () => {
+    await seedOpenAiRoute("outlinePlan", "gpt-4o-mini", null);
+
+    const previousApiKey = process.env.OPENAI_API_KEY;
+    process.env.OPENAI_API_KEY = "test-openai-key";
+
+    const originalFetch = globalThis.fetch;
+    const calls: string[] = [];
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      calls.push(url);
+      if (url.endsWith("/responses")) {
+        return new Response(JSON.stringify({ status: "completed", output: [] }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify({
+        choices: [
+          {
+            message: {
+              role: "assistant",
+              content: "chat fallback ok",
+            },
+          },
+        ],
+        usage: {
+          prompt_tokens: 12,
+          completion_tokens: 4,
+          total_tokens: 16,
+        },
+      }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }) as typeof fetch;
+
+    try {
+      const result = await generateSceneText({
+        sceneCode: "outlinePlan",
+        systemPrompt: "system",
+        userPrompt: "user",
+      });
+
+      assert.equal(result.provider, "openai");
+      assert.equal(result.model, "gpt-4o-mini");
+      assert.equal(result.text, "chat fallback ok");
+      assert.equal(calls.length, 2);
+      assert(calls[0]?.endsWith("/responses"));
+      assert(calls[1]?.endsWith("/chat/completions"));
+    } finally {
+      globalThis.fetch = originalFetch;
+      if (previousApiKey == null) delete process.env.OPENAI_API_KEY;
+      else process.env.OPENAI_API_KEY = previousApiKey;
+    }
+  });
+});
+
+test("generateSceneText falls back to streamed chat completions when non-stream chat is empty", async () => {
+  await withTempDatabase("openai-stream-chat-fallback", async () => {
+    await seedOpenAiRoute("outlinePlan", "gpt-4o-mini", null);
+
+    const previousApiKey = process.env.OPENAI_API_KEY;
+    process.env.OPENAI_API_KEY = "test-openai-key";
+
+    const originalFetch = globalThis.fetch;
+    const calls: Array<{ url: string; stream: boolean }> = [];
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const payload = JSON.parse(String(init?.body || "{}")) as { stream?: boolean };
+      calls.push({ url, stream: Boolean(payload.stream) });
+      if (url.endsWith("/responses")) {
+        return new Response(JSON.stringify({ status: "completed", output: [] }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (!payload.stream) {
+        return new Response(JSON.stringify({
+          choices: [{ message: { role: "assistant" } }],
+        }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return new Response(
+        [
+          'data: {"choices":[{"delta":{"role":"assistant"},"finish_reason":null}]}\n\n',
+          'data: {"choices":[{"delta":{"content":"stream fallback ok"},"finish_reason":null}]}\n\n',
+          'data: {"choices":[{"delta":{"content":""},"finish_reason":"stop"}]}\n\n',
+          "data: [DONE]\n\n",
+        ].join(""),
+        {
+          status: 200,
+          headers: { "content-type": "text/event-stream" },
+        },
+      );
+    }) as typeof fetch;
+
+    try {
+      const result = await generateSceneText({
+        sceneCode: "outlinePlan",
+        systemPrompt: "system",
+        userPrompt: "user",
+      });
+
+      assert.equal(result.provider, "openai");
+      assert.equal(result.model, "gpt-4o-mini");
+      assert.equal(result.text, "stream fallback ok");
+      assert.deepEqual(calls, [
+        { url: "https://api.openai.com/v1/responses", stream: false },
+        { url: "https://api.openai.com/v1/chat/completions", stream: false },
+        { url: "https://api.openai.com/v1/chat/completions", stream: true },
+      ]);
+    } finally {
+      globalThis.fetch = originalFetch;
+      if (previousApiKey == null) delete process.env.OPENAI_API_KEY;
+      else process.env.OPENAI_API_KEY = previousApiKey;
     }
   });
 });
