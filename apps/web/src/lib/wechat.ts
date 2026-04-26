@@ -1,5 +1,5 @@
 import { getDatabase } from "./db";
-import { decryptSecret, encryptSecret, pngThumbBuffer } from "./security";
+import { decryptSecret, encryptSecret, jpegThumbBuffer } from "./security";
 import { renderMarkdownToWechatHtml } from "./rendering";
 import type { TemplateRenderConfig } from "./template-rendering";
 
@@ -78,7 +78,7 @@ async function uploadThumb(accessToken: string) {
     return `mock_thumb_${Date.now()}`;
   }
   const formData = new FormData();
-  formData.append("media", new Blob([pngThumbBuffer()], { type: "image/png" }), "huozi-thumb.png");
+  formData.append("media", new Blob([jpegThumbBuffer()], { type: "image/jpeg" }), "huozi-thumb.jpg");
   const response = await fetch(`https://api.weixin.qq.com/cgi-bin/material/add_material?access_token=${accessToken}&type=image`, {
     method: "POST",
     body: formData,

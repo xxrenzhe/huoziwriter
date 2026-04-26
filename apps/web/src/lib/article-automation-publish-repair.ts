@@ -22,6 +22,7 @@ import { persistArticleCoverImageAssetSet } from "./image-assets";
 import { generateCoverImage } from "./image-generation";
 import { collectLanguageGuardHits, getLanguageGuardRules } from "./language-guard";
 import { loadPromptWithMeta, type PromptLoadContext } from "./prompt-loader";
+import { jpegThumbBuffer } from "./security";
 import {
   getArticleById,
   getArticleEvidenceItems,
@@ -579,10 +580,25 @@ export async function ensureCoverImagePreparedForPublish(input: {
   }
 
   const authoringContext = await getArticleAuthoringStyleContext(input.userId, input.articleId);
-  const generated = await generateCoverImage({
-    title: input.title,
-    authoringContext,
-  });
+  let generated: {
+    imageUrl: string;
+    prompt: string;
+    providerName: string;
+    model: string;
+  };
+  try {
+    generated = await generateCoverImage({
+      title: input.title,
+      authoringContext,
+    });
+  } catch (error) {
+    generated = {
+      imageUrl: `data:image/jpeg;base64,${jpegThumbBuffer().toString("base64")}`,
+      prompt: `本地兜底封面：${input.title}`,
+      providerName: "local",
+      model: "fallback-jpeg-thumb",
+    };
+  }
   const storedAsset = await persistArticleCoverImageAssetSet({
     userId: input.userId,
     articleId: input.articleId,
