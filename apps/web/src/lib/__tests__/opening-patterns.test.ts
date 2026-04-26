@@ -47,6 +47,27 @@ test("normalizeOpeningOptions infers D1 D2 D3 and backfills diagnose fields", ()
   assert.equal(normalized[0]?.diagnose.hookDensity, "danger");
 });
 
+test("normalizeOpeningOptions does not recommend an explicit forbidden opening", () => {
+  const normalized = normalizeOpeningOptions(
+    [
+      {
+        opening: "在这个信息爆炸的时代，内容创作正在发生深刻变化，今天想和你聊聊这件事。",
+        isRecommended: true,
+      },
+      {
+        opening: "上周一篇稿子明明已经润色完，群里还是有人问：为什么还不能一键发？问题不在正文，而在链路断着。",
+        isRecommended: false,
+      },
+    ],
+    [],
+  );
+
+  assert.equal(normalized[0]?.forbiddenHits.includes("D3 钩子后置"), true);
+  assert.equal(normalized[0]?.isRecommended, false);
+  assert.equal(normalized[1]?.isRecommended, true);
+  assert.deepEqual(normalized[1]?.forbiddenHits, []);
+});
+
 test("normalizeOpeningOptions aligns quality ceiling with five-tier pattern map", () => {
   const fallback = buildFallbackOpeningOptions("公众号开头模式");
   const normalized = normalizeOpeningOptions(

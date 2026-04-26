@@ -460,6 +460,7 @@ export async function runFactRiskRepairWithRetries(input: {
   articleId: number;
   userId: number;
   promptContext: PromptLoadContext;
+  scope?: "highRiskOnly" | "allBlocking";
 }) {
   let article = await getArticleById(input.articleId, input.userId);
   if (!article) {
@@ -475,11 +476,14 @@ export async function runFactRiskRepairWithRetries(input: {
 
   const factCheckArtifact = await getArticleStageArtifact(input.articleId, input.userId, "factCheck");
   const riskItems = buildFactRiskItems(factCheckArtifact?.payload ?? null);
+  const scope = input.scope || "allBlocking";
   const needsRepair =
-    riskItems.overallRisk === "high"
-    || riskItems.riskyClaims.length > 0
-    || riskItems.needsSourceClaims.length > 0
-    || riskItems.missingEvidence.length > 0;
+    scope === "highRiskOnly"
+      ? riskItems.overallRisk === "high" || riskItems.riskyClaims.length > 0
+      : riskItems.overallRisk === "high"
+        || riskItems.riskyClaims.length > 0
+        || riskItems.needsSourceClaims.length > 0
+        || riskItems.missingEvidence.length > 0;
   if (!needsRepair) {
     return {
       changed: false,
@@ -512,11 +516,13 @@ export async function runFactRiskRepairWithRetries(input: {
           `标题：${article.title}`,
           `整体风险：${riskItems.overallRisk || "unknown"}`,
           riskItems.riskyClaims.length > 0 ? `高风险断言：${riskItems.riskyClaims.join("；")}` : "高风险断言：无",
-          riskItems.needsSourceClaims.length > 0 ? `待补证据断言：${riskItems.needsSourceClaims.join("；")}` : "待补证据断言：无",
-          riskItems.missingEvidence.length > 0 ? `缺失证据：${riskItems.missingEvidence.join("；")}` : "缺失证据：无",
+          scope === "allBlocking" && riskItems.needsSourceClaims.length > 0 ? `待补证据断言：${riskItems.needsSourceClaims.join("；")}` : "待补证据断言：本轮不处理",
+          scope === "allBlocking" && riskItems.missingEvidence.length > 0 ? `缺失证据：${riskItems.missingEvidence.join("；")}` : "缺失证据：本轮不处理",
           "改写要求：",
           "1. 对高风险断言，优先删除具体强判断；如果保留，只能写成有条件、可被证据支撑的判断。",
-          "2. 对待补证据断言，正文中不得继续以确定语气出现。",
+          scope === "allBlocking"
+            ? "2. 对待补证据断言，正文中不得继续以确定语气出现。"
+            : "2. 不要因为普通待补证据大改文章结构；只隔离高风险断言，保留原有段落顺序和节奏。",
           "3. 保留文章主线、段落顺序和已验证事实。",
           "4. 输出完整 Markdown 正文。",
           "当前正文：",

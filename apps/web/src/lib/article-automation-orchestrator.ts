@@ -828,11 +828,17 @@ function hasBlockingFactRisk(payload: Record<string, unknown>) {
   );
 }
 
+function hasHighRiskFactClaim(payload: Record<string, unknown>) {
+  const checks = getRecordArray(payload.checks);
+  return getString(payload.overallRisk) === "high" || checks.some((item) => getString(item.status) === "risky");
+}
+
 async function executeFactCheck(detail: AutomationRunDetail, promptContext: AutomationPromptContext): Promise<StageExecutionResult> {
   if (!detail.run.articleId) {
     throw new AutomationStageBlockedError("缺少稿件记录，无法执行事实核查。");
   }
-  const autoRepairEnabled = process.env.PLAN22_FACT_RISK_AUTO_REPAIR === "1";
+  const fullAutoRepairEnabled = process.env.PLAN22_FACT_RISK_AUTO_REPAIR === "1";
+  const highRiskAutoRepairEnabled = process.env.PLAN22_FACT_RISK_AUTO_REPAIR !== "0";
   let artifact = await generateArticleStageArtifact({
     articleId: detail.run.articleId,
     userId: detail.run.userId,
@@ -840,11 +846,21 @@ async function executeFactCheck(detail: AutomationRunDetail, promptContext: Auto
   });
   let payload = getRecord(artifact.payload) ?? {};
   const repairAttempts: Array<Record<string, unknown>> = [];
-  for (let attempt = 0; autoRepairEnabled && attempt < 2 && hasBlockingFactRisk(payload); attempt += 1) {
+  for (
+    let attempt = 0;
+    attempt < 2
+      && (
+        fullAutoRepairEnabled
+          ? hasBlockingFactRisk(payload)
+          : highRiskAutoRepairEnabled && hasHighRiskFactClaim(payload)
+      );
+    attempt += 1
+  ) {
     const repair = await runFactRiskRepairWithRetries({
       articleId: detail.run.articleId,
       userId: detail.run.userId,
       promptContext,
+      scope: fullAutoRepairEnabled ? "allBlocking" : "highRiskOnly",
     });
     repairAttempts.push({
       changed: repair.changed,
@@ -853,6 +869,7 @@ async function executeFactCheck(detail: AutomationRunDetail, promptContext: Auto
       error: repair.error,
       riskyClaimCount: repair.riskyClaimCount,
       needsSourceClaimCount: repair.needsSourceClaimCount,
+      scope: fullAutoRepairEnabled ? "allBlocking" : "highRiskOnly",
     });
     if (!repair.changed) {
       break;
@@ -870,7 +887,8 @@ async function executeFactCheck(detail: AutomationRunDetail, promptContext: Auto
       artifactSummary: artifact.summary,
       overallRisk: getString(payload.overallRisk),
       missingEvidenceCount: getStringArray(payload.missingEvidence, 8).length,
-      autoRepairEnabled,
+      autoRepairEnabled: fullAutoRepairEnabled || highRiskAutoRepairEnabled,
+      autoRepairMode: fullAutoRepairEnabled ? "allBlocking" : highRiskAutoRepairEnabled ? "highRiskOnly" : "disabled",
       autoRepairAttempts: repairAttempts,
     },
     provider: artifact.provider,

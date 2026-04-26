@@ -547,7 +547,7 @@ export function ensureSingleRecommendedOpeningOption(options: OpeningOption[]) {
     return options;
   }
 
-  const explicitRecommendedIndex = options.findIndex((item) => item.isRecommended);
+  const explicitRecommendedIndex = options.findIndex((item) => item.isRecommended && item.forbiddenHits.length === 0);
   const recommendedIndex = explicitRecommendedIndex >= 0
     ? explicitRecommendedIndex
     : options.reduce((bestIndex, item, index, list) => {
