@@ -25,6 +25,13 @@ test("classifyProviderFailure returns quota-specific user guidance", () => {
   assert.match(failure.operatorAction, /OPENAI_API_KEY/);
 });
 
+test("classifyProviderFailure treats insufficient balance as quota exhaustion", () => {
+  const failure = classifyProviderFailure("Insufficient account balance");
+
+  assert.equal(failure.failureKind, "provider_quota_exhausted");
+  assert.match(failure.userMessage, /额度已用尽/);
+});
+
 test("buildMarkdownReport includes readable provider blocking details", () => {
   const report: AcceptanceReport = {
     generatedAt: "2026-04-26T00:00:00.000Z",

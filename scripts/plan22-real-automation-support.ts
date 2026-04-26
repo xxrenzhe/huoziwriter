@@ -169,7 +169,7 @@ export function sanitizeDiagnosticText(value: unknown) {
 
 export function classifyProviderFailure(error: unknown) {
   const detail = sanitizeDiagnosticText(error) || "provider 凭据不可用";
-  if (/额度|余额|quota|insufficient_quota|billing|subscription.*exhaust|订阅额度/i.test(detail)) {
+  if (/额度|余额|quota|insufficient_quota|billing|subscription.*exhaust|订阅额度|insufficient.*balance|account.*balance/i.test(detail)) {
     return {
       failureKind: "provider_quota_exhausted" as const,
       userMessage: "AI 服务账号额度已用尽，当前无法完成真实模型验收；请更换可用账号或等待额度恢复后重跑。",

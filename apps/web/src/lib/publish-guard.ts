@@ -285,15 +285,16 @@ export async function evaluatePublishGuard(input: {
   });
   const selectedOpeningHook = getString(outlineSelection?.selectedOpeningHook) || getString(outlineArtifact?.payload?.openingHook);
   const draftOpening = extractPublishOpeningText(article?.markdown_content);
+  const guardOpening =
+    draftOpening
+    || getString(deepWritingArtifact?.payload?.openingStrategy)
+    || selectedOpeningHook;
   const selectedOpeningOption = getRecordArray(outlineArtifact?.payload?.openingOptions).find((item) => {
     const optionOpening = getString(item.opening) || getString(item.text) || getString(item.content) || getString(item.value);
-    return optionOpening === selectedOpeningHook;
+    return optionOpening === guardOpening;
   }) ?? null;
   const openingGuardEvaluation = evaluateOpeningPatternGuardChecks({
-    selectedOpening:
-      draftOpening
-      || getString(deepWritingArtifact?.payload?.openingStrategy)
-      || selectedOpeningHook,
+    selectedOpening: guardOpening,
     selectedOpeningHook,
     selectedOpeningOption,
     openingAuditedAt: outlineArtifact?.payload?.openingAuditedAt,

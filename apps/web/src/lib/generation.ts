@@ -430,17 +430,12 @@ function buildLocalOpeningPreview(input: {
   bannedWords: string[];
   deepWritingPayload?: Record<string, unknown> | null;
 }) {
-  const openingStrategy = getString(input.deepWritingPayload?.openingStrategy) || "第一段先抛现象或冲突，再给一句硬判断。";
-  const openingMove = getString(input.deepWritingPayload?.openingMove);
-  const stateVariantLabel = getString(input.deepWritingPayload?.stateVariantLabel);
-  const articlePrototypeLabel = getString(input.deepWritingPayload?.articlePrototypeLabel) || getString(input.deepWritingPayload?.articlePrototype);
-  const leadFact = input.fragments.find((item) => getString(item)) || "围绕“" + input.title + "”直接进入核心判断。";
+  const leadFact = (input.fragments.find((item) => getString(item)) || "单次生成效果不能代表完整交付能力。").slice(0, 90);
   return sanitizeBannedWords(
     [
-      "先说结论，这篇更适合按「" + ([articlePrototypeLabel, stateVariantLabel].filter(Boolean).join(" / ") || "当前推荐写法") + "」开。",
-      openingStrategy,
-      openingMove,
-      "我先抓住一个最具体的点：" + leadFact,
+      "真正拖慢内容生产的，往往不是某一句提示词，而是素材、核查、排版和发布之间的断点。",
+      "只要终稿前还要反复补证据、改结构、查风险，这套流程就还没有形成生产线。",
+      leadFact,
     ].filter(Boolean).join("\n\n"),
     input.bannedWords,
   );

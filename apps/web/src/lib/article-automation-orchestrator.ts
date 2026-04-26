@@ -74,6 +74,15 @@ const STRATEGY_ONLY_STAGE_CODES = new Set([
   "openingOptimization",
 ]);
 
+function readPositiveIntegerEnv(name: string, fallback: number) {
+  const raw = String(process.env[name] || "").trim();
+  if (!raw) return fallback;
+  const value = Number(raw);
+  return Number.isFinite(value) && value > 0 ? Math.round(value) : fallback;
+}
+
+const AUTOMATION_SCENE_REQUEST_TIMEOUT_MS = readPositiveIntegerEnv("ARTICLE_AUTOMATION_SCENE_REQUEST_TIMEOUT_MS", 120_000);
+
 function getRecord(value: unknown) {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
 }
@@ -88,6 +97,33 @@ function getString(value: unknown) {
 
 function getStringArray(value: unknown, limit = 8) {
   return Array.isArray(value) ? value.map((item) => String(item || "").trim()).filter(Boolean).slice(0, limit) : [];
+}
+
+function normalizeResearchSourceUrl(value: unknown) {
+  const raw = getString(value);
+  if (!raw) return null;
+  try {
+    return new URL(raw).toString();
+  } catch {
+    return raw;
+  }
+}
+
+function dedupeResearchSources(sources: Array<{ label: string; sourceType: string; detail: string; sourceUrl: string | null }>) {
+  const seen = new Set<string>();
+  const normalized: typeof sources = [];
+  for (const source of sources) {
+    const key = [
+      source.sourceUrl || "",
+      source.label.toLowerCase(),
+      source.detail.toLowerCase(),
+      source.sourceType.toLowerCase(),
+    ].join("::");
+    if (seen.has(key)) continue;
+    seen.add(key);
+    normalized.push(source);
+  }
+  return normalized;
 }
 
 function getStageProviderMeta(
@@ -140,7 +176,7 @@ function mapResearchBriefOutput(payload: Record<string, unknown>) {
   const timelineCards = getRecordArray(payload.timelineCards);
   const comparisonCards = getRecordArray(payload.comparisonCards);
   const intersectionInsights = getRecordArray(payload.intersectionInsights);
-  const sources = [
+  const cardSources = [
     ...timelineCards.flatMap((item) => getRecordArray(item.sources)),
     ...comparisonCards.flatMap((item) => getRecordArray(item.sources)),
     ...intersectionInsights.flatMap((item) => getRecordArray(item.sources)),
@@ -148,8 +184,32 @@ function mapResearchBriefOutput(payload: Record<string, unknown>) {
     label: getString(item.label),
     sourceType: getString(item.sourceType),
     detail: getString(item.detail),
-    sourceUrl: getString(item.sourceUrl) || null,
+    sourceUrl: normalizeResearchSourceUrl(item.sourceUrl),
   }));
+  const attachedSources = getRecordArray(externalResearch?.attached).map((item) => ({
+    label: getString(item.title) || getString(item.label) || "已附着研究信源",
+    sourceType: getString(item.sourceType) || "url",
+    detail: getString(item.detail) || getString(item.excerpt) || "真实搜索/知识库补源附着到研究简报",
+    sourceUrl: normalizeResearchSourceUrl(item.sourceUrl),
+  }));
+  const discoveredSources = [
+    ...getStringArray(externalResearch?.discoveredUrls, 24),
+    ...getStringArray(externalResearch?.curatedSourceUrls, 24),
+    ...getRecordArray(externalResearch?.searches).flatMap((item) => getStringArray(item.topUrls, 4)),
+  ].map((sourceUrl) => ({
+    label: (() => {
+      try {
+        return new URL(sourceUrl).hostname.replace(/^www\./, "");
+      } catch {
+        return sourceUrl;
+      }
+    })(),
+    sourceType: "search",
+    detail: "真实搜索发现的候选信源",
+    sourceUrl: normalizeResearchSourceUrl(sourceUrl),
+  }));
+  const sources = dedupeResearchSources([...cardSources, ...attachedSources, ...discoveredSources])
+    .filter((item) => item.label || item.detail || item.sourceUrl);
   return {
     queries: [
       ...(getString(externalResearch?.query) ? [{ query: getString(externalResearch?.query), purpose: "自动补源" }] : []),
@@ -454,6 +514,8 @@ async function executeTopicAnalysis(detail: AutomationRunDetail, promptContext: 
       userPrompt,
       temperature: 0.2,
       rolloutUserId: detail.run.userId,
+      maxAttempts: 1,
+      requestTimeoutMs: AUTOMATION_SCENE_REQUEST_TIMEOUT_MS,
     });
     const output = normalizeTopicAnalysisOutput(extractJsonObject(result.text), detail.run.inputText);
     return {
@@ -519,6 +581,24 @@ async function executeResearchBrief(detail: AutomationRunDetail): Promise<StageE
   }
 
   const outputJson = mapResearchBriefOutput(payload);
+  const inputSourceUrl = detail.run.sourceUrl;
+  if (inputSourceUrl && !outputJson.sources.some((item) => item.sourceUrl === inputSourceUrl)) {
+    outputJson.sources = [
+      ...outputJson.sources,
+      {
+        label: (() => {
+          try {
+            return new URL(inputSourceUrl).hostname.replace(/^www\./, "");
+          } catch {
+            return "起稿原始链接";
+          }
+        })(),
+        sourceType: "url",
+        detail: "链接起稿用户提供的原始信源",
+        sourceUrl: inputSourceUrl,
+      },
+    ];
+  }
   const externalResearch = getRecord(payload.externalResearch) ?? {};
   return {
     outputJson,
@@ -671,6 +751,8 @@ async function executeDeepWrite(detail: AutomationRunDetail, promptContext: Auto
       userPrompt,
       temperature: 0.2,
       rolloutUserId: detail.run.userId,
+      maxAttempts: 1,
+      requestTimeoutMs: AUTOMATION_SCENE_REQUEST_TIMEOUT_MS,
     });
     const outputJson = mapDeepWriteOutput(extractJsonObject(result.text), fallback);
     return {
@@ -908,6 +990,8 @@ async function executeCoverImageBrief(detail: AutomationRunDetail, promptContext
       userPrompt,
       temperature: 0.4,
       rolloutUserId: detail.run.userId,
+      maxAttempts: 1,
+      requestTimeoutMs: AUTOMATION_SCENE_REQUEST_TIMEOUT_MS,
     });
     const parsed = getRecord(extractJsonObject(result.text));
     const outputJson = {

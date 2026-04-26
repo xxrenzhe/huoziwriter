@@ -62,6 +62,7 @@ const ARTICLE_STAGE_ARTIFACT_TIMEOUT_MS = readPositiveIntegerEnv("ARTICLE_STAGE_
 const ARTICLE_STAGE_OPTION_TIMEOUT_MS = readPositiveIntegerEnv("ARTICLE_STAGE_OPTION_TIMEOUT_MS", 120_000);
 const RESEARCH_BRIEF_ARTIFACT_TIMEOUT_MS = readPositiveIntegerEnv("RESEARCH_BRIEF_ARTIFACT_TIMEOUT_MS", 180_000);
 const FACT_CHECK_ARTIFACT_TIMEOUT_MS = readPositiveIntegerEnv("FACT_CHECK_ARTIFACT_TIMEOUT_MS", 120_000);
+const ARTICLE_STAGE_ARTIFACT_MAX_ATTEMPTS = readPositiveIntegerEnv("ARTICLE_STAGE_ARTIFACT_MAX_ATTEMPTS", 1);
 
 export type ArticleStageArtifactStatus = "ready" | "failed";
 
@@ -1153,6 +1154,98 @@ function buildResearchCoverage(context: GenerationContext) {
   } satisfies Record<string, unknown> & { coveredCount: number };
 }
 
+function getExternalResearchDomainLabel(url: string) {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return url;
+  }
+}
+
+function inferExternalResearchCategory(input: { category?: string; url?: string | null }): ResearchSourceCategoryKey {
+  const category = String(input.category || "").trim();
+  const url = String(input.url || "").toLowerCase();
+  if (category === "official" || /openai\.com|anthropic\.com|claude\.com|ai\.google\.dev|developers\.google\.com|microsoft\.com|github\.com/.test(url)) {
+    return "official";
+  }
+  if (category === "comparison" || /alternative|compare|versus|benchmark|a16z\.com/.test(url)) {
+    return "comparison";
+  }
+  if (category === "userVoice" || /v2ex\.com|reddit\.com|zhihu\.com|news\.ycombinator\.com|producthunt\.com|lennysnewsletter\.com/.test(url)) {
+    return "userVoice";
+  }
+  if (category === "timeline" || /news|changelog|release|blog/.test(url)) {
+    return "timeline";
+  }
+  return "industry";
+}
+
+function enrichResearchCoverageWithExternalSearch(
+  coverage: Record<string, unknown>,
+  externalResearch?: {
+    discoveredUrls?: string[];
+    curatedSourceUrls?: string[];
+    attached?: Array<{ title: string; sourceUrl: string | null }>;
+    searches?: Array<{ category?: string; label?: string; topUrls?: string[] }>;
+  } | null,
+) {
+  if (!externalResearch) return coverage;
+  const buckets: Record<ResearchSourceCategoryKey, string[]> = {
+    official: dedupeLimited(coverage.official as Array<string | null | undefined>, 6),
+    industry: dedupeLimited(coverage.industry as Array<string | null | undefined>, 6),
+    comparison: dedupeLimited(coverage.comparison as Array<string | null | undefined>, 6),
+    userVoice: dedupeLimited(coverage.userVoice as Array<string | null | undefined>, 6),
+    timeline: dedupeLimited(coverage.timeline as Array<string | null | undefined>, 6),
+  };
+  const addUrl = (url: string | null | undefined, category?: string, title?: string | null) => {
+    const normalizedUrl = String(url || "").trim();
+    if (!normalizedUrl) return;
+    const key = inferExternalResearchCategory({ category, url: normalizedUrl });
+    const label = String(title || "").trim() || getExternalResearchDomainLabel(normalizedUrl);
+    buckets[key].push(`${label}：${normalizedUrl}`);
+  };
+
+  for (const item of externalResearch.attached ?? []) {
+    addUrl(item.sourceUrl, undefined, item.title);
+  }
+  for (const url of externalResearch.curatedSourceUrls ?? []) {
+    addUrl(url);
+  }
+  for (const url of externalResearch.discoveredUrls ?? []) {
+    addUrl(url);
+  }
+  for (const search of externalResearch.searches ?? []) {
+    for (const url of search.topUrls ?? []) {
+      addUrl(url, search.category, search.label);
+    }
+  }
+
+  const categoryMap = {
+    official: dedupeLimited(buckets.official, 6),
+    industry: dedupeLimited(buckets.industry, 6),
+    comparison: dedupeLimited(buckets.comparison, 6),
+    userVoice: dedupeLimited(buckets.userVoice, 6),
+    timeline: dedupeLimited(buckets.timeline, 6),
+  };
+  const coveredCount = (Object.keys(categoryMap) as ResearchSourceCategoryKey[]).filter((key) => categoryMap[key].length > 0).length;
+  const missingCategories = (Object.keys(categoryMap) as ResearchSourceCategoryKey[])
+    .filter((key) => categoryMap[key].length === 0)
+    .map((key) => RESEARCH_SOURCE_CATEGORY_LABELS[key]);
+  const sufficiency = coveredCount >= 4 ? "ready" : coveredCount >= 2 ? "limited" : "blocked";
+
+  return {
+    ...coverage,
+    ...categoryMap,
+    coveredCount,
+    missingCategories,
+    sufficiency,
+    note:
+      sufficiency === "ready"
+        ? "已结合外部搜索五类结果回填研究覆盖，可继续进入结构判断。"
+        : String(coverage.note || ""),
+  };
+}
+
 function buildResearchTimelineCards(context: GenerationContext, coverage: ReturnType<typeof buildResearchCoverage>) {
   const timelineFragments = context.evidenceFragments.filter((fragment) =>
     looksLikeTimeline(String(fragment.title || "").trim() + " " + truncateText(fragment.distilledContent, 96)),
@@ -1340,8 +1433,14 @@ function buildResearchIntersectionInsights(
   ] satisfies Record<string, unknown>[];
 }
 
-function fallbackResearchBrief(context: GenerationContext) {
-  const sourceCoverage = buildResearchCoverage(context);
+function fallbackResearchBrief(
+  context: GenerationContext,
+  externalResearch?: Parameters<typeof enrichResearchCoverageWithExternalSearch>[1],
+) {
+  const sourceCoverage = enrichResearchCoverageWithExternalSearch(
+    buildResearchCoverage(context),
+    externalResearch,
+  ) as ReturnType<typeof buildResearchCoverage>;
   const timelineCards = buildResearchTimelineCards(context, sourceCoverage);
   const comparisonCards = buildResearchComparisonCards(context, sourceCoverage);
   const intersectionInsights = buildResearchIntersectionInsights(context, timelineCards, comparisonCards);
@@ -2403,7 +2502,10 @@ function fallbackProsePolish(context: GenerationContext) {
       },
     ].filter(Boolean),
     languageGuardHits,
-    rewrittenLead: truncateText(firstSentence, 28) + "。先把结论扔出来，再补证据，不要让背景介绍抢走前两段的位置。",
+    rewrittenLead: [
+      "真正拖慢内容生产的，往往不是某一句提示词，而是素材、核查、排版和发布之间的断点。",
+      "只要终稿前还要反复补证据、改结构、查风险，这套流程就还没有形成生产线。",
+    ].join("\n\n"),
     punchlines: [
       "这篇稿子最该强化的，不是态度，而是“" + context.article.title + "”背后的证据密度。",
       "先让读者看见变化，再让他接受判断。",
@@ -3021,6 +3123,23 @@ function normalizeDeepWritingPayload(value: unknown, fallback: Record<string, un
   } satisfies Record<string, unknown>;
 }
 
+function hasConcreteFactMarker(claim: string) {
+  const normalized = claim.trim();
+  if (!normalized) return false;
+  if (/[0-9０-９]/.test(normalized)) return true;
+  if (/[一二三四五六七八九十百千万亿]+(?:个|位|人|年|月|天|周|款|项|家|%|％|倍|美元|美金|元|人民币|万|亿)/.test(normalized)) return true;
+  if (/(?:19|20)\d{2}\s*年|(?:19|20)\d{2}[-/]\d{1,2}|[一二三四五六七八九十]+月[一二三四五六七八九十\d]+日/.test(normalized)) return true;
+  if (/https?:\/\/|www\./i.test(normalized)) return true;
+  return /(OpenAI|Anthropic|Google|Microsoft|Meta|Apple|NVIDIA|Claude|ChatGPT|Gemini|Deep Research|SearXNG|微信|公众号|GitHub|V2EX).{0,32}(发布|推出|宣布|上线|下线|支持|限制|收费|开源|收购|投资|更新|提供|允许|禁止|要求|可用|不可用|接入|关闭|新增|移除)/i.test(normalized);
+}
+
+function normalizeFactCheckStatus(input: unknown, claim: string) {
+  const status = String(input || "").trim();
+  if (!["verified", "needs_source", "risky", "opinion"].includes(status)) return "needs_source";
+  if (status === "risky" && !hasConcreteFactMarker(claim)) return "opinion";
+  return status;
+}
+
 function normalizeFactCheckPayload(value: unknown, fallback: Record<string, unknown>, context: GenerationContext) {
   const payload = normalizeRecord(value);
   const payloadResearchReview = normalizeRecord(payload?.researchReview);
@@ -3030,13 +3149,14 @@ function normalizeFactCheckPayload(value: unknown, fallback: Record<string, unkn
     ? payload.checks
         .map((item) => normalizeRecord(item))
         .filter(Boolean)
-        .map((item) => ({
-          claim: String(item?.claim || "").trim(),
-          status: ["verified", "needs_source", "risky", "opinion"].includes(String(item?.status || "").trim())
-            ? String(item?.status || "").trim()
-            : "needs_source",
-          suggestion: String(item?.suggestion || "").trim(),
-        }))
+        .map((item) => {
+          const claim = String(item?.claim || "").trim();
+          return {
+            claim,
+            status: normalizeFactCheckStatus(item?.status, claim),
+            suggestion: String(item?.suggestion || "").trim(),
+          };
+        })
         .filter((item) => item.claim)
         .slice(0, 8)
     : [];
@@ -3583,7 +3703,6 @@ async function generateWithPrompt(input: {
         : input.stageCode === "researchBrief"
           ? Math.min(ARTICLE_STAGE_ARTIFACT_TIMEOUT_MS, RESEARCH_BRIEF_ARTIFACT_TIMEOUT_MS)
           : ARTICLE_STAGE_ARTIFACT_TIMEOUT_MS;
-    const strictSingleAttempt = input.stageCode === "factCheck" || input.stageCode === "researchBrief";
     const result = await withStageGenerationTimeout(
       generateSceneText({
         sceneCode: input.sceneCode,
@@ -3595,8 +3714,8 @@ async function generateWithPrompt(input: {
         },
         temperature: 0.2,
         rolloutUserId: input.context.userId,
-        maxAttempts: strictSingleAttempt ? 1 : undefined,
-        requestTimeoutMs: strictSingleAttempt ? stageTimeoutMs : undefined,
+        maxAttempts: ARTICLE_STAGE_ARTIFACT_MAX_ATTEMPTS,
+        requestTimeoutMs: stageTimeoutMs,
       }),
       stageTimeoutMs,
       `${input.stageCode} AI 生成超时`,
@@ -3626,6 +3745,8 @@ async function generateWithPrompt(input: {
           },
           temperature: 0.1,
           rolloutUserId: input.context.userId,
+          maxAttempts: 1,
+          requestTimeoutMs: ARTICLE_STAGE_OPTION_TIMEOUT_MS,
         }),
         ARTICLE_STAGE_OPTION_TIMEOUT_MS,
         `${input.stageCode} JSON 修复超时`,
@@ -3696,9 +3817,10 @@ async function generateResearchBrief(
     skipped: string[];
     failed: Array<{ url: string; error: string }>;
     searchError: string | null;
+    searches?: Array<{ category?: string; label?: string; topUrls?: string[] }>;
   } | null,
 ) {
-  const fallback = fallbackResearchBrief(context);
+  const fallback = fallbackResearchBrief(context, externalResearch);
   const userPrompt = [
     "请输出 JSON，不要解释，不要 markdown。",
     '字段：{"summary":"字符串","researchObject":"字符串","coreQuestion":"字符串","authorHypothesis":"字符串","targetReader":"字符串","mustCoverAngles":[""],"hypothesesToVerify":[""],"forbiddenConclusions":[""],"sourceCoverage":{"official":[""],"industry":[""],"comparison":[""],"userVoice":[""],"timeline":[""],"sufficiency":"ready|limited|blocked","missingCategories":[""],"note":"字符串"},"timelineCards":[{"phase":"字符串","title":"字符串","summary":"字符串","signals":[""],"sources":[{"label":"字符串","sourceType":"official|industry|comparison|userVoice|timeline|knowledge|history|url|manual|screenshot","detail":"字符串","sourceUrl":"字符串或空"}]}],"comparisonCards":[{"subject":"字符串","position":"字符串","differences":[""],"userVoices":[""],"opportunities":[""],"risks":[""],"sources":[{"label":"字符串","sourceType":"official|industry|comparison|userVoice|timeline|knowledge|history|url|manual|screenshot","detail":"字符串","sourceUrl":"字符串或空"}]}],"intersectionInsights":[{"insight":"字符串","whyNow":"字符串","support":[""],"caution":"字符串","sources":[{"label":"字符串","sourceType":"official|industry|comparison|userVoice|timeline|knowledge|history|url|manual|screenshot","detail":"字符串","sourceUrl":"字符串或空"}]}],"strategyWriteback":{"targetReader":"字符串","coreAssertion":"字符串","whyNow":"字符串","researchHypothesis":"字符串","marketPositionInsight":"字符串","historicalTurningPoint":"字符串"}}',
@@ -3869,6 +3991,8 @@ async function runTitleOptimizer(context: GenerationContext, outlinePayload: Rec
         userPrompt,
         temperature: 0.2,
         rolloutUserId: context.userId,
+        maxAttempts: 1,
+        requestTimeoutMs: ARTICLE_STAGE_OPTION_TIMEOUT_MS,
       }),
       ARTICLE_STAGE_OPTION_TIMEOUT_MS,
       "标题优化 AI 超时",
@@ -3984,6 +4108,8 @@ async function runOpeningOptimizer(context: GenerationContext, outlinePayload: R
         userPrompt,
         temperature: 0.2,
         rolloutUserId: context.userId,
+        maxAttempts: 1,
+        requestTimeoutMs: ARTICLE_STAGE_OPTION_TIMEOUT_MS,
       }),
       ARTICLE_STAGE_OPTION_TIMEOUT_MS,
       "开头优化 AI 超时",
@@ -4736,28 +4862,51 @@ export async function generateArticleStageArtifact(input: {
 }) {
   if (input.stageCode === "researchBrief") {
     const initialContext = await buildGenerationContext(input.articleId, input.userId);
-    const externalResearch = await withStageGenerationTimeout(
-      supplementArticleResearchSources({
-        articleId: input.articleId,
-        userId: input.userId,
-        articleTitle: initialContext.article.title,
-        evidenceFragments: initialContext.evidenceFragments.map((item) => ({
-          sourceType: item.sourceType,
-          sourceUrl: item.sourceUrl,
-        })),
-        knowledgeCards: initialContext.knowledgeCards.map((item) => ({
-          title: item.title,
-          summary: item.summary,
-        })),
-        outlineNodes: initialContext.outlineNodes.map((item) => ({
-          title: item.title,
-          description: item.description,
-        })),
-        searchHints: input.researchSearchHints,
-      }),
-      ARTICLE_STAGE_OPTION_TIMEOUT_MS,
-      "researchBrief 外部补源超时",
-    );
+    let externalResearch: Awaited<ReturnType<typeof supplementArticleResearchSources>>;
+    try {
+      externalResearch = await withStageGenerationTimeout(
+        supplementArticleResearchSources({
+          articleId: input.articleId,
+          userId: input.userId,
+          articleTitle: initialContext.article.title,
+          evidenceFragments: initialContext.evidenceFragments.map((item) => ({
+            sourceType: item.sourceType,
+            sourceUrl: item.sourceUrl,
+          })),
+          knowledgeCards: initialContext.knowledgeCards.map((item) => ({
+            title: item.title,
+            summary: item.summary,
+          })),
+          outlineNodes: initialContext.outlineNodes.map((item) => ({
+            title: item.title,
+            description: item.description,
+          })),
+          searchHints: input.researchSearchHints,
+        }),
+        ARTICLE_STAGE_OPTION_TIMEOUT_MS,
+        "researchBrief 外部补源超时",
+      );
+    } catch (error) {
+      externalResearch = {
+        attempted: true,
+        query: [
+          input.researchSearchHints?.topicTheme,
+          input.researchSearchHints?.researchObject,
+          ...(input.researchSearchHints?.mustCoverAngles ?? []),
+        ].map((item) => String(item || "").trim()).filter(Boolean).join(" | "),
+        searchUrl: null,
+        discoveredUrls: [],
+        imaQueries: [],
+        imaDiscoveredTitles: [],
+        imaError: null,
+        curatedSourceUrls: [],
+        attached: [],
+        skipped: [],
+        failed: [],
+        searchError: error instanceof Error ? error.message : "researchBrief 外部补源失败",
+        searches: [],
+      };
+    }
     const context = externalResearch.attached.length > 0
       ? await buildGenerationContext(input.articleId, input.userId)
       : initialContext;
