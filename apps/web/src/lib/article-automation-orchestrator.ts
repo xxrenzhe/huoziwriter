@@ -83,6 +83,38 @@ function readPositiveIntegerEnv(name: string, fallback: number) {
 
 const AUTOMATION_SCENE_REQUEST_TIMEOUT_MS = readPositiveIntegerEnv("ARTICLE_AUTOMATION_SCENE_REQUEST_TIMEOUT_MS", 120_000);
 
+function readBooleanEnv(name: string, fallback: boolean) {
+  const raw = String(process.env[name] || "").trim().toLowerCase();
+  if (!raw) return fallback;
+  if (["1", "true", "yes", "on"].includes(raw)) return true;
+  if (["0", "false", "no", "off"].includes(raw)) return false;
+  return fallback;
+}
+
+const DRAFT_PREVIEW_FAST_SKIPPED_STAGE_CODES = new Set([
+  "titleOptimization",
+  "openingOptimization",
+  "deepWrite",
+  "languageGuardAudit",
+  "coverImageBrief",
+]);
+
+function isFastDraftPreview(detail: AutomationRunDetail) {
+  return detail.run.automationLevel === "draftPreview" && readBooleanEnv("ARTICLE_AUTOMATION_FAST_DRAFT_PREVIEW", true);
+}
+
+function shouldUseFastLocalReview(detail: AutomationRunDetail) {
+  return isFastDraftPreview(detail) && readBooleanEnv("ARTICLE_AUTOMATION_FAST_LOCAL_REVIEW", true);
+}
+
+function shouldUseFastLocalStrategy(detail: AutomationRunDetail) {
+  return isFastDraftPreview(detail) && readBooleanEnv("ARTICLE_AUTOMATION_FAST_LOCAL_STRATEGY", true);
+}
+
+function shouldSkipDraftApplyAudit(detail: AutomationRunDetail) {
+  return isFastDraftPreview(detail) && readBooleanEnv("ARTICLE_AUTOMATION_SKIP_APPLY_AUDIT", true);
+}
+
 function getRecord(value: unknown) {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
 }
@@ -405,7 +437,11 @@ function getSupportedStageCodes(detail: AutomationRunDetail) {
   if (detail.run.automationLevel === "strategyOnly") {
     return new Set(Array.from(STRATEGY_ONLY_STAGE_CODES));
   }
-  return new Set(PLAN22_STAGE_PROMPT_DEFINITIONS.map((item) => item.stageCode));
+  const allStageCodes = PLAN22_STAGE_PROMPT_DEFINITIONS.map((item) => item.stageCode);
+  if (isFastDraftPreview(detail)) {
+    return new Set(allStageCodes.filter((stageCode) => !DRAFT_PREVIEW_FAST_SKIPPED_STAGE_CODES.has(stageCode)));
+  }
+  return new Set(allStageCodes);
 }
 
 function getStage(detail: AutomationRunDetail, stageCode: string) {
@@ -639,6 +675,7 @@ async function executeAudienceAnalysis(detail: AutomationRunDetail): Promise<Sta
     articleId: detail.run.articleId,
     userId: detail.run.userId,
     stageCode: "audienceAnalysis",
+    forceLocal: shouldUseFastLocalStrategy(detail),
   });
   const payload = getRecord(artifact.payload) ?? {};
   return {
@@ -646,6 +683,7 @@ async function executeAudienceAnalysis(detail: AutomationRunDetail): Promise<Sta
     qualityJson: {
       artifactSummary: artifact.summary,
       artifactStatus: artifact.status,
+      fastLocalStrategy: shouldUseFastLocalStrategy(detail),
       promptVersionRefs: getStringArray(getRecord(payload.runtimeMeta)?.promptVersionRefs, 8),
     },
     provider: artifact.provider,
@@ -792,6 +830,7 @@ async function executeArticleWrite(detail: AutomationRunDetail, promptContext: A
     userId: detail.run.userId,
     role: promptContext.role,
     stageCode: "deepWriting",
+    skipLanguageGuardAudit: shouldSkipDraftApplyAudit(detail),
   });
   const payload = getRecord(artifact.payload) ?? {};
   const usedEvidenceIds = Array.from(
@@ -812,6 +851,7 @@ async function executeArticleWrite(detail: AutomationRunDetail, promptContext: A
       artifactSummary: artifact.summary,
       applyMode: applied.applyMode,
       command: applied.command,
+      applyAuditSkipped: shouldSkipDraftApplyAudit(detail),
       promptVersionRefs: getStringArray(getRecord(payload.runtimeMeta)?.promptVersionRefs, 8),
     },
     provider: artifact.provider,
@@ -839,16 +879,19 @@ async function executeFactCheck(detail: AutomationRunDetail, promptContext: Auto
   }
   const fullAutoRepairEnabled = process.env.PLAN22_FACT_RISK_AUTO_REPAIR === "1";
   const highRiskAutoRepairEnabled = process.env.PLAN22_FACT_RISK_AUTO_REPAIR !== "0";
+  const fastLocalReview = shouldUseFastLocalReview(detail);
   let artifact = await generateArticleStageArtifact({
     articleId: detail.run.articleId,
     userId: detail.run.userId,
     stageCode: "factCheck",
+    forceLocal: fastLocalReview,
   });
   let payload = getRecord(artifact.payload) ?? {};
   const repairAttempts: Array<Record<string, unknown>> = [];
   for (
     let attempt = 0;
-    attempt < 2
+    !fastLocalReview
+      && attempt < 2
       && (
         fullAutoRepairEnabled
           ? hasBlockingFactRisk(payload)
@@ -887,7 +930,8 @@ async function executeFactCheck(detail: AutomationRunDetail, promptContext: Auto
       artifactSummary: artifact.summary,
       overallRisk: getString(payload.overallRisk),
       missingEvidenceCount: getStringArray(payload.missingEvidence, 8).length,
-      autoRepairEnabled: fullAutoRepairEnabled || highRiskAutoRepairEnabled,
+      fastLocalReview,
+      autoRepairEnabled: !fastLocalReview && (fullAutoRepairEnabled || highRiskAutoRepairEnabled),
       autoRepairMode: fullAutoRepairEnabled ? "allBlocking" : highRiskAutoRepairEnabled ? "highRiskOnly" : "disabled",
       autoRepairAttempts: repairAttempts,
     },
@@ -904,12 +948,14 @@ async function executeProsePolish(detail: AutomationRunDetail, promptContext: Au
     articleId: detail.run.articleId,
     userId: detail.run.userId,
     stageCode: "prosePolish",
+    forceLocal: shouldUseFastLocalReview(detail),
   });
   const applied = await applyArticleStageArtifact({
     articleId: detail.run.articleId,
     userId: detail.run.userId,
     role: promptContext.role,
     stageCode: "prosePolish",
+    localOnly: shouldUseFastLocalReview(detail),
   });
   const payload = getRecord(artifact.payload) ?? {};
   return {
@@ -917,6 +963,7 @@ async function executeProsePolish(detail: AutomationRunDetail, promptContext: Au
     qualityJson: {
       artifactSummary: artifact.summary,
       applyMode: applied.applyMode,
+      fastLocalReview: shouldUseFastLocalReview(detail),
       issueCount: getRecordArray(payload.issues).length,
       languageGuardHitCount: getRecordArray(payload.languageGuardHits).length,
     },
@@ -1136,7 +1183,7 @@ async function executeStage(detail: AutomationRunDetail, promptContext: Automati
   if (stageCode === "languageGuardAudit") return await executeLanguageGuardAudit(detail, promptContext);
   if (stageCode === "coverImageBrief") return await executeCoverImageBrief(detail, promptContext);
   if (stageCode === "layoutApply") return await executeLayoutApply(detail);
-  if (stageCode === "publishGuard") return await executePublishGuard(detail, promptContext, { allowRepair: true });
+  if (stageCode === "publishGuard") return await executePublishGuard(detail, promptContext, { allowRepair: shouldRunPublishGuardAutoRepair(detail) });
   throw new Error(`暂不支持的自动化阶段：${stageCode}`);
 }
 
@@ -1268,6 +1315,13 @@ async function skipUnsupportedStages(detail: AutomationRunDetail) {
 
 function classifyStageFailureStatus(error: unknown): Extract<ArticleAutomationRunStatus, "blocked" | "failed"> {
   return error instanceof AutomationStageBlockedError ? "blocked" : "failed";
+}
+
+function shouldRunPublishGuardAutoRepair(detail: AutomationRunDetail) {
+  if (detail.run.automationLevel === "wechatDraft") {
+    return true;
+  }
+  return readBooleanEnv("ARTICLE_AUTOMATION_PUBLISH_GUARD_AUTO_REPAIR", false);
 }
 
 export async function resumeArticleAutomationRun(input: {

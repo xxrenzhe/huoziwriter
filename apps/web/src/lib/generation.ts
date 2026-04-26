@@ -1166,6 +1166,7 @@ export async function buildCommandRewrite(input: {
   fragments: string[];
   bannedWords: string[];
   command: string;
+  skipAudit?: boolean;
   promptContext?: {
     userId?: number | null;
     role?: string | null;
@@ -1182,11 +1183,9 @@ export async function buildCommandRewrite(input: {
   knowledgeCards?: KnowledgeCardContext[];
   deepWritingPayload?: Record<string, unknown> | null;
 }): Promise<GenerationBuildResult> {
-  const [writePrompt, auditPrompt] = await Promise.all([
-    loadPromptWithMeta("article_write", input.promptContext),
-    loadPromptWithMeta("language_guard_audit", input.promptContext),
-  ]);
-  const promptVersionRefs = uniquePromptRefs([writePrompt.ref, auditPrompt.ref]);
+  const writePrompt = await loadPromptWithMeta("article_write", input.promptContext);
+  const auditPrompt = input.skipAudit ? null : await loadPromptWithMeta("language_guard_audit", input.promptContext);
+  const promptVersionRefs = uniquePromptRefs([writePrompt.ref, auditPrompt?.ref]);
 
   const fragmentText = input.fragments.length > 0 ? input.fragments.join("\n- ") : "当前没有额外素材，请尽量保留已有事实，不要空泛扩写。";
   const bannedWordsText = input.bannedWords.length > 0 ? input.bannedWords.join("、") : "无";
@@ -1233,11 +1232,13 @@ export async function buildCommandRewrite(input: {
     cacheableBlocks: [personaGuide, writingStyleGuide, styleGuide],
     contextualBlocks: [humanSignalGuide, writingStateGuide, deepWritingBehaviorGuide, researchGuide, seriesRuntimeGuide],
   });
-  const auditSystemSegments = buildGenerationSystemSegments({
-    basePrompt: auditPrompt.content,
-    cacheableBlocks: [personaGuide, writingStyleGuide, styleGuide],
-    contextualBlocks: [humanSignalGuide, writingStateGuide, deepWritingBehaviorGuide, researchGuide],
-  });
+  const auditSystemSegments = auditPrompt
+    ? buildGenerationSystemSegments({
+        basePrompt: auditPrompt.content,
+        cacheableBlocks: [personaGuide, writingStyleGuide, styleGuide],
+        contextualBlocks: [humanSignalGuide, writingStateGuide, deepWritingBehaviorGuide, researchGuide],
+      })
+    : null;
 
   const writerUserPrompt = [
     promptLine("标题：", input.title),
@@ -1269,6 +1270,13 @@ export async function buildCommandRewrite(input: {
       "文章改写 AI 超时",
     );
 
+    if (input.skipAudit) {
+      return {
+        markdown: sanitizeBannedWords(drafted.text.trim(), input.bannedWords),
+        promptVersionRefs,
+      };
+    }
+
     const auditUserPrompt = [
       promptBlock("原始事实：", formatPromptTemplate("- {{fragmentText}}", { fragmentText })),
       "",
@@ -1284,7 +1292,7 @@ export async function buildCommandRewrite(input: {
       generateSceneText({
         sceneCode: "languageGuardAudit",
         systemPrompt: "",
-        systemSegments: auditSystemSegments,
+        systemSegments: auditSystemSegments ?? undefined,
         userPrompt: auditUserPrompt,
         temperature: 0.2,
         rolloutUserId: input.promptContext?.userId ?? null,

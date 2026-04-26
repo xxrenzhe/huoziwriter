@@ -4846,6 +4846,7 @@ export async function generateArticleStageArtifact(input: {
   articleId: number;
   userId: number;
   stageCode: ArticleArtifactStageCode;
+  forceLocal?: boolean;
   deepWritingPrototypeCode?: ArticlePrototypeCode | null;
   deepWritingStateVariantCode?: WritingStateVariantCode | null;
   outlineTitleOptionsOnly?: boolean;
@@ -4914,6 +4915,27 @@ export async function generateArticleStageArtifact(input: {
   }
   const context = await buildGenerationContext(input.articleId, input.userId);
   if (input.stageCode === "audienceAnalysis") {
+    if (input.forceLocal) {
+      const payload = fallbackAudienceAnalysis(context);
+      return upsertArtifact({
+        articleId: input.articleId,
+        userId: input.userId,
+        stageCode: "audienceAnalysis",
+        status: "ready",
+        summary: String(payload.summary || "").trim() || null,
+        payload: {
+          ...payload,
+          ...buildArticleArtifactRuntimeMetaPatch({
+            scoringProfile: context.scoringProfile,
+            layoutStrategy: context.layoutStrategy,
+          }),
+          fastLocalStrategy: true,
+        },
+        model: "fast-local",
+        provider: "local",
+        errorMessage: null,
+      });
+    }
     return generateAudienceAnalysis(context);
   }
   if (input.stageCode === "outlinePlanning") {
@@ -4948,7 +4970,49 @@ export async function generateArticleStageArtifact(input: {
     return generateDeepWriting(context, input.deepWritingStateVariantCode, input.deepWritingPrototypeCode);
   }
   if (input.stageCode === "factCheck") {
+    if (input.forceLocal) {
+      const payload = fallbackFactCheck(context);
+      return upsertArtifact({
+        articleId: input.articleId,
+        userId: input.userId,
+        stageCode: "factCheck",
+        status: "ready",
+        summary: String(payload.summary || "").trim() || null,
+        payload: {
+          ...payload,
+          ...buildArticleArtifactRuntimeMetaPatch({
+            scoringProfile: context.scoringProfile,
+            layoutStrategy: context.layoutStrategy,
+          }),
+          fastLocalReview: true,
+        },
+        model: "fast-local",
+        provider: "local",
+        errorMessage: null,
+      });
+    }
     return generateFactCheck(context);
+  }
+  if (input.forceLocal) {
+    const payload = fallbackProsePolish(context);
+    return upsertArtifact({
+      articleId: input.articleId,
+      userId: input.userId,
+      stageCode: "prosePolish",
+      status: "ready",
+      summary: String(payload.summary || "").trim() || null,
+      payload: {
+        ...payload,
+        ...buildArticleArtifactRuntimeMetaPatch({
+          scoringProfile: context.scoringProfile,
+          layoutStrategy: context.layoutStrategy,
+        }),
+        fastLocalReview: true,
+      },
+      model: "fast-local",
+      provider: "local",
+      errorMessage: null,
+    });
   }
   return generateProsePolish(context);
 }

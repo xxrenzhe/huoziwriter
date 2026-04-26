@@ -33,6 +33,8 @@ export async function applyArticleStageArtifact(input: {
   userId: number;
   role: string | null;
   stageCode: ArticleArtifactStageCode;
+  localOnly?: boolean;
+  skipLanguageGuardAudit?: boolean;
 }): Promise<ApplyArticleStageArtifactResult> {
   await consumeDailyGenerationQuota(input.userId);
 
@@ -132,7 +134,19 @@ export async function applyArticleStageArtifact(input: {
     }),
   });
   const rewritten =
-    artifact.stageCode === "factCheck"
+    input.localOnly
+      ? {
+          markdown:
+            artifact.stageCode === "prosePolish"
+              ? buildLocalProsePolishMarkdown({
+                  markdownContent: article.markdown_content,
+                  payload: artifact.payload,
+                  bannedWords,
+                })
+              : sanitizeBannedWordsLocal(article.markdown_content, bannedWords),
+          promptVersionRefs: [],
+        }
+      : artifact.stageCode === "factCheck"
       ? await buildFactCheckTargetedRewrite({
           title: effectiveTitle,
           markdownContent: article.markdown_content,
@@ -283,6 +297,7 @@ export async function applyArticleStageArtifact(input: {
             knowledgeCards: writingContext.knowledgeCards,
             deepWritingPayload: (artifact.stageCode === "deepWriting" ? artifact.payload : deepWritingArtifact?.payload) || null,
             layoutStrategy: layoutStrategyConfig,
+            skipAudit: input.skipLanguageGuardAudit,
           });
   if (rewritten.promptVersionRefs.length > 0) {
     await updateArticleStageArtifactPayload({
@@ -330,4 +345,28 @@ export async function applyArticleStageArtifact(input: {
     stageTitle: artifact.title,
     applyMode: ["factCheck", "prosePolish"].includes(artifact.stageCode) ? "targeted" : "rewrite",
   };
+}
+
+function sanitizeBannedWordsLocal(content: string, bannedWords: string[]) {
+  let next = String(content || "");
+  for (const word of bannedWords) {
+    const token = String(word || "").trim();
+    if (!token) continue;
+    next = next.split(token).join("");
+  }
+  return next;
+}
+
+function buildLocalProsePolishMarkdown(input: {
+  markdownContent: string;
+  payload: Record<string, unknown>;
+  bannedWords: string[];
+}) {
+  let next = String(input.markdownContent || "").trim();
+  const rewrittenLead = String(input.payload.rewrittenLead || "").trim();
+  if (rewrittenLead) {
+    const firstLine = next.split("\n").find((line) => line.trim()) || "";
+    next = firstLine ? next.replace(firstLine, rewrittenLead) : rewrittenLead;
+  }
+  return sanitizeBannedWordsLocal(next, input.bannedWords);
 }

@@ -137,8 +137,16 @@ test("resumeArticleAutomationRun completes draftPreview runs end-to-end", async 
     assert.ok(result.run.articleId);
     const detail = await getArticleAutomationRunById(created.run.id, userId);
     assert.equal(detail?.stages.find((item) => item.stageCode === "articleWrite")?.status, "completed");
-    assert.equal(detail?.stages.find((item) => item.stageCode === "languageGuardAudit")?.status, "completed");
+    assert.equal(detail?.stages.find((item) => item.stageCode === "titleOptimization")?.status, "skipped");
+    assert.equal(detail?.stages.find((item) => item.stageCode === "openingOptimization")?.status, "skipped");
+    assert.equal(detail?.stages.find((item) => item.stageCode === "deepWrite")?.status, "skipped");
+    assert.equal(detail?.stages.find((item) => item.stageCode === "languageGuardAudit")?.status, "skipped");
+    assert.equal(detail?.stages.find((item) => item.stageCode === "coverImageBrief")?.status, "skipped");
     assert.equal(detail?.stages.find((item) => item.stageCode === "publishGuard")?.status, "completed");
+    assert.equal(getRecord(detail?.stages.find((item) => item.stageCode === "audienceAnalysis")?.qualityJson)?.fastLocalStrategy, true);
+    assert.equal(getRecord(detail?.stages.find((item) => item.stageCode === "articleWrite")?.qualityJson)?.applyAuditSkipped, true);
+    assert.equal(getRecord(detail?.stages.find((item) => item.stageCode === "factCheck")?.qualityJson)?.fastLocalReview, true);
+    assert.equal(getRecord(detail?.stages.find((item) => item.stageCode === "prosePolish")?.qualityJson)?.fastLocalReview, true);
     assert.equal(typeof detail?.article?.markdown_content, "string");
     assert.ok((detail?.article?.markdown_content || "").length > 0);
     const strategyCard = await getArticleStrategyCard(detail?.run.articleId ?? 0, userId);
@@ -189,6 +197,7 @@ test("resumeArticleAutomationRun continues past researchBrief when coverage is l
       assert.equal(detail?.stages.find((item) => item.stageCode === "researchBrief")?.status, "completed");
       assert.equal(detail?.stages.find((item) => item.stageCode === "audienceAnalysis")?.status, "completed");
       assert.equal(detail?.stages.find((item) => item.stageCode === "articleWrite")?.status, "completed");
+      assert.equal(detail?.stages.find((item) => item.stageCode === "languageGuardAudit")?.status, "skipped");
       assert.equal(detail?.stages.find((item) => item.stageCode === "publishGuard")?.status, "completed");
     } finally {
       await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));

@@ -275,7 +275,11 @@ async function main() {
   const username = readOption("--user") || "huozi";
   const briefInput = readOption("--input") || DEFAULT_BRIEF_INPUT;
   const modeOverride = readOption("--mode");
+  const fullRun = readFlag("--full") || normalizeString(process.env.PLAN22_REAL_AUTOMATION_FULL) === "1";
+  const effectiveModeOverride = modeOverride || (fullRun ? "" : "brief");
   const levelOverride = readOption("--level");
+  const shouldProbeCoverImage =
+    readFlag("--probe-cover") || normalizeString(process.env.PLAN22_REAL_AUTOMATION_PROBE_COVER) === "1";
 
   const user = await findUserByUsername(username);
   if (!user) {
@@ -304,7 +308,7 @@ async function main() {
     recommendation: selectedRecommendation,
     wechatConnectionId: selectedWechatConnectionId,
     levelOverride,
-    modeOverride,
+    modeOverride: effectiveModeOverride,
   });
   const requiresWechatDraft = scenariosToRun.some(([, config]) => config.automationLevel === "wechatDraft");
   const runsRecommendedTopicScenario = scenariosToRun.some(([scenarioCode]) => scenarioCode === "recommendedTopic");
@@ -353,7 +357,14 @@ async function main() {
     }) satisfies PrerequisiteCheck[];
 
   const searchCheck = await runSearchCheck(briefInput);
-  const coverProbe = await probeCoverImage();
+  const coverProbe =
+    requiresWechatDraft || shouldProbeCoverImage
+      ? await probeCoverImage()
+      : {
+          code: "coverImageProbe",
+          status: "skipped",
+          detail: "当前验收模式只要求文章终稿，跳过真实生图探针；如需验证封面链路，使用 --probe-cover 或 PLAN22_REAL_AUTOMATION_PROBE_COVER=1。",
+        } satisfies PrerequisiteCheck;
   const prerequisiteChecks = [
     ...envChecks,
     ...providerChecks,
