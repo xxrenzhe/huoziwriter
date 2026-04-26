@@ -885,12 +885,13 @@ export async function evaluatePublishGuard(input: {
     actionLabel: aiNoiseNeedsAttention ? "去精修段落" : undefined,
   });
 
+  const coverImageRequired = Boolean(input.wechatConnectionId);
   pushCheck(checks, blockers, warnings, suggestions, {
     key: "coverImage",
     label: "封面图",
-    status: coverImage ? "passed" : "blocked",
-    severity: coverImage ? "suggestion" : "blocking",
-    detail: coverImage ? "封面图已准备。" : "发布前需要先选择封面图。",
+    status: coverImage ? "passed" : coverImageRequired ? "blocked" : "warning",
+    severity: coverImage ? "suggestion" : coverImageRequired ? "blocking" : "warning",
+    detail: coverImage ? "封面图已准备。" : coverImageRequired ? "发布前需要先选择封面图。" : "当前是终稿预览，封面图缺失只作为发布前告警。",
     targetStageCode: "coverImage",
     actionLabel: coverImage ? undefined : "去选封面图",
   });
@@ -925,8 +926,10 @@ export async function evaluatePublishGuard(input: {
               connectionName: connection.account_name ?? "未命名公众号",
               status: "valid",
               detail:
-                latestAttempt?.status === "failed" && latestAttempt.failure_code === "auth_failed"
-                  ? "连接配置存在最近一次鉴权失败记录，建议先重试校验。"
+                latestAttempt?.status === "failed" && latestAttempt.failure_code === "ip_whitelist_blocked"
+                  ? "最近一次微信推送被接口白名单拦截，请先把当前服务器出口 IP 加入公众号后台白名单。"
+                  : latestAttempt?.status === "failed" && latestAttempt.failure_code === "auth_failed"
+                    ? "连接配置存在最近一次鉴权失败记录，建议先重试校验。"
                   : "连接状态正常，可直接推送。",
               tokenExpiresAt: connection.access_token_expires_at,
             }

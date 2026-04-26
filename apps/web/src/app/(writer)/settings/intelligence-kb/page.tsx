@@ -74,8 +74,8 @@ export default async function SettingsIntelligenceKbPage() {
         },
         {
           label: "接入范围",
-          value: "Warroom + 证据",
-          note: "裂变候选可切到 IMA 真实爆款；证据面板可直接从 IMA 检索。",
+          value: "Warroom + 自动研究 + 证据",
+          note: "裂变候选、自动研究补源、证据面板检索都会优先使用默认 IMA 知识库。",
         },
       ]}
     >
@@ -86,14 +86,14 @@ export default async function SettingsIntelligenceKbPage() {
             把 IMA 知识库作为高价值信源接进既有工作流。
           </div>
           <div className="mt-3 text-sm leading-7 text-inkSoft">
-            这里不做周期同步，也不把 IMA 塞进机会信源抓取管道。它只服务两件事：Warroom 裂变时提供真实爆款语料，证据面板里提供同赛道检索入口。
+            这里仍不做周期同步，也不把 IMA 塞进热点抓取管道；但在稿件自动研究阶段，系统会优先用默认 IMA 知识库补高价值素材，再决定是否需要外部搜索。
           </div>
           <div className="mt-6 grid gap-3 md:grid-cols-3">
             {[
               {
                 label: "接入方式",
                 value: "按需检索",
-                note: "只在你主动发起裂变或证据检索时调用 IMA。",
+                note: "在 Warroom、自动研究和证据检索中按需调用，不做后台噪声同步。",
               },
               {
                 label: "凭证安全",

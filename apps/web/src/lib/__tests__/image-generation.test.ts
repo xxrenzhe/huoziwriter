@@ -107,6 +107,32 @@ async function seedBrokenImageEngine(input?: {
   );
 }
 
+async function seedCustomImageEngine(input?: {
+  baseUrl?: string;
+  model?: string;
+}) {
+  await ensureExtendedProductSchema();
+  const db = getDatabase();
+  const now = new Date().toISOString();
+  await db.exec("DELETE FROM global_ai_engines WHERE engine_code = ?", ["coverImage"]);
+  await db.exec(
+    `INSERT INTO global_ai_engines (
+      engine_code, provider_name, base_url, api_key_encrypted, model, is_enabled, updated_by, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      "coverImage",
+      "custom",
+      input?.baseUrl || "https://gateway.example.com",
+      encryptSecret("test-custom-key"),
+      input?.model || "gemini-3-pro-image-preview",
+      1,
+      null,
+      now,
+      now,
+    ],
+  );
+}
+
 const ONE_PIXEL_PNG_DATA_URL =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9pNCXl8AAAAASUVORK5CYII=";
 
@@ -223,6 +249,315 @@ test("generateCoverImage surfaces unsupported custom OpenAI image gateway clearl
   });
 });
 
+test("generateCoverImage surfaces html shell response clearly for custom image gateway", async () => {
+  await withTempDatabase("custom-html-shell", async () => {
+    await seedCustomImageEngine();
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () =>
+      new Response("<!doctype html><html><body>app shell</body></html>", {
+        status: 200,
+        headers: { "Content-Type": "text/html" },
+      })) as typeof fetch;
+
+    try {
+      await assert.rejects(
+        () => generateCoverImage({ title: "自定义 HTML 壳封面" }),
+        /站点 HTML|网站首页/,
+      );
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+});
+
+test("generateCoverImage uses chat completions endpoint for image-preview models", async () => {
+  await withTempDatabase("custom-chat-completions", async () => {
+    await seedCustomImageEngine();
+
+    const originalFetch = globalThis.fetch;
+    let requestUrl = "";
+    let payload: any = null;
+
+    globalThis.fetch = (async (input, init) => {
+      requestUrl = String(input);
+      payload = JSON.parse(String(init?.body || "{}"));
+      return new Response(JSON.stringify({
+        choices: [
+          {
+            message: {
+              content: "![cover](https://cdn.example.com/generated/cover.png)",
+            },
+          },
+        ],
+      }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }) as typeof fetch;
+
+    try {
+      const result = await generateCoverImage({
+        title: "聊天生图封面",
+        outputResolution: "1K",
+      });
+      assert.equal(requestUrl, "https://gateway.example.com/chat/completions");
+      assert.equal(payload.model, "gemini-3-pro-image-preview");
+      assert.equal(payload.stream, false);
+      assert.equal(payload.size, "1024x1024");
+      assert.equal(payload.messages[0].role, "user");
+      assert.equal(Array.isArray(payload.messages[0].content), true);
+      assert.match(payload.messages[0].content[0].text, /输出分辨率：1024x1024/);
+      assert.equal(result.imageUrl, "https://cdn.example.com/generated/cover.png");
+      assert.equal(result.endpoint, "https://gateway.example.com/chat/completions");
+      assert.equal(result.size, "1024x1024");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+});
+
+test("generateCoverImage passes reference image into chat completions payload", async () => {
+  await withTempDatabase("custom-chat-reference-image", async () => {
+    await seedCustomImageEngine();
+
+    const originalFetch = globalThis.fetch;
+    let payload: any = null;
+
+    globalThis.fetch = (async (_input, init) => {
+      payload = JSON.parse(String(init?.body || "{}"));
+      return new Response(JSON.stringify({
+        choices: [
+          {
+            message: {
+              content: [
+                {
+                  type: "output_text",
+                  text: "https://cdn.example.com/generated/reference-cover.webp",
+                },
+              ],
+            },
+          },
+        ],
+      }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }) as typeof fetch;
+
+    try {
+      const result = await generateCoverImage({
+        title: "参考图聊天生图封面",
+        referenceImageDataUrl: ONE_PIXEL_PNG_DATA_URL,
+      });
+      assert.equal(payload.messages[0].content[0].type, "image_url");
+      assert.equal(payload.messages[0].content[0].image_url.url, ONE_PIXEL_PNG_DATA_URL);
+      assert.equal(payload.messages[0].content[1].type, "text");
+      assert.equal(result.imageUrl, "https://cdn.example.com/generated/reference-cover.webp");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+});
+
+test("generateCoverImage uses Gemini native generateContent endpoint for v1beta image models", async () => {
+  await withTempDatabase("custom-gemini-native-image", async () => {
+    await seedCustomImageEngine({
+      baseUrl: "https://aicode.cat/v1beta/models/",
+      model: "gemini-3.1-flash-image-preview",
+    });
+
+    const originalFetch = globalThis.fetch;
+    let requestUrl = "";
+    let requestInit: RequestInit | undefined;
+    let payload: any = null;
+
+    globalThis.fetch = (async (input, init) => {
+      requestUrl = String(input);
+      requestInit = init;
+      payload = JSON.parse(String(init?.body || "{}"));
+      return new Response(JSON.stringify({
+        candidates: [
+          {
+            content: {
+              parts: [
+                { text: "cover alt text" },
+                {
+                  inlineData: {
+                    mimeType: "image/jpeg",
+                    data: Buffer.from("gemini-native-image", "utf8").toString("base64"),
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }) as typeof fetch;
+
+    try {
+      const result = await generateCoverImage({
+        title: "Gemini 原生生图封面",
+        outputResolution: "1K",
+      });
+      assert.equal(
+        requestUrl,
+        "https://aicode.cat/v1beta/models/gemini-3.1-flash-image-preview:generateContent?key=test-custom-key",
+      );
+      assert.equal(new Headers(requestInit?.headers).get("x-goog-api-key"), "test-custom-key");
+      assert.equal(payload.contents[0].role, "user");
+      assert.equal(payload.generationConfig.responseModalities[0], "TEXT");
+      assert.equal(payload.generationConfig.responseModalities[1], "IMAGE");
+      assert.match(payload.contents[0].parts[0].text, /输出分辨率：1024x1024/);
+      assert.match(result.imageUrl, /^data:image\/jpeg;base64,/);
+      assert.equal(result.endpoint, requestUrl);
+      assert.equal(result.size, "1024x1024");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+});
+
+test("generateCoverImage passes reference image into Gemini native payload", async () => {
+  await withTempDatabase("custom-gemini-native-reference-image", async () => {
+    await seedCustomImageEngine({
+      baseUrl: "https://aicode.cat/v1beta/models",
+      model: "gemini-3.1-flash-image-preview",
+    });
+
+    const originalFetch = globalThis.fetch;
+    let payload: any = null;
+
+    globalThis.fetch = (async (_input, init) => {
+      payload = JSON.parse(String(init?.body || "{}"));
+      return new Response(JSON.stringify({
+        candidates: [
+          {
+            content: {
+              parts: [
+                {
+                  inlineData: {
+                    mimeType: "image/png",
+                    data: Buffer.from("gemini-reference-image", "utf8").toString("base64"),
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }) as typeof fetch;
+
+    try {
+      const result = await generateCoverImage({
+        title: "Gemini 原生参考图封面",
+        referenceImageDataUrl: ONE_PIXEL_PNG_DATA_URL,
+      });
+      assert.equal(payload.contents[0].parts[0].inlineData.mimeType, "image/png");
+      assert.match(String(payload.contents[0].parts[0].inlineData.data || ""), /^[A-Za-z0-9+/=]+$/);
+      assert.equal(typeof payload.contents[0].parts[1].text, "string");
+      assert.match(result.imageUrl, /^data:image\/png;base64,/);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+});
+
+test("generateCoverImage retries Gemini native image generation after transient timeout", async () => {
+  await withTempDatabase("custom-gemini-native-retry", async () => {
+    await seedCustomImageEngine({
+      baseUrl: "https://aicode.cat/v1beta/models/",
+      model: "gemini-3.1-flash-image-preview",
+    });
+
+    const originalFetch = globalThis.fetch;
+    let callCount = 0;
+
+    globalThis.fetch = (async () => {
+      callCount += 1;
+      if (callCount === 1) {
+        return new Response(JSON.stringify({
+          error: {
+            message: "upstream timeout",
+            type: "gateway_timeout",
+          },
+        }), {
+          status: 504,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify({
+        candidates: [
+          {
+            content: {
+              parts: [
+                {
+                  inlineData: {
+                    mimeType: "image/jpeg",
+                    data: Buffer.from("gemini-native-retry-image", "utf8").toString("base64"),
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }) as typeof fetch;
+
+    try {
+      const result = await generateCoverImage({
+        title: "Gemini 原生重试封面",
+      });
+      assert.equal(callCount, 2);
+      assert.match(result.imageUrl, /^data:image\/jpeg;base64,/);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+});
+
+test("generateCoverImage translates exhausted upstream accounts into a user-friendly message", async () => {
+  await withTempDatabase("custom-chat-accounts-exhausted", async () => {
+    await seedCustomImageEngine({
+      baseUrl: "https://aicode.cat/v1",
+      model: "gemini-3-pro-image-preview",
+    });
+
+    const originalFetch = globalThis.fetch;
+    let callCount = 0;
+    globalThis.fetch = (async () =>
+      (callCount += 1,
+      new Response(JSON.stringify({
+        error: {
+          message: "All available accounts exhausted",
+          type: "server_error",
+        },
+      }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      }))) as typeof fetch;
+
+    try {
+      await assert.rejects(
+        () => generateCoverImage({ title: "账号耗尽封面" }),
+        /可用上游账号已耗尽|不是提示词或接口地址错误|切换图片网关/,
+      );
+      assert.equal(callCount, 1);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+});
+
 test("generateCoverImageCandidates switches gpt-image reference calls to OpenAI edits endpoint", async () => {
   await withTempDatabase("openai-edits", async () => {
     await seedImageEngine({
@@ -291,8 +626,8 @@ test("generateCoverImage supports explicit output resolution override", async ()
       const result = await generateCoverImage({
         title: "高分辨率封面",
         outputResolution: "1536x1024",
-      });
-      assert.equal(payload?.size, "1536x1024");
+      }) as { size: string };
+      assert.equal((payload as Record<string, unknown> | null)?.size, "1536x1024");
       assert.equal(result.size, "1536x1024");
     } finally {
       globalThis.fetch = originalFetch;

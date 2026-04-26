@@ -74,6 +74,7 @@ export function TopicSourceManagerClient({
   function formatSourceTypeLabel(value: string) {
     if (value === "youtube") return "YouTube";
     if (value === "reddit") return "Reddit";
+    if (value === "community") return "Community";
     if (value === "podcast") return "Podcast";
     if (value === "spotify") return "Spotify";
     if (value === "rss") return "RSS";
@@ -211,6 +212,7 @@ export function TopicSourceManagerClient({
           <Select aria-label="select control" value={sourceType} onChange={(event) => setSourceType(event.target.value)} disabled={reachedLimit} className="bg-surface disabled:bg-surfaceMuted">
             <option value="youtube">YouTube</option>
             <option value="reddit">Reddit</option>
+            <option value="community">Community</option>
             <option value="podcast">Podcast</option>
             <option value="spotify">Spotify</option>
             <option value="news">News</option>
@@ -272,6 +274,7 @@ export function TopicSourceManagerClient({
                 >
                   <option value="youtube">YouTube</option>
                   <option value="reddit">Reddit</option>
+                  <option value="community">Community</option>
                   <option value="podcast">Podcast</option>
                   <option value="spotify">Spotify</option>
                   <option value="news">News</option>

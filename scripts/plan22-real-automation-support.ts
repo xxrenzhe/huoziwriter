@@ -14,6 +14,9 @@ export type PrerequisiteCheck = {
   status: "passed" | "failed" | "skipped";
   detail: string;
   blocking?: boolean;
+  failureKind?: "provider_quota_exhausted" | "provider_rate_limited" | "provider_unavailable";
+  userMessage?: string;
+  operatorAction?: string;
 };
 
 export type SearchCheck = {
@@ -70,6 +73,12 @@ export type ScenarioReport = {
     htmlLength: number;
     htmlSyncedToArticle: boolean;
   };
+  publishGuardSummary: {
+    canPublish: boolean | null;
+    blockerCount: number;
+    warningCount: number;
+    blockers: string[];
+  };
   aiUsageSummary: {
     callCount: number;
     totalInputTokens: number;
@@ -109,6 +118,7 @@ export type AcceptanceReport = {
     topicRecommendationCount: number;
   };
   scenarios: ScenarioReport[];
+  acceptanceIssues?: string[];
   status: "passed" | "failed";
 };
 
@@ -146,6 +156,43 @@ export function normalizeString(value: unknown) {
   return String(value || "").trim();
 }
 
+export function sanitizeDiagnosticText(value: unknown) {
+  const text = normalizeString(value);
+  if (!text) {
+    return "";
+  }
+  return text.replace(
+    /data:([a-z0-9.+-]+\/[a-z0-9.+-]+);base64,([a-z0-9+/=_-]+)/gi,
+    (_match, mimeType: string, payload: string) => `data:${mimeType};base64,<omitted length=${payload.length}>`,
+  );
+}
+
+export function classifyProviderFailure(error: unknown) {
+  const detail = sanitizeDiagnosticText(error) || "provider 凭据不可用";
+  if (/额度|余额|quota|insufficient_quota|billing|subscription.*exhaust|订阅额度/i.test(detail)) {
+    return {
+      failureKind: "provider_quota_exhausted" as const,
+      userMessage: "AI 服务账号额度已用尽，当前无法完成真实模型验收；请更换可用账号或等待额度恢复后重跑。",
+      operatorAction: "检查 OPENAI_API_KEY / OPENAI_BASE_URL 对应账号额度，恢复后运行 pnpm plan22:real-automation-run。",
+      detail,
+    };
+  }
+  if (/429|rate.?limit|too many requests|请求过于频繁|限流/i.test(detail)) {
+    return {
+      failureKind: "provider_rate_limited" as const,
+      userMessage: "AI 服务被限流，当前真实模型验收暂时不可用；等待限流窗口结束后重跑。",
+      operatorAction: "降低并发或稍后运行 pnpm plan22:real-automation-run。",
+      detail,
+    };
+  }
+  return {
+    failureKind: "provider_unavailable" as const,
+    userMessage: "AI 服务连接或凭据不可用，真实模型验收被阻塞。",
+    operatorAction: "检查 .env 中 OPENAI_API_KEY、OPENAI_BASE_URL、AI_MODEL_ROUTES_JSON 与模型可用性。",
+    detail,
+  };
+}
+
 export function asRecord(value: unknown) {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }
@@ -158,6 +205,13 @@ export function asRecordArray(value: unknown) {
 
 export function asStringArray(value: unknown) {
   return Array.isArray(value) ? value.map((item) => normalizeString(item)).filter(Boolean) : [];
+}
+
+export function asBooleanOrNull(value: unknown) {
+  if (typeof value === "boolean") {
+    return value;
+  }
+  return null;
 }
 
 export function getDomain(value: string) {
@@ -297,6 +351,49 @@ export function buildRecommendedTopicInput(recommendation: TopicRecommendation) 
   return `${title}\n推荐理由：${reason}`;
 }
 
+function isWechatOnlyBlocker(value: string) {
+  return /微信|公众号连接|草稿箱|media id|media_id/i.test(value);
+}
+
+export function getScenarioAcceptanceIssues(input: {
+  scenario: ScenarioReport;
+  requiresWechatDraft: boolean;
+}) {
+  const issues: string[] = [];
+  const scenario = input.scenario;
+  const prefix = `${scenario.scenarioCode}:`;
+
+  if (scenario.status !== "completed") {
+    issues.push(`${prefix} 运行状态不是 completed，而是 ${scenario.status}`);
+  }
+  if (scenario.error) {
+    issues.push(`${prefix} 存在运行错误：${sanitizeDiagnosticText(scenario.error)}`);
+  }
+  if (scenario.searchSummary.sourceCount < 8 || scenario.searchSummary.distinctDomainCount < 3) {
+    issues.push(`${prefix} 研究信源不足，sources=${scenario.searchSummary.sourceCount}, domains=${scenario.searchSummary.distinctDomainCount}`);
+  }
+  if (scenario.factCheckSummary.overallRisk === "high" || scenario.factCheckSummary.highRiskClaimCount > 0) {
+    issues.push(`${prefix} 事实核查仍有高风险，risk=${scenario.factCheckSummary.overallRisk ?? "null"}, highRisk=${scenario.factCheckSummary.highRiskClaimCount}`);
+  }
+  if (scenario.layoutSummary.htmlLength <= 0 || !scenario.layoutSummary.htmlSyncedToArticle) {
+    issues.push(`${prefix} 排版 HTML 未与文章正文同步，htmlLength=${scenario.layoutSummary.htmlLength}, synced=${scenario.layoutSummary.htmlSyncedToArticle ? "yes" : "no"}`);
+  }
+
+  const blockers = scenario.publishGuardSummary.blockers;
+  const nonWechatBlockers = blockers.filter((item) => !isWechatOnlyBlocker(item));
+  if (input.requiresWechatDraft && !scenario.finalWechatMediaId) {
+    issues.push(`${prefix} wechatDraft 未生成微信草稿 mediaId`);
+  }
+  if (input.requiresWechatDraft && scenario.publishGuardSummary.canPublish !== true) {
+    issues.push(`${prefix} 发布守门未放行，blockers=${blockers.length}`);
+  }
+  if (!input.requiresWechatDraft && nonWechatBlockers.length > 0) {
+    issues.push(`${prefix} 发布守门仍有内容阻塞：${nonWechatBlockers.slice(0, 2).join("；")}`);
+  }
+
+  return issues;
+}
+
 export function buildScenarioInputs(input: {
   briefInput: string;
   urlInput: string;
@@ -328,6 +425,22 @@ export function buildScenarioInputs(input: {
 
 export function buildMarkdownReport(report: AcceptanceReport) {
   const formatMode = (blocking?: boolean) => blocking === false ? "advisory" : "required";
+  const formatCheck = (item: PrerequisiteCheck) => {
+    const parts = [
+      `${item.code}: ${item.status} (${formatMode(item.blocking)})`,
+      sanitizeDiagnosticText(item.detail),
+    ];
+    if (item.failureKind) {
+      parts.push(`failureKind=${item.failureKind}`);
+    }
+    if (item.userMessage) {
+      parts.push(`userMessage=${sanitizeDiagnosticText(item.userMessage)}`);
+    }
+    if (item.operatorAction) {
+      parts.push(`operatorAction=${sanitizeDiagnosticText(item.operatorAction)}`);
+    }
+    return `- ${parts.filter(Boolean).join(" · ")}`;
+  };
   const lines = [
     "# Plan22 真实自动化验收报告",
     "",
@@ -339,8 +452,8 @@ export function buildMarkdownReport(report: AcceptanceReport) {
     "",
     "## 前置检查",
     "",
-    ...report.prerequisites.checks.map((item) => `- ${item.code}: ${item.status} (${formatMode(item.blocking)}) · ${item.detail}`),
-    `- search: ${report.prerequisites.search.status} (${formatMode(report.prerequisites.search.blocking)}) · results=${report.prerequisites.search.resultCount}, domains=${report.prerequisites.search.distinctDomainCount}, recent=${report.prerequisites.search.recentResultCount}`,
+    ...report.prerequisites.checks.map(formatCheck),
+    `- search: ${report.prerequisites.search.status} (${formatMode(report.prerequisites.search.blocking)}) · results=${report.prerequisites.search.resultCount}, domains=${report.prerequisites.search.distinctDomainCount}, recent=${report.prerequisites.search.recentResultCount}, error=${sanitizeDiagnosticText(report.prerequisites.search.error) || "null"}`,
     "",
     "## 场景结果",
     "",
@@ -353,15 +466,25 @@ export function buildMarkdownReport(report: AcceptanceReport) {
     lines.push(`- articleId: ${scenario.articleId ?? "null"}`);
     lines.push(`- articleTitle: ${scenario.articleTitle ?? "null"}`);
     lines.push(`- finalWechatMediaId: ${scenario.finalWechatMediaId ?? "null"}`);
-    lines.push(`- blockedReason: ${scenario.blockedReason ?? "null"}`);
-    lines.push(`- search: queries=${scenario.searchSummary.queryCount}, sources=${scenario.searchSummary.sourceCount}, domains=${scenario.searchSummary.distinctDomainCount}, error=${scenario.searchSummary.searchError ?? "null"}`);
+    lines.push(`- blockedReason: ${sanitizeDiagnosticText(scenario.blockedReason) || "null"}`);
+    lines.push(`- search: queries=${scenario.searchSummary.queryCount}, sources=${scenario.searchSummary.sourceCount}, domains=${scenario.searchSummary.distinctDomainCount}, error=${sanitizeDiagnosticText(scenario.searchSummary.searchError) || "null"}`);
     lines.push(`- factCheck: risk=${scenario.factCheckSummary.overallRisk ?? "null"}, needsEvidence=${scenario.factCheckSummary.needsEvidenceCount}, highRisk=${scenario.factCheckSummary.highRiskClaimCount}`);
     lines.push(`- title: ${scenario.titleSummary.recommendedTitle ?? "null"} (${scenario.titleSummary.optionCount} options)`);
     lines.push(`- opening: ${scenario.openingSummary.recommendedOpening ?? "null"} (${scenario.openingSummary.optionCount} options)`);
     lines.push(`- layout: template=${scenario.layoutSummary.templateId ?? "null"}, htmlLength=${scenario.layoutSummary.htmlLength}, synced=${scenario.layoutSummary.htmlSyncedToArticle ? "yes" : "no"}`);
+    lines.push(`- publishGuard: canPublish=${scenario.publishGuardSummary.canPublish == null ? "null" : scenario.publishGuardSummary.canPublish ? "yes" : "no"}, blockers=${scenario.publishGuardSummary.blockerCount}, warnings=${scenario.publishGuardSummary.warningCount}`);
     lines.push(`- aiUsage: calls=${scenario.aiUsageSummary.callCount}, input=${scenario.aiUsageSummary.totalInputTokens}, output=${scenario.aiUsageSummary.totalOutputTokens}, cacheRead=${scenario.aiUsageSummary.totalCacheReadTokens}, latencyMs=${scenario.aiUsageSummary.totalLatencyMs}`);
     if (scenario.error) {
-      lines.push(`- error: ${scenario.error}`);
+      lines.push(`- error: ${sanitizeDiagnosticText(scenario.error)}`);
+    }
+    lines.push("");
+  }
+
+  if (report.acceptanceIssues?.length) {
+    lines.push("## 验收阻塞");
+    lines.push("");
+    for (const issue of report.acceptanceIssues) {
+      lines.push(`- ${sanitizeDiagnosticText(issue)}`);
     }
     lines.push("");
   }

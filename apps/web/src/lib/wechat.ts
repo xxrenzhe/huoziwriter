@@ -15,6 +15,29 @@ type WechatConnectionRow = {
   status: "valid" | "invalid" | "expired" | "disabled";
 };
 
+function extractWechatWhitelistIp(message: string) {
+  const matched = String(message || "").match(/invalid ip\s+([0-9a-fA-F:.]+)/i);
+  return matched?.[1] || null;
+}
+
+function normalizeWechatUpstreamMessage(message: string, fallback: string) {
+  const normalized = String(message || "").trim();
+  if (!normalized) {
+    return fallback;
+  }
+  if (/not in whitelist|invalid ip/i.test(normalized)) {
+    const ip = extractWechatWhitelistIp(normalized);
+    return `当前服务器出口 IP${ip ? ` ${ip}` : ""} 未加入微信公众平台接口白名单，暂时无法获取 access_token 或推送草稿箱。请先到公众号后台把这个出口 IP 加入白名单后再重试。`;
+  }
+  if (/invalid appsecret/i.test(normalized)) {
+    return "当前 WECHAT_APP_SECRET 无效，或与 WECHAT_APP_ID 不匹配。请到微信公众平台确认 AppSecret 是否最新且与该公众号的 AppID 对应。";
+  }
+  if (/invalid appid/i.test(normalized)) {
+    return "当前 WECHAT_APP_ID 无效。请到微信公众平台确认 AppID 是否填写正确。";
+  }
+  return normalized;
+}
+
 function isMockWechatCredential(appId: string, appSecret: string) {
   return appId.startsWith("mock_") && appSecret.startsWith("mock_");
 }
@@ -36,7 +59,7 @@ async function fetchWechatToken(appId: string, appSecret: string) {
   );
   const json = await response.json();
   if (!response.ok || json.errcode) {
-    throw new Error(json.errmsg || "获取微信 access_token 失败");
+    throw new Error(normalizeWechatUpstreamMessage(String(json.errmsg || ""), "获取微信 access_token 失败"));
   }
   return json as { access_token: string; expires_in: number };
 }
@@ -62,7 +85,7 @@ async function uploadThumb(accessToken: string) {
   });
   const json = await response.json();
   if (!response.ok || json.errcode) {
-    throw new Error(json.errmsg || "上传微信封面图失败");
+    throw new Error(normalizeWechatUpstreamMessage(String(json.errmsg || ""), "上传微信封面图失败"));
   }
   return json.media_id as string;
 }
@@ -216,7 +239,7 @@ export async function publishWechatDraft(input: {
   });
   const json = await response.json();
   if (!response.ok || json.errcode) {
-    throw new Error(json.errmsg || "推送微信草稿箱失败");
+    throw new Error(normalizeWechatUpstreamMessage(String(json.errmsg || ""), "推送微信草稿箱失败"));
   }
 
   return {

@@ -60,6 +60,8 @@ function readPositiveIntegerEnv(name: string, fallback: number) {
 
 const ARTICLE_STAGE_ARTIFACT_TIMEOUT_MS = readPositiveIntegerEnv("ARTICLE_STAGE_ARTIFACT_TIMEOUT_MS", 300_000);
 const ARTICLE_STAGE_OPTION_TIMEOUT_MS = readPositiveIntegerEnv("ARTICLE_STAGE_OPTION_TIMEOUT_MS", 120_000);
+const RESEARCH_BRIEF_ARTIFACT_TIMEOUT_MS = readPositiveIntegerEnv("RESEARCH_BRIEF_ARTIFACT_TIMEOUT_MS", 180_000);
+const FACT_CHECK_ARTIFACT_TIMEOUT_MS = readPositiveIntegerEnv("FACT_CHECK_ARTIFACT_TIMEOUT_MS", 120_000);
 
 export type ArticleStageArtifactStatus = "ready" | "failed";
 
@@ -147,10 +149,12 @@ type GenerationContext = {
   evidenceFragments: Array<{
     id: number;
     title: string | null;
+    rawContent: string | null;
     distilledContent: string;
     sourceType: string;
     sourceUrl: string | null;
     screenshotPath: string | null;
+    sourceMeta: Record<string, unknown> | null;
     usageMode: string;
   }>;
   imageFragments: Array<{
@@ -554,9 +558,85 @@ function getSourceFacts(context: GenerationContext, limit = 6) {
   return Array.from(
     new Set([
       ...context.knowledgeCards.flatMap((card) => card.keyFacts),
+      ...context.evidenceFragments.flatMap((fragment) => collectEvidenceFragmentFacts(fragment, 2)),
       ...context.fragments,
     ].map((item) => truncateText(String(item || "").trim(), 120)).filter(Boolean)),
   ).slice(0, limit);
+}
+
+function getEvidenceFragmentLocalization(fragment: GenerationContext["evidenceFragments"][number]) {
+  const sourceMeta = normalizeRecord(fragment.sourceMeta);
+  const localization = normalizeRecord(sourceMeta?.localization);
+  if (!localization) {
+    return null;
+  }
+  return {
+    localizedSummary: String(localization.localizedSummary || "").trim(),
+    factPointsZh: getStringArray(localization.factPointsZh, 4),
+    quoteCandidatesZh: getStringArray(localization.quoteCandidatesZh, 2),
+    translationRisk: String(localization.translationRisk || "").trim() || null,
+    originalTitle: String(localization.originalTitle || "").trim() || null,
+    originalExcerpt: String(localization.originalExcerpt || "").trim() || null,
+    degradedReason: String(localization.degradedReason || "").trim() || null,
+  };
+}
+
+export function collectEvidenceFragmentFacts(
+  fragment: Pick<GenerationContext["evidenceFragments"][number], "distilledContent" | "sourceMeta">,
+  limit = 2,
+) {
+  const localization = getEvidenceFragmentLocalization(fragment as GenerationContext["evidenceFragments"][number]);
+  const facts = localization?.factPointsZh ?? [];
+  if (facts.length > 0) {
+    return facts.slice(0, limit);
+  }
+  const localizedSummary = String(localization?.localizedSummary || "").trim();
+  if (localizedSummary) {
+    return [truncateText(localizedSummary, 120)];
+  }
+  const distilled = String(fragment.distilledContent || "").trim();
+  return distilled ? [truncateText(distilled, 120)] : [];
+}
+
+export function buildEvidenceFragmentPromptSummary(
+  fragment: Pick<GenerationContext["evidenceFragments"][number], "distilledContent" | "sourceMeta">,
+  options?: { includeRisk?: boolean },
+) {
+  const localization = getEvidenceFragmentLocalization(fragment as GenerationContext["evidenceFragments"][number]);
+  const baseSummary = String(localization?.localizedSummary || fragment.distilledContent || "").trim();
+  const risk = options?.includeRisk ? String(localization?.translationRisk || "").trim() : "";
+  const summary = truncateText(baseSummary, 120);
+  if (!risk) {
+    return summary;
+  }
+  return truncateText(`${summary}；转述提醒：${risk}`, 160);
+}
+
+function getLocalizationRiskNotes(context: GenerationContext, limit = 4) {
+  return Array.from(new Set(
+    context.evidenceFragments
+      .map((fragment) => getEvidenceFragmentLocalization(fragment)?.translationRisk || "")
+      .map((item) => item.trim())
+      .filter(Boolean),
+  )).slice(0, limit);
+}
+
+function getLocalizationTermMappings(context: GenerationContext, limit = 6) {
+  const pairs = context.evidenceFragments.flatMap((fragment) => {
+    const localization = normalizeRecord(normalizeRecord(fragment.sourceMeta)?.localization);
+    const mappings = Array.isArray(localization?.termMappings) ? localization.termMappings : [];
+    return mappings.map((item) => {
+      const record = normalizeRecord(item);
+      const sourceTerm = String(record?.sourceTerm || "").trim();
+      const zhTerm = String(record?.zhTerm || "").trim();
+      const note = String(record?.note || "").trim();
+      if (!sourceTerm || !zhTerm) {
+        return "";
+      }
+      return `${sourceTerm}=${zhTerm}${note ? `（${note}）` : ""}`;
+    }).filter(Boolean);
+  });
+  return Array.from(new Set(pairs)).slice(0, limit);
 }
 
 function getMaterialBundle(context: GenerationContext, limit = 8) {
@@ -566,7 +646,7 @@ function getMaterialBundle(context: GenerationContext, limit = 8) {
       title: String(fragment.title || "").trim() || ("素材 #" + String(fragment.id)),
       usageMode: fragment.usageMode,
       sourceType: fragment.sourceType,
-      summary: truncateText(fragment.distilledContent, 120),
+      summary: buildEvidenceFragmentPromptSummary(fragment, { includeRisk: true }),
       screenshotPath: fragment.screenshotPath,
     })),
   ];
@@ -638,7 +718,7 @@ function buildFactCheckEvidenceCards(
       .map((item) => ({
         fragmentId: item.fragment.id as number | null,
         title: String(item.fragment.title || "").trim() || ("素材 #" + String(item.fragment.id)),
-        excerpt: truncateText(item.fragment.distilledContent, 120),
+        excerpt: buildEvidenceFragmentPromptSummary(item.fragment, { includeRisk: true }),
         sourceType: item.fragment.sourceType,
         sourceUrl: item.fragment.sourceUrl,
         researchTag:
@@ -818,10 +898,18 @@ function buildEvidenceFragmentSourceReference(
   fragment: GenerationContext["evidenceFragments"][number],
   detailOverride?: string | null,
 ): ResearchSourceReference {
+  const sourceType =
+    fragment.sourceType === "screenshot"
+      ? "screenshot"
+      : fragment.sourceType === "ima_kb"
+        ? "knowledge"
+        : fragment.sourceUrl
+          ? "url"
+          : "manual";
   return {
     label: String(fragment.title || "").trim() || ("素材 #" + String(fragment.id)),
-    sourceType: fragment.sourceType === "screenshot" ? "screenshot" : fragment.sourceUrl ? "url" : "manual",
-    detail: truncateText(detailOverride || fragment.distilledContent || "素材线索", 96),
+    sourceType,
+    detail: truncateText(detailOverride || buildEvidenceFragmentPromptSummary(fragment, { includeRisk: true }) || "素材线索", 96),
     sourceUrl: fragment.sourceUrl || null,
   };
 }
@@ -877,8 +965,75 @@ function looksLikeTimeline(text: string) {
   return /(19\d{2}|20\d{2}|起点|阶段|节点|转折|此前|后来|历史|演化|timeline|milestone|去年|今年|本月)/i.test(text);
 }
 
+function isGenericResearchLandingPage(input: {
+  title?: string | null;
+  content?: string | null;
+  sourceUrl?: string | null;
+}) {
+  const title = (String(input.title || "")).trim().toLowerCase();
+  const content = (String(input.content || "")).trim().toLowerCase();
+  const url = String(input.sourceUrl || "").trim().toLowerCase();
+  const path = url ? url.replace(/^https?:\/\/[^/]+\/?/i, "") : "";
+  const genericTitle = /^(overview|docs|documentation|images|news|templates|workflows|guide|帮助|文档|概览|总览|模板)$/.test(title);
+  const genericPath = /(?:^|\/)(overview|docs|images|news|templates|workflows|guide)\/?$/.test(path);
+  const thinContent = content.length > 0 && content.length <= 48;
+  return (genericTitle || genericPath) && thinContent;
+}
+
+function scoreResearchSourceStrength(input: {
+  title?: string | null;
+  content?: string | null;
+  sourceType?: string | null;
+  sourceUrl?: string | null;
+}) {
+  const seed = `${String(input.title || "")} ${String(input.content || "")} ${String(input.sourceUrl || "")}`.toLowerCase();
+  let score = 0;
+  if (String(input.sourceType || "").trim() === "ima_kb") {
+    score += 18;
+  }
+  if (looksLikeOfficialSource(input)) {
+    score += 14;
+  }
+  if (looksLikeUserVoice(input)) {
+    score += 6;
+  }
+  if (looksLikeComparison(seed) || looksLikeTimeline(seed)) {
+    score += 8;
+  }
+  if (/(案例|实战|复盘|经验|方法|流程|工作流|报告|白皮书|评测|对比|差异|数据|调研|benchmark|analysis|report|case study|retrospective|review|workflow|release|changelog|版本|演进|更新)/i.test(seed)) {
+    score += 10;
+  }
+  if (String(input.content || "").trim().length >= 48) {
+    score += 6;
+  } else if (String(input.content || "").trim().length > 0 && String(input.content || "").trim().length < 18) {
+    score -= 8;
+  }
+  if (isGenericResearchLandingPage(input)) {
+    score -= 18;
+  }
+  return score;
+}
+
+export function pickStricterResearchSufficiency(...values: Array<string | null | undefined>) {
+  const order = ["blocked", "limited", "ready"] as const;
+  const normalized = values
+    .map((item) => String(item || "").trim())
+    .filter((item): item is typeof order[number] => (order as readonly string[]).includes(item));
+  if (normalized.length === 0) {
+    return "";
+  }
+  return normalized.sort((left, right) => order.indexOf(left) - order.indexOf(right))[0] || "";
+}
+
 function buildResearchCoverage(context: GenerationContext) {
   const buckets: Record<ResearchSourceCategoryKey, string[]> = {
+    official: [],
+    industry: [],
+    comparison: [],
+    userVoice: [],
+    timeline: [],
+  };
+  const strongBuckets: Record<ResearchSourceCategoryKey, string[]> = {
     official: [],
     industry: [],
     comparison: [],
@@ -891,19 +1046,46 @@ function buildResearchCoverage(context: GenerationContext) {
     const summary = truncateText(fragment.distilledContent, 96);
     const descriptor = title + "：" + summary;
     const comparisonSeed = title + " " + summary;
+    const qualityScore = scoreResearchSourceStrength({
+      title,
+      content: summary,
+      sourceType: fragment.sourceType,
+      sourceUrl: fragment.sourceUrl,
+    });
+    if (fragment.sourceType === "ima_kb") {
+      buckets.industry.push(descriptor);
+      if (qualityScore >= 16) {
+        strongBuckets.industry.push(descriptor);
+      }
+    }
     if (looksLikeOfficialSource({ title, content: summary, sourceUrl: fragment.sourceUrl })) {
       buckets.official.push(descriptor);
+      if (qualityScore >= 16) {
+        strongBuckets.official.push(descriptor);
+      }
     } else if (fragment.sourceUrl) {
       buckets.industry.push(descriptor);
+      if (qualityScore >= 16) {
+        strongBuckets.industry.push(descriptor);
+      }
     }
     if (looksLikeUserVoice({ title, content: summary, sourceUrl: fragment.sourceUrl })) {
       buckets.userVoice.push(descriptor);
+      if (qualityScore >= 18) {
+        strongBuckets.userVoice.push(descriptor);
+      }
     }
     if (looksLikeComparison(comparisonSeed)) {
       buckets.comparison.push(descriptor);
+      if (qualityScore >= 16) {
+        strongBuckets.comparison.push(descriptor);
+      }
     }
     if (looksLikeTimeline(comparisonSeed)) {
       buckets.timeline.push(descriptor);
+      if (qualityScore >= 14) {
+        strongBuckets.timeline.push(descriptor);
+      }
     }
   }
 
@@ -929,22 +1111,44 @@ function buildResearchCoverage(context: GenerationContext) {
   const userVoice = dedupeLimited(buckets.userVoice, 4);
   const timeline = dedupeLimited(buckets.timeline, 4);
   const categoryMap = { official, industry, comparison, userVoice, timeline };
+  const strongCategoryMap = {
+    official: dedupeLimited(strongBuckets.official, 3),
+    industry: dedupeLimited(strongBuckets.industry, 3),
+    comparison: dedupeLimited(strongBuckets.comparison, 3),
+    userVoice: dedupeLimited(strongBuckets.userVoice, 3),
+    timeline: dedupeLimited(strongBuckets.timeline, 3),
+  };
   const coveredCount = (Object.keys(categoryMap) as ResearchSourceCategoryKey[]).filter((key) => categoryMap[key].length > 0).length;
+  const strongCoveredCount = (Object.keys(strongCategoryMap) as ResearchSourceCategoryKey[]).filter((key) => strongCategoryMap[key].length > 0).length;
   const missingCategories = (Object.keys(categoryMap) as ResearchSourceCategoryKey[])
     .filter((key) => categoryMap[key].length === 0)
     .map((key) => RESEARCH_SOURCE_CATEGORY_LABELS[key]);
-  const sufficiency = coveredCount >= 4 ? "ready" : coveredCount >= 2 ? "limited" : "blocked";
+  const weakOnlyCategories = (Object.keys(categoryMap) as ResearchSourceCategoryKey[])
+    .filter((key) => categoryMap[key].length > 0 && strongCategoryMap[key].length === 0)
+    .map((key) => RESEARCH_SOURCE_CATEGORY_LABELS[key]);
+  const sufficiency =
+    coveredCount >= 4 && strongCoveredCount >= 2
+      ? "ready"
+      : coveredCount >= 3 || strongCoveredCount >= 1
+        ? "limited"
+        : "blocked";
 
   return {
     ...categoryMap,
+    strongCategoryCount: strongCoveredCount,
+    weakOnlyCategories,
     sufficiency,
     missingCategories,
     coveredCount,
     note:
       sufficiency === "ready"
-        ? "当前研究底座已覆盖多数关键来源维度，可以继续进入结构判断。"
+        ? "当前研究底座已覆盖多数关键来源维度，且已有足够强证据，可继续进入结构判断。"
         : sufficiency === "limited"
-          ? "当前仍缺这些来源维度：" + missingCategories.join("、") + "。建议先补研究，再把判断写硬。"
+          ? [
+              missingCategories.length ? "当前仍缺这些来源维度：" + missingCategories.join("、") : null,
+              weakOnlyCategories.length ? "这些维度暂时只有弱证据：" + weakOnlyCategories.join("、") : null,
+              "建议先补强研究，再把判断写硬。",
+            ].filter(Boolean).join("。")
           : "当前信源覆盖过窄，最多只适合写成观点草稿，不适合直接进入判断型长文。",
   } satisfies Record<string, unknown> & { coveredCount: number };
 }
@@ -1272,9 +1476,9 @@ function fallbackOutlinePlanning(context: GenerationContext) {
     note: "作为补充观点参与结构规划，但不替代主论点。",
   }));
   const openingHookSeedOptions = [
-    "开头优先从这条历史节点切入：" + String(researchBackbone.openingTimelineAnchor || "").trim(),
-    "先抛今天的现实冲突，再倒回这个转折：" + String(researchBackbone.openingTimelineAnchor || "").trim(),
-    "先给一句判断，再补这组横向差异：" + String(researchBackbone.middleComparisonAnchor || "").trim(),
+    `真正拖住 AI 内容生产的，不是某一句 Prompt。是选题、素材、审核和发布之间没人接手。`,
+    `一篇 AI 文章写完后还要人工补素材、核查、排版，它就没跑通。问题不在 Prompt，而在流程断点。`,
+    `别先看单次生成多漂亮。先看终稿前还要人补多少窟窿，这才是生产线的分水岭。`,
   ];
   const openingOptions = normalizeOpeningOptions(
     [
@@ -2142,10 +2346,13 @@ function fallbackFactCheck(context: GenerationContext) {
           : "标注为判断或经验总结，避免写成绝对事实。",
     };
   });
-  const riskCount = checks.filter((item) => item.status !== "verified").length;
+  const riskyCount = checks.filter((item) => item.status === "risky").length;
+  const needsSourceCount = checks.filter((item) => item.status === "needs_source").length;
+  const opinionCount = checks.filter((item) => item.status === "opinion").length;
+  const riskCount = riskyCount + needsSourceCount + opinionCount;
   return {
     summary: riskCount > 0 ? "当前稿子里至少有 " + String(riskCount) + " 条表述需要补来源或改成判断语气。" : "当前主要事实表述基本可站住脚，进入终稿前仍建议补齐来源锚点。",
-    overallRisk: riskCount >= 4 ? "high" : riskCount >= 2 ? "medium" : "low",
+    overallRisk: riskyCount > 0 ? "high" : needsSourceCount >= 2 ? "medium" : "low",
     checks,
     evidenceCards: buildFactCheckEvidenceCards(context, checks),
     missingEvidence: dedupeLimited([
@@ -2216,6 +2423,7 @@ function normalizeRecord(value: unknown) {
 function normalizeResearchBriefPayload(value: unknown, fallback: Record<string, unknown>) {
   const payload = normalizeRecord(value);
   const sourceCoverage = normalizeRecord(payload?.sourceCoverage) || normalizeRecord(fallback.sourceCoverage) || {};
+  const fallbackSourceCoverage = normalizeRecord(fallback.sourceCoverage) || {};
   const sourceKeys = Object.keys(RESEARCH_SOURCE_CATEGORY_LABELS) as ResearchSourceCategoryKey[];
   const normalizedSourceCoverage = sourceKeys.reduce<Record<string, string[]>>((acc, key) => {
     acc[key] = uniqueStrings(sourceCoverage[key], 4);
@@ -2228,6 +2436,31 @@ function normalizeResearchBriefPayload(value: unknown, fallback: Record<string, 
     timeline: [],
   });
   const sourceCoverageCoveredCount = sourceKeys.filter((key) => normalizedSourceCoverage[key].length > 0).length;
+  const derivedSufficiency =
+    sourceCoverageCoveredCount >= 4
+      ? "ready"
+      : sourceCoverageCoveredCount >= 2
+        ? "limited"
+        : "blocked";
+  const fallbackSufficiency = String(fallbackSourceCoverage.sufficiency || "").trim();
+  const normalizedSufficiency = pickStricterResearchSufficiency(
+    String(sourceCoverage.sufficiency || "").trim() || derivedSufficiency,
+    fallbackSufficiency,
+  ) || derivedSufficiency;
+  const mergedMissingCategories = uniqueStrings(
+    [
+      ...uniqueStrings(sourceCoverage.missingCategories, 5),
+      ...uniqueStrings(fallbackSourceCoverage.missingCategories, 5),
+    ],
+    5,
+  );
+  const weakOnlyCategories = uniqueStrings(
+    [
+      ...uniqueStrings(sourceCoverage.weakOnlyCategories, 5),
+      ...uniqueStrings(fallbackSourceCoverage.weakOnlyCategories, 5),
+    ],
+    5,
+  );
 
   return {
     summary: String(payload?.summary || fallback.summary || "").trim(),
@@ -2249,16 +2482,13 @@ function normalizeResearchBriefPayload(value: unknown, fallback: Record<string, 
         : uniqueStrings(fallback.forbiddenConclusions, 5),
     sourceCoverage: {
       ...normalizedSourceCoverage,
-      sufficiency: ["ready", "limited", "blocked"].includes(String(sourceCoverage.sufficiency || "").trim())
-        ? String(sourceCoverage.sufficiency || "").trim()
-        : sourceCoverageCoveredCount >= 4
-          ? "ready"
-          : sourceCoverageCoveredCount >= 2
-            ? "limited"
-            : "blocked",
+      strongCategoryCount:
+        Number(sourceCoverage.strongCategoryCount ?? fallbackSourceCoverage.strongCategoryCount ?? 0) || 0,
+      weakOnlyCategories,
+      sufficiency: normalizedSufficiency,
       missingCategories:
-        uniqueStrings(sourceCoverage.missingCategories, 5).length
-          ? uniqueStrings(sourceCoverage.missingCategories, 5)
+        mergedMissingCategories.length
+          ? mergedMissingCategories
           : sourceKeys
               .filter((key) => normalizedSourceCoverage[key].length === 0)
               .map((key) => RESEARCH_SOURCE_CATEGORY_LABELS[key]),
@@ -2889,12 +3119,19 @@ function normalizeFactCheckPayload(value: unknown, fallback: Record<string, unkn
     context,
     normalizedChecks as Array<{ claim: string; status: string; suggestion: string }>,
   );
+  const riskyCheckCount = normalizedChecks.filter((item) => String(item.status || "").trim() === "risky").length;
+  const needsSourceCheckCount = normalizedChecks.filter((item) => String(item.status || "").trim() === "needs_source").length;
+  const rawOverallRisk = String(payload?.overallRisk || "").trim();
+  const normalizedOverallRisk =
+    rawOverallRisk === "high" && riskyCheckCount === 0
+      ? needsSourceCheckCount >= 2 ? "medium" : "low"
+      : ["low", "medium", "high"].includes(rawOverallRisk)
+        ? rawOverallRisk
+        : String(fallback.overallRisk || "medium");
 
   return {
     summary: String(payload?.summary || fallback.summary || "").trim(),
-    overallRisk: ["low", "medium", "high"].includes(String(payload?.overallRisk || "").trim())
-      ? String(payload?.overallRisk || "").trim()
-      : String(fallback.overallRisk || "medium"),
+    overallRisk: normalizedOverallRisk,
     checks: normalizedChecks,
     evidenceCards: evidenceCards.length ? evidenceCards : fallbackEvidenceCards.length ? fallbackEvidenceCards : derivedEvidenceCards,
     missingEvidence: uniqueStrings([
@@ -3340,6 +3577,13 @@ async function generateWithPrompt(input: {
       planCode: input.context.planCode,
     });
     const systemSegments = buildArticleArtifactPromptSystemSegments(promptMeta.content);
+    const stageTimeoutMs =
+      input.stageCode === "factCheck"
+        ? Math.min(ARTICLE_STAGE_ARTIFACT_TIMEOUT_MS, FACT_CHECK_ARTIFACT_TIMEOUT_MS)
+        : input.stageCode === "researchBrief"
+          ? Math.min(ARTICLE_STAGE_ARTIFACT_TIMEOUT_MS, RESEARCH_BRIEF_ARTIFACT_TIMEOUT_MS)
+          : ARTICLE_STAGE_ARTIFACT_TIMEOUT_MS;
+    const strictSingleAttempt = input.stageCode === "factCheck" || input.stageCode === "researchBrief";
     const result = await withStageGenerationTimeout(
       generateSceneText({
         sceneCode: input.sceneCode,
@@ -3351,8 +3595,10 @@ async function generateWithPrompt(input: {
         },
         temperature: 0.2,
         rolloutUserId: input.context.userId,
+        maxAttempts: strictSingleAttempt ? 1 : undefined,
+        requestTimeoutMs: strictSingleAttempt ? stageTimeoutMs : undefined,
       }),
-      ARTICLE_STAGE_ARTIFACT_TIMEOUT_MS,
+      stageTimeoutMs,
       `${input.stageCode} AI 生成超时`,
     );
     let parsedPayload: unknown;
@@ -3442,6 +3688,10 @@ async function generateResearchBrief(
     query: string;
     searchUrl: string | null;
     discoveredUrls: string[];
+    imaQueries?: string[];
+    imaDiscoveredTitles?: string[];
+    imaError?: string | null;
+    curatedSourceUrls?: string[];
     attached: Array<{ fragmentId: number; nodeId: number; title: string; sourceUrl: string | null }>;
     skipped: string[];
     failed: Array<{ url: string; error: string }>;
@@ -3455,6 +3705,8 @@ async function generateResearchBrief(
     "你是在做研究层，而不是直接写公众号正文。",
     "先把研究对象、核心问题和待验证假设写清楚，再判断信源是否充分。",
     "sourceCoverage 必须覆盖官方源、行业源、同类源、用户源、时间源五类，并明确哪些仍然缺失。",
+    "不要把总览页、目录页、列表页、模板集合页直接当成强证据；这类页面最多只能算弱证据或入口线索。",
+    "IMA 命中属于高价值私有信源，但仍要区分是可直接支撑判断的案例/复盘/数据，还是只有标题级提示的弱线索。",
     "timelineCards 必须体现起点、关键转折和当前位置，不要只写今天发生了什么。",
     "comparisonCards 必须体现横向差异、用户口碑差异、风险与机会差异。",
     "intersectionInsights 必须把纵向时间脉络和横向比较交叉起来，输出真正可写成判断的洞察。",
@@ -3468,12 +3720,21 @@ async function generateResearchBrief(
     context.strategyCard?.whyNow ? promptLine("已有 why now：", context.strategyCard.whyNow) : null,
     promptLine("当前正文摘要：", truncateText(stripMarkdown(context.article.markdownContent), 700) || "暂无正文，请以研究先行。"),
     externalResearch?.attempted
-      ? formatPromptTemplate("外部补源：本次查询「{{query}}」，发现 {{discoveredCount}} 个候选链接，成功补入 {{attachedCount}} 条外部网页素材。", {
+      ? formatPromptTemplate("自动补源：IMA 查询 {{imaQueryCount}} 次、命中 {{imaCount}} 条；直达高质量来源 {{curatedCount}} 条；外部搜索查询「{{query}}」，发现 {{discoveredCount}} 个候选链接，成功补入 {{attachedCount}} 条研究素材。", {
+        imaQueryCount: externalResearch.imaQueries?.length ?? 0,
+        imaCount: externalResearch.imaDiscoveredTitles?.length ?? 0,
+        curatedCount: externalResearch.curatedSourceUrls?.length ?? 0,
         query: externalResearch.query,
         discoveredCount: externalResearch.discoveredUrls.length,
         attachedCount: externalResearch.attached.length,
       })
       : "外部补源：本次未发现可用搜索入口或补源线索。",
+    externalResearch?.imaDiscoveredTitles?.length
+      ? promptLine("IMA 命中：", externalResearch.imaDiscoveredTitles.slice(0, 4).join("；"))
+      : null,
+    externalResearch?.curatedSourceUrls?.length
+      ? promptLine("高质量直达源：", externalResearch.curatedSourceUrls.slice(0, 4).join("；"))
+      : null,
     promptLine("可用事实素材：", getSourceFacts(context, 8).join("；") || "暂无已挂载事实素材。"),
     promptLine(
       "可用素材包：",
@@ -3905,6 +4166,8 @@ async function generateOutlinePlanning(context: GenerationContext) {
         .join("；") || "暂无大纲草稿",
     ),
     promptLine("背景卡事实：", getSourceFacts(context, 6).join("；") || "暂无背景卡事实"),
+    getLocalizationTermMappings(context, 6).length ? promptLine("外文术语对照：", getLocalizationTermMappings(context, 6).join("；")) : null,
+    getLocalizationRiskNotes(context, 4).length ? promptLine("外文转述风险：", getLocalizationRiskNotes(context, 4).join("；")) : null,
     promptLine(
       "当前可用素材包：",
       getMaterialBundle(context, 8)
@@ -3991,6 +4254,7 @@ async function generateDeepWriting(
     "finalChecklist 必须覆盖标题一致性、事实密度、语言守卫规避、结尾动作或判断收束。",
     "如果已提供 seriesInsight 或 seriesChecklist，请保留下来并显式提醒系列口径一致性。",
     "如果大纲里已经确认了标题、开头、目标情绪、结尾策略，必须优先沿用。",
+    "事实风险前置约束：不要把未验证的具体数字、时间压缩、金额、比例或第一人称效率案例写进标题、开头、sectionBlueprint 或 mustUseFacts；证据不足时只能写成有限观察或趋势信号。",
     diversityIssues.length
       ? "如果最近几篇的原型、开头、句法、结尾或状态已经重复，openingStrategy / endingStrategy / stateChecklist / finalChecklist 必须主动改写并吸收 diversitySuggestions，不能继续沿用同一种推进骨架和句法呼吸。"
       : "如果最近几篇没有明显重复，也要在 diversitySummary 中说明当前多样性状态，并给出 0-2 条保持差异化的动作。",
@@ -4104,6 +4368,8 @@ async function generateDeepWriting(
     diversitySuggestions.length ? promptLine("这次执行卡必须吸收的去重动作：", diversitySuggestions.join("；")) : "这次执行卡必须吸收的去重动作：保持当前差异化，不要回到总结式开头、模板化句法或教科书式收尾。",
     outlineSections.length ? promptBlock("大纲章节：", outlineSections.join("\n\n")) : "暂无结构化大纲章节。",
     promptLine("现有事实素材：", getSourceFacts(context, 6).join("；") || "暂无"),
+    getLocalizationTermMappings(context, 6).length ? promptLine("外文术语对照：", getLocalizationTermMappings(context, 6).join("；")) : null,
+    getLocalizationRiskNotes(context, 4).length ? promptLine("外文转述风险：", getLocalizationRiskNotes(context, 4).join("；")) : null,
     promptLine(
       "可用素材包：",
       getMaterialBundle(context, 8)
@@ -4181,6 +4447,7 @@ async function generateFactCheck(context: GenerationContext) {
   const fallback = fallbackFactCheck(context);
   const preferredResearchSignals = getPreferredResearchSignals(context);
   const researchSourceCoverage = normalizeRecord(context.researchBrief?.sourceCoverage);
+  const localizationRiskNotes = getLocalizationRiskNotes(context, 4);
   const userPrompt = [
     "请输出 JSON，不要解释，不要 markdown。",
     '字段：{"summary":"字符串","overallRisk":"low|medium|high","checks":[{"claim":"字符串","status":"verified|needs_source|risky|opinion","suggestion":"字符串"}],"evidenceCards":[{"claim":"字符串","supportLevel":"strong|partial|missing","supportingEvidence":[{"title":"字符串","excerpt":"字符串","sourceType":"url|manual|screenshot","sourceUrl":"字符串或空","researchTag":"timeline|competitor|userVoice|contradiction|turningPoint","rationale":"字符串"}],"counterEvidence":[{"title":"字符串","excerpt":"字符串","sourceType":"url|manual|screenshot","sourceUrl":"字符串或空","researchTag":"contradiction|competitor|userVoice","rationale":"字符串"}]}],"missingEvidence":[""],"researchReview":{"summary":"字符串","sourceCoverage":"ready|limited|blocked|unknown","timelineSupport":"enough|missing","comparisonSupport":"enough|missing","intersectionSupport":"enough|missing","strongestAnchor":"字符串","gaps":[""]},"personaAlignment":"字符串","topicAlignment":"字符串"}',
@@ -4203,6 +4470,7 @@ async function generateFactCheck(context: GenerationContext) {
     promptBlock("写作风格资产 / DNA 注入细节：", listLayoutStrategySummary(context)),
     promptLine("当前正文：", context.article.markdownContent || "暂无正文"),
     promptLine("可对照事实：", getSourceFacts(context, 8).join("；") || "暂无对照事实"),
+    localizationRiskNotes.length ? promptLine("外文信源转述提醒：", localizationRiskNotes.join("；")) : null,
     context.researchBrief ? promptLine("研究简报摘要：", String(context.researchBrief.summary || "").trim()) : "当前没有研究简报。",
     context.researchBrief ? promptLine("研究核心问题：", String(context.researchBrief.coreQuestion || "").trim()) : null,
     context.researchBrief
@@ -4456,26 +4724,40 @@ export async function generateArticleStageArtifact(input: {
   deepWritingStateVariantCode?: WritingStateVariantCode | null;
   outlineTitleOptionsOnly?: boolean;
   outlineOpeningOptionsOnly?: boolean;
+  researchSearchHints?: {
+    topicTheme?: string | null;
+    coreAssertion?: string | null;
+    whyNow?: string | null;
+    researchObject?: string | null;
+    coreQuestion?: string | null;
+    mustCoverAngles?: string[];
+    missingCategories?: string[];
+  };
 }) {
   if (input.stageCode === "researchBrief") {
     const initialContext = await buildGenerationContext(input.articleId, input.userId);
-    const externalResearch = await supplementArticleResearchSources({
-      articleId: input.articleId,
-      userId: input.userId,
-      articleTitle: initialContext.article.title,
-      evidenceFragments: initialContext.evidenceFragments.map((item) => ({
-        sourceType: item.sourceType,
-        sourceUrl: item.sourceUrl,
-      })),
-      knowledgeCards: initialContext.knowledgeCards.map((item) => ({
-        title: item.title,
-        summary: item.summary,
-      })),
-      outlineNodes: initialContext.outlineNodes.map((item) => ({
-        title: item.title,
-        description: item.description,
-      })),
-    });
+    const externalResearch = await withStageGenerationTimeout(
+      supplementArticleResearchSources({
+        articleId: input.articleId,
+        userId: input.userId,
+        articleTitle: initialContext.article.title,
+        evidenceFragments: initialContext.evidenceFragments.map((item) => ({
+          sourceType: item.sourceType,
+          sourceUrl: item.sourceUrl,
+        })),
+        knowledgeCards: initialContext.knowledgeCards.map((item) => ({
+          title: item.title,
+          summary: item.summary,
+        })),
+        outlineNodes: initialContext.outlineNodes.map((item) => ({
+          title: item.title,
+          description: item.description,
+        })),
+        searchHints: input.researchSearchHints,
+      }),
+      ARTICLE_STAGE_OPTION_TIMEOUT_MS,
+      "researchBrief 外部补源超时",
+    );
     const context = externalResearch.attached.length > 0
       ? await buildGenerationContext(input.articleId, input.userId)
       : initialContext;

@@ -67,6 +67,17 @@ export type WechatConnectionOption = {
   isDefault: boolean;
 };
 
+export type AutomationStageDetailSection = {
+  title: string;
+  items: string[];
+};
+
+export type AutomationStageSearchMetrics = {
+  queryCount: number;
+  domainCount: number;
+  urlCount: number;
+};
+
 export const stageLabels: Record<string, string> = {
   topicAnalysis: "选题分析",
   researchBrief: "联网研究",
@@ -94,6 +105,178 @@ function getString(value: unknown) {
 
 function getStringArray(value: unknown, limit = 6) {
   return Array.isArray(value) ? value.map((item) => String(item || "").trim()).filter(Boolean).slice(0, limit) : [];
+}
+
+function getRecordArray(value: unknown) {
+  return Array.isArray(value)
+    ? value.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object" && !Array.isArray(item))
+    : [];
+}
+
+function appendSection(sections: AutomationStageDetailSection[], title: string, items: Array<string | null | undefined>, limit = 4) {
+  const normalized = items.map((item) => String(item || "").trim()).filter(Boolean).slice(0, limit);
+  if (normalized.length > 0) {
+    sections.push({ title, items: normalized });
+  }
+}
+
+function collectStageUrls(value: unknown, bucket = new Set<string>()) {
+  if (!value) {
+    return bucket;
+  }
+  if (typeof value === "string") {
+    const normalized = value.trim();
+    if (/^https?:\/\//i.test(normalized)) {
+      bucket.add(normalized);
+    }
+    return bucket;
+  }
+  if (Array.isArray(value)) {
+    value.forEach((item) => collectStageUrls(item, bucket));
+    return bucket;
+  }
+  if (typeof value === "object") {
+    Object.values(value as Record<string, unknown>).forEach((item) => collectStageUrls(item, bucket));
+  }
+  return bucket;
+}
+
+function collectStageQueries(value: unknown, bucket = new Set<string>()) {
+  if (!value) {
+    return bucket;
+  }
+  if (Array.isArray(value)) {
+    value.forEach((item) => collectStageQueries(item, bucket));
+    return bucket;
+  }
+  if (typeof value !== "object") {
+    return bucket;
+  }
+  const record = value as Record<string, unknown>;
+  if (typeof record.query === "string" && record.query.trim()) {
+    bucket.add(record.query.trim());
+  }
+  Object.values(record).forEach((item) => collectStageQueries(item, bucket));
+  return bucket;
+}
+
+function formatDomainLabel(url: string) {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return url;
+  }
+}
+
+export function getStageSearchMetrics(stage: AutomationStage): AutomationStageSearchMetrics | null {
+  const urls = [...collectStageUrls(stage.searchTraceJson)];
+  const queries = [...collectStageQueries(stage.searchTraceJson)];
+  const domains = new Set(urls.map((item) => formatDomainLabel(item)));
+  if (urls.length === 0 && queries.length === 0) {
+    return null;
+  }
+  return {
+    queryCount: queries.length,
+    domainCount: domains.size,
+    urlCount: urls.length,
+  };
+}
+
+export function buildStageDetailSections(stage: AutomationStage): AutomationStageDetailSection[] {
+  const output = getRecord(stage.outputJson) ?? {};
+  const quality = getRecord(stage.qualityJson) ?? {};
+  const sections: AutomationStageDetailSection[] = [];
+
+  appendSection(sections, "决策信号", [
+    getString(output.decision) ? `决策：${getString(output.decision)}` : null,
+    getString(output.whyNow) ? `Why now：${getString(output.whyNow)}` : null,
+    getString(output.readerBenefit) ? `读者收益：${getString(output.readerBenefit)}` : null,
+    getString(output.risk) ? `风险：${getString(output.risk)}` : null,
+    getString(output.targetReader) ? `目标读者：${getString(output.targetReader)}` : null,
+    getString(output.recommendedCallToAction) ? `建议 CTA：${getString(output.recommendedCallToAction)}` : null,
+  ]);
+
+  appendSection(sections, "研究查询", getRecordArray(output.queries).map((item) => {
+    const query = getString(item.query);
+    const purpose = getString(item.purpose);
+    return query ? `${query}${purpose ? ` · ${purpose}` : ""}` : "";
+  }));
+
+  appendSection(sections, "信源摘要", getRecordArray(output.sources).map((item) => {
+    const label = getString(item.label);
+    const sourceType = getString(item.sourceType);
+    const detail = getString(item.detail);
+    const sourceUrl = getString(item.sourceUrl);
+    const sourceLabel = sourceUrl ? formatDomainLabel(sourceUrl) : "";
+    return [label, sourceType, sourceLabel || detail].filter(Boolean).join(" · ");
+  }));
+
+  appendSection(sections, "结构规划", [
+    ...getRecordArray(output.sections).map((item) => {
+      const heading = getString(item.heading);
+      const goal = getString(item.goal);
+      return heading ? `${heading}${goal ? ` · ${goal}` : ""}` : "";
+    }),
+    getString(output.workingTitle) ? `工作标题：${getString(output.workingTitle)}` : null,
+    getString(output.openingHook) ? `开头抓手：${getString(output.openingHook)}` : null,
+  ], 5);
+
+  appendSection(sections, "候选方案", [
+    ...getRecordArray(output.titleOptions).map((item) => {
+      const title = getString(item.title);
+      const angle = getString(item.angle);
+      return title ? `${title}${angle ? ` · ${angle}` : ""}` : "";
+    }),
+    ...getRecordArray(output.openingOptions).map((item) => {
+      const opening = getString(item.opening);
+      const patternLabel = getString(item.patternLabel);
+      return opening ? `${opening.slice(0, 42)}${opening.length > 42 ? "..." : ""}${patternLabel ? ` · ${patternLabel}` : ""}` : "";
+    }),
+  ], 4);
+
+  appendSection(sections, "事实与风险", [
+    ...getStringArray(output.highRiskClaims, 4).map((item) => `高风险：${item}`),
+    ...getStringArray(output.needsEvidence, 4).map((item) => `待补证：${item}`),
+    ...getStringArray(output.missingEvidence, 4).map((item) => `缺口：${item}`),
+    getString(output.overallRisk) ? `总体风险：${getString(output.overallRisk)}` : null,
+  ], 5);
+
+  appendSection(sections, "润色结果", [
+    getString(output.rewrittenLead) ? `重写开头：${getString(output.rewrittenLead)}` : null,
+    ...getStringArray(output.punchlines, 4).map((item) => `金句：${item}`),
+    ...getRecordArray(output.changes).map((item) => {
+      const type = getString(item.type);
+      const suggestion = getString(item.suggestion);
+      return [type, suggestion].filter(Boolean).join(" · ");
+    }),
+  ], 4);
+
+  appendSection(sections, "发布守门", [
+    ...getStringArray(output.blockers, 4).map((item) => `阻塞：${item}`),
+    ...getStringArray(output.warnings, 4).map((item) => `提醒：${item}`),
+    ...getStringArray(output.repairActions, 4).map((item) => `修复：${item}`),
+    typeof output.canPublish === "boolean" ? `可发布：${output.canPublish ? "是" : "否"}` : null,
+  ], 5);
+
+  appendSection(sections, "质量记录", [
+    getString(quality.artifactSummary) ? `摘要：${getString(quality.artifactSummary)}` : null,
+    ...getStringArray(quality.promptVersionRefs, 3).map((item) => `Prompt：${item}`),
+    ...getStringArray(quality.repairActions, 3).map((item) => `动作：${item}`),
+    getString(quality.decision) ? `决策：${getString(quality.decision)}` : null,
+    quality.fallbackUsed ? "已启用 fallback 输出" : null,
+    getString(quality.error) ? `回退原因：${getString(quality.error)}` : null,
+  ], 5);
+
+  const searchMetrics = getStageSearchMetrics(stage);
+  if (searchMetrics) {
+    const urls = [...collectStageUrls(stage.searchTraceJson)].slice(0, 3).map((item) => formatDomainLabel(item));
+    appendSection(sections, "搜索轨迹", [
+      `查询 ${searchMetrics.queryCount} 条 · 域名 ${searchMetrics.domainCount} 个 · 结果 ${searchMetrics.urlCount} 条`,
+      ...urls.map((item) => `命中域名：${item}`),
+    ], 4);
+  }
+
+  return sections;
 }
 
 export function formatRelativeTime(value: string | null) {

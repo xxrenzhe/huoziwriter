@@ -36,7 +36,7 @@ const CIRCUIT_OPEN_THRESHOLD = 3;
 
 function normalizeSourceType(value: string | null | undefined) {
   const normalized = String(value || "news").trim().toLowerCase();
-  if (["youtube", "reddit", "podcast", "spotify", "news", "blog", "rss"].includes(normalized)) {
+  if (["youtube", "reddit", "community", "podcast", "spotify", "news", "blog", "rss"].includes(normalized)) {
     return normalized;
   }
   return "news";

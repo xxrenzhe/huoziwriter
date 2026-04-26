@@ -1,4 +1,4 @@
-const BANNED_PHRASES = ["赋能", "底层逻辑", "不可否认", "毋庸置疑", "瞬息万变", "颗粒度", "总而言之", "闭环"];
+const BANNED_PHRASES = ["赋能", "底层逻辑", "不可否认", "毋庸置疑", "瞬息万变", "颗粒度", "总而言之"];
 const EMPTY_PHRASES = ["高质量发展", "抓手", "全方位", "体系化", "方法论", "价值闭环", "协同效率", "有效提升"];
 const TRANSITION_PHRASES = ["与此同时", "换句话说", "从某种意义上说", "某种程度上", "归根结底", "首先", "其次", "最后"];
 const PREANNOUNCE_PHRASES = ["让我们来看看", "接下来让我们", "下面我们来", "接下来我们将", "本文将"];
@@ -60,17 +60,26 @@ export function analyzeAiNoise(content: string) {
   const repeatedConnectorCount = (text.match(/我们需要|在这个|通过|进行/g) || []).length;
   const paragraphLengthBuckets = paragraphs.map((paragraph) => Math.min(6, Math.floor(paragraph.length / 40)));
   const repeatedParagraphBuckets = paragraphLengthBuckets.filter((bucket, index) => index > 0 && bucket === paragraphLengthBuckets[index - 1]).length;
-  const outlineRigidityRaw = transitionHits.reduce((total, item) => total + item.count, 0) + repeatedParagraphBuckets + preannounceHits.reduce((total, item) => total + item.count, 0);
+  const transitionCount = transitionHits.reduce((total, item) => total + item.count, 0);
+  const transitionOveruseCount = Math.max(0, transitionCount - 2);
+  const longSentenceLimit = Math.max(4, Math.ceil(sentences.length * 0.24));
+  const longSentenceOveruseCount = Math.max(0, longSentences.length - longSentenceLimit);
+  const repeatedParagraphLimit = Math.max(3, Math.ceil(paragraphs.length * 0.28));
+  const repeatedParagraphOveruseCount = Math.max(0, repeatedParagraphBuckets - repeatedParagraphLimit);
+  const outlineRigidityRaw =
+    transitionOveruseCount
+    + repeatedParagraphOveruseCount
+    + preannounceHits.reduce((total, item) => total + item.count, 0);
 
   const rawScore =
     bannedHits.reduce((total, item) => total + item.count * 14, 0) +
     emptyHits.reduce((total, item) => total + item.count * 9, 0) +
-    transitionHits.reduce((total, item) => total + item.count * 6, 0) +
+    transitionOveruseCount * 5 +
     preannounceHits.reduce((total, item) => total + item.count * 8, 0) +
     summaryEndingHits.reduce((total, item) => total + item.count * 10, 0) +
-    longSentences.length * 8 +
+    longSentenceOveruseCount * 6 +
     Math.max(0, repeatedConnectorCount - 2) * 4 +
-    Math.max(0, repeatedParagraphBuckets - 1) * 5;
+    Math.min(12, repeatedParagraphOveruseCount * 2);
 
   const score = Math.min(100, rawScore);
   const level = score >= 80 ? "high" : score >= 45 ? "medium" : "low";
@@ -94,11 +103,11 @@ export function analyzeAiNoise(content: string) {
           suggestion: "空话后面必须补数字、案例、角色或证据，否则整句删除。",
         }
       : null,
-    transitionHits.length
+    transitionOveruseCount > 0
       ? {
           label: "过度转折",
           reason: "连接词太密时，文章会更像播音稿或汇报稿，而不是自然推进的论证。",
-          count: transitionHits.reduce((total, item) => total + item.count, 0),
+          count: transitionCount,
           suggestion: "删掉无效转折，直接让事实句或判断句接上下一句。",
         }
       : null,
@@ -118,7 +127,7 @@ export function analyzeAiNoise(content: string) {
           suggestion: "结尾停在动作、判断或画面上，不要另起一段做总结。",
         }
       : null,
-    longSentences.length
+    longSentenceOveruseCount > 0
       ? {
           label: "长句堆叠",
           reason: "一口气塞进多个动作和判断，会让段落显得模板化且不利于读者换气。",
@@ -146,10 +155,10 @@ export function analyzeAiNoise(content: string) {
   const findings = [
     bannedHits.length ? `命中禁用表达：${bannedHits.map((item) => item.phrase).join(" / ")}` : null,
     emptyHits.length ? `命中空话短语：${emptyHits.map((item) => item.phrase).join(" / ")}` : null,
-    transitionHits.length ? `命中过度转折：${transitionHits.map((item) => item.phrase).join(" / ")}` : null,
+    transitionOveruseCount > 0 ? `命中过度转折：${transitionHits.map((item) => item.phrase).join(" / ")}` : null,
     preannounceHits.length ? `命中预告式句子：${preannounceHits.map((item) => item.phrase).join(" / ")}` : null,
     summaryEndingHits.length ? `命中总结式收尾：${summaryEndingHits.map((item) => item.phrase).join(" / ")}` : null,
-    longSentences.length ? `检测到 ${longSentences.length} 句长句，容易出现播音腔和抽象铺垫。` : null,
+    longSentenceOveruseCount > 0 ? `检测到 ${longSentences.length} 句长句，超过当前篇幅建议上限 ${longSentenceLimit} 句。` : null,
     repeatedConnectorCount > 2 ? `连接词重复偏多，像“我们需要 / 通过 / 在这个”这类起手式过密。` : null,
     outlineRigidityRisk !== "low" ? "段落和转场过于整齐，像按施工图展开。" : null,
   ].filter(Boolean) as string[];
@@ -157,7 +166,7 @@ export function analyzeAiNoise(content: string) {
   const suggestions = [
     bannedHits.length ? "先删掉命中的禁用表达，把判断换成具体动作、数据或角色关系。" : null,
     emptyHits.length ? "空话短语后面补事实锚点，否则整句直接删除。" : null,
-    longSentences.length ? "把超过 38 字的长句斩成两到三句，每句只保留一个动作。" : null,
+    longSentenceOveruseCount > 0 ? "优先拆掉最影响换气的长句，每句只保留一个动作或判断。" : null,
     preannounceHits.length ? "删掉“接下来我们来看”这类预告，直接说事。" : null,
     summaryEndingHits.length ? "把结尾改成动作、判断或画面，不要重写一遍摘要。" : null,
     outlineRigidityRisk !== "low" ? "打破段落对称感，允许一句话成段或忽长忽短的呼吸变化。" : null,

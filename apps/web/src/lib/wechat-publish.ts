@@ -64,6 +64,9 @@ export function buildArticleVersionHash(input: {
 
 export function classifyPublishFailure(error: unknown) {
   const message = error instanceof Error ? error.message : "推送失败";
+  if (/(not in whitelist|invalid ip|接口白名单|出口 IP)/i.test(message)) {
+    return { code: "ip_whitelist_blocked", message };
+  }
   if (/(access_token|token|凭证|appid|appsecret|secret|credential|授权|验证失败)/i.test(message)) {
     return { code: "auth_failed", message };
   }
@@ -261,7 +264,7 @@ export async function publishArticleToWechat(input: {
     }));
     throw new WechatPublishError(failure.message, {
       code: failure.code,
-      retryable: !["auth_failed", "content_invalid"].includes(failure.code),
+      retryable: !["auth_failed", "ip_whitelist_blocked", "content_invalid"].includes(failure.code),
     });
   }
 }

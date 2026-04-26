@@ -1238,6 +1238,7 @@ export function AdminTopicSourcesClient({
         <select value={sourceType} onChange={(event) => setSourceType(event.target.value)} className={uiPrimitives.adminSelect}>
           <option value="youtube">YouTube</option>
           <option value="reddit">Reddit</option>
+          <option value="community">Community</option>
           <option value="podcast">Podcast</option>
           <option value="spotify">Spotify</option>
           <option value="news">News</option>
@@ -1292,6 +1293,7 @@ export function AdminTopicSourcesClient({
                 >
                   <option value="youtube">YouTube</option>
                   <option value="reddit">Reddit</option>
+                  <option value="community">Community</option>
                   <option value="podcast">Podcast</option>
                   <option value="spotify">Spotify</option>
                   <option value="news">News</option>

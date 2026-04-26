@@ -17,6 +17,7 @@ import { buildSemanticEmbedding, parseSemanticEmbedding, scoreSemanticMatch } fr
 import { normalizeArticleStatus, toStoredArticleStatus } from "./article-status-label";
 import { getSeriesById, resolveArticleSeriesId } from "./series";
 import { resolvePlanFeatureSnapshot, type PlanFeatureSourceRecord } from "./plan-entitlements";
+import { ensureWechatEnvConnectionForUser } from "./wechat-env-connection";
 
 let articleSnapshotsArticleColumnPromise: Promise<"article_id" | "document_id"> | null = null;
 
@@ -80,6 +81,29 @@ const DEFAULT_PROMPT_SEEDS = [
     ].join("\n"),
     language: "zh-CN",
     changeNotes: "补强 plan22 搜索结果、可引用事实、待验证线索和模型推断边界",
+  },
+  {
+    promptId: "source_localization",
+    version: "v1.0.0",
+    category: "analysis",
+    name: "英文信源中文化表达转化",
+    description: "在保留事实准确性的前提下，把英文或中英混合信源转成中文写作可消费素材",
+    filePath: "system:analysis",
+    functionName: "sourceLocalization",
+    promptContent: [
+      "你是中文写作研究编辑，负责把英文或中英混合信源转成适合中文公众号写作的结构化素材。",
+      "你的目标是：事实不变、中文自然、术语准确、风险可追溯。",
+      "必须严格区分原文事实、中文转述和翻译风险，不得补编背景，不得新增判断。",
+      "输出 JSON，不要 markdown，不要解释。",
+      '字段：{"localizedTitle":"字符串","localizedSummary":"字符串","factPointsZh":["字符串"],"quoteCandidatesZh":["字符串"],"termMappings":[{"sourceTerm":"字符串","zhTerm":"字符串","note":"字符串或空"}],"translationRisk":"字符串或空"}',
+      "localizedSummary 是可直接供研究简报和正文消费的自然中文摘要。",
+      "factPointsZh 只保留可核查事实，最多 4 条，优先时间、主体、动作、数字、规则变化。",
+      "quoteCandidatesZh 是可以被正文引用的中文表述，最多 2 条，不能写成夸张标题。",
+      "termMappings 只保留关键术语、岗位名、产品名、平台规则名、专业缩写等必要对照。",
+      "translationRisk 只在存在潜在误译、营销腔、主观判断、口径不清时填写。",
+    ].join("\n"),
+    language: "zh-CN",
+    changeNotes: "新增高质量英文信源中文化表达转化场景",
   },
   {
     promptId: "fragment_distill",
@@ -163,7 +187,7 @@ const DEFAULT_PROMPT_SEEDS = [
   },
   {
     promptId: "ima_hook_pattern_distill",
-    version: "v1.0.0",
+    version: "v1.1.0",
     category: "analysis",
     name: "IMA 爆点规律提炼",
     description: "基于 IMA 知识库命中的真实爆款，提炼赛道规律并生成裂变候选",
@@ -175,18 +199,19 @@ const DEFAULT_PROMPT_SEEDS = [
       "你的任务是基于一个赛道关键词，以及同赛道的真实爆款标题与片段，提炼共同规律，并生成可直接起稿的差异化选题。",
       "",
       "输出严格 JSON，结构如下：",
-      '{"hookPatterns":[{"name":"字符串","description":"字符串","triggerPsychology":"字符串","sampleTitles":["字符串"]}],"differentiatedAngles":[{"title":"字符串","fissionMode":"regularity|contrast|cross-domain","targetReader":"字符串","description":"字符串","sampleTitles":["字符串"]}]}',
+      '{"hookPatterns":[{"name":"字符串","description":"字符串","triggerPsychology":"字符串","sampleTitles":["字符串"]}],"viralDirections":[{"direction":"字符串","coreTension":"字符串","identityHook":"字符串","emotionalTrigger":"字符串","transferHint":"字符串","sampleTitles":["字符串"]}],"differentiatedAngles":[{"title":"字符串","fissionMode":"regularity|contrast|cross-domain","targetReader":"字符串","description":"字符串","sampleTitles":["字符串"]}]}',
       "",
       "硬约束：",
       "1. 只能引用输入里真实存在的标题，禁止改写 sampleTitles。",
       "2. 禁止编造未出现的事实、数据、案例或标题。",
-      "3. hookPatterns 输出 2-4 条；differentiatedAngles 输出 3-6 条。",
-      "4. 名称简洁，description 与 triggerPsychology 使用自然中文，不要空话。",
-      "5. 禁止使用：赋能、底层逻辑、抓手、闭环、破圈、跃迁、心智模型、降维打击、颗粒度、顶层设计。",
-      "6. 不要输出 markdown，不要解释，只返回 JSON。",
+      "3. hookPatterns 输出 2-4 条；viralDirections 输出 3-5 条；differentiatedAngles 输出 3-6 条。",
+      "4. 名称简洁，description / triggerPsychology / coreTension / transferHint 使用自然中文，不要空话。",
+      "5. viralDirections 必须尽量覆盖：高频题材、身份切口、处境冲突、可迁移角度。",
+      "6. 禁止使用：赋能、底层逻辑、抓手、闭环、破圈、跃迁、心智模型、降维打击、颗粒度、顶层设计。",
+      "7. 不要输出 markdown，不要解释，只返回 JSON。",
     ].join("\n"),
     language: "zh-CN",
-    changeNotes: "新增 IMA 知识库爆款规律提炼场景",
+    changeNotes: "新增爆文素材方向提炼字段，支持从 IMA 样本抽取可迁移题材方向",
   },
   {
     promptId: "topicFission.regularity",
@@ -321,6 +346,25 @@ const DEFAULT_PROMPT_SEEDS = [
     changeNotes: "初始化版本",
   },
   {
+    promptId: "language_guard_audit",
+    version: "v1.1.0",
+    category: "review",
+    name: "语言守卫审校",
+    description: "按真实发布阻塞项清理禁用表达、模板句和过长句",
+    filePath: "system:review",
+    functionName: "languageGuardAudit",
+    promptContent: [
+      "你是公众号终审编辑，只负责把已成稿改到可发布，不负责重写选题。",
+      "必须输出修复后的完整 Markdown 正文，不要解释。",
+      "优先级：先删禁用表达和模板句，再拆影响阅读的长句，最后打散过于工整的段落呼吸。",
+      "禁用表达必须改成具体动作、对象、结果或代价；不能只换同义抽象词。",
+      "长句拆分不得新增事实，不得扩大证据含义，不得改变核心判断。",
+      "保留标题层级、证据、引用和已核查事实。",
+    ].join("\n"),
+    language: "zh-CN",
+    changeNotes: "补强发布阻塞项定向修复，避免只做泛化润色",
+  },
+  {
     promptId: "audience_analysis",
     version: "v1.1.0",
     category: "analysis",
@@ -434,6 +478,25 @@ const DEFAULT_PROMPT_SEEDS = [
     promptContent: "你是事实核查编辑。请只针对正文中的具体事实、数据、案例、时间与因果判断做核查。不能把没有证据支持的表述说成已验证，必须明确区分已验证、待补证据、高风险表述和主观判断，并指出人设与选题是否偏离。",
     language: "zh-CN",
     changeNotes: "补强事实核查对证据充分性、风险分级和匹配度校验的约束",
+  },
+  {
+    promptId: "fact_check",
+    version: "v1.2.0",
+    category: "review",
+    name: "事实核查",
+    description: "对正文中的事实、数据、案例、时间和因果判断进行核查并区分修复优先级",
+    filePath: "system:review",
+    functionName: "factCheck",
+    promptContent: [
+      "你是事实核查编辑。只核查正文里的具体事实、数据、案例、时间、产品能力、政策限制和强因果判断。",
+      "请区分四类：已验证、待补证据、高风险表述、主观判断。不要把观点、写作判断、有限观察误判成事实错误。",
+      "高风险只用于：具体数字无来源、真实主体能力/限制无来源、案例细节无来源、强因果或行业定论没有证据支撑。",
+      "如果只是趋势判断或作者观点，应标为主观判断，并给出建议措辞，而不是直接标高风险。",
+      "必须指出哪些高风险项需要删除、降级为条件表达，或回到研究阶段补证据。",
+      "同时判断人设与选题是否偏离。输出 JSON，不要解释。",
+    ].join("\n"),
+    language: "zh-CN",
+    changeNotes: "降低观点误杀，明确高风险事实边界和自动修复方向",
   },
   {
     promptId: "prose_polish",
@@ -1389,9 +1452,19 @@ export async function getFragmentsByUser(userId: number) {
     distilled_content: string;
     source_url: string | null;
     screenshot_path: string | null;
+    raw_payload_json: string | null;
     created_at: string;
   }>(
-    `SELECT * FROM fragments WHERE user_id IN (${placeholders}) ORDER BY id DESC`,
+    `SELECT f.*, fs.raw_payload_json
+     FROM fragments f
+     LEFT JOIN fragment_sources fs
+       ON fs.id = (
+         SELECT MAX(id)
+         FROM fragment_sources
+         WHERE fragment_id = f.id
+       )
+     WHERE f.user_id IN (${placeholders})
+     ORDER BY f.id DESC`,
     scope.userIds,
   );
 }
@@ -2060,6 +2133,7 @@ export async function createFragment(input: {
   distilledContent: string;
   sourceUrl?: string | null;
   screenshotPath?: string | null;
+  sourceMeta?: Record<string, unknown> | null;
 }) {
   const db = getDatabase();
   const now = new Date().toISOString();
@@ -2084,7 +2158,18 @@ export async function createFragment(input: {
   await db.exec(
     `INSERT INTO fragment_sources (fragment_id, source_type, source_url, screenshot_path, raw_payload_json, created_at)
      VALUES (?, ?, ?, ?, ?, ?)`,
-    [result.lastInsertRowid!, input.sourceType, input.sourceUrl ?? null, input.screenshotPath ?? null, { title: input.title, rawContent: input.rawContent }, now],
+    [
+      result.lastInsertRowid!,
+      input.sourceType,
+      input.sourceUrl ?? null,
+      input.screenshotPath ?? null,
+      {
+        title: input.title,
+        rawContent: input.rawContent,
+        sourceMeta: input.sourceMeta ?? null,
+      },
+      now,
+    ],
   );
   await db.exec(
     `INSERT INTO fragment_embeddings (fragment_id, embedding_json, created_at, updated_at)
@@ -2473,6 +2558,7 @@ export async function updateModelRoute(input: {
 }
 
 export async function getWechatConnections(userId: number) {
+  await ensureWechatEnvConnectionForUser(userId);
   const db = getDatabase();
   return db.query<{
     id: number;

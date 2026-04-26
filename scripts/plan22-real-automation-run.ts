@@ -15,24 +15,29 @@ import { ensureBootstrapData, getModelRoutes, getWechatConnections } from "../ap
 import { PLAN22_STAGE_PROMPT_DEFINITIONS } from "../apps/web/src/lib/plan22-prompt-catalog";
 import { createSeries, getDefaultSeries, getSeries } from "../apps/web/src/lib/series";
 import { getVisibleTopicRecommendationsForUser } from "../apps/web/src/lib/topic-recommendations";
+import { ensureWechatEnvConnectionForUser, hasWechatEnvConnectionConfig } from "../apps/web/src/lib/wechat-env-connection";
 import { runPendingMigrations } from "./db-flow";
 import {
   ARTIFACT_DIR,
   asRecord,
   asRecordArray,
+  asBooleanOrNull,
   asStringArray,
   buildEnvChecks,
   buildMarkdownReport,
   buildScenarioInputs,
+  classifyProviderFailure,
   DEFAULT_BRIEF_INPUT,
   DEFAULT_URL,
   getDomain,
   getTimestampTag,
+  getScenarioAcceptanceIssues,
   loadDotenv,
   normalizeString,
   readFlag,
   readOption,
   runSearchCheck,
+  sanitizeDiagnosticText,
   summarizeAiUsage,
   type AcceptanceReport,
   type PrerequisiteCheck,
@@ -84,10 +89,10 @@ async function probeCoverImage(): Promise<PrerequisiteCheck> {
     return {
       code: "coverImageProbe",
       status: "passed",
-      detail: `${result.providerName}/${result.model} -> ${result.imageUrl}`,
+      detail: `${result.providerName}/${result.model} -> ${sanitizeDiagnosticText(result.imageUrl)}`,
     };
   } catch (error) {
-    const detail = error instanceof Error ? error.message : "封面探针失败";
+    const detail = sanitizeDiagnosticText(error instanceof Error ? error.message : "封面探针失败");
     return {
       code: "coverImageProbe",
       status: "failed",
@@ -161,6 +166,7 @@ async function runScenario(input: {
     const openingOptimization = asRecord(stageMap.get("openingOptimization")?.outputJson);
     const coverImageBrief = asRecord(stageMap.get("coverImageBrief")?.outputJson);
     const layoutApply = asRecord(stageMap.get("layoutApply")?.outputJson);
+    const publishGuard = asRecord(stageMap.get("publishGuard")?.outputJson);
     const aiUsageSummary = await summarizeAiUsage(detail.run.articleId);
     const researchSources = asRecordArray(researchBrief.sources);
     const distinctDomains = new Set(
@@ -212,6 +218,12 @@ async function runScenario(input: {
         htmlLength: normalizeString(layoutApply.html).length,
         htmlSyncedToArticle: normalizeString(layoutApply.html) !== "" && normalizeString(layoutApply.html) === normalizeString(detail.article?.html_content),
       },
+      publishGuardSummary: {
+        canPublish: asBooleanOrNull(publishGuard.canPublish),
+        blockerCount: asStringArray(publishGuard.blockers).length,
+        warningCount: asStringArray(publishGuard.warnings).length,
+        blockers: asStringArray(publishGuard.blockers),
+      },
       aiUsageSummary,
       stageStatuses: detail.stages.map((stage) => ({
         stageCode: stage.stageCode,
@@ -247,6 +259,7 @@ async function runScenario(input: {
       openingSummary: { recommendedOpening: null, optionCount: 0 },
       coverImageSummary: { prompt: null, altText: null },
       layoutSummary: { templateId: null, htmlLength: 0, htmlSyncedToArticle: false },
+      publishGuardSummary: { canPublish: null, blockerCount: 0, warningCount: 0, blockers: [] },
       aiUsageSummary: { callCount: 0, totalInputTokens: 0, totalOutputTokens: 0, totalCacheReadTokens: 0, totalLatencyMs: 0 },
       stageStatuses: [],
       error: error instanceof Error ? error.message : String(error),
@@ -267,6 +280,10 @@ async function main() {
   const user = await findUserByUsername(username);
   if (!user) {
     throw new Error(`未找到用户 ${username}，请先运行 pnpm db:init 或指定 --user`);
+  }
+
+  if (hasWechatEnvConnectionConfig()) {
+    await ensureWechatEnvConnectionForUser(user.id, { throwOnError: true });
   }
 
   const series = await ensureSeries(user.id);
@@ -314,12 +331,26 @@ async function main() {
   };
   const providerChecks = credentialMatrix.providers
     .filter((provider) => provider.models.length > 0)
-    .map((provider) => ({
-      code: `provider:${provider.provider}`,
-      status: provider.status === "healthy" ? "passed" : "failed",
-      detail: provider.status === "healthy" ? `${provider.probeModel} 可用，latency=${provider.latencyMs ?? 0}ms` : provider.error || `${provider.provider} 凭据不可用`,
-      blocking: true,
-    })) satisfies PrerequisiteCheck[];
+    .map((provider) => {
+      if (provider.status === "healthy") {
+        return {
+          code: `provider:${provider.provider}`,
+          status: "passed",
+          detail: `${provider.probeModel} 可用，latency=${provider.latencyMs ?? 0}ms`,
+          blocking: true,
+        } satisfies PrerequisiteCheck;
+      }
+      const failure = classifyProviderFailure(provider.error || `${provider.provider} 凭据不可用`);
+      return {
+        code: `provider:${provider.provider}`,
+        status: "failed",
+        detail: failure.detail,
+        failureKind: failure.failureKind,
+        userMessage: failure.userMessage,
+        operatorAction: failure.operatorAction,
+        blocking: true,
+      } satisfies PrerequisiteCheck;
+    }) satisfies PrerequisiteCheck[];
 
   const searchCheck = await runSearchCheck(briefInput);
   const coverProbe = await probeCoverImage();
@@ -379,6 +410,18 @@ async function main() {
       }),
     );
   }
+  const scenarioAcceptanceIssues = scenarioReports.flatMap((scenario) =>
+    getScenarioAcceptanceIssues({
+      scenario,
+      requiresWechatDraft: scenario.automationLevel === "wechatDraft",
+    }),
+  );
+  const acceptanceIssues = [
+    ...blockingPrerequisiteChecks
+      .filter((item) => item.status !== "passed")
+      .map((item) => `${item.code}: ${item.detail}`),
+    ...scenarioAcceptanceIssues,
+  ];
 
   fs.mkdirSync(ARTIFACT_DIR, { recursive: true });
   const reportBaseName = `real-automation-run-${getTimestampTag()}`;
@@ -397,10 +440,12 @@ async function main() {
       topicRecommendationCount: topicRecommendations.length,
     },
     scenarios: scenarioReports,
+    acceptanceIssues,
     status:
       blockingPrerequisiteChecks.every((item) => item.status === "passed")
       && scenarioReports.length > 0
       && scenarioReports.every((scenario) => scenario.status === "completed" && !scenario.error)
+      && acceptanceIssues.length === 0
       && (!requiresWechatDraft || scenarioReports.some((scenario) => Boolean(scenario.finalWechatMediaId)))
         ? "passed"
         : "failed",

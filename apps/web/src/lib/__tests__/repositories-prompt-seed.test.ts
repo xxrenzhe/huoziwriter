@@ -35,6 +35,7 @@ test("getPromptVersions seeds default plan17 prompt scenes on a fresh database",
     assert.equal(promptIds.has("styleDna.crossCheck"), true);
     assert.equal(promptIds.has("publishGate.rhythmConsistency"), true);
     assert.equal(promptIds.has("opening_optimizer"), true);
+    assert.equal(promptIds.has("source_localization"), true);
   } finally {
     await closeDatabase();
     if (previousDatabasePath == null) {
@@ -76,6 +77,14 @@ test("fresh migrations include plan22 prompt matrix and model routes", async () 
     const researchPrompt = prompts.find((item) => item.prompt_id === "research_brief" && item.version === "v1.1.0");
     assert.ok(researchPrompt);
     assert.match(researchPrompt.prompt_content, /搜索摘要直接写成已验证事实/);
+
+    const localizationPrompt = prompts.find((item) => item.prompt_id === "source_localization" && item.version === "v1.0.0");
+    assert.ok(localizationPrompt);
+    const localizationRoute = await db.queryOne<{ scene_code: string }>(
+      "SELECT scene_code FROM ai_model_routes WHERE scene_code = ? LIMIT 1",
+      ["sourceLocalization"],
+    );
+    assert.equal(localizationRoute?.scene_code, "sourceLocalization");
   } finally {
     await closeDatabase();
     if (previousDatabasePath == null) {

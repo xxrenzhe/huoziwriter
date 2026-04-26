@@ -190,6 +190,7 @@ CREATE TABLE IF NOT EXISTS topic_sources (
   name TEXT NOT NULL,
   homepage_url TEXT,
   source_type TEXT NOT NULL DEFAULT 'news',
+  topic_verticals_json TEXT NOT NULL DEFAULT '[]',
   priority INTEGER NOT NULL DEFAULT 100,
   is_active INTEGER NOT NULL DEFAULT 1,
   last_fetched_at TEXT,
@@ -236,6 +237,7 @@ CREATE TABLE IF NOT EXISTS topic_items (
   summary TEXT,
   emotion_labels_json TEXT,
   angle_options_json TEXT,
+  topic_verticals_json TEXT NOT NULL DEFAULT '[]',
   source_url TEXT,
   published_at TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -249,6 +251,7 @@ CREATE TABLE IF NOT EXISTS topic_events (
   summary TEXT,
   emotion_labels_json TEXT NOT NULL,
   angle_options_json TEXT NOT NULL,
+  topic_verticals_json TEXT NOT NULL DEFAULT '[]',
   primary_source_name TEXT,
   primary_source_type TEXT NOT NULL DEFAULT 'news',
   primary_source_priority INTEGER NOT NULL DEFAULT 100,
@@ -272,6 +275,7 @@ CREATE TABLE IF NOT EXISTS hot_event_clusters (
   summary TEXT,
   emotion_labels_json TEXT NOT NULL,
   angle_options_json TEXT NOT NULL,
+  topic_verticals_json TEXT NOT NULL DEFAULT '[]',
   primary_source_name TEXT,
   primary_source_type TEXT NOT NULL DEFAULT 'news',
   primary_source_priority INTEGER NOT NULL DEFAULT 100,
@@ -791,12 +795,14 @@ INSERT OR IGNORE INTO prompt_versions (
   ('style_extract', 'v1.0.0', 'analysis', '写作风格提取', '从网页文章中提炼写作风格画像', 'system:analysis', 'styleExtract', '你是中文文风分析师。必须基于正文内容抽取语气、句式、结构、开头结尾习惯和模仿提示，不要空泛赞美。', 'zh-CN', 1, '初始化版本'),
   ('topic_supplement', 'v1.0.0', 'analysis', '选题补证', '围绕选题生成补充信源、检索词与补证清单', 'system:analysis', 'topicSupplement', '你是选题补证编辑。围绕一个待写选题，优先推荐 YouTube、Reddit、X、Podcast、Spotify、主流新闻等第一手或近一手信源的补证方向，输出可直接执行的查询词、平台建议与验证清单，不要把模型猜测写成事实。', 'zh-CN', 1, '新增二期标准场景码 topicSupplement'),
   ('language_guard_audit', 'v1.0.0', 'review', '死刑词审校', '检查并替换死刑词与长句', 'system:review', 'languageGuardAudit', '你是终审编辑。删除禁用词，保留事实，拆解长句。', 'zh-CN', 1, '初始化版本'),
+  ('language_guard_audit', 'v1.1.0', 'review', '语言守卫审校', '按真实发布阻塞项清理禁用表达、模板句和过长句', 'system:review', 'languageGuardAudit', '你是公众号终审编辑，只负责把已成稿改到可发布，不负责重写选题。必须输出修复后的完整 Markdown 正文，不要解释。优先级：先删禁用表达和模板句，再拆影响阅读的长句，最后打散过于工整的段落呼吸。禁用表达必须改成具体动作、对象、结果或代价；不能只换同义抽象词。长句拆分不得新增事实，不得扩大证据含义，不得改变核心判断。保留标题层级、证据、引用和已核查事实。', 'zh-CN', 1, '补强发布阻塞项定向修复，避免只做泛化润色'),
   ('audience_profile', 'v1.0.0', 'analysis', '受众画像', '根据选题、人设和素材生成读者画像与表达建议', 'system:analysis', 'audienceProfile', '你是内容策略编辑。你要为一篇中文内容判断真正应该写给谁看、怎么说他们才会继续读。必须优先给出可执行的读者分层、痛点、动机、表达方式、背景认知分层和通俗度建议，避免空泛人口学描述，避免营销套话。', 'zh-CN', 1, '新增二期标准场景码 audienceProfile'),
   ('audience_analysis', 'v1.0.0', 'analysis', '受众分析', '根据选题、人设和素材生成读者画像与表达建议', 'system:analysis', 'audienceAnalysis', '你是内容策略编辑。请基于选题、人设、素材和当前文稿，输出结构化的受众分析，重点给出读者分层、痛点、表达方式与语言通俗度建议。', 'zh-CN', 1, '初始化版本'),
   ('outline_plan', 'v1.0.0', 'writing', '大纲规划场景', '根据选题、人设、受众和素材生成结构化大纲', 'system:writing', 'outlinePlan', '你是专栏主编。请基于主题、人设、受众和素材，设计一份真正可写的结构化文章大纲。大纲必须体现核心观点、论证递进、证据挂载、情绪转折、开头策略和结尾动作，不能把信息并列堆砌成目录。', 'zh-CN', 1, '新增二期标准场景码 outlinePlan'),
   ('outline_planning', 'v1.0.0', 'writing', '大纲规划', '根据选题、人设、受众和素材生成结构化大纲', 'system:writing', 'outlinePlanning', '你是专栏主编。请基于主题、人设、受众和素材，输出结构化文章大纲，覆盖核心观点、论证路径、情绪转折、开头钩子和结尾收束。', 'zh-CN', 1, '初始化版本'),
   ('deep_write', 'v1.0.0', 'writing', '深度写作', '围绕大纲、素材和风格生成写作执行卡', 'system:writing', 'deepWrite', '你是资深专栏写作教练。请基于标题、大纲、素材、人设、受众和禁词约束，输出真正可执行的写作执行卡，明确章节任务、事实锚点、表达约束、情绪节奏和结尾动作，不要空泛复述大纲。', 'zh-CN', 1, '新增二期标准场景码 deepWrite'),
   ('fact_check', 'v1.0.0', 'review', '事实核查', '对正文中的事实、数据和案例进行核查提示', 'system:review', 'factCheck', '你是事实核查编辑。请标出正文里需要核查的数据、案例、时间与因果推断，区分已验证、待补证据、风险表述与主观判断。', 'zh-CN', 1, '初始化版本'),
+  ('fact_check', 'v1.2.0', 'review', '事实核查', '对正文中的事实、数据、案例、时间和因果判断进行核查并区分修复优先级', 'system:review', 'factCheck', '你是事实核查编辑。只核查正文里的具体事实、数据、案例、时间、产品能力、政策限制和强因果判断。请区分四类：已验证、待补证据、高风险表述、主观判断。不要把观点、写作判断、有限观察误判成事实错误。高风险只用于：具体数字无来源、真实主体能力/限制无来源、案例细节无来源、强因果或行业定论没有证据支撑。如果只是趋势判断或作者观点，应标为主观判断，并给出建议措辞，而不是直接标高风险。必须指出哪些高风险项需要删除、降级为条件表达，或回到研究阶段补证据。同时判断人设与选题是否偏离。输出 JSON，不要解释。', 'zh-CN', 1, '降低观点误杀，明确高风险事实边界和自动修复方向'),
   ('prose_polish', 'v1.0.0', 'review', '文笔润色', '对正文的表达方式、节奏和情绪转折给出润色建议', 'system:review', 'prosePolish', '你是终稿润色编辑。请评估正文的表达方式、金句节奏、专业性、通俗度和情绪转折，输出可执行的语言优化建议。', 'zh-CN', 1, '初始化版本'),
   ('layout_extract', 'v1.0.0', 'publish', '排版提取', '分析参考文章排版结构并生成模板线索', 'system:publish', 'layoutExtract', '你是微信排版分析师。请从参考文章里提取标题层级、分隔节奏、引用样式、重点标记、推荐区块和整体视觉结构，输出可转成模板 DSL 的结构化线索，不要只做审美评价。', 'zh-CN', 1, '新增二期标准场景码 layoutExtract'),
   ('publish_guard', 'v1.0.0', 'publish', '发布守门', '对发布前内容完整度、证据风险和配置缺口做检查', 'system:publish', 'publishGuard', '你是发布守门编辑。请在发布前检查内容是否存在证据缺口、事实高风险、标题与正文不一致、缺少封面或模板、公众号配置缺失等问题，输出结构化阻断项、警告项和放行条件。', 'zh-CN', 1, '新增二期标准场景码 publishGuard'),
@@ -830,10 +836,23 @@ INSERT OR IGNORE INTO layout_template_versions (
   ('huozi-editorial', 'v1.0.0', 'v2', '{"tone":"留白专栏","paragraphLength":"medium","titleStyle":"serif","bannedPunctuation":[]}', 1),
   ('anti-buzzwords', 'v1.0.0', 'v2', '{"tone":"降噪净化","paragraphLength":"short","titleStyle":"plain","bannedWords":["赋能","底层逻辑","不可否认"]}', 1);
 
-INSERT OR IGNORE INTO topic_sources (name, homepage_url, source_type, priority, is_active) VALUES
-  ('晚点 LatePost', 'https://www.latepost.com', 'news', 90, 1),
-  ('36Kr', 'https://36kr.com', 'news', 80, 1),
-  ('华尔街日报 Wall Street Journal', 'https://www.wsj.com', 'news', 70, 1);
+INSERT OR IGNORE INTO topic_sources (name, homepage_url, source_type, topic_verticals_json, priority, is_active) VALUES
+  ('Hacker News Top Stories', 'https://hacker-news.firebaseio.com/v0/topstories.json', 'news', '["ai_products"]', 95, 1),
+  ('Hacker News Jobs', 'https://hacker-news.firebaseio.com/v0/jobstories.json', 'news', '["career","overseas_income"]', 93, 1),
+  ('V2EX Hot Topics', 'https://www.v2ex.com/api/topics/hot.json', 'community', '["ai_products","career","side_hustles","overseas_income"]', 94, 1),
+  ('Remotive Remote Jobs', 'https://remotive.com/api/remote-jobs', 'news', '["career","overseas_income","side_hustles"]', 92, 1),
+  ('Side Hustle Nation Feed', 'https://www.sidehustlenation.com/feed/', 'rss', '["side_hustles","overseas_income"]', 91, 1),
+  ('Location Rebel Feed', 'https://www.locationrebel.com/feed/', 'rss', '["overseas_income","side_hustles","career"]', 90, 1),
+  ('Ahrefs Blog Feed', 'https://ahrefs.com/blog/feed/', 'rss', '["affiliate_marketing","ai_products"]', 89, 1),
+  ('Backlinko Feed', 'https://backlinko.com/feed', 'rss', '["affiliate_marketing"]', 88, 1),
+  ('Niche Pursuits Feed', 'https://www.nichepursuits.com/feed/', 'rss', '["affiliate_marketing","side_hustles","overseas_income"]', 87, 1),
+  ('Social Media Examiner Feed', 'https://www.socialmediaexaminer.com/feed/', 'rss', '["affiliate_marketing","side_hustles"]', 86, 1),
+  ('HubSpot Marketing Feed', 'https://blog.hubspot.com/marketing/rss.xml', 'rss', '["affiliate_marketing"]', 85, 1),
+  ('Lenny''s Newsletter Feed', 'https://www.lennysnewsletter.com/feed', 'rss', '["ai_products","career"]', 84, 1),
+  ('n8n Releases', 'https://github.com/n8n-io/n8n/releases.atom', 'rss', '["ai_products"]', 83, 1),
+  ('Flowise Releases', 'https://github.com/FlowiseAI/Flowise/releases.atom', 'rss', '["ai_products"]', 82, 1),
+  ('Dify Releases', 'https://github.com/langgenius/dify/releases.atom', 'rss', '["ai_products"]', 81, 1),
+  ('GitHub Changelog Feed', 'https://github.blog/changelog/feed/', 'rss', '["ai_products"]', 80, 1);
 
 CREATE TABLE IF NOT EXISTS article_research_cards (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

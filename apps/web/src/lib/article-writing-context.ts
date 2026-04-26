@@ -12,10 +12,12 @@ type OutlineNodeContext = {
 type EvidenceFragmentContext = {
   id: number;
   title: string | null;
+  rawContent: string | null;
   distilledContent: string;
   sourceType: string;
   sourceUrl: string | null;
   screenshotPath: string | null;
+  sourceMeta: Record<string, unknown> | null;
   usageMode: string;
 };
 
@@ -66,6 +68,23 @@ function tokenize(value: string) {
 
 function toSentenceList(values: Array<string | null | undefined>, limit: number) {
   return Array.from(new Set(values.map((item) => String(item || "").trim()).filter(Boolean))).slice(0, limit);
+}
+
+function parseJsonRecord(value: unknown) {
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value) as Record<string, unknown>;
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null;
+    } catch {
+      return null;
+    }
+  }
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+}
+
+function readSourceMetaFromRawPayload(value: unknown) {
+  const payload = parseJsonRecord(value);
+  return parseJsonRecord(payload?.sourceMeta);
 }
 
 function buildSeriesInsight(input: {
@@ -201,10 +220,12 @@ export async function getArticleWritingContext(input: {
           {
             id: fragment.id,
             title: "title" in fragment ? (fragment.title as string | null) : null,
+            rawContent: "rawContent" in fragment ? (fragment.rawContent as string | null) : null,
             distilledContent: fragment.distilledContent,
             sourceType: "sourceType" in fragment ? String(fragment.sourceType || "manual") : "manual",
             sourceUrl: "sourceUrl" in fragment ? (fragment.sourceUrl as string | null) : null,
             screenshotPath: "screenshotPath" in fragment ? (fragment.screenshotPath as string | null) : null,
+            sourceMeta: "sourceMeta" in fragment ? (fragment.sourceMeta as Record<string, unknown> | null) : null,
             usageMode: "usageMode" in fragment ? String(fragment.usageMode || "rewrite") : "rewrite",
           },
         ] as const),
@@ -237,10 +258,12 @@ export async function getArticleWritingContext(input: {
     evidenceFragments = fallbackFragments.slice(0, 8).map((fragment) => ({
       id: fragment.id,
       title: fragment.title,
+      rawContent: fragment.raw_content,
       distilledContent: fragment.distilled_content,
       sourceType: fragment.source_type,
       sourceUrl: fragment.source_url,
       screenshotPath: fragment.screenshot_path,
+      sourceMeta: readSourceMetaFromRawPayload(fragment.raw_payload_json),
       usageMode: fragment.source_type === "screenshot" ? "image" : "rewrite",
     }));
   }
@@ -263,10 +286,12 @@ export async function getArticleWritingContext(input: {
     evidenceFragments: evidenceFragments.map<EvidenceFragmentContext>((fragment) => ({
       id: fragment.id,
       title: fragment.title,
+      rawContent: fragment.rawContent,
       distilledContent: fragment.distilledContent,
       sourceType: fragment.sourceType,
       sourceUrl: fragment.sourceUrl,
       screenshotPath: fragment.screenshotPath,
+      sourceMeta: fragment.sourceMeta,
       usageMode: fragment.usageMode,
     })),
     imageFragments: evidenceFragments

@@ -19,13 +19,22 @@ export type ImaKnowledgeSearchItem = {
 };
 
 type ImaResponse<T> = {
-  retcode: number;
-  errmsg: string;
+  retcode?: number;
+  errmsg?: string;
+  code?: number;
+  msg?: string;
   data: T;
 };
 
 type ImaKnowledgeBaseSearchData = {
-  info_list?: Array<{ id?: string; name?: string }>;
+  info_list?: Array<{
+    id?: string;
+    name?: string;
+    kb_id?: string;
+    kb_name?: string;
+    description?: string;
+    content_count?: string | number;
+  }>;
   is_end?: boolean;
   next_cursor?: string;
 };
@@ -34,7 +43,10 @@ type ImaKnowledgeBaseInfoData = {
   infos?: Record<string, {
     id?: string;
     name?: string;
+    kb_id?: string;
+    kb_name?: string;
     description?: string;
+    content_count?: string | number;
   }>;
 };
 
@@ -44,11 +56,40 @@ type ImaSearchKnowledgeData = {
     title?: string;
     parent_folder_id?: string;
     highlight_content?: string;
-    web_info?: { content_id?: string };
+    web_info?: { content_id?: string; url?: string };
+    url?: string;
+    content_id?: string;
   }>;
   next_cursor?: string;
   is_end?: boolean;
 };
+
+function getImaResponseCode<T>(payload: ImaResponse<T> | null | undefined) {
+  if (!payload) return null;
+  if (typeof payload.retcode === "number") return payload.retcode;
+  if (typeof payload.code === "number") return payload.code;
+  return null;
+}
+
+function getImaResponseMessage<T>(payload: ImaResponse<T> | null | undefined) {
+  if (!payload) return null;
+  if (typeof payload.errmsg === "string" && payload.errmsg.trim()) return payload.errmsg.trim();
+  if (typeof payload.msg === "string" && payload.msg.trim()) return payload.msg.trim();
+  return null;
+}
+
+function parseContentCount(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "string") {
+    const normalized = value.trim();
+    if (/^\d+$/.test(normalized)) {
+      return Number(normalized);
+    }
+  }
+  return null;
+}
 
 export class ImaApiError extends Error {
   constructor(message: string, public readonly code: number) {
@@ -106,13 +147,14 @@ export async function imaRequest<T>(path: string, body: unknown, creds: ImaCreds
 
   const payload = await response.json().catch(() => null) as ImaResponse<T> | null;
   if (!response.ok) {
-    throw new ImaNetworkError(payload?.errmsg || `IMA 请求失败，HTTP ${response.status}`);
+    throw new ImaNetworkError(getImaResponseMessage(payload) || `IMA 请求失败，HTTP ${response.status}`);
   }
-  if (!payload || typeof payload.retcode !== "number") {
+  const responseCode = getImaResponseCode(payload);
+  if (!payload || typeof responseCode !== "number") {
     throw new ImaNetworkError("IMA 返回格式异常");
   }
-  if (payload.retcode !== 0) {
-    throw new ImaApiError(payload.errmsg || "IMA 调用失败", payload.retcode);
+  if (responseCode !== 0) {
+    throw new ImaApiError(getImaResponseMessage(payload) || "IMA 调用失败", responseCode);
   }
   return payload.data;
 }
@@ -127,12 +169,14 @@ export async function getKnowledgeBaseInfo(creds: ImaCreds, kbIds: string[]) {
     const infos = data.infos ?? {};
     for (const kbId of group) {
       const info = infos[kbId];
-      if (!info?.id || !info?.name) continue;
+      const resolvedKbId = String(info?.id || info?.kb_id || kbId).trim();
+      const resolvedKbName = String(info?.name || info?.kb_name || "").trim();
+      if (!resolvedKbId || !resolvedKbName) continue;
       result.push({
-        kbId: info.id,
-        kbName: info.name,
+        kbId: resolvedKbId,
+        kbName: resolvedKbName,
         description: typeof info.description === "string" ? info.description.trim() || null : null,
-        contentCount: parseCountFromDescription(info.description),
+        contentCount: parseContentCount(info.content_count) ?? parseCountFromDescription(info.description),
       });
     }
   }
@@ -148,11 +192,11 @@ export async function listKnowledgeBases(creds: ImaCreds) {
     const data = await imaRequest<ImaKnowledgeBaseSearchData>("openapi/wiki/v1/search_knowledge_base", {
       query: "",
       cursor,
-      limit: 50,
+      limit: 20,
     }, creds);
     for (const item of data.info_list ?? []) {
-      const kbId = String(item.id || "").trim();
-      const kbName = String(item.name || "").trim();
+      const kbId = String(item.id || item.kb_id || "").trim();
+      const kbName = String(item.name || item.kb_name || "").trim();
       if (kbId && kbName) {
         basicRows.push({ kbId, kbName });
       }
@@ -189,7 +233,16 @@ export async function searchKnowledge(
       mediaId: String(item.media_id || "").trim(),
       title: String(item.title || "").trim(),
       parentFolderId: String(item.parent_folder_id || "").trim() || null,
-      sourceUrl: typeof item.web_info?.content_id === "string" ? item.web_info.content_id.trim() || null : null,
+      sourceUrl:
+        typeof item.web_info?.url === "string"
+          ? item.web_info.url.trim() || null
+          : typeof item.web_info?.content_id === "string"
+            ? item.web_info.content_id.trim() || null
+            : typeof item.url === "string"
+              ? item.url.trim() || null
+              : typeof item.content_id === "string"
+                ? item.content_id.trim() || null
+                : null,
       highlightContent: String(item.highlight_content || "").trim(),
     })).filter((item) => item.mediaId && item.title),
     nextCursor: String(data.next_cursor || ""),

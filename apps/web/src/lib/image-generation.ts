@@ -2,7 +2,9 @@ import { getGlobalCoverImageEngineSecret, updateGlobalCoverImageEngineHealth } f
 import { buildVisualAuthoringDirective, type ImageAuthoringStyleContext } from "./image-authoring-context";
 
 type ImageProvider = "openai" | "custom";
-type ImageRequestMode = "generations" | "edits";
+type ImageRequestMode = "generations" | "edits" | "chatCompletions" | "geminiGenerateContent";
+const GEMINI_NATIVE_IMAGE_RETRYABLE_STATUS_CODES = new Set([408, 429, 500, 502, 503, 504]);
+const GEMINI_NATIVE_IMAGE_RETRY_DELAYS_MS = [250, 800];
 
 function resolveOutputSize(outputResolution?: string | null) {
   const normalized = String(outputResolution || process.env.COVER_IMAGE_OUTPUT_RESOLUTION || "1K").trim().toLowerCase();
@@ -30,6 +32,34 @@ function isOfficialOpenAiBaseUrl(baseUrl: string) {
 
 function buildUnsupportedOpenAiImageEndpointMessage(baseUrl: string) {
   return `当前图片网关不支持 OpenAI 图片接口：${baseUrl}。请单独配置 COVER_IMAGE_BASE_URL / COVER_IMAGE_API_KEY，或改用支持 /images/generations 的图片网关。`;
+}
+
+function buildHtmlShellImageEndpointMessage(baseUrl: string) {
+  return `当前图片接口返回的是站点 HTML，而不是图片 API 响应：${baseUrl}。请检查 COVER_IMAGE_BASE_URL 是否指向真实生图接口，而不是网站首页。`;
+}
+
+function buildExhaustedImageAccountsMessage(model: string, baseUrl: string) {
+  return `当前图片服务的可用上游账号已耗尽，暂时无法继续生图。模型：${model}；网关：${baseUrl}。这通常不是提示词或接口地址错误，请稍后重试；如果持续出现，请在后台补充可用图片账号或切换图片网关。`;
+}
+
+function isChatImagePreviewModel(model: string) {
+  return /image-preview/i.test(String(model || "").trim());
+}
+
+function isGeminiNativeBaseUrl(baseUrl: string) {
+  return /\/v1beta(?:\/|$)/i.test(String(baseUrl || "").trim());
+}
+
+function shouldUseGeminiNativeGenerateContent(input: {
+  providerName?: string | null;
+  baseUrl?: string | null;
+  model?: string | null;
+}) {
+  return (
+    resolveImageProvider(input) === "custom"
+    && isGeminiNativeBaseUrl(String(input.baseUrl || ""))
+    && /^gemini-/i.test(String(input.model || "").trim())
+  );
 }
 
 function buildImagePrompt(
@@ -66,6 +96,18 @@ function resolveImageProvider(input: {
 
 function resolveImageEndpoint(baseUrl: string, mode: ImageRequestMode) {
   const normalizedBaseUrl = baseUrl.trim().replace(/\/+$/, "");
+  if (mode === "geminiGenerateContent") {
+    return normalizedBaseUrl;
+  }
+  if (mode === "chatCompletions") {
+    if (/\/chat\/completions$/i.test(normalizedBaseUrl)) {
+      return normalizedBaseUrl;
+    }
+    if (/\/v1$/i.test(normalizedBaseUrl)) {
+      return `${normalizedBaseUrl}/chat/completions`;
+    }
+    return `${normalizedBaseUrl}/chat/completions`;
+  }
   if (/\/images\/(generations|edits)$/.test(normalizedBaseUrl)) {
     return normalizedBaseUrl.replace(/\/images\/(generations|edits)$/, `/images/${mode}`);
   }
@@ -136,6 +178,119 @@ function buildLegacyImageRequestPayload(input: {
   return requestPayload;
 }
 
+function buildChatImagePreviewRequest(input: {
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+  prompt: string;
+  size: string;
+  referenceImageDataUrl?: string | null;
+}) {
+  const content: Array<Record<string, unknown>> = [];
+  if (input.referenceImageDataUrl) {
+    content.push({
+      type: "image_url",
+      image_url: {
+        url: input.referenceImageDataUrl,
+      },
+    });
+  }
+  content.push({
+    type: "text",
+    text: `${input.prompt}\n输出分辨率：${input.size}。请直接返回图片结果，优先返回可访问的图片 URL。`,
+  });
+
+  const requestInit: RequestInit = {
+    method: "POST",
+    headers: new Headers({
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${input.apiKey}`,
+    }),
+    body: JSON.stringify({
+      model: input.model,
+      messages: [
+        {
+          role: "user",
+          content,
+        },
+      ],
+      stream: false,
+      size: input.size,
+    }),
+  };
+
+  return {
+    endpoint: resolveImageEndpoint(input.baseUrl, "chatCompletions"),
+    requestInit,
+    mode: "chatCompletions" as const,
+  };
+}
+
+function buildGeminiGenerateContentEndpoint(baseUrl: string, model: string, apiKey: string) {
+  const normalizedBaseUrl = baseUrl.trim().replace(/\/+$/, "");
+  const appendApiKey = (url: string) => `${url}${url.includes("?") ? "&" : "?"}key=${encodeURIComponent(apiKey)}`;
+
+  if (/\/models\/[^/?#:]+:generateContent$/i.test(normalizedBaseUrl)) {
+    return appendApiKey(normalizedBaseUrl);
+  }
+  if (/\/models\/[^/?#:]+$/i.test(normalizedBaseUrl)) {
+    return appendApiKey(`${normalizedBaseUrl}:generateContent`);
+  }
+  if (/\/models$/i.test(normalizedBaseUrl)) {
+    return appendApiKey(`${normalizedBaseUrl}/${encodeURIComponent(model)}:generateContent`);
+  }
+  return appendApiKey(`${normalizedBaseUrl}/models/${encodeURIComponent(model)}:generateContent`);
+}
+
+function buildGeminiImageRequest(input: {
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+  prompt: string;
+  size: string;
+  referenceImageDataUrl?: string | null;
+}) {
+  const parts: Array<Record<string, unknown>> = [];
+  if (input.referenceImageDataUrl) {
+    const referenceImage = decodeImageDataUrl(input.referenceImageDataUrl);
+    parts.push({
+      inlineData: {
+        mimeType: referenceImage.mimeType,
+        data: referenceImage.buffer.toString("base64"),
+      },
+    });
+  }
+  parts.push({
+    text: `${input.prompt}\n输出分辨率：${input.size}。请直接返回图片结果，并在可行时附带一句简短图像说明。`,
+  });
+
+  const requestInit: RequestInit = {
+    method: "POST",
+    headers: new Headers({
+      "Content-Type": "application/json",
+      "x-goog-api-key": input.apiKey,
+      Authorization: `Bearer ${input.apiKey}`,
+    }),
+    body: JSON.stringify({
+      contents: [
+        {
+          role: "user",
+          parts,
+        },
+      ],
+      generationConfig: {
+        responseModalities: ["TEXT", "IMAGE"],
+      },
+    }),
+  };
+
+  return {
+    endpoint: buildGeminiGenerateContentEndpoint(input.baseUrl, input.model, input.apiKey),
+    requestInit,
+    mode: "geminiGenerateContent" as const,
+  };
+}
+
 function buildOpenAiImageRequest(input: {
   baseUrl: string;
   apiKey: string;
@@ -201,8 +356,20 @@ function buildImageRequest(input: {
   size: string;
   referenceImageDataUrl?: string | null;
 }) {
+  if (resolveImageProvider(input) === "custom" && isChatImagePreviewModel(input.model)) {
+    if (shouldUseGeminiNativeGenerateContent(input)) {
+      return buildGeminiImageRequest(input);
+    }
+    return buildChatImagePreviewRequest(input);
+  }
+  if (shouldUseGeminiNativeGenerateContent(input)) {
+    return buildGeminiImageRequest(input);
+  }
   if (resolveImageProvider(input) === "openai") {
-    return buildOpenAiImageRequest(input);
+    return {
+      ...buildOpenAiImageRequest(input),
+      mode: input.referenceImageDataUrl ? ("edits" as const) : ("generations" as const),
+    };
   }
   const requestInit: RequestInit = {
     method: "POST",
@@ -222,6 +389,7 @@ function buildImageRequest(input: {
   return {
     endpoint: resolveImageEndpoint(input.baseUrl, "generations"),
     requestInit,
+    mode: "generations" as const,
   };
 }
 
@@ -256,6 +424,11 @@ function extractImageUrl(payload: any) {
     return `data:image/png;base64,${b64}`;
   }
 
+  const chatMatch = extractChatImageArtifacts(payload)[0];
+  if (chatMatch) {
+    return chatMatch;
+  }
+
   return null;
 }
 
@@ -284,7 +457,85 @@ function extractImageUrls(payload: any) {
     payload?.b64_json,
     payload?.data?.b64_json,
   ].filter((item): item is string => typeof item === "string" && item.length > 0);
-  return base64Candidates.map((item) => `data:image/png;base64,${item}`);
+  if (base64Candidates.length > 0) {
+    return base64Candidates.map((item) => `data:image/png;base64,${item}`);
+  }
+  return extractChatImageArtifacts(payload);
+}
+
+function extractImageUrlCandidatesFromText(text: string) {
+  const matched = new Set<string>();
+  const markdownImagePattern = /!\[[^\]]*]\((https?:\/\/[^)\s]+|data:image\/[a-zA-Z0-9.+-]+;base64,[^)]+)\)/gi;
+  for (const item of text.matchAll(markdownImagePattern)) {
+    if (item[1]) {
+      matched.add(item[1]);
+    }
+  }
+  const dataUrlPattern = /data:image\/[a-zA-Z0-9.+-]+;base64,[A-Za-z0-9+/=]+/gi;
+  for (const item of text.matchAll(dataUrlPattern)) {
+    matched.add(item[0]);
+  }
+  const urlPattern = /https?:\/\/[^\s)"'<>]+/gi;
+  for (const item of text.matchAll(urlPattern)) {
+    matched.add(item[0]);
+  }
+  return [...matched];
+}
+
+function extractChatImageArtifacts(value: any, seen = new Set<any>()): string[] {
+  if (value == null) {
+    return [];
+  }
+  if (typeof value === "string") {
+    return extractImageUrlCandidatesFromText(value);
+  }
+  if (typeof value !== "object") {
+    return [];
+  }
+  if (seen.has(value)) {
+    return [];
+  }
+  seen.add(value);
+
+  const directMatches = [
+    typeof value.url === "string" ? value.url : null,
+    typeof value.imageUrl === "string" ? value.imageUrl : null,
+    typeof value.image_url === "string" ? value.image_url : null,
+    typeof value.image_url?.url === "string" ? value.image_url.url : null,
+    typeof value.output_image?.url === "string" ? value.output_image.url : null,
+    typeof value.inlineData?.data === "string"
+      ? `data:${typeof value.inlineData?.mimeType === "string" ? value.inlineData.mimeType : "image/png"};base64,${value.inlineData.data}`
+      : null,
+    typeof value.inline_data?.data === "string"
+      ? `data:${typeof value.inline_data?.mimeType === "string" ? value.inline_data.mimeType : typeof value.inline_data?.mime_type === "string" ? value.inline_data.mime_type : "image/png"};base64,${value.inline_data.data}`
+      : null,
+    typeof value.b64_json === "string" ? `data:image/png;base64,${value.b64_json}` : null,
+    typeof value.data === "string" && /^data:image\//i.test(value.data) ? value.data : null,
+  ].filter((item): item is string => typeof item === "string" && item.length > 0);
+  if (directMatches.length > 0) {
+    return directMatches;
+  }
+
+  const nestedValues = [
+    value.text,
+    value.content,
+    value.parts,
+    value.message,
+    value.output,
+    value.response,
+    value.responses,
+    value.candidates,
+    value.choices,
+    value.data,
+    value.items,
+    value.result,
+  ];
+  return nestedValues.flatMap((item) => {
+    if (Array.isArray(item)) {
+      return item.flatMap((entry) => extractChatImageArtifacts(entry, seen));
+    }
+    return extractChatImageArtifacts(item, seen);
+  });
 }
 
 function resolveErrorMessage(payload: any, fallbackText: string) {
@@ -293,12 +544,17 @@ function resolveErrorMessage(payload: any, fallbackText: string) {
   return fallbackText;
 }
 
+function isExhaustedImageAccountsMessage(message: string) {
+  return /all available accounts exhausted|accounts? exhausted/i.test(String(message || "").trim());
+}
+
 function resolveImageRequestFailureMessage(input: {
   providerName?: string | null;
   baseUrl: string;
   endpoint: string;
   response: Response;
   payload: any;
+  model?: string | null;
 }) {
   if (
     resolveImageProvider(input) === "openai"
@@ -308,7 +564,11 @@ function resolveImageRequestFailureMessage(input: {
   ) {
     return buildUnsupportedOpenAiImageEndpointMessage(input.baseUrl);
   }
-  return resolveErrorMessage(input.payload, `生图引擎请求失败，HTTP ${input.response.status}`);
+  const message = resolveErrorMessage(input.payload, `生图引擎请求失败，HTTP ${input.response.status}`);
+  if (isExhaustedImageAccountsMessage(message)) {
+    return buildExhaustedImageAccountsMessage(String(input.model || "unknown"), input.baseUrl);
+  }
+  return message;
 }
 
 async function readImageResponse(response: Response) {
@@ -326,6 +586,24 @@ async function readImageResponse(response: Response) {
   };
 }
 
+function resolveMissingImageFieldMessage(input: {
+  providerName?: string | null;
+  baseUrl: string;
+  contentType: string;
+  payload: any;
+}) {
+  if (input.contentType.includes("text/html")) {
+    return buildHtmlShellImageEndpointMessage(input.baseUrl);
+  }
+  if (resolveImageProvider(input) === "openai" && !isOfficialOpenAiBaseUrl(input.baseUrl)) {
+    return buildUnsupportedOpenAiImageEndpointMessage(input.baseUrl);
+  }
+  if (typeof input.payload?.raw === "string" && /<!doctype html>|<html/i.test(input.payload.raw)) {
+    return buildHtmlShellImageEndpointMessage(input.baseUrl);
+  }
+  return "生图引擎返回成功，但未发现图片结果字段";
+}
+
 function shouldRetryOpenAiImageRequest(input: {
   providerName?: string | null;
   baseUrl: string;
@@ -335,7 +613,11 @@ function shouldRetryOpenAiImageRequest(input: {
   contentType: string;
   payload: any;
 }) {
-  if (resolveImageProvider(input) !== "openai" || !input.retryEndpoint || input.endpoint === input.retryEndpoint) {
+  const provider = resolveImageProvider(input);
+  const supportsRetry =
+    provider === "openai"
+    || (provider === "custom" && input.endpoint.includes("/chat/completions"));
+  if (!supportsRetry || !input.retryEndpoint || input.endpoint === input.retryEndpoint) {
     return false;
   }
   if (!input.response.ok) {
@@ -345,6 +627,52 @@ function shouldRetryOpenAiImageRequest(input: {
     return true;
   }
   return !extractImageUrl(input.payload) && !extractImageUrls(input.payload).length;
+}
+
+function parseRetryAfterMs(response: Response) {
+  const header = String(response.headers.get("retry-after") || "").trim();
+  if (!header) {
+    return null;
+  }
+  if (/^\d+$/.test(header)) {
+    return Number(header) * 1000;
+  }
+  const timestamp = Date.parse(header);
+  if (!Number.isFinite(timestamp)) {
+    return null;
+  }
+  return Math.max(0, timestamp - Date.now());
+}
+
+function shouldRetryGeminiNativeImageRequest(input: {
+  mode: ImageRequestMode;
+  response: Response;
+  payload: any;
+  attemptCount: number;
+}) {
+  if (input.mode !== "geminiGenerateContent" || input.attemptCount >= 3) {
+    return false;
+  }
+  const message = resolveErrorMessage(input.payload, "");
+  if (isExhaustedImageAccountsMessage(message)) {
+    return false;
+  }
+  return GEMINI_NATIVE_IMAGE_RETRYABLE_STATUS_CODES.has(input.response.status);
+}
+
+function resolveGeminiNativeRetryDelayMs(response: Response, retryIndex: number) {
+  const retryAfterMs = parseRetryAfterMs(response);
+  if (typeof retryAfterMs === "number") {
+    return Math.min(Math.max(retryAfterMs, 0), 5000);
+  }
+  return GEMINI_NATIVE_IMAGE_RETRY_DELAYS_MS[Math.min(retryIndex, GEMINI_NATIVE_IMAGE_RETRY_DELAYS_MS.length - 1)] || 800;
+}
+
+async function sleep(ms: number) {
+  if (ms <= 0) {
+    return;
+  }
+  await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 async function fetchImageWithRetry(input: {
@@ -376,9 +704,21 @@ async function fetchImageWithRetry(input: {
     retryEndpoint,
     response: first.response,
     contentType: first.contentType,
-    payload: first.payload,
+      payload: first.payload,
   })) {
-    return first;
+    let latest = first;
+    let retryIndex = 0;
+    while (shouldRetryGeminiNativeImageRequest({
+      mode: input.mode,
+      response: latest.response,
+      payload: latest.payload,
+      attemptCount: retryIndex + 1,
+    })) {
+      await sleep(resolveGeminiNativeRetryDelayMs(latest.response, retryIndex));
+      latest = await attempt(input.endpoint);
+      retryIndex += 1;
+    }
+    return latest;
   }
   return attempt(retryEndpoint!);
 }
@@ -401,7 +741,7 @@ export async function generateCoverImage(input: {
     input.authoringContext,
   );
   const size = resolveOutputSize(input.outputResolution);
-  const { endpoint, requestInit } = buildImageRequest({
+  const { endpoint, requestInit, mode } = buildImageRequest({
     providerName: engine.providerName,
     baseUrl: engine.baseUrl,
     apiKey: engine.apiKey,
@@ -410,12 +750,12 @@ export async function generateCoverImage(input: {
     size,
     referenceImageDataUrl: input.referenceImageDataUrl,
   });
-  const { response, payload } = await fetchImageWithRetry({
+  const { response, payload, contentType, endpoint: finalEndpoint } = await fetchImageWithRetry({
     providerName: engine.providerName,
     baseUrl: engine.baseUrl,
     endpoint,
     requestInit,
-    mode: input.referenceImageDataUrl ? "edits" : "generations",
+    mode,
   });
 
   const checkedAt = new Date().toISOString();
@@ -426,6 +766,7 @@ export async function generateCoverImage(input: {
       endpoint,
       response,
       payload,
+      model: engine.model,
     });
     await updateGlobalCoverImageEngineHealth({
       lastCheckedAt: checkedAt,
@@ -436,11 +777,17 @@ export async function generateCoverImage(input: {
 
   const imageUrl = extractImageUrl(payload);
   if (!imageUrl) {
+    const message = resolveMissingImageFieldMessage({
+      providerName: engine.providerName,
+      baseUrl: engine.baseUrl,
+      contentType,
+      payload,
+    });
     await updateGlobalCoverImageEngineHealth({
       lastCheckedAt: checkedAt,
-      lastError: "生图引擎返回成功，但未发现图片结果字段",
+      lastError: message,
     });
-    throw new Error("生图引擎返回成功，但未发现图片结果字段");
+    throw new Error(message);
   }
 
   await updateGlobalCoverImageEngineHealth({
@@ -454,7 +801,7 @@ export async function generateCoverImage(input: {
     size,
     model: engine.model,
     providerName: engine.providerName,
-    endpoint,
+    endpoint: finalEndpoint,
   };
 }
 
@@ -477,7 +824,7 @@ async function requestCoverImage(input: {
     input.authoringContext,
   );
   const size = resolveOutputSize(input.outputResolution);
-  const { endpoint, requestInit } = buildImageRequest({
+  const { endpoint, requestInit, mode } = buildImageRequest({
     providerName: engine.providerName,
     baseUrl: engine.baseUrl,
     apiKey: engine.apiKey,
@@ -486,12 +833,12 @@ async function requestCoverImage(input: {
     size,
     referenceImageDataUrl: input.referenceImageDataUrl,
   });
-  const { response, payload } = await fetchImageWithRetry({
+  const { response, payload, contentType, endpoint: finalEndpoint } = await fetchImageWithRetry({
     providerName: engine.providerName,
     baseUrl: engine.baseUrl,
     endpoint,
     requestInit,
-    mode: input.referenceImageDataUrl ? "edits" : "generations",
+    mode,
   });
   const checkedAt = new Date().toISOString();
   if (!response.ok) {
@@ -501,6 +848,7 @@ async function requestCoverImage(input: {
       endpoint,
       response,
       payload,
+      model: engine.model,
     });
     await updateGlobalCoverImageEngineHealth({
       lastCheckedAt: checkedAt,
@@ -511,11 +859,17 @@ async function requestCoverImage(input: {
 
   const imageUrl = extractImageUrls(payload)[0] || extractImageUrl(payload);
   if (!imageUrl) {
+    const message = resolveMissingImageFieldMessage({
+      providerName: engine.providerName,
+      baseUrl: engine.baseUrl,
+      contentType,
+      payload,
+    });
     await updateGlobalCoverImageEngineHealth({
       lastCheckedAt: checkedAt,
-      lastError: "生图引擎返回成功，但未发现图片结果字段",
+      lastError: message,
     });
-    throw new Error("生图引擎返回成功，但未发现图片结果字段");
+    throw new Error(message);
   }
 
   await updateGlobalCoverImageEngineHealth({
@@ -529,7 +883,7 @@ async function requestCoverImage(input: {
     size,
     model: engine.model,
     providerName: engine.providerName,
-    endpoint,
+    endpoint: finalEndpoint,
   };
 }
 

@@ -7,6 +7,7 @@ import { getDatabase } from "./db";
 type SupportedSceneCode =
   | "topicAnalysis"
   | "researchBrief"
+  | "sourceLocalization"
   | "fragmentDistill"
   | "visionNote"
   | "articleWrite"
@@ -116,6 +117,18 @@ function readPositiveIntegerEnv(name: string, fallback: number) {
 }
 
 const OPENAI_REQUEST_TIMEOUT_MS = readPositiveIntegerEnv("OPENAI_REQUEST_TIMEOUT_MS", 300_000);
+
+function createRequestDeadline(timeoutMs: number, label: string) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => {
+    controller.abort(new DOMException(`${label} 请求超时`, "TimeoutError"));
+  }, timeoutMs);
+  timeout.unref?.();
+  return {
+    signal: controller.signal,
+    clear: () => clearTimeout(timeout),
+  };
+}
 
 function inferProvider(model: string): Provider {
   const normalized = model.trim().toLowerCase();
@@ -297,38 +310,50 @@ async function extractOpenAiChatCompletionStreamText(response: Response) {
   return text;
 }
 
-async function callOpenAiChatCompletionStream(model: string, apiKey: string, systemPrompt: string, userPrompt: string, temperature: number): Promise<ProviderCallResult> {
-  const streamResponse = await fetch(getOpenAiChatCompletionsUrl(), {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
-      temperature,
-      stream: true,
-    }),
-    signal: AbortSignal.timeout(OPENAI_REQUEST_TIMEOUT_MS),
-  });
-  if (!streamResponse.ok) {
-    const streamPayload = await streamResponse.json().catch(() => null);
-    throw createProviderError({
-      provider: "openai",
-      model,
-      status: streamResponse.status,
-      retryAfterMs: parseRetryAfterMs(streamResponse.headers.get("retry-after")),
-      message: streamPayload?.error?.message || `OpenAI stream chat.completions 请求失败，HTTP ${streamResponse.status}`,
+async function callOpenAiChatCompletionStream(
+  model: string,
+  apiKey: string,
+  systemPrompt: string,
+  userPrompt: string,
+  temperature: number,
+  requestTimeoutMs = OPENAI_REQUEST_TIMEOUT_MS,
+): Promise<ProviderCallResult> {
+  const deadline = createRequestDeadline(requestTimeoutMs, "OpenAI stream chat.completions");
+  try {
+    const streamResponse = await fetch(getOpenAiChatCompletionsUrl(), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt },
+        ],
+        temperature,
+        stream: true,
+      }),
+      signal: deadline.signal,
     });
+    if (!streamResponse.ok) {
+      const streamPayload = await streamResponse.json().catch(() => null);
+      throw createProviderError({
+        provider: "openai",
+        model,
+        status: streamResponse.status,
+        retryAfterMs: parseRetryAfterMs(streamResponse.headers.get("retry-after")),
+        message: streamPayload?.error?.message || `OpenAI stream chat.completions 请求失败，HTTP ${streamResponse.status}`,
+      });
+    }
+    return {
+      text: await extractOpenAiChatCompletionStreamText(streamResponse),
+      usage: undefined,
+    };
+  } finally {
+    deadline.clear();
   }
-  return {
-    text: await extractOpenAiChatCompletionStreamText(streamResponse),
-    usage: undefined,
-  };
 }
 
 function normalizeUsageNumber(value: unknown) {
@@ -430,37 +455,50 @@ function getAnthropicClient(apiKey: string) {
   return anthropicClient;
 }
 
-async function callOpenAI(model: string, systemPrompt: string, userPrompt: string, temperature: number): Promise<ProviderCallResult> {
+async function callOpenAI(
+  model: string,
+  systemPrompt: string,
+  userPrompt: string,
+  temperature: number,
+  requestTimeoutMs = OPENAI_REQUEST_TIMEOUT_MS,
+): Promise<ProviderCallResult> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     throw new Error("缺少 OPENAI_API_KEY");
   }
   if (shouldPreferOpenAiChatCompletionsStream()) {
-    return callOpenAiChatCompletionStream(model, apiKey, systemPrompt, userPrompt, temperature);
+    return callOpenAiChatCompletionStream(model, apiKey, systemPrompt, userPrompt, temperature, requestTimeoutMs);
   }
-  const response = await fetch(getOpenAiResponsesUrl(), {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model,
-      input: [
-        {
-          role: "system",
-          content: [{ type: "input_text", text: systemPrompt }],
-        },
-        {
-          role: "user",
-          content: [{ type: "input_text", text: userPrompt }],
-        },
-      ],
-      temperature,
-    }),
-    signal: AbortSignal.timeout(OPENAI_REQUEST_TIMEOUT_MS),
-  });
-  const payload = await response.json().catch(() => null);
+  const responseDeadline = createRequestDeadline(requestTimeoutMs, "OpenAI responses");
+  let response: Response;
+  let payload: any;
+  try {
+    response = await fetch(getOpenAiResponsesUrl(), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        input: [
+          {
+            role: "system",
+            content: [{ type: "input_text", text: systemPrompt }],
+          },
+          {
+            role: "user",
+            content: [{ type: "input_text", text: userPrompt }],
+          },
+        ],
+        temperature,
+      }),
+      signal: responseDeadline.signal,
+    });
+    payload = await response.json().catch(() => null);
+  } finally {
+    responseDeadline.clear();
+  }
   if (!response.ok) {
     throw createProviderError({
       provider: "openai",
@@ -480,23 +518,30 @@ async function callOpenAI(model: string, systemPrompt: string, userPrompt: strin
       }),
     };
   } catch (responsesError) {
-    const chatResponse = await fetch(getOpenAiChatCompletionsUrl(), {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model,
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt },
-        ],
-        temperature,
-      }),
-      signal: AbortSignal.timeout(OPENAI_REQUEST_TIMEOUT_MS),
-    });
-    const chatPayload = await chatResponse.json().catch(() => null);
+    const chatDeadline = createRequestDeadline(requestTimeoutMs, "OpenAI chat.completions");
+    let chatResponse: Response;
+    let chatPayload: any;
+    try {
+      chatResponse = await fetch(getOpenAiChatCompletionsUrl(), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt },
+          ],
+          temperature,
+        }),
+        signal: chatDeadline.signal,
+      });
+      chatPayload = await chatResponse.json().catch(() => null);
+    } finally {
+      chatDeadline.clear();
+    }
     if (!chatResponse.ok) {
       throw createProviderError({
         provider: "openai",
@@ -518,7 +563,7 @@ async function callOpenAI(model: string, systemPrompt: string, userPrompt: strin
       };
     } catch (chatError) {
       try {
-        return await callOpenAiChatCompletionStream(model, apiKey, systemPrompt, userPrompt, temperature);
+        return await callOpenAiChatCompletionStream(model, apiKey, systemPrompt, userPrompt, temperature, requestTimeoutMs);
       } catch (streamError) {
         throw createProviderError({
           provider: "openai",
@@ -545,28 +590,41 @@ function extractAnthropicText(payload: any) {
   return text;
 }
 
-async function callAnthropicWithFetch(model: string, systemPrompt: string, userPrompt: string, temperature: number): Promise<ProviderCallResult> {
+async function callAnthropicWithFetch(
+  model: string,
+  systemPrompt: string,
+  userPrompt: string,
+  temperature: number,
+  requestTimeoutMs = 90_000,
+): Promise<ProviderCallResult> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
     throw new Error("缺少 ANTHROPIC_API_KEY");
   }
-  const response = await fetch(getAnthropicMessagesUrl(), {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-    },
-    body: JSON.stringify({
-      model,
-      system: systemPrompt,
-      messages: [{ role: "user", content: userPrompt }],
-      max_tokens: 4096,
-      temperature,
-    }),
-    signal: AbortSignal.timeout(90_000),
-  });
-  const payload = await response.json().catch(() => null);
+  const deadline = createRequestDeadline(requestTimeoutMs, "Anthropic messages");
+  let response: Response;
+  let payload: any;
+  try {
+    response = await fetch(getAnthropicMessagesUrl(), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model,
+        system: systemPrompt,
+        messages: [{ role: "user", content: userPrompt }],
+        max_tokens: 4096,
+        temperature,
+      }),
+      signal: deadline.signal,
+    });
+    payload = await response.json().catch(() => null);
+  } finally {
+    deadline.clear();
+  }
   if (!response.ok) {
     throw createProviderError({
       provider: "anthropic",
@@ -598,9 +656,10 @@ async function callAnthropic(
   userPrompt: string,
   temperature: number,
   systemSegments?: GatewaySystemSegment[],
+  requestTimeoutMs = 90_000,
 ): Promise<ProviderCallResult> {
   if (!systemSegments || systemSegments.length === 0) {
-    return callAnthropicWithFetch(model, systemPrompt, userPrompt, temperature);
+    return callAnthropicWithFetch(model, systemPrompt, userPrompt, temperature, requestTimeoutMs);
   }
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
@@ -655,37 +714,50 @@ async function callAnthropic(
   }
 }
 
-async function callGemini(model: string, systemPrompt: string, userPrompt: string, temperature: number): Promise<ProviderCallResult> {
+async function callGemini(
+  model: string,
+  systemPrompt: string,
+  userPrompt: string,
+  temperature: number,
+  requestTimeoutMs = 90_000,
+): Promise<ProviderCallResult> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     throw new Error("缺少 GEMINI_API_KEY");
   }
-  const response = await fetch(
-    getGeminiGenerateContentUrl(model, apiKey),
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        contents: [
-          {
-            role: "user",
-            parts: [
-              {
-                text: `${systemPrompt}\n\n${userPrompt}`,
-              },
-            ],
-          },
-        ],
-        generationConfig: {
-          temperature,
+  const deadline = createRequestDeadline(requestTimeoutMs, "Gemini generateContent");
+  let response: Response;
+  let payload: any;
+  try {
+    response = await fetch(
+      getGeminiGenerateContentUrl(model, apiKey),
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
         },
-      }),
-      signal: AbortSignal.timeout(90_000),
-    },
-  );
-  const payload = await response.json().catch(() => null);
+        body: JSON.stringify({
+          contents: [
+            {
+              role: "user",
+              parts: [
+                {
+                  text: `${systemPrompt}\n\n${userPrompt}`,
+                },
+              ],
+            },
+          ],
+          generationConfig: {
+            temperature,
+          },
+        }),
+        signal: deadline.signal,
+      },
+    );
+    payload = await response.json().catch(() => null);
+  } finally {
+    deadline.clear();
+  }
   if (!response.ok) {
     throw createProviderError({
       provider: "gemini",
@@ -723,14 +795,15 @@ async function callProvider(
   userPrompt: string,
   temperature: number,
   systemSegments?: GatewaySystemSegment[],
+  requestTimeoutMs?: number,
 ) {
   if (provider === "openai") {
-    return callOpenAI(model, systemPrompt, userPrompt, temperature);
+    return callOpenAI(model, systemPrompt, userPrompt, temperature, requestTimeoutMs);
   }
   if (provider === "anthropic") {
-    return callAnthropic(model, systemPrompt, userPrompt, temperature, systemSegments);
+    return callAnthropic(model, systemPrompt, userPrompt, temperature, systemSegments, requestTimeoutMs);
   }
-  return callGemini(model, systemPrompt, userPrompt, temperature);
+  return callGemini(model, systemPrompt, userPrompt, temperature, requestTimeoutMs);
 }
 
 export function classifyGatewayError(error: unknown, status = getErrorStatus(error)): RetryClassification {
@@ -979,6 +1052,8 @@ export async function generateSceneText(input: {
   };
   temperature?: number;
   rolloutUserId?: number | null;
+  maxAttempts?: number;
+  requestTimeoutMs?: number;
 }) {
   const startedAt = Date.now();
   const route = await getSceneRoute(input.sceneCode);
@@ -1000,11 +1075,12 @@ export async function generateSceneText(input: {
             provider,
             model,
             systemPrompt,
-            input.userPrompt,
-            input.temperature ?? 0.3,
-            provider === "anthropic" ? input.systemSegments : undefined,
-          ),
-        { maxAttempts: 3, baseDelayMs: 200 },
+                  input.userPrompt,
+                  input.temperature ?? 0.3,
+                  provider === "anthropic" ? input.systemSegments : undefined,
+                  input.requestTimeoutMs,
+                ),
+        { maxAttempts: input.maxAttempts ?? 3, baseDelayMs: 200 },
       );
       void recordAiCallObservation({
         sceneCode: input.sceneCode,
@@ -1039,8 +1115,9 @@ export async function generateSceneText(input: {
                   input.userPrompt,
                   input.temperature ?? 0.3,
                   shadowProvider === "anthropic" ? input.systemSegments : undefined,
+                  input.requestTimeoutMs,
                 ),
-              { maxAttempts: 3, baseDelayMs: 200 },
+              { maxAttempts: input.maxAttempts ?? 3, baseDelayMs: 200 },
             );
             await recordAiCallObservation({
               sceneCode: input.sceneCode,

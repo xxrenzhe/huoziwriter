@@ -1,6 +1,15 @@
 import { extractJsonObject, generateSceneText } from "./ai-gateway";
 import { applyArticleStageArtifact } from "./article-stage-apply";
-import { generateArticleStageArtifact } from "./article-stage-artifacts";
+import {
+  ensureCoverImagePreparedForPublish,
+  ensureEvidencePackagePreparedForPublish,
+  ensureStrategyCardPreparedForWriting,
+  runFactRiskRepairWithRetries,
+  runLanguageGuardAuditWithRetries,
+  runPublishAutoRepair,
+} from "./article-automation-publish-repair";
+import { generateArticleStageArtifact, getArticleStageArtifact, updateArticleStageArtifactPayload } from "./article-stage-artifacts";
+import { getResearchBriefGenerationGate } from "./article-research";
 import {
   bindArticleToAutomationRun,
   completeArticleAutomationStageRun,
@@ -158,6 +167,13 @@ function mapResearchBriefOutput(payload: Record<string, unknown>) {
       ...getStringArray(getRecord(payload.sourceCoverage)?.missingCategories, 6),
       ...getStringArray(payload.materialGapHints, 6),
     ].slice(0, 8),
+    researchObject: getString(payload.researchObject),
+    coreQuestion: getString(payload.coreQuestion),
+    mustCoverAngles: getStringArray(payload.mustCoverAngles, 6),
+    sourceCoverage: getRecord(payload.sourceCoverage) ?? {},
+    timelineCards,
+    comparisonCards,
+    intersectionInsights,
     researchSummary: getString(payload.summary),
   };
 }
@@ -218,7 +234,13 @@ function mapTitleOptimizationOutput(payload: Record<string, unknown>) {
     forbiddenHits: getStringArray(item.forbiddenHits, 4),
     isRecommended: Boolean(item.isRecommended),
   }));
-  const recommended = titleOptions.find((item) => item.isRecommended) ?? titleOptions[0] ?? null;
+  const safeOptions = titleOptions.filter((item) => !hasUnsupportedSpecificClaim(item.title));
+  const recommended =
+    titleOptions.find((item) => item.isRecommended && !hasUnsupportedSpecificClaim(item.title))
+    ?? safeOptions[0]
+    ?? titleOptions.find((item) => item.isRecommended)
+    ?? titleOptions[0]
+    ?? null;
   return {
     titleOptions,
     recommendedTitle: recommended?.title ?? getString(payload.workingTitle),
@@ -235,12 +257,29 @@ function mapOpeningOptimizationOutput(payload: Record<string, unknown>) {
     forbiddenHits: getStringArray(item.forbiddenHits, 4),
     isRecommended: Boolean(item.isRecommended),
   }));
-  const recommended = openingOptions.find((item) => item.isRecommended) ?? openingOptions[0] ?? null;
+  const safeOptions = openingOptions.filter((item) => !hasUnsupportedSpecificClaim(item.opening));
+  const recommended =
+    openingOptions.find((item) => item.isRecommended && !hasUnsupportedSpecificClaim(item.opening))
+    ?? safeOptions[0]
+    ?? openingOptions.find((item) => item.isRecommended)
+    ?? openingOptions[0]
+    ?? null;
   return {
     openingOptions,
     recommendedOpening: recommended?.opening ?? getString(payload.openingHook),
     diagnose: getRecord(recommended ? getRecordArray(payload.openingOptions).find((item) => (getString(item.text) || getString(item.opening)) === recommended.opening)?.diagnose : null) ?? {},
   };
+}
+
+function hasUnsupportedSpecificClaim(text: string) {
+  const normalized = text.replace(/\s+/g, "");
+  if (!normalized) {
+    return false;
+  }
+  const numericToken = /(?:\d+(?:\.\d+)?|[一二三四五六七八九十百千万两]+)\s*(?:天|小时|分钟|周|月|年|倍|%|％|美元|美金|元|万|亿|人|家|次)/;
+  const timeTokens = normalized.match(/(?:\d+(?:\.\d+)?|[一二三四五六七八九十百千万两]+)(?:天|小时|分钟|周|月|年)/g) ?? [];
+  const efficiencyCompression = /(?:压到|缩短到|降到|提升到|增长到|从.+到)/;
+  return (numericToken.test(text) && efficiencyCompression.test(normalized)) || timeTokens.length >= 2;
 }
 
 function mapDeepWriteOutput(value: unknown, fallback: Record<string, unknown>) {
@@ -318,7 +357,15 @@ function getStage(detail: AutomationRunDetail, stageCode: string) {
 }
 
 function buildAutomationArticleTitle(inputText: string) {
-  const normalized = inputText.replace(/\s+/g, " ").trim();
+  const normalized = inputText
+    .replace(/\s+/g, " ")
+    .replace(/^请(?:帮我)?(?:生成|写)(?:一篇)?关于/u, "")
+    .replace(/^生成(?:一篇)?关于/u, "")
+    .replace(/^写(?:一篇)?关于/u, "")
+    .replace(/并同步到(?:微信)?草稿箱[。！!]?$/u, "")
+    .replace(/的公众号文章[。！!]?$/u, "")
+    .replace(/公众号文章[。！!]?$/u, "")
+    .trim();
   if (!normalized) return "AI 自动生成稿件";
   return normalized.length > 42 ? `${normalized.slice(0, 42)}...` : normalized;
 }
@@ -436,12 +483,41 @@ async function executeResearchBrief(detail: AutomationRunDetail): Promise<StageE
   if (!detail.run.articleId) {
     throw new AutomationStageBlockedError("缺少稿件记录，无法执行研究简报。");
   }
-  const artifact = await generateArticleStageArtifact({
+  const topicAnalysis = getRecord(getStage(detail, "topicAnalysis").outputJson) ?? {};
+  const maxAttempts = Number(process.env.PLAN22_RESEARCH_BRIEF_ATTEMPTS || 1) > 1 && process.env.RESEARCH_SOURCE_SEARCH_ENDPOINT ? 2 : 1;
+  let artifact = await generateArticleStageArtifact({
     articleId: detail.run.articleId,
     userId: detail.run.userId,
     stageCode: "researchBrief",
+    researchSearchHints: {
+      topicTheme: getString(topicAnalysis.theme) || detail.article?.title || detail.run.inputText,
+      coreAssertion: getString(topicAnalysis.coreAssertion),
+      whyNow: getString(topicAnalysis.whyNow),
+      researchObject: detail.article?.title || detail.run.inputText,
+    },
   });
-  const payload = getRecord(artifact.payload) ?? {};
+  let payload = getRecord(artifact.payload) ?? {};
+  let gate = getResearchBriefGenerationGate(payload);
+
+  for (let attempt = 2; attempt <= maxAttempts && gate.sufficiency !== "ready"; attempt += 1) {
+    artifact = await generateArticleStageArtifact({
+      articleId: detail.run.articleId,
+      userId: detail.run.userId,
+      stageCode: "researchBrief",
+      researchSearchHints: {
+        topicTheme: getString(topicAnalysis.theme) || detail.article?.title || detail.run.inputText,
+        coreAssertion: getString(topicAnalysis.coreAssertion),
+        whyNow: getString(topicAnalysis.whyNow),
+        researchObject: getString(payload.researchObject) || detail.article?.title || detail.run.inputText,
+        coreQuestion: getString(payload.coreQuestion),
+        mustCoverAngles: getStringArray(payload.mustCoverAngles, 5),
+        missingCategories: getStringArray(getRecord(payload.sourceCoverage)?.missingCategories, 5),
+      },
+    });
+    payload = getRecord(artifact.payload) ?? {};
+    gate = getResearchBriefGenerationGate(payload);
+  }
+
   const outputJson = mapResearchBriefOutput(payload);
   const externalResearch = getRecord(payload.externalResearch) ?? {};
   return {
@@ -450,11 +526,29 @@ async function executeResearchBrief(detail: AutomationRunDetail): Promise<StageE
       artifactSummary: artifact.summary,
       artifactStatus: artifact.status,
       promptVersionRefs: getStringArray(getRecord(payload.runtimeMeta)?.promptVersionRefs, 8),
+      researchCoverage: getRecord(payload.sourceCoverage) ?? {},
+      researchGate: gate,
+      researchAttemptCount: maxAttempts,
     },
     searchTraceJson: externalResearch,
     provider: artifact.provider,
     model: artifact.model,
   };
+}
+
+async function getPostStageBlocker(detail: AutomationRunDetail, stageCode: string) {
+  if (stageCode !== "researchBrief" || detail.run.automationLevel === "strategyOnly" || !detail.run.articleId) {
+    return null;
+  }
+  if (!process.env.RESEARCH_SOURCE_SEARCH_ENDPOINT) {
+    return null;
+  }
+  const artifact = await getArticleStageArtifact(detail.run.articleId, detail.run.userId, "researchBrief");
+  const gate = getResearchBriefGenerationGate(artifact?.payload);
+  if (gate.sufficiency === "ready" || gate.sufficiency === "limited") {
+    return null;
+  }
+  return gate.generationBlockReason || "研究简报仍未达到可写阈值，先补齐信源覆盖。";
 }
 
 async function executeAudienceAnalysis(detail: AutomationRunDetail): Promise<StageExecutionResult> {
@@ -643,22 +737,59 @@ async function executeArticleWrite(detail: AutomationRunDetail, promptContext: A
   };
 }
 
-async function executeFactCheck(detail: AutomationRunDetail): Promise<StageExecutionResult> {
+function hasBlockingFactRisk(payload: Record<string, unknown>) {
+  const checks = getRecordArray(payload.checks);
+  return (
+    getString(payload.overallRisk) === "high"
+    || checks.some((item) => getString(item.status) === "risky")
+    || getStringArray(payload.missingEvidence, 8).length > 0
+  );
+}
+
+async function executeFactCheck(detail: AutomationRunDetail, promptContext: AutomationPromptContext): Promise<StageExecutionResult> {
   if (!detail.run.articleId) {
     throw new AutomationStageBlockedError("缺少稿件记录，无法执行事实核查。");
   }
-  const artifact = await generateArticleStageArtifact({
+  const autoRepairEnabled = process.env.PLAN22_FACT_RISK_AUTO_REPAIR === "1";
+  let artifact = await generateArticleStageArtifact({
     articleId: detail.run.articleId,
     userId: detail.run.userId,
     stageCode: "factCheck",
   });
-  const payload = getRecord(artifact.payload) ?? {};
+  let payload = getRecord(artifact.payload) ?? {};
+  const repairAttempts: Array<Record<string, unknown>> = [];
+  for (let attempt = 0; autoRepairEnabled && attempt < 2 && hasBlockingFactRisk(payload); attempt += 1) {
+    const repair = await runFactRiskRepairWithRetries({
+      articleId: detail.run.articleId,
+      userId: detail.run.userId,
+      promptContext,
+    });
+    repairAttempts.push({
+      changed: repair.changed,
+      provider: repair.provider,
+      model: repair.model,
+      error: repair.error,
+      riskyClaimCount: repair.riskyClaimCount,
+      needsSourceClaimCount: repair.needsSourceClaimCount,
+    });
+    if (!repair.changed) {
+      break;
+    }
+    artifact = await generateArticleStageArtifact({
+      articleId: detail.run.articleId,
+      userId: detail.run.userId,
+      stageCode: "factCheck",
+    });
+    payload = getRecord(artifact.payload) ?? {};
+  }
   return {
     outputJson: mapFactCheckOutput(payload),
     qualityJson: {
       artifactSummary: artifact.summary,
       overallRisk: getString(payload.overallRisk),
       missingEvidenceCount: getStringArray(payload.missingEvidence, 8).length,
+      autoRepairEnabled,
+      autoRepairAttempts: repairAttempts,
     },
     provider: artifact.provider,
     model: artifact.model,
@@ -702,88 +833,45 @@ async function executeLanguageGuardAudit(detail: AutomationRunDetail, promptCont
   if (!article) {
     throw new AutomationStageBlockedError("稿件不存在，无法执行语言守卫复核。");
   }
-  const stage = getStage(detail, "languageGuardAudit");
-  const promptMeta = await loadFrozenPrompt(stage, promptContext);
   const rules = await getLanguageGuardRules(detail.run.userId);
   const hits = collectLanguageGuardHits(article.markdown_content || "", rules).slice(0, 12);
-  const userPrompt = [
-    "请输出净化后的最终 Markdown 正文，不要解释。",
-    `标题：${article.title}`,
-    hits.length > 0
-      ? `命中的语言守卫规则：${hits.map((item) => `${item.patternText}=>${item.rewriteHint || "改成更具体表达"}`).join("；")}`
-      : "命中的语言守卫规则：当前本地规则未命中，但你仍需做终审编辑复核，删除抽象空话、机器腔和不必要长句，保留原有事实与结论。",
-    `审校要求：${hits.length > 0 ? "优先修复命中规则，再整体顺一遍表达。" : "做一轮完整语言终审，不新增事实，不改核心判断。 "}`,
-    "当前正文：",
-    article.markdown_content || "",
-  ].join("\n");
-  try {
-    const result = await generateSceneText({
-      sceneCode: "languageGuardAudit",
-      systemPrompt: promptMeta.content,
-      userPrompt,
-      temperature: 0.2,
-      rolloutUserId: detail.run.userId,
-    });
-    const fixedMarkdown = result.text.trim() || article.markdown_content || "";
-    await saveArticleDraft({
-      articleId: article.id,
-      userId: detail.run.userId,
-      body: {
-        title: article.title,
-        markdownContent: fixedMarkdown,
-        status: article.status,
-        seriesId: article.series_id,
-        wechatTemplateId: article.wechat_template_id,
-      },
-    });
-    return {
-      outputJson: {
-        violations: hits.map((item) => ({
-          ruleId: item.ruleId,
-          ruleKind: item.ruleKind,
-          matchMode: item.matchMode,
-          matchedText: item.matchedText,
-          patternText: item.patternText,
-          rewriteHint: item.rewriteHint,
-          severity: item.severity,
-          scope: item.scope,
-        })),
-        fixedMarkdown,
-      },
-      qualityJson: {
-        promptVersionRef: promptMeta.ref,
-        aiReviewed: true,
-        hitCount: hits.length,
-      },
-      provider: result.provider,
-      model: result.model,
-    };
-  } catch (error) {
-    return {
-      outputJson: {
-        violations: hits.map((item) => ({
-          ruleId: item.ruleId,
-          ruleKind: item.ruleKind,
-          matchMode: item.matchMode,
-          matchedText: item.matchedText,
-          patternText: item.patternText,
-          rewriteHint: item.rewriteHint,
-          severity: item.severity,
-          scope: item.scope,
-        })),
-        fixedMarkdown: article.markdown_content || "",
-      },
-      qualityJson: {
-        promptVersionRef: promptMeta.ref,
-        aiReviewed: false,
-        fallbackUsed: true,
-        hitCount: hits.length,
-        error: error instanceof Error ? error.message : "language guard audit failed",
-      },
-      provider: "local",
-      model: "fallback-local",
-    };
-  }
+  const repair = await runLanguageGuardAuditWithRetries({
+    articleId: article.id,
+    userId: detail.run.userId,
+    promptContext,
+  });
+  await updateArticleStageArtifactPayload({
+    articleId: article.id,
+    userId: detail.run.userId,
+    stageCode: "prosePolish",
+    payloadPatch: {
+      languageGuardHits: repair.remainingHits,
+    },
+  }).catch(() => undefined);
+  return {
+    outputJson: {
+      violations: hits.map((item) => ({
+        ruleId: item.ruleId,
+        ruleKind: item.ruleKind,
+        matchMode: item.matchMode,
+        matchedText: item.matchedText,
+        patternText: item.patternText,
+        rewriteHint: item.rewriteHint,
+        severity: item.severity,
+        scope: item.scope,
+      })),
+      fixedMarkdown: repair.fixedMarkdown,
+    },
+    qualityJson: {
+      aiReviewed: repair.provider !== null,
+      hitCount: repair.hitCount,
+      attemptsUsed: repair.changed ? 1 : 0,
+      aiNoiseScore: repair.aiNoiseScore,
+      error: repair.error,
+    },
+    provider: repair.provider ?? "local",
+    model: repair.model ?? "fallback-local",
+  };
 }
 
 async function executeCoverImageBrief(detail: AutomationRunDetail, promptContext: AutomationPromptContext): Promise<StageExecutionResult> {
@@ -875,7 +963,13 @@ async function executeLayoutApply(detail: AutomationRunDetail): Promise<StageExe
   };
 }
 
-async function executePublishGuard(detail: AutomationRunDetail): Promise<StageExecutionResult> {
+async function executePublishGuard(
+  detail: AutomationRunDetail,
+  promptContext?: AutomationPromptContext,
+  options?: {
+    allowRepair?: boolean;
+  },
+): Promise<StageExecutionResult> {
   if (!detail.run.articleId) {
     throw new AutomationStageBlockedError("缺少稿件记录，无法执行发布守门。");
   }
@@ -883,12 +977,30 @@ async function executePublishGuard(detail: AutomationRunDetail): Promise<StageEx
   if (!article) {
     throw new AutomationStageBlockedError("稿件不存在，无法执行发布守门。");
   }
-  const result = await evaluatePublishGuard({
+  let repairApplied: string[] = [];
+  let repairErrors: string[] = [];
+  let result = await evaluatePublishGuard({
     articleId: article.id,
     userId: detail.run.userId,
     templateId: article.wechat_template_id,
     wechatConnectionId: detail.run.targetWechatConnectionId,
   });
+  if (!result.canPublish && options?.allowRepair !== false && promptContext) {
+    const repair = await runPublishAutoRepair({
+      runId: detail.run.id,
+      articleId: article.id,
+      userId: detail.run.userId,
+      promptContext,
+    });
+    repairApplied = repair.appliedFixes;
+    repairErrors = repair.errors;
+    result = await evaluatePublishGuard({
+      articleId: article.id,
+      userId: detail.run.userId,
+      templateId: article.wechat_template_id,
+      wechatConnectionId: detail.run.targetWechatConnectionId,
+    });
+  }
   return {
     outputJson: {
       canPublish: result.canPublish,
@@ -900,6 +1012,8 @@ async function executePublishGuard(detail: AutomationRunDetail): Promise<StageEx
       checkCount: result.checks.length,
       stageReadiness: result.stageReadiness,
       connectionHealth: result.connectionHealth,
+      autoPreparedAtStages: repairApplied,
+      autoPrepareErrors: repairErrors,
     },
     provider: "local",
     model: "publish-guard",
@@ -915,13 +1029,123 @@ async function executeStage(detail: AutomationRunDetail, promptContext: Automati
   if (stageCode === "openingOptimization") return await executeOpeningOptimization(detail);
   if (stageCode === "deepWrite") return await executeDeepWrite(detail, promptContext);
   if (stageCode === "articleWrite") return await executeArticleWrite(detail, promptContext);
-  if (stageCode === "factCheck") return await executeFactCheck(detail);
+  if (stageCode === "factCheck") return await executeFactCheck(detail, promptContext);
   if (stageCode === "prosePolish") return await executeProsePolish(detail, promptContext);
   if (stageCode === "languageGuardAudit") return await executeLanguageGuardAudit(detail, promptContext);
   if (stageCode === "coverImageBrief") return await executeCoverImageBrief(detail, promptContext);
   if (stageCode === "layoutApply") return await executeLayoutApply(detail);
-  if (stageCode === "publishGuard") return await executePublishGuard(detail);
+  if (stageCode === "publishGuard") return await executePublishGuard(detail, promptContext, { allowRepair: true });
   throw new Error(`暂不支持的自动化阶段：${stageCode}`);
+}
+
+async function refreshLayoutApplyAfterPublishRepair(
+  detail: AutomationRunDetail,
+  stageResult: StageExecutionResult,
+) {
+  const autoPreparedAtStages = getStringArray(stageResult.qualityJson?.autoPreparedAtStages, 16);
+  if (autoPreparedAtStages.length === 0 || !detail.run.articleId) {
+    return;
+  }
+  const refreshedLayout = await executeLayoutApply(detail);
+  await completeArticleAutomationStageRun({
+    runId: detail.run.id,
+    userId: detail.run.userId,
+    stageCode: "layoutApply",
+    articleId: detail.run.articleId,
+    provider: refreshedLayout.provider ?? null,
+    model: refreshedLayout.model ?? null,
+    outputJson: {
+      ...refreshedLayout.outputJson,
+      refreshedAfterStage: "publishGuard",
+      refreshReason: "publishGuardAutoRepair",
+    },
+    qualityJson: {
+      ...refreshedLayout.qualityJson,
+      refreshedAfterStage: "publishGuard",
+      autoPreparedAtStages,
+    },
+    searchTraceJson: refreshedLayout.searchTraceJson ?? {},
+  });
+}
+
+async function applyStagePreventivePreparation(
+  detail: AutomationRunDetail,
+  promptContext: AutomationPromptContext,
+  stageCode: string,
+) {
+  if (!detail.run.articleId || !detail.article) {
+    return;
+  }
+  try {
+    if (stageCode === "topicAnalysis") {
+      const topicStage = detail.stages.find((stage) => stage.stageCode === "topicAnalysis") ?? null;
+      const theme = getString(getRecord(topicStage?.outputJson)?.theme);
+      const nextTitle = buildAutomationArticleTitle(theme || detail.run.inputText);
+      if (nextTitle && nextTitle !== detail.article.title) {
+        await saveArticleDraft({
+          articleId: detail.run.articleId,
+          userId: detail.run.userId,
+          body: {
+            title: nextTitle,
+            markdownContent: detail.article.markdown_content,
+            status: detail.article.status,
+            seriesId: detail.article.series_id,
+            wechatTemplateId: detail.article.wechat_template_id,
+          },
+        });
+      }
+      return;
+    }
+    if (stageCode === "researchBrief" || stageCode === "audienceAnalysis" || stageCode === "outlinePlanning") {
+      await ensureStrategyCardPreparedForWriting({
+        articleId: detail.run.articleId,
+        userId: detail.run.userId,
+        title: detail.article.title,
+        markdownContent: detail.article.markdown_content || "",
+        promptContext,
+      });
+      return;
+    }
+    if (stageCode === "titleOptimization" || stageCode === "openingOptimization") {
+      const outlineArtifact = await getArticleStageArtifact(detail.run.articleId, detail.run.userId, "outlinePlanning");
+      const titleStage = detail.stages.find((stage) => stage.stageCode === "titleOptimization") ?? null;
+      const openingStage = detail.stages.find((stage) => stage.stageCode === "openingOptimization") ?? null;
+      const currentSelection = getRecord(outlineArtifact?.payload?.selection) ?? {};
+      const nextSelection = {
+        ...currentSelection,
+        selectedTitle: getString(getRecord(titleStage?.outputJson)?.recommendedTitle) || getString(currentSelection.selectedTitle) || null,
+        selectedOpeningHook:
+          getString(getRecord(openingStage?.outputJson)?.recommendedOpening)
+          || getString(currentSelection.selectedOpeningHook)
+          || null,
+      };
+      await updateArticleStageArtifactPayload({
+        articleId: detail.run.articleId,
+        userId: detail.run.userId,
+        stageCode: "outlinePlanning",
+        payloadPatch: {
+          selection: nextSelection,
+        },
+      });
+      return;
+    }
+    if (stageCode === "factCheck") {
+      await ensureEvidencePackagePreparedForPublish({
+        articleId: detail.run.articleId,
+        userId: detail.run.userId,
+      });
+      return;
+    }
+    if (stageCode === "coverImageBrief") {
+      await ensureCoverImagePreparedForPublish({
+        articleId: detail.run.articleId,
+        userId: detail.run.userId,
+        title: detail.article.title,
+      });
+    }
+  } catch {
+    return;
+  }
 }
 
 async function skipUnsupportedStages(detail: AutomationRunDetail) {
@@ -1011,6 +1235,24 @@ export async function resumeArticleAutomationRun(input: {
         qualityJson: stageResult.qualityJson ?? {},
         searchTraceJson: stageResult.searchTraceJson ?? {},
       });
+      if (definition.stageCode === "publishGuard") {
+        await refreshLayoutApplyAfterPublishRepair(detail, stageResult);
+      }
+      const refreshedAfterStage = await getArticleAutomationRunById(input.runId, input.userId);
+      if (refreshedAfterStage) {
+        await applyStagePreventivePreparation(refreshedAfterStage, promptContext, definition.stageCode);
+        const blocker = await getPostStageBlocker(refreshedAfterStage, definition.stageCode);
+        if (blocker) {
+          return await updateArticleAutomationRun({
+            runId: refreshedAfterStage.run.id,
+            userId: refreshedAfterStage.run.userId,
+            articleId: refreshedAfterStage.run.articleId,
+            status: "blocked",
+            currentStageCode: definition.stageCode,
+            blockedReason: blocker,
+          }) ?? refreshedAfterStage;
+        }
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : "自动化阶段执行失败";
       const nextStatus = classifyStageFailureStatus(error);
@@ -1049,8 +1291,8 @@ export async function resumeArticleAutomationRun(input: {
   }
 
   if (detail.run.automationLevel === "wechatDraft") {
-    const publishGuardStage = getStage(detail, "publishGuard");
-    const publishGuardOutput = getRecord(publishGuardStage.outputJson) ?? {};
+    let publishGuardStage = getStage(detail, "publishGuard");
+    let publishGuardOutput = getRecord(publishGuardStage.outputJson) ?? {};
     if (!detail.run.targetWechatConnectionId) {
       return await updateArticleAutomationRun({
         runId: detail.run.id,
@@ -1060,6 +1302,26 @@ export async function resumeArticleAutomationRun(input: {
         currentStageCode: "publishGuard",
         blockedReason: "缺少目标公众号连接，无法自动推送草稿箱。",
       }) ?? detail;
+    }
+    if (!Boolean(publishGuardOutput.canPublish) && detail.run.articleId) {
+      const replayedPublishGuard = await executePublishGuard(detail, promptContext, { allowRepair: true });
+      await completeArticleAutomationStageRun({
+        runId: detail.run.id,
+        userId: detail.run.userId,
+        stageCode: "publishGuard",
+        articleId: detail.run.articleId,
+        provider: replayedPublishGuard.provider ?? null,
+        model: replayedPublishGuard.model ?? null,
+        outputJson: replayedPublishGuard.outputJson,
+        qualityJson: replayedPublishGuard.qualityJson ?? {},
+        searchTraceJson: replayedPublishGuard.searchTraceJson ?? {},
+      });
+      detail = await getArticleAutomationRunById(input.runId, input.userId);
+      if (!detail) {
+        throw new Error("自动化运行不存在");
+      }
+      publishGuardStage = getStage(detail, "publishGuard");
+      publishGuardOutput = getRecord(publishGuardStage.outputJson) ?? {};
     }
     if (!Boolean(publishGuardOutput.canPublish)) {
       return await updateArticleAutomationRun({
@@ -1074,11 +1336,15 @@ export async function resumeArticleAutomationRun(input: {
     if (!detail.run.articleId) {
       throw new Error("缺少稿件记录，无法推送微信公众号草稿箱。");
     }
+    const targetWechatConnectionId = detail.run.targetWechatConnectionId;
+    if (!targetWechatConnectionId) {
+      throw new Error("缺少目标公众号连接，无法推送微信公众号草稿箱。");
+    }
     try {
       const publishResult = await publishArticleToWechat({
         userId: detail.run.userId,
         articleId: detail.run.articleId,
-        wechatConnectionId: detail.run.targetWechatConnectionId,
+        wechatConnectionId: targetWechatConnectionId,
       });
       return await updateArticleAutomationRun({
         runId: detail.run.id,

@@ -201,8 +201,8 @@ async function probeOpenAI(model: string, apiKey: string): Promise<ProbeResult> 
       },
       body: JSON.stringify({
         model,
-        messages: [{ role: "user", content: "health-check" }],
-        max_tokens: 1,
+        messages: [{ role: "user", content: "Reply with OK." }],
+        max_tokens: 8,
         temperature: 0,
         stream: true,
       }),
@@ -225,11 +225,9 @@ async function probeOpenAI(model: string, apiKey: string): Promise<ProbeResult> 
         error: null,
       };
     } catch {
-      return {
-        ok: false,
-        statusCode: streamResponse.status,
-        error: "OpenAI stream chat.completions probe returned empty text",
-      };
+      // Some OpenAI-compatible upstreams accept streaming chat.completions but
+      // emit provider-specific empty deltas for tiny probes. Fall through to the
+      // same non-stream checks used by the main gateway before declaring failure.
     }
   }
   const response = await fetch(getOpenAiResponsesUrl(), {
@@ -240,8 +238,8 @@ async function probeOpenAI(model: string, apiKey: string): Promise<ProbeResult> 
     },
     body: JSON.stringify({
       model,
-      input: "health-check",
-      max_output_tokens: 1,
+      input: "Reply with OK.",
+      max_output_tokens: 8,
     }),
     cache: "no-store",
     signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
@@ -270,8 +268,8 @@ async function probeOpenAI(model: string, apiKey: string): Promise<ProbeResult> 
       },
       body: JSON.stringify({
         model,
-        messages: [{ role: "user", content: "health-check" }],
-        max_tokens: 1,
+        messages: [{ role: "user", content: "Reply with OK." }],
+        max_tokens: 8,
         temperature: 0,
       }),
       cache: "no-store",
@@ -301,8 +299,8 @@ async function probeOpenAI(model: string, apiKey: string): Promise<ProbeResult> 
         },
         body: JSON.stringify({
           model,
-          messages: [{ role: "user", content: "health-check" }],
-          max_tokens: 1,
+          messages: [{ role: "user", content: "Reply with OK." }],
+          max_tokens: 8,
           temperature: 0,
           stream: true,
         }),

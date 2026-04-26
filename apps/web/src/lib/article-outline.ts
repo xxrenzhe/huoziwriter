@@ -2,6 +2,18 @@ import { getDatabase } from "./db";
 
 const DEFAULT_NODE_TITLES = ["痛点引入", "核心反转", "底层原因", "行动建议"];
 
+function parseJsonRecord(value: unknown) {
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value) as Record<string, unknown>;
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null;
+    } catch {
+      return null;
+    }
+  }
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+}
+
 function mapArticleNodeRecord(node: {
   id: number;
   article_id: number;
@@ -49,14 +61,22 @@ export async function getArticleNodes(articleId: number) {
     usage_mode: string | null;
     user_id: number;
     title: string | null;
+    raw_content: string | null;
     distilled_content: string;
     source_type: string;
     source_url: string | null;
     screenshot_path: string | null;
+    raw_payload_json: string | null;
   }>(
-    `SELECT r.article_node_id AS article_node_id, f.id as fragment_id, r.usage_mode, f.user_id, f.title, f.distilled_content, f.source_type, f.source_url, f.screenshot_path
+    `SELECT r.article_node_id AS article_node_id, f.id as fragment_id, r.usage_mode, f.user_id, f.title, f.raw_content, f.distilled_content, f.source_type, f.source_url, f.screenshot_path, fs.raw_payload_json
      FROM article_fragment_refs r
      INNER JOIN fragments f ON f.id = r.fragment_id
+     LEFT JOIN fragment_sources fs
+       ON fs.id = (
+         SELECT MAX(id)
+         FROM fragment_sources
+         WHERE fragment_id = f.id
+       )
      WHERE r.article_id = ?
      ORDER BY r.id ASC`,
     [articleId],
@@ -70,10 +90,12 @@ export async function getArticleNodes(articleId: number) {
         id: ref.fragment_id,
         userId: ref.user_id,
         title: ref.title,
+        rawContent: ref.raw_content,
         distilledContent: ref.distilled_content,
         sourceType: ref.source_type,
         sourceUrl: ref.source_url,
         screenshotPath: ref.screenshot_path,
+        sourceMeta: parseJsonRecord(ref.raw_payload_json)?.sourceMeta ?? null,
         usageMode: String(ref.usage_mode || "rewrite"),
       })),
   }));

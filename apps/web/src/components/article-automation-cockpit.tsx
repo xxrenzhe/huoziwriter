@@ -4,13 +4,15 @@ import { Button, Input, Select, Textarea, buttonStyles, cn, surfaceCardStyles } 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type FormEvent, startTransition, useEffect, useState } from "react";
-import { ArrowUpRight, Bot, Loader2, Play, RotateCcw, Square } from "lucide-react";
+import { ArrowUpRight, Bot, ChevronDown, Loader2, Play, RotateCcw, Square } from "lucide-react";
 import {
+  buildStageDetailSections,
   buildStageSummary,
   formatDuration,
   formatRelativeTime,
   getAutomationLevelLabel,
   getRunStatusClassName,
+  getStageSearchMetrics,
   mergeRun,
   readJson,
   stageLabels,
@@ -43,7 +45,7 @@ export function ArticleAutomationCockpit({
   const [inputMode, setInputMode] = useState<AutomationRun["inputMode"]>("brief");
   const [inputText, setInputText] = useState("");
   const [sourceUrl, setSourceUrl] = useState("");
-  const [automationLevel, setAutomationLevel] = useState<AutomationLevel>(defaultWechatConnectionId ? "wechatDraft" : "draftPreview");
+  const [automationLevel, setAutomationLevel] = useState<AutomationLevel>("draftPreview");
   const [seriesId, setSeriesId] = useState(defaultSeriesId);
   const [wechatConnectionId, setWechatConnectionId] = useState(defaultWechatConnectionId ? String(defaultWechatConnectionId) : "");
   const [message, setMessage] = useState("");
@@ -249,7 +251,7 @@ export function ArticleAutomationCockpit({
                 <Button type="submit" variant="primary" loading={submitting} iconLeft={<Play size={16} />}>
                   开始自动生成高质量草稿
                 </Button>
-                <div className="text-sm text-inkMuted">14 个阶段串行执行，默认自动补研究、自动核查、自动润色。</div>
+                <div className="text-sm text-inkMuted">14 个阶段串行执行，默认停在终稿预览；需要时再手动切到草稿箱。</div>
               </div>
               {message ? <div className="text-sm text-cinnabar">{message}</div> : null}
             </form>
@@ -357,6 +359,11 @@ export function ArticleAutomationCockpit({
             <div className="mt-5 grid gap-3 lg:grid-cols-2">
               {selectedRunDetail?.stages.map((stage) => (
                 <article key={stage.stageCode} className={subtleCardClassName}>
+                  {(() => {
+                    const detailSections = buildStageDetailSections(stage);
+                    const searchMetrics = getStageSearchMetrics(stage);
+                    return (
+                      <>
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <div className="text-xs uppercase tracking-[0.16em] text-inkMuted">{stage.sceneCode}</div>
@@ -369,8 +376,34 @@ export function ArticleAutomationCockpit({
                     <span>{stage.promptId}@{stage.promptVersion}</span>
                     <span>{stage.provider || "待路由"}{stage.model ? ` · ${stage.model}` : ""}</span>
                     <span>{formatDuration(stage.startedAt, stage.completedAt)}</span>
+                    {searchMetrics ? <span>{searchMetrics.queryCount} 查询 · {searchMetrics.domainCount} 域</span> : null}
                   </div>
                   {stage.errorMessage ? <div className="mt-3 rounded-2xl border border-cinnabar/20 bg-cinnabar/5 px-3 py-2 text-xs leading-6 text-cinnabar">{stage.errorMessage}</div> : null}
+                  {detailSections.length > 0 ? (
+                    <details className="mt-4 rounded-[1.25rem] border border-lineStrong/80 bg-white/70 p-3">
+                      <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 rounded-xl px-1 text-sm font-medium text-ink marker:hidden">
+                        <span>查看决策、信源与质量细节</span>
+                        <span className="flex items-center gap-2 text-xs font-normal text-inkMuted">
+                          {detailSections.length} 组信息
+                          <ChevronDown size={14} />
+                        </span>
+                      </summary>
+                      <div className="mt-3 grid gap-3 md:grid-cols-2">
+                        {detailSections.map((section) => (
+                          <div key={`${stage.stageCode}-${section.title}`} className="rounded-[1rem] border border-lineStrong/70 bg-surface px-4 py-3">
+                            <div className="text-[11px] uppercase tracking-[0.16em] text-inkMuted">{section.title}</div>
+                            <div className="mt-2 space-y-2">
+                              {section.items.map((item) => (
+                                <div key={item} className="text-sm leading-6 text-inkSoft">
+                                  {item}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </details>
+                  ) : null}
                   <div className="mt-4 flex justify-end">
                     <Button
                       variant="secondary"
@@ -382,6 +415,9 @@ export function ArticleAutomationCockpit({
                       重跑本阶段
                     </Button>
                   </div>
+                      </>
+                    );
+                  })()}
                 </article>
               )) || <div className="text-sm leading-7 text-inkSoft">选中一个运行后，这里会展示完整阶段时间线、状态和重跑入口。</div>}
             </div>

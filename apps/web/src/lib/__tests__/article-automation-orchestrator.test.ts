@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -8,6 +9,7 @@ import { resumeArticleAutomationRun } from "../article-automation-orchestrator";
 import { closeDatabase, getDatabase } from "../db";
 import { createPersona } from "../personas";
 import { createArticleAutomationRun, getArticleAutomationRunById } from "../article-automation-runs";
+import { getArticleStrategyCard } from "../repositories";
 import { createSeries } from "../series";
 import { runPendingMigrations } from "../../../../../scripts/db-flow";
 
@@ -139,10 +141,60 @@ test("resumeArticleAutomationRun completes draftPreview runs end-to-end", async 
     assert.equal(detail?.stages.find((item) => item.stageCode === "publishGuard")?.status, "completed");
     assert.equal(typeof detail?.article?.markdown_content, "string");
     assert.ok((detail?.article?.markdown_content || "").length > 0);
-    assert.equal(
-      typeof getRecord(detail?.stages.find((item) => item.stageCode === "layoutApply")?.outputJson)?.html,
-      "string",
-    );
+    const strategyCard = await getArticleStrategyCard(detail?.run.articleId ?? 0, userId);
+    assert.ok(strategyCard);
+    assert.ok(String(strategyCard?.targetReader || "").trim().length > 0);
+    assert.ok(String(strategyCard?.coreAssertion || "").trim().length > 0);
+    assert.ok(String(strategyCard?.publishWindow || "").trim().length > 0);
+    assert.ok(String(strategyCard?.endingAction || "").trim().length > 0);
+    assert.ok(String(strategyCard?.firstHandObservation || "").trim().length > 0);
+    const layoutHtml = String(getRecord(detail?.stages.find((item) => item.stageCode === "layoutApply")?.outputJson)?.html || "");
+    assert.ok(layoutHtml.length > 0);
+    assert.equal(layoutHtml, detail?.article?.html_content);
+  });
+});
+
+test("resumeArticleAutomationRun continues past researchBrief when coverage is limited but not blocked", async () => {
+  await withTempDatabase("draft-preview-research-gate", async () => {
+    const server = http.createServer((_request, response) => {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ results: [] }));
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
+    const address = server.address();
+    const port = address && typeof address === "object" ? address.port : 0;
+    const previousSearchEndpoint = process.env.RESEARCH_SOURCE_SEARCH_ENDPOINT;
+    process.env.RESEARCH_SOURCE_SEARCH_ENDPOINT = `http://127.0.0.1:${port}/search`;
+
+    try {
+      const userId = await createTestUser();
+      const series = await createDefaultSeries(userId);
+      const created = await createArticleAutomationRun({
+        userId,
+        inputMode: "brief",
+        inputText: "为什么 AI 内容工作流必须把研究充分性前置到正文生成之前",
+        targetSeriesId: series.id,
+        automationLevel: "draftPreview",
+      });
+
+      const result = await resumeArticleAutomationRun({
+        runId: created.run.id,
+        userId,
+      });
+
+      assert.equal(result.run.status, "completed");
+      assert.equal(result.run.currentStageCode, "publishGuard");
+      assert.equal(result.run.blockedReason, null);
+      const detail = await getArticleAutomationRunById(created.run.id, userId);
+      assert.equal(detail?.stages.find((item) => item.stageCode === "researchBrief")?.status, "completed");
+      assert.equal(detail?.stages.find((item) => item.stageCode === "audienceAnalysis")?.status, "completed");
+      assert.equal(detail?.stages.find((item) => item.stageCode === "articleWrite")?.status, "completed");
+      assert.equal(detail?.stages.find((item) => item.stageCode === "publishGuard")?.status, "completed");
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+      if (previousSearchEndpoint == null) delete process.env.RESEARCH_SOURCE_SEARCH_ENDPOINT;
+      else process.env.RESEARCH_SOURCE_SEARCH_ENDPOINT = previousSearchEndpoint;
+    }
   });
 });
 

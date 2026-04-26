@@ -11,6 +11,10 @@ import {
   syncLegacyTopicSourcesToSourceConnectors,
   syncTopicSourceToSourceConnector,
 } from "./source-connectors";
+import {
+  getVerifiedSystemTopicSources,
+  LEGACY_SYSTEM_TOPIC_SOURCE_NAMES_TO_DEACTIVATE,
+} from "./topic-source-registry";
 
 const LEGACY_STYLE_GENOME_ASSET_TYPE = "style_genome";
 const LEGACY_AUDIT_LOG_STAFF_SCOPE_KEY = "staff";
@@ -213,6 +217,7 @@ export async function applyLegacySchemaCompat({
   await ensureColumn("topic_sources", "owner_user_id", getDatabase().type === "postgres" ? "BIGINT" : "INTEGER");
   await ensureColumn("topic_sources", "last_fetched_at", getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT");
   await ensureColumn("topic_sources", "source_type", "TEXT NOT NULL DEFAULT 'news'");
+  await ensureColumn("topic_sources", "topic_verticals_json", "TEXT NOT NULL DEFAULT '[]'");
   await ensureColumn("topic_sources", "priority", "INTEGER NOT NULL DEFAULT 100");
   await ensureColumn("source_connectors", "owner_user_id", getDatabase().type === "postgres" ? "BIGINT" : "INTEGER");
   await ensureColumn("source_connectors", "connector_scope", "TEXT NOT NULL DEFAULT 'system'");
@@ -230,6 +235,8 @@ export async function applyLegacySchemaCompat({
   await ensureColumn("source_connectors", "degraded_reason", "TEXT");
   await ensureColumn("source_connectors", "last_fetched_at", getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT");
   await ensureColumn("topic_items", "owner_user_id", getDatabase().type === "postgres" ? "BIGINT" : "INTEGER");
+  await ensureColumn("topic_items", "topic_verticals_json", "TEXT NOT NULL DEFAULT '[]'");
+  await ensureColumn("topic_events", "topic_verticals_json", "TEXT NOT NULL DEFAULT '[]'");
   await ensureColumn("topic_recommendations", "source_owner_user_id", getDatabase().type === "postgres" ? "BIGINT" : "INTEGER");
   await ensureColumn("topic_recommendations", "emotion_labels_json", "TEXT NOT NULL DEFAULT '[]'");
   await ensureColumn("topic_recommendations", "angle_options_json", "TEXT NOT NULL DEFAULT '[]'");
@@ -242,6 +249,7 @@ export async function applyLegacySchemaCompat({
   await ensureColumn("hot_event_clusters", "normalized_title", "TEXT NOT NULL DEFAULT ''");
   await ensureColumn("hot_event_clusters", "emotion_labels_json", "TEXT NOT NULL DEFAULT '[]'");
   await ensureColumn("hot_event_clusters", "angle_options_json", "TEXT NOT NULL DEFAULT '[]'");
+  await ensureColumn("hot_event_clusters", "topic_verticals_json", "TEXT NOT NULL DEFAULT '[]'");
   await ensureColumn("hot_event_clusters", "source_names_json", "TEXT NOT NULL DEFAULT '[]'");
   await ensureColumn("hot_event_clusters", "source_urls_json", "TEXT NOT NULL DEFAULT '[]'");
   await ensureColumn("hot_event_clusters", "freshness_score", "REAL NOT NULL DEFAULT 0");
@@ -366,6 +374,7 @@ export async function applyLegacySchemaCompat({
   await execAll(buildLegacySchemaIndexStatements());
   await ensureTopicSourceScopedUniqueness();
   await ensureColumn("topic_sources", "source_type", "TEXT NOT NULL DEFAULT 'news'");
+  await ensureColumn("topic_sources", "topic_verticals_json", "TEXT NOT NULL DEFAULT '[]'");
   await ensureColumn("topic_sources", "priority", "INTEGER NOT NULL DEFAULT 100");
   await ensureColumn("topic_sources", "last_fetched_at", getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT");
   await normalizeLayoutStrategyTerminology({ hasTable, replaceTextInColumn });
@@ -1292,6 +1301,7 @@ export function buildLegacySchemaCreateTableStatements(databaseType: SchemaBoots
       name TEXT NOT NULL,
       homepage_url TEXT,
       source_type TEXT NOT NULL DEFAULT 'news',
+      topic_verticals_json TEXT NOT NULL DEFAULT '[]',
       priority ${dbType === "postgres" ? "INTEGER" : "INTEGER"} NOT NULL DEFAULT 100,
       is_active ${dbType === "postgres" ? "BOOLEAN" : "INTEGER"} NOT NULL DEFAULT ${dbType === "postgres" ? "TRUE" : "1"},
       created_at ${dbType === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${dbType === "postgres" ? "NOW()" : "(datetime('now'))"},
@@ -1327,6 +1337,7 @@ export function buildLegacySchemaCreateTableStatements(databaseType: SchemaBoots
       summary TEXT,
       emotion_labels_json TEXT NOT NULL,
       angle_options_json TEXT NOT NULL,
+      topic_verticals_json TEXT NOT NULL DEFAULT '[]',
       primary_source_name TEXT,
       primary_source_type TEXT NOT NULL DEFAULT 'news',
       primary_source_priority INTEGER NOT NULL DEFAULT 100,
@@ -1349,6 +1360,7 @@ export function buildLegacySchemaCreateTableStatements(databaseType: SchemaBoots
       summary TEXT,
       emotion_labels_json TEXT NOT NULL,
       angle_options_json TEXT NOT NULL,
+      topic_verticals_json TEXT NOT NULL DEFAULT '[]',
       primary_source_name TEXT,
       primary_source_type TEXT NOT NULL DEFAULT 'news',
       primary_source_priority INTEGER NOT NULL DEFAULT 100,
@@ -1635,6 +1647,7 @@ export async function ensureTopicSourceScopedUniqueness() {
           name TEXT NOT NULL,
           homepage_url TEXT,
           source_type TEXT NOT NULL DEFAULT 'news',
+          topic_verticals_json TEXT NOT NULL DEFAULT '[]',
           priority INTEGER NOT NULL DEFAULT 100,
           is_active INTEGER NOT NULL DEFAULT 1,
           last_fetched_at TEXT,
@@ -1643,8 +1656,8 @@ export async function ensureTopicSourceScopedUniqueness() {
         )`,
       );
       await db.exec(
-        `INSERT INTO topic_sources (id, owner_user_id, name, homepage_url, source_type, priority, is_active, last_fetched_at, created_at, updated_at)
-         SELECT id, owner_user_id, name, homepage_url, 'news', 100, is_active, NULL, created_at, updated_at
+        `INSERT INTO topic_sources (id, owner_user_id, name, homepage_url, source_type, topic_verticals_json, priority, is_active, last_fetched_at, created_at, updated_at)
+         SELECT id, owner_user_id, name, homepage_url, 'news', '[]', 100, is_active, NULL, created_at, updated_at
          FROM topic_sources_legacy`,
       );
       await db.exec("DROP TABLE topic_sources_legacy");
@@ -2354,26 +2367,40 @@ export async function ensureTemplateLibrarySeeds() {
     });
   }
 
-  for (const source of [
-    { name: "YouTube Official Blog", homepageUrl: "https://blog.youtube/", sourceType: "youtube", priority: 98 },
-    { name: "Reddit r/technology", homepageUrl: "https://www.reddit.com/r/technology/", sourceType: "reddit", priority: 96 },
-    { name: "The Vergecast RSS", homepageUrl: "https://feeds.megaphone.fm/vergecast", sourceType: "podcast", priority: 94 },
-    { name: "Spotify Newsroom Podcasts", homepageUrl: "https://newsroom.spotify.com/category/podcasts/", sourceType: "spotify", priority: 92 },
-    { name: "晚点 LatePost", homepageUrl: "https://www.latepost.com", sourceType: "news", priority: 90 },
-    { name: "OpenAI News", homepageUrl: "https://openai.com/news/", sourceType: "blog", priority: 88 },
-    { name: "GitHub Changelog Feed", homepageUrl: "https://github.blog/changelog/feed/", sourceType: "rss", priority: 86 },
-    { name: "36Kr", homepageUrl: "https://36kr.com", sourceType: "news", priority: 80 },
-    { name: "华尔街日报 Wall Street Journal", homepageUrl: "https://www.wsj.com", sourceType: "news", priority: 70 },
-  ]) {
+  for (const source of getVerifiedSystemTopicSources()) {
     const exists = await db.queryOne<{ id: number }>(
       "SELECT id FROM topic_sources WHERE owner_user_id IS NULL AND name = ?",
       [source.name],
     );
     if (!exists) {
       await db.exec(
-        `INSERT INTO topic_sources (name, homepage_url, source_type, priority, is_active, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [source.name, source.homepageUrl, source.sourceType, source.priority, true, new Date().toISOString(), new Date().toISOString()],
+        `INSERT INTO topic_sources (name, homepage_url, source_type, topic_verticals_json, priority, is_active, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          source.name,
+          source.homepageUrl,
+          source.sourceType,
+          JSON.stringify(source.verticals),
+          source.priority,
+          true,
+          new Date().toISOString(),
+          new Date().toISOString(),
+        ],
+      );
+    } else {
+      await db.exec(
+        `UPDATE topic_sources
+         SET homepage_url = ?, source_type = ?, topic_verticals_json = ?, priority = ?, is_active = ?, updated_at = ?
+         WHERE owner_user_id IS NULL AND name = ?`,
+        [
+          source.homepageUrl,
+          source.sourceType,
+          JSON.stringify(source.verticals),
+          source.priority,
+          true,
+          new Date().toISOString(),
+          source.name,
+        ],
       );
     }
     const currentSource = await db.queryOne<{
@@ -2382,11 +2409,12 @@ export async function ensureTemplateLibrarySeeds() {
       name: string;
       homepage_url: string | null;
       source_type: string | null;
+      topic_verticals_json: string | null;
       priority: number | null;
       is_active: number | boolean;
       last_fetched_at: string | null;
     }>(
-      `SELECT id, owner_user_id, name, homepage_url, source_type, priority, is_active, last_fetched_at
+      `SELECT id, owner_user_id, name, homepage_url, source_type, topic_verticals_json, priority, is_active, last_fetched_at
        FROM topic_sources
        WHERE owner_user_id IS NULL AND name = ?`,
       [source.name],
@@ -2404,4 +2432,20 @@ export async function ensureTemplateLibrarySeeds() {
       });
     }
   }
+
+  for (const sourceName of LEGACY_SYSTEM_TOPIC_SOURCE_NAMES_TO_DEACTIVATE) {
+    await db.exec(
+      `UPDATE topic_sources
+       SET is_active = ?, updated_at = ?
+       WHERE owner_user_id IS NULL AND name = ?`,
+      [false, new Date().toISOString(), sourceName],
+    );
+  }
+
+  await db.exec(
+    `UPDATE topic_sources
+     SET is_active = ?, updated_at = ?
+     WHERE owner_user_id IS NULL AND name = ?`,
+    [false, new Date().toISOString(), "华尔街日报 Wall Street Journal"],
+  );
 }

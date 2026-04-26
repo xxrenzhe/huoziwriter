@@ -9,6 +9,8 @@ import {
   recordSourceConnectorSyncSuccess,
   syncTopicSourceToSourceConnectorById,
 } from "./source-connectors";
+import { fetchTopicsFromSourceAdapter } from "./topic-source-adapters";
+import { resolveTopicVerticalsForTopicItem } from "./topic-source-registry";
 
 type TopicSourceRow = {
   id: number;
@@ -16,6 +18,7 @@ type TopicSourceRow = {
   name: string;
   homepage_url: string | null;
   source_type: string | null;
+  topic_verticals_json?: string | string[] | null;
   priority: number | null;
   is_active: number | boolean;
   last_fetched_at?: string | null;
@@ -33,6 +36,8 @@ type TopicSourceRow = {
 type ParsedTopic = {
   title: string;
   sourceUrl: string | null;
+  summary?: string | null;
+  publishedAt?: string | null;
 };
 
 type TopicEventSourceRow = {
@@ -40,6 +45,7 @@ type TopicEventSourceRow = {
   owner_user_id: number | null;
   source_name: string;
   source_type: string | null;
+  topic_verticals_json: string | string[] | null;
   source_priority: number | null;
   title: string;
   summary: string | null;
@@ -55,6 +61,7 @@ type TopicEventRow = {
   owner_user_id: number | null;
   source_name: string | null;
   source_type: string | null;
+  topic_verticals_json?: string | string[] | null;
   source_priority: number | null;
   title: string;
   summary: string | null;
@@ -183,7 +190,7 @@ function clampScore(value: number, max = 100) {
 
 function normalizeTopicSourceType(value: string | null | undefined) {
   const normalized = String(value || "news").trim().toLowerCase();
-  if (["youtube", "reddit", "podcast", "spotify", "news", "blog", "rss"].includes(normalized)) {
+  if (["youtube", "reddit", "community", "podcast", "spotify", "news", "blog", "rss"].includes(normalized)) {
     return normalized;
   }
   return "news";
@@ -259,6 +266,7 @@ async function getTopicEventSourceRows(ownerUserId?: number | null) {
          ti.owner_user_id,
          ti.source_name,
          ts.source_type,
+         COALESCE(ti.topic_verticals_json, ts.topic_verticals_json, '[]') as topic_verticals_json,
          ts.priority AS source_priority,
          ti.title,
          ti.summary,
@@ -282,6 +290,7 @@ async function getTopicEventSourceRows(ownerUserId?: number | null) {
        ti.owner_user_id,
        ti.source_name,
        ts.source_type,
+       COALESCE(ti.topic_verticals_json, ts.topic_verticals_json, '[]') as topic_verticals_json,
        ts.priority AS source_priority,
        ti.title,
        ti.summary,
@@ -351,6 +360,9 @@ export async function rebuildTopicEvents(options?: { ownerUserId?: number | null
     const angleOptions = Array.from(
       new Set(groupedRows.flatMap((row) => parseJsonArray(row.angle_options_json).map((item) => item.trim()).filter(Boolean))),
     ).slice(0, 8);
+    const topicVerticals = Array.from(
+      new Set(groupedRows.flatMap((row) => parseJsonArray(row.topic_verticals_json).map((item) => item.trim()).filter(Boolean))),
+    ).slice(0, 6);
     const sourceNames = Array.from(new Set(groupedRows.map((row) => row.source_name).filter(Boolean))).slice(0, 12) as string[];
     const sourceUrls = Array.from(new Set(groupedRows.map((row) => row.source_url).filter(Boolean))).slice(0, 12) as string[];
     const publishedTimes = groupedRows
@@ -376,16 +388,17 @@ export async function rebuildTopicEvents(options?: { ownerUserId?: number | null
     });
     const emotionPayload = JSON.stringify(emotionLabels.length > 0 ? emotionLabels : pickEmotionLabels(primary.title));
     const anglePayload = JSON.stringify(angleOptions.length > 0 ? angleOptions : buildAngleOptions(primary.title, emotionLabels));
+    const topicVerticalsPayload = JSON.stringify(topicVerticals);
     const sourceNamesPayload = JSON.stringify(sourceNames);
     const sourceUrlsPayload = JSON.stringify(sourceUrls);
 
     await db.exec(
       `INSERT INTO topic_events (
-        event_key, owner_user_id, canonical_title, summary, emotion_labels_json, angle_options_json,
+        event_key, owner_user_id, canonical_title, summary, emotion_labels_json, angle_options_json, topic_verticals_json,
         primary_source_name, primary_source_type, primary_source_priority, primary_source_url,
         source_names_json, source_urls_json, item_count, first_seen_at, last_seen_at, latest_published_at,
         created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         eventKey,
         ownerUserId,
@@ -393,6 +406,7 @@ export async function rebuildTopicEvents(options?: { ownerUserId?: number | null
         primary.summary || buildSummary(primary.title),
         emotionPayload,
         anglePayload,
+        topicVerticalsPayload,
         primary.source_name,
         primarySourceType,
         primarySourcePriority,
@@ -410,11 +424,11 @@ export async function rebuildTopicEvents(options?: { ownerUserId?: number | null
 
     await db.exec(
       `INSERT INTO hot_event_clusters (
-        cluster_key, owner_user_id, canonical_title, normalized_title, summary, emotion_labels_json, angle_options_json,
+        cluster_key, owner_user_id, canonical_title, normalized_title, summary, emotion_labels_json, angle_options_json, topic_verticals_json,
         primary_source_name, primary_source_type, primary_source_priority, primary_source_url,
         source_names_json, source_urls_json, item_count, freshness_score, authority_score, priority_score,
         first_seen_at, last_seen_at, latest_published_at, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         eventKey,
         ownerUserId,
@@ -423,6 +437,7 @@ export async function rebuildTopicEvents(options?: { ownerUserId?: number | null
         primary.summary || buildSummary(primary.title),
         emotionPayload,
         anglePayload,
+        topicVerticalsPayload,
         primary.source_name,
         primarySourceType,
         primarySourcePriority,
@@ -533,6 +548,7 @@ export async function getVisibleTopicEvents(userId: number) {
        owner_user_id,
        primary_source_name as source_name,
        primary_source_type as source_type,
+       topic_verticals_json,
        primary_source_priority as source_priority,
        canonical_title as title,
        summary,
@@ -788,14 +804,16 @@ async function insertTopicItem(input: {
   summary: string;
   emotionLabels: string[];
   angleOptions: string[];
+  topicVerticals: string[];
   sourceUrl: string | null;
+  publishedAt?: string | null;
 }) {
   const db = getDatabase();
   const now = new Date().toISOString();
   await db.exec(
     `INSERT INTO topic_items (
-      owner_user_id, source_name, title, summary, emotion_labels_json, angle_options_json, source_url, published_at, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      owner_user_id, source_name, title, summary, emotion_labels_json, angle_options_json, topic_verticals_json, source_url, published_at, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       input.ownerUserId ?? null,
       input.sourceName,
@@ -803,8 +821,9 @@ async function insertTopicItem(input: {
       input.summary,
       input.emotionLabels,
       input.angleOptions,
+      input.topicVerticals,
       input.sourceUrl,
-      now,
+      input.publishedAt ?? now,
       now,
     ],
   );
@@ -812,6 +831,15 @@ async function insertTopicItem(input: {
 
 async function fetchSourceTopics(source: TopicSourceRow) {
   if (!source.homepage_url) return [] as ParsedTopic[];
+  const adapted = await fetchTopicsFromSourceAdapter({
+    name: source.name,
+    homepageUrl: source.homepage_url,
+    sourceType: source.source_type,
+    limit: 8,
+  });
+  if (adapted) {
+    return adapted;
+  }
   const response = await fetchExternalText({
     url: source.homepage_url,
     timeoutMs: 20_000,
@@ -870,14 +898,22 @@ async function syncTopicItemsForSource(source: TopicSourceRow, limitPerSource: n
       continue;
     }
     const emotionLabels = pickEmotionLabels(topic.title);
+    const topicVerticals = resolveTopicVerticalsForTopicItem({
+      sourceName: source.name,
+      homepageUrl: source.homepage_url,
+      title: topic.title,
+      summary: String(topic.summary || ""),
+    });
     await insertTopicItem({
       ownerUserId: source.owner_user_id,
       sourceName: source.name,
       title: topic.title,
-      summary: buildSummary(topic.title),
+      summary: String(topic.summary || "").trim() || buildSummary(topic.title),
       emotionLabels,
       angleOptions: buildAngleOptions(topic.title, emotionLabels),
+      topicVerticals,
       sourceUrl: topic.sourceUrl,
+      publishedAt: topic.publishedAt ?? null,
     });
     inserted += 1;
   }

@@ -90,6 +90,7 @@ const DAILY_RECOMMENDATION_LIMIT = 10;
 const SOURCE_TYPE_PRIORITY_BOOST: Record<string, number> = {
   youtube: 24,
   reddit: 22,
+  community: 21,
   x: 20,
   podcast: 18,
   spotify: 16,

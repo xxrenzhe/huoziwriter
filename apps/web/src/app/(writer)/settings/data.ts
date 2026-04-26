@@ -236,6 +236,7 @@ export function parseStringList(value: unknown) {
 export function formatSourceTypeLabel(value: string | null | undefined) {
   if (value === "youtube") return "YouTube";
   if (value === "reddit") return "Reddit";
+  if (value === "community") return "社区";
   if (value === "podcast") return "播客";
   if (value === "spotify") return "Spotify";
   if (value === "rss") return "RSS";

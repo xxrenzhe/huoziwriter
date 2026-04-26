@@ -8,6 +8,7 @@ export type ArticleMainStepStatus = "pending" | "current" | "completed" | "needs
 
 export function formatPublishFailureCode(code: string | null | undefined) {
   if (!code) return "未分类";
+  if (code === "ip_whitelist_blocked") return "IP 白名单未放行";
   if (code === "auth_failed") return "凭证失败";
   if (code === "media_failed") return "媒体素材失败";
   if (code === "rate_limited") return "频率限制";

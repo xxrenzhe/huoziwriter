@@ -37,6 +37,12 @@ export const DEFAULT_MODEL_ROUTES: readonly ModelRouteDefinition[] = [
     description: "研究简报、时间脉络、横向比较与交汇洞察生成",
   },
   {
+    sceneCode: "sourceLocalization",
+    primaryModel: "gpt-5.4",
+    fallbackModel: "gpt-5.4-mini",
+    description: "英文或混合语种高质量信源的中文化表达转化",
+  },
+  {
     sceneCode: "fragmentDistill",
     primaryModel: "gemini-3.0-flash-lite",
     fallbackModel: "gemini-3.0-flash",
