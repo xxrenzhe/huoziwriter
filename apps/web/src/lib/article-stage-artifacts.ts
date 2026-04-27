@@ -4213,7 +4213,12 @@ async function refreshOutlineOpeningOptions(input: {
   });
 }
 
-async function generateOutlinePlanning(context: GenerationContext) {
+async function generateOutlinePlanning(
+  context: GenerationContext,
+  options?: {
+    skipOptionRefresh?: boolean;
+  },
+) {
   const fallback = fallbackOutlinePlanning(context);
   const preferredResearchSignals = getPreferredResearchSignals(context);
   const userPrompt = [
@@ -4319,7 +4324,16 @@ async function generateOutlinePlanning(context: GenerationContext) {
     fallback,
     normalize: normalizeOutlinePayload,
     context,
+    runtimeMetaPatch: options?.skipOptionRefresh
+      ? {
+          outlineOptionRefreshSkipped: true,
+          outlineOptionRefreshSkipReason: "fast_draft_preview",
+        }
+      : undefined,
   });
+  if (options?.skipOptionRefresh) {
+    return artifact;
+  }
   const titleOptimizedArtifact = await refreshOutlineTitleOptions({
     context,
     artifact,
@@ -4847,6 +4861,7 @@ export async function generateArticleStageArtifact(input: {
   userId: number;
   stageCode: ArticleArtifactStageCode;
   forceLocal?: boolean;
+  skipOutlineOptionRefresh?: boolean;
   deepWritingPrototypeCode?: ArticlePrototypeCode | null;
   deepWritingStateVariantCode?: WritingStateVariantCode | null;
   outlineTitleOptionsOnly?: boolean;
@@ -4942,7 +4957,9 @@ export async function generateArticleStageArtifact(input: {
     if (input.outlineTitleOptionsOnly || input.outlineOpeningOptionsOnly) {
       const existingOutlineArtifact = await getArticleStageArtifact(input.articleId, input.userId, "outlinePlanning");
       if (!existingOutlineArtifact?.payload) {
-        return generateOutlinePlanning(context);
+        return generateOutlinePlanning(context, {
+          skipOptionRefresh: input.skipOutlineOptionRefresh,
+        });
       }
       const fallback = fallbackOutlinePlanning(context);
       let artifact = existingOutlineArtifact;
@@ -4964,7 +4981,9 @@ export async function generateArticleStageArtifact(input: {
       }
       return artifact;
     }
-    return generateOutlinePlanning(context);
+    return generateOutlinePlanning(context, {
+      skipOptionRefresh: input.skipOutlineOptionRefresh,
+    });
   }
   if (input.stageCode === "deepWriting") {
     return generateDeepWriting(context, input.deepWritingStateVariantCode, input.deepWritingPrototypeCode);

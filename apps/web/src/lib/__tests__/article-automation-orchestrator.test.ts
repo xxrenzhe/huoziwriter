@@ -111,6 +111,8 @@ test("resumeArticleAutomationRun completes strategyOnly runs and skips later sta
     assert.equal(detail?.stages.find((item) => item.stageCode === "outlinePlanning")?.status, "completed");
     assert.equal(detail?.stages.find((item) => item.stageCode === "titleOptimization")?.status, "completed");
     assert.equal(detail?.stages.find((item) => item.stageCode === "openingOptimization")?.status, "completed");
+    assert.equal(getRecord(detail?.stages.find((item) => item.stageCode === "titleOptimization")?.qualityJson)?.reusedFromOutlinePlanning, true);
+    assert.equal(getRecord(detail?.stages.find((item) => item.stageCode === "openingOptimization")?.qualityJson)?.reusedFromOutlinePlanning, true);
     assert.equal(detail?.stages.find((item) => item.stageCode === "deepWrite")?.status, "skipped");
     assert.equal(detail?.stages.find((item) => item.stageCode === "publishGuard")?.status, "skipped");
   });
@@ -144,6 +146,7 @@ test("resumeArticleAutomationRun completes draftPreview runs end-to-end", async 
     assert.equal(detail?.stages.find((item) => item.stageCode === "coverImageBrief")?.status, "skipped");
     assert.equal(detail?.stages.find((item) => item.stageCode === "publishGuard")?.status, "completed");
     assert.equal(getRecord(detail?.stages.find((item) => item.stageCode === "audienceAnalysis")?.qualityJson)?.fastLocalStrategy, true);
+    assert.equal(getRecord(detail?.stages.find((item) => item.stageCode === "outlinePlanning")?.qualityJson)?.outlineOptionRefreshSkipped, true);
     assert.equal(getRecord(detail?.stages.find((item) => item.stageCode === "articleWrite")?.qualityJson)?.applyAuditSkipped, true);
     assert.equal(getRecord(detail?.stages.find((item) => item.stageCode === "factCheck")?.qualityJson)?.fastLocalReview, true);
     assert.equal(getRecord(detail?.stages.find((item) => item.stageCode === "prosePolish")?.qualityJson)?.fastLocalReview, true);

@@ -357,6 +357,93 @@ function sanitizeBannedWordsLocal(content: string, bannedWords: string[]) {
   return next;
 }
 
+function splitLongChineseSentence(sentence: string) {
+  const trimmed = sentence.trim();
+  if (trimmed.length < 42) {
+    return trimmed;
+  }
+  let parts = trimmed
+    .split(/，(?=(?:但|而|因为|所以|同时|并且|如果|只有|任何|这|它|他们|我们|系统|流程|工具|文章|图片|素材))/g)
+    .map((item) => item.trim())
+    .filter(Boolean);
+  if (parts.length <= 1) {
+    parts = trimmed
+      .split(/，/g)
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+  if (parts.length <= 1) {
+    return trimmed;
+  }
+  const rebuilt: string[] = [];
+  let buffer = "";
+  for (const part of parts) {
+    const nextBuffer = buffer ? `${buffer}，${part}` : part;
+    if (nextBuffer.length <= 34) {
+      buffer = nextBuffer;
+      continue;
+    }
+    if (buffer) {
+      rebuilt.push(buffer);
+    }
+    buffer = part;
+  }
+  if (buffer) {
+    rebuilt.push(buffer);
+  }
+  const balanced = rebuilt.flatMap((part) => {
+    if (part.length < 42 || !part.includes("、")) {
+      return [part];
+    }
+    const chunks: string[] = [];
+    let rest = part;
+    while (rest.length >= 42 && rest.includes("、")) {
+      const separatorIndexes = Array.from(rest.matchAll(/、/g)).map((match) => match.index ?? -1).filter((index) => index >= 14 && index <= 34);
+      const splitAt = separatorIndexes.at(-1);
+      if (splitAt == null) {
+        break;
+      }
+      chunks.push(rest.slice(0, splitAt).trim());
+      rest = rest.slice(splitAt + 1).trim();
+    }
+    if (rest) {
+      chunks.push(rest);
+    }
+    return chunks.length > 1 ? chunks : [part];
+  });
+  return balanced
+    .map((part) => part.replace(/[，,]\s*$/g, "").trim())
+    .filter(Boolean)
+    .join("。\n");
+}
+
+function reduceTemplateConnectors(line: string) {
+  return line
+    .replace(/(^|[。！？\n])通过([^，。！？\n]{2,18})，/g, "$1$2，")
+    .replace(/(^|[。！？\n])我们需要/g, "$1需要")
+    .replace(/在这个([^，。！？\n]{2,18})中，/g, "$1里，");
+}
+
+export function polishMarkdownLocallyForReadability(markdown: string) {
+  return String(markdown || "")
+    .split("\n")
+    .map((line) => {
+      const trimmed = line.trim();
+      if (!trimmed || /^#{1,6}\s/.test(trimmed) || /^[-*]\s+/.test(trimmed) || /^```/.test(trimmed) || /^!\[/.test(trimmed)) {
+        return line;
+      }
+      const leadingWhitespace = line.match(/^\s*/)?.[0] ?? "";
+      const reduced = reduceTemplateConnectors(trimmed);
+      const polished = reduced.replace(/([^。！？!?；;\n]{42,})([。！？!?；;])/g, (_match, sentence: string, punctuation: string) => {
+        const split = splitLongChineseSentence(sentence);
+        return `${split}${punctuation}`;
+      });
+      return `${leadingWhitespace}${polished}`;
+    })
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n");
+}
+
 function buildLocalProsePolishMarkdown(input: {
   markdownContent: string;
   payload: Record<string, unknown>;
@@ -368,5 +455,5 @@ function buildLocalProsePolishMarkdown(input: {
     const firstLine = next.split("\n").find((line) => line.trim()) || "";
     next = firstLine ? next.replace(firstLine, rewrittenLead) : rewrittenLead;
   }
-  return sanitizeBannedWordsLocal(next, input.bannedWords);
+  return polishMarkdownLocallyForReadability(sanitizeBannedWordsLocal(next, input.bannedWords));
 }

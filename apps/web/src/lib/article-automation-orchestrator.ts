@@ -86,6 +86,7 @@ function readPositiveIntegerEnv(name: string, fallback: number) {
 }
 
 const AUTOMATION_SCENE_REQUEST_TIMEOUT_MS = readPositiveIntegerEnv("ARTICLE_AUTOMATION_SCENE_REQUEST_TIMEOUT_MS", 120_000);
+const ARTICLE_IMAGE_BATCH_CONCURRENCY = readPositiveIntegerEnv("ARTICLE_IMAGE_BATCH_CONCURRENCY", 2);
 
 function readBooleanEnv(name: string, fallback: boolean) {
   const raw = String(process.env[name] || "").trim().toLowerCase();
@@ -134,6 +135,32 @@ function getString(value: unknown) {
 
 function getStringArray(value: unknown, limit = 8) {
   return Array.isArray(value) ? value.map((item) => String(item || "").trim()).filter(Boolean).slice(0, limit) : [];
+}
+
+function hasUsableTitleOptions(payload: Record<string, unknown>) {
+  return getRecordArray(payload.titleOptions).some((item) => getString(item.title) || getString(item.text));
+}
+
+function hasUsableOpeningOptions(payload: Record<string, unknown>) {
+  return getRecordArray(payload.openingOptions).some((item) => getString(item.opening) || getString(item.text));
+}
+
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  mapper: (item: T, index: number) => Promise<R>,
+) {
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+  const workerCount = Math.max(1, Math.min(concurrency, items.length || 1));
+  await Promise.all(Array.from({ length: workerCount }, async () => {
+    while (nextIndex < items.length) {
+      const currentIndex = nextIndex;
+      nextIndex += 1;
+      results[currentIndex] = await mapper(items[currentIndex], currentIndex);
+    }
+  }));
+  return results;
 }
 
 function normalizeResearchSourceUrl(value: unknown) {
@@ -669,6 +696,12 @@ async function getPostStageBlocker(detail: AutomationRunDetail, stageCode: strin
   if (gate.sufficiency === "ready" || gate.sufficiency === "limited") {
     return null;
   }
+  if (detail.run.automationLevel === "draftPreview") {
+    const sourceCount = getRecordArray(getRecord(artifact?.payload)?.sources).length;
+    if (sourceCount > 0) {
+      return null;
+    }
+  }
   return gate.generationBlockReason || "研究简报仍未达到可写阈值，先补齐信源覆盖。";
 }
 
@@ -704,6 +737,7 @@ async function executeOutlinePlanning(detail: AutomationRunDetail): Promise<Stag
     articleId: detail.run.articleId,
     userId: detail.run.userId,
     stageCode: "outlinePlanning",
+    skipOutlineOptionRefresh: isFastDraftPreview(detail),
   });
   const payload = getRecord(artifact.payload) ?? {};
   return {
@@ -713,6 +747,7 @@ async function executeOutlinePlanning(detail: AutomationRunDetail): Promise<Stag
       artifactStatus: artifact.status,
       titleAuditedAt: getString(payload.titleAuditedAt),
       openingAuditedAt: getString(payload.openingAuditedAt),
+      outlineOptionRefreshSkipped: payload.outlineOptionRefreshSkipped === true,
     },
     provider: artifact.provider,
     model: artifact.model,
@@ -722,6 +757,22 @@ async function executeOutlinePlanning(detail: AutomationRunDetail): Promise<Stag
 async function executeTitleOptimization(detail: AutomationRunDetail): Promise<StageExecutionResult> {
   if (!detail.run.articleId) {
     throw new AutomationStageBlockedError("缺少稿件记录，无法执行标题优化。");
+  }
+  const existingArtifact = await getArticleStageArtifact(detail.run.articleId, detail.run.userId, "outlinePlanning");
+  const existingPayload = getRecord(existingArtifact?.payload) ?? {};
+  if (existingArtifact?.status === "ready" && hasUsableTitleOptions(existingPayload)) {
+    const outputJson = mapTitleOptimizationOutput(existingPayload);
+    const stageMeta = getStageProviderMeta(existingPayload, "titleOptimizer", existingArtifact.provider, existingArtifact.model);
+    return {
+      outputJson,
+      qualityJson: {
+        titleAuditedAt: getString(existingPayload.titleAuditedAt),
+        titleOptionCount: getRecordArray(existingPayload.titleOptions).length,
+        reusedFromOutlinePlanning: true,
+      },
+      provider: stageMeta.provider,
+      model: stageMeta.model,
+    };
   }
   const artifact = await generateArticleStageArtifact({
     articleId: detail.run.articleId,
@@ -736,6 +787,7 @@ async function executeTitleOptimization(detail: AutomationRunDetail): Promise<St
     qualityJson: {
       titleAuditedAt: getString(payload.titleAuditedAt),
       titleOptionCount: getRecordArray(payload.titleOptions).length,
+      reusedFromOutlinePlanning: false,
     },
     provider: stageMeta.provider,
     model: stageMeta.model,
@@ -745,6 +797,22 @@ async function executeTitleOptimization(detail: AutomationRunDetail): Promise<St
 async function executeOpeningOptimization(detail: AutomationRunDetail): Promise<StageExecutionResult> {
   if (!detail.run.articleId) {
     throw new AutomationStageBlockedError("缺少稿件记录，无法执行开头优化。");
+  }
+  const existingArtifact = await getArticleStageArtifact(detail.run.articleId, detail.run.userId, "outlinePlanning");
+  const existingPayload = getRecord(existingArtifact?.payload) ?? {};
+  if (existingArtifact?.status === "ready" && hasUsableOpeningOptions(existingPayload)) {
+    const outputJson = mapOpeningOptimizationOutput(existingPayload);
+    const stageMeta = getStageProviderMeta(existingPayload, "openingOptimizer", existingArtifact.provider, existingArtifact.model);
+    return {
+      outputJson,
+      qualityJson: {
+        openingAuditedAt: getString(existingPayload.openingAuditedAt),
+        openingOptionCount: getRecordArray(existingPayload.openingOptions).length,
+        reusedFromOutlinePlanning: true,
+      },
+      provider: stageMeta.provider,
+      model: stageMeta.model,
+    };
   }
   const artifact = await generateArticleStageArtifact({
     articleId: detail.run.articleId,
@@ -759,6 +827,7 @@ async function executeOpeningOptimization(detail: AutomationRunDetail): Promise<
     qualityJson: {
       openingAuditedAt: getString(payload.openingAuditedAt),
       openingOptionCount: getRecordArray(payload.openingOptions).length,
+      reusedFromOutlinePlanning: false,
     },
     provider: stageMeta.provider,
     model: stageMeta.model,
@@ -1037,19 +1106,21 @@ async function executeCoverImageBrief(detail: AutomationRunDetail, promptContext
   const stage = getStage(detail, "coverImageBrief");
   const promptMeta = await loadFrozenPrompt(stage, promptContext);
   const currentCover = await getLatestArticleCoverImage(detail.run.userId, article.id);
-  const planned = await planArticleVisualBriefs({
-    userId: detail.run.userId,
-    articleId: article.id,
-    title: article.title,
-    markdown: article.markdown_content,
-    includeCover: true,
-    includeInline: false,
-  });
-  const saved = await replaceArticleVisualBriefs({
-    userId: detail.run.userId,
-    articleId: article.id,
-    briefs: planned,
-  });
+  const existingCoverBrief = (await listArticleVisualBriefs(detail.run.userId, article.id)).find((brief) => brief.visualScope === "cover") ?? null;
+  const saved = existingCoverBrief
+    ? [existingCoverBrief]
+    : await replaceArticleVisualBriefs({
+        userId: detail.run.userId,
+        articleId: article.id,
+        briefs: await planArticleVisualBriefs({
+          userId: detail.run.userId,
+          articleId: article.id,
+          title: article.title,
+          markdown: article.markdown_content,
+          includeCover: true,
+          includeInline: false,
+        }),
+      });
   const coverBrief = saved.find((brief) => brief.visualScope === "cover");
   if (!coverBrief) {
     throw new AutomationStageBlockedError("封面图 brief 规划失败。");
@@ -1077,6 +1148,7 @@ async function executeCoverImageBrief(detail: AutomationRunDetail, promptContext
       hasExistingCover: Boolean(currentCover),
       baoyuPresetVersion: "2026-04-27",
       promptManifestRecorded: Boolean(coverBrief.promptManifest),
+      reusedExistingVisualBrief: Boolean(existingCoverBrief),
     },
     provider: "local",
     model: "baoyu-compatible-cover-planner",
@@ -1114,12 +1186,14 @@ async function executeInlineImagePlan(detail: AutomationRunDetail): Promise<Stag
   if (!article) {
     throw new AutomationStageBlockedError("稿件不存在，无法规划文中配图。");
   }
+  const existingBriefs = await listArticleVisualBriefs(detail.run.userId, article.id);
+  const hasCoverBrief = existingBriefs.some((brief) => brief.visualScope === "cover");
   const planned = await planArticleVisualBriefs({
     userId: detail.run.userId,
     articleId: article.id,
     title: article.title,
     markdown: article.markdown_content,
-    includeCover: true,
+    includeCover: !hasCoverBrief,
     includeInline: true,
   });
   const saved = await replaceArticleVisualBriefs({
@@ -1148,6 +1222,7 @@ async function executeInlineImagePlan(detail: AutomationRunDetail): Promise<Stag
       provider: "local",
       baoyuPresetVersion: "2026-04-27",
       coverBriefPlanned: saved.some((brief) => brief.visualScope === "cover"),
+      reusedExistingCoverBrief: hasCoverBrief,
     },
     provider: "local",
     model: "baoyu-compatible-planner",
@@ -1181,11 +1256,25 @@ async function executeInlineImageGenerate(detail: AutomationRunDetail): Promise<
 
   const generated: Array<Record<string, unknown>> = [];
   const warnings: string[] = [];
-  for (const brief of briefs.filter((item) => item.status !== "generated" && item.status !== "inserted")) {
+  const pendingBriefs = briefs.filter((item) => item.status !== "generated" && item.status !== "inserted");
+  const generationResults = await mapWithConcurrency(pendingBriefs, ARTICLE_IMAGE_BATCH_CONCURRENCY, async (brief) => {
     try {
-      generated.push(await generateArticleVisualAsset(brief));
+      return {
+        ok: true as const,
+        value: await generateArticleVisualAsset(brief),
+      };
     } catch (error) {
-      warnings.push(`${brief.title}: ${error instanceof Error ? error.message : "图片生成失败"}`);
+      return {
+        ok: false as const,
+        warning: `${brief.title}: ${error instanceof Error ? error.message : "图片生成失败"}`,
+      };
+    }
+  });
+  for (const result of generationResults) {
+    if (result.ok) {
+      generated.push(result.value);
+    } else {
+      warnings.push(result.warning);
     }
   }
 
@@ -1210,6 +1299,8 @@ async function executeInlineImageGenerate(detail: AutomationRunDetail): Promise<
       insertedCount: insertion.inserted.length,
       warningCount: warnings.length,
       nonBlocking: true,
+      pendingCount: pendingBriefs.length,
+      concurrency: ARTICLE_IMAGE_BATCH_CONCURRENCY,
     },
     provider: generated.some((item) => item.assetType !== "diagram_png") ? "coverImageEngine" : "local",
     model: "article-visual-generator",
