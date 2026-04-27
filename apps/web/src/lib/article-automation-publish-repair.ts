@@ -1,6 +1,6 @@
 import { generateSceneText } from "./ai-gateway";
 import { analyzeAiNoise } from "./ai-noise-scan";
-import { syncArticleCoverAssetToAssetFiles } from "./asset-files";
+import { syncArticleCoverAssetToAssetFiles, syncArticleVisualAssetToAssetFiles } from "./asset-files";
 import {
   buildSuggestedEvidenceItems,
   getArticleEvidenceStats,
@@ -41,6 +41,17 @@ import { getArticleNodes } from "./article-outline";
 
 function getRecord(value: unknown) {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+}
+
+function parseRecord(value: unknown) {
+  if (typeof value === "string" && value.trim()) {
+    try {
+      return getRecord(JSON.parse(value));
+    } catch {
+      return null;
+    }
+  }
+  return getRecord(value);
 }
 
 function getString(value: unknown) {
@@ -578,15 +589,6 @@ export async function ensureCoverImagePreparedForPublish(input: {
   userId: number;
   title: string;
 }) {
-  const currentCover = await getLatestArticleCoverImage(input.userId, input.articleId);
-  if (currentCover) {
-    return {
-      changed: false,
-      provider: null as string | null,
-      model: null as string | null,
-    };
-  }
-
   const authoringContext = await getArticleAuthoringStyleContext(input.userId, input.articleId);
   const article = await getArticleById(input.articleId, input.userId);
   let coverBrief = (await listArticleVisualBriefs(input.userId, input.articleId)).find((brief) => brief.visualScope === "cover") ?? null;
@@ -604,6 +606,66 @@ export async function ensureCoverImagePreparedForPublish(input: {
       articleId: input.articleId,
       briefs: planned,
     })).find((brief) => brief.visualScope === "cover") ?? null;
+  }
+  const currentCover = await getLatestArticleCoverImage(input.userId, input.articleId);
+  if (currentCover) {
+    if (coverBrief?.id) {
+      const db = getDatabase();
+      const row = await db.queryOne<{
+        id: number;
+        image_url: string;
+        storage_provider: string | null;
+        original_object_key: string | null;
+        compressed_object_key: string | null;
+        thumbnail_object_key: string | null;
+        asset_manifest_json: string | Record<string, unknown> | null;
+        created_at: string | null;
+      }>(
+        `SELECT id, image_url, storage_provider, original_object_key, compressed_object_key,
+                thumbnail_object_key, asset_manifest_json, created_at
+         FROM cover_images
+         WHERE id = ? AND user_id = ? AND article_id = ?`,
+        [currentCover.id, input.userId, input.articleId],
+      );
+      if (row) {
+        const manifest = parseRecord(row.asset_manifest_json) ?? {};
+        const visualManifest = {
+          ...manifest,
+          baoyu: coverBrief.promptManifest || getRecord(manifest.baoyu) || null,
+          promptHash: coverBrief.promptHash || getString(manifest.promptHash) || null,
+          visualBriefId: coverBrief.id,
+        };
+        const coverAssetFileId = await syncArticleVisualAssetToAssetFiles({
+          assetScope: "visual_brief",
+          sourceRecordId: coverBrief.id,
+          visualBriefId: coverBrief.id,
+          userId: input.userId,
+          articleId: input.articleId,
+          assetType: "cover_image",
+          imageUrl: row.image_url,
+          storageProvider: row.storage_provider,
+          originalObjectKey: row.original_object_key,
+          compressedObjectKey: row.compressed_object_key,
+          thumbnailObjectKey: row.thumbnail_object_key,
+          assetManifestJson: visualManifest,
+          insertAnchor: coverBrief.targetAnchor,
+          altText: coverBrief.altText,
+          caption: coverBrief.caption ?? null,
+          createdAt: row.created_at,
+        });
+        await updateArticleVisualBriefStatus({
+          briefId: coverBrief.id,
+          userId: input.userId,
+          status: "generated",
+          generatedAssetFileId: coverAssetFileId,
+        });
+      }
+    }
+    return {
+      changed: false,
+      provider: null as string | null,
+      model: null as string | null,
+    };
   }
   let generated: {
     imageUrl: string;
@@ -677,10 +739,29 @@ export async function ensureCoverImagePreparedForPublish(input: {
     createdAt,
   });
   if (coverBrief?.id) {
+    const coverAssetFileId = await syncArticleVisualAssetToAssetFiles({
+      assetScope: "visual_brief",
+      sourceRecordId: coverBrief.id,
+      visualBriefId: coverBrief.id,
+      userId: input.userId,
+      articleId: input.articleId,
+      assetType: "cover_image",
+      imageUrl: storedAsset.imageUrl,
+      storageProvider: storedAsset.storageProvider,
+      originalObjectKey: storedAsset.originalObjectKey,
+      compressedObjectKey: storedAsset.compressedObjectKey,
+      thumbnailObjectKey: storedAsset.thumbnailObjectKey,
+      assetManifestJson: assetManifest,
+      insertAnchor: coverBrief.targetAnchor,
+      altText: coverBrief.altText,
+      caption: coverBrief.caption ?? null,
+      createdAt,
+    });
     await updateArticleVisualBriefStatus({
       briefId: coverBrief.id,
       userId: input.userId,
       status: "generated",
+      generatedAssetFileId: coverAssetFileId,
     });
   }
 
