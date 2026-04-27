@@ -9,6 +9,8 @@ import {
 } from "./article-evidence";
 import { getArticleAuthoringStyleContext } from "./article-authoring-style-context";
 import { saveArticleDraft } from "./article-draft";
+import { planArticleVisualBriefs } from "./article-visual-planner";
+import { listArticleVisualBriefs, replaceArticleVisualBriefs, updateArticleVisualBriefStatus } from "./article-visual-repository";
 import {
   buildFourPointAudit,
   buildSuggestedStrategyCard,
@@ -586,6 +588,23 @@ export async function ensureCoverImagePreparedForPublish(input: {
   }
 
   const authoringContext = await getArticleAuthoringStyleContext(input.userId, input.articleId);
+  const article = await getArticleById(input.articleId, input.userId);
+  let coverBrief = (await listArticleVisualBriefs(input.userId, input.articleId)).find((brief) => brief.visualScope === "cover") ?? null;
+  if (!coverBrief && article) {
+    const planned = await planArticleVisualBriefs({
+      userId: input.userId,
+      articleId: input.articleId,
+      title: input.title,
+      markdown: article.markdown_content,
+      includeCover: true,
+      includeInline: false,
+    });
+    coverBrief = (await replaceArticleVisualBriefs({
+      userId: input.userId,
+      articleId: input.articleId,
+      briefs: planned,
+    })).find((brief) => brief.visualScope === "cover") ?? null;
+  }
   let generated: {
     imageUrl: string;
     prompt: string;
@@ -596,6 +615,10 @@ export async function ensureCoverImagePreparedForPublish(input: {
     generated = await generateCoverImage({
       title: input.title,
       authoringContext,
+      promptOverride: coverBrief?.promptText || undefined,
+      negativePrompt: coverBrief?.negativePrompt || undefined,
+      outputResolution: coverBrief?.outputResolution || undefined,
+      aspectRatio: coverBrief?.aspectRatio || undefined,
     });
   } catch (error) {
     generated = {
@@ -612,6 +635,12 @@ export async function ensureCoverImagePreparedForPublish(input: {
     variantLabel: "自动首选",
     source: generated.imageUrl,
   });
+  const assetManifest = {
+    ...storedAsset.assetManifest,
+    baoyu: coverBrief?.promptManifest || null,
+    promptHash: coverBrief?.promptHash || null,
+    visualBriefId: coverBrief?.id || null,
+  };
   const db = getDatabase();
   const createdAt = new Date().toISOString();
   const result = await db.exec(
@@ -628,7 +657,7 @@ export async function ensureCoverImagePreparedForPublish(input: {
       storedAsset.originalObjectKey,
       storedAsset.compressedObjectKey,
       storedAsset.thumbnailObjectKey,
-      JSON.stringify(storedAsset.assetManifest),
+      JSON.stringify(assetManifest),
       createdAt,
     ],
   );
@@ -644,9 +673,16 @@ export async function ensureCoverImagePreparedForPublish(input: {
     originalObjectKey: storedAsset.originalObjectKey,
     compressedObjectKey: storedAsset.compressedObjectKey,
     thumbnailObjectKey: storedAsset.thumbnailObjectKey,
-    assetManifestJson: storedAsset.assetManifest,
+    assetManifestJson: assetManifest,
     createdAt,
   });
+  if (coverBrief?.id) {
+    await updateArticleVisualBriefStatus({
+      briefId: coverBrief.id,
+      userId: input.userId,
+      status: "generated",
+    });
+  }
 
   return {
     changed: true,

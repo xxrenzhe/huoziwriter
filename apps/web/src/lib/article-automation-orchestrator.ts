@@ -1036,62 +1036,51 @@ async function executeCoverImageBrief(detail: AutomationRunDetail, promptContext
   }
   const stage = getStage(detail, "coverImageBrief");
   const promptMeta = await loadFrozenPrompt(stage, promptContext);
-  const outline = getRecord(getStage(detail, "outlinePlanning").outputJson) ?? {};
   const currentCover = await getLatestArticleCoverImage(detail.run.userId, article.id);
-  const fallback = {
-    prompt: `为题为《${article.title}》的公众号文章生成一张信息密度高、非营销感、适合微信封面的横版插图，突出核心判断与现实感。`,
-    negativePrompt: "过度科幻、紫色霓虹、夸张 3D 图标、廉价营销海报、密集英文排版",
-    altText: `${article.title} 的公众号封面图`,
-    style: "editorial-illustration",
-  };
-  const userPrompt = [
-    "请输出 JSON，不要解释，不要 markdown。",
-    '字段：{"prompt":"字符串","negativePrompt":"字符串","altText":"字符串","style":"字符串"}',
-    `标题：${article.title}`,
-    `核心判断：${getString(getRecord(outline.claimMap)?.centralThesis) || article.title}`,
-    `目标情绪：${getString(outline.targetEmotion) || "克制、可信、信息密度高"}`,
-    `开头切口：${getString(outline.openingHook) || "直入主题"}`,
-    `正文摘要：${(article.markdown_content || "").replace(/\s+/g, " ").slice(0, 900)}`,
-  ].join("\n");
-  try {
-    const result = await generateSceneText({
-      sceneCode: "coverImageBrief",
-      systemPrompt: promptMeta.content,
-      userPrompt,
-      temperature: 0.4,
-      rolloutUserId: detail.run.userId,
-      maxAttempts: 1,
-      requestTimeoutMs: AUTOMATION_SCENE_REQUEST_TIMEOUT_MS,
-    });
-    const parsed = getRecord(extractJsonObject(result.text));
-    const outputJson = {
-      prompt: getString(parsed?.prompt) || fallback.prompt,
-      negativePrompt: getString(parsed?.negativePrompt) || fallback.negativePrompt,
-      altText: getString(parsed?.altText) || fallback.altText,
-      style: getString(parsed?.style) || fallback.style,
-    };
-    return {
-      outputJson,
-      qualityJson: {
-        promptVersionRef: promptMeta.ref,
-        hasExistingCover: Boolean(currentCover),
-      },
-      provider: result.provider,
-      model: result.model,
-    };
-  } catch (error) {
-    return {
-      outputJson: fallback,
-      qualityJson: {
-        promptVersionRef: promptMeta.ref,
-        hasExistingCover: Boolean(currentCover),
-        fallbackUsed: true,
-        error: error instanceof Error ? error.message : "cover image brief failed",
-      },
-      provider: "local",
-      model: "fallback-local",
-    };
+  const planned = await planArticleVisualBriefs({
+    userId: detail.run.userId,
+    articleId: article.id,
+    title: article.title,
+    markdown: article.markdown_content,
+    includeCover: true,
+    includeInline: false,
+  });
+  const saved = await replaceArticleVisualBriefs({
+    userId: detail.run.userId,
+    articleId: article.id,
+    briefs: planned,
+  });
+  const coverBrief = saved.find((brief) => brief.visualScope === "cover");
+  if (!coverBrief) {
+    throw new AutomationStageBlockedError("封面图 brief 规划失败。");
   }
+  return {
+    outputJson: {
+      prompt: coverBrief.promptText,
+      negativePrompt: coverBrief.negativePrompt,
+      altText: coverBrief.altText,
+      style: coverBrief.styleCode || coverBrief.renderingCode,
+      baoyuSkill: coverBrief.baoyuSkill,
+      visualType: coverBrief.visualType,
+      palette: coverBrief.paletteCode,
+      rendering: coverBrief.renderingCode,
+      text: coverBrief.textLevel,
+      mood: coverBrief.moodCode,
+      font: coverBrief.fontCode,
+      aspectRatio: coverBrief.aspectRatio,
+      outputResolution: coverBrief.outputResolution,
+      promptHash: coverBrief.promptHash,
+      promptManifest: coverBrief.promptManifest,
+    },
+    qualityJson: {
+      promptVersionRef: promptMeta.ref,
+      hasExistingCover: Boolean(currentCover),
+      baoyuPresetVersion: "2026-04-27",
+      promptManifestRecorded: Boolean(coverBrief.promptManifest),
+    },
+    provider: "local",
+    model: "baoyu-compatible-cover-planner",
+  };
 }
 
 async function executeLayoutApply(detail: AutomationRunDetail): Promise<StageExecutionResult> {
