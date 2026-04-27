@@ -233,9 +233,30 @@ function buildEvidenceKey(input: {
   return `text:${getString(input.title)}:${getString(input.excerpt).slice(0, 80)}:${normalizeEvidenceRole(input.evidenceRole)}`;
 }
 
+const NON_VERIFIABLE_EVIDENCE_SOURCE_TYPES = new Set([
+  "manual",
+  "editorial_observation",
+  "author_framework",
+  "history",
+]);
+
+function normalizeEvidenceSourceType(value: unknown) {
+  return getString(value).toLowerCase().replace(/[\s-]+/g, "_");
+}
+
+function isVerifiableEvidenceItem(item: Partial<ArticleEvidenceItem>) {
+  if (getString(item.sourceUrl) || getString(item.screenshotPath) || getString(item.usageMode) === "image") {
+    return true;
+  }
+  const sourceType = normalizeEvidenceSourceType(item.sourceType);
+  return Boolean(sourceType) && !NON_VERIFIABLE_EVIDENCE_SOURCE_TYPES.has(sourceType);
+}
+
 export function getArticleEvidenceStats(items: Array<Partial<ArticleEvidenceItem>> | null | undefined) {
   const normalizedItems = (items ?? []).filter((item) => getString(item.excerpt) || getString(item.title));
   const uniqueSourceTypes = new Set(normalizedItems.map((item) => getString(item.sourceType) || "manual"));
+  const verifiableItems = normalizedItems.filter(isVerifiableEvidenceItem);
+  const verifiableSourceTypes = new Set(verifiableItems.map((item) => getString(item.sourceType) || "url"));
   const hookTagCoverage = Array.from(new Set(
     normalizedItems.flatMap((item) => {
       return Array.isArray(item.hookTags)
@@ -254,9 +275,12 @@ export function getArticleEvidenceStats(items: Array<Partial<ArticleEvidenceItem
   const externalOrScreenshotCount = externalEvidenceCount + screenshotEvidenceCount;
   const minimumCountReady = normalizedItems.length >= 3;
   const externalReady = externalOrScreenshotCount >= 1;
+  const publishVerifiableReady = verifiableItems.length >= 2 && verifiableSourceTypes.size >= 2;
   const flags = [
     !minimumCountReady ? "证据条数不足 3 条" : null,
     !externalReady ? "缺外部来源或截图证据" : null,
+    minimumCountReady && externalReady && verifiableItems.length < 2 ? "可核验证据不足 2 条" : null,
+    minimumCountReady && externalReady && verifiableItems.length >= 2 && verifiableSourceTypes.size < 2 ? "可核验证据来源类型不足 2 类" : null,
     normalizedItems.length > 0 && uniqueSourceTypes.size <= 1 ? "信源类型过于单一" : null,
     minimumCountReady && counterEvidenceCount === 0 ? "只有支持性证据，缺少反证或反例" : null,
   ].filter(Boolean) as string[];
@@ -268,15 +292,18 @@ export function getArticleEvidenceStats(items: Array<Partial<ArticleEvidenceItem
     hookTagCoverageCount: hookTagCoverage.length,
     externalEvidenceCount,
     screenshotEvidenceCount,
+    verifiableEvidenceCount: verifiableItems.length,
+    verifiableSourceTypeCount: verifiableSourceTypes.size,
     counterEvidenceCount,
     researchTagCount,
     externalOrScreenshotCount,
     ready: minimumCountReady && externalReady,
+    publishReady: minimumCountReady && externalReady && publishVerifiableReady,
     status:
       normalizedItems.length === 0
         ? "blocked"
         : minimumCountReady && externalReady
-          ? uniqueSourceTypes.size <= 1 || counterEvidenceCount === 0
+          ? !publishVerifiableReady || uniqueSourceTypes.size <= 1 || counterEvidenceCount === 0
             ? "warning"
             : "passed"
           : "blocked",
@@ -288,6 +315,8 @@ export function getArticleEvidenceStats(items: Array<Partial<ArticleEvidenceItem
           ? "证据条数还不够，至少需要 3 条可核对证据。"
           : !externalReady
             ? "还缺外部来源或截图证据，当前证据包不能进入发布守门。"
+            : !publishVerifiableReady
+              ? "证据包已达最低条数，但可独立核验的来源仍不足，不能直接推送公众号草稿箱。"
             : uniqueSourceTypes.size <= 1
               ? "证据包已达最低门槛，但信源类型仍偏单一。"
               : counterEvidenceCount === 0

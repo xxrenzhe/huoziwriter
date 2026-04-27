@@ -1515,9 +1515,6 @@ function classifyStageFailureStatus(error: unknown): Extract<ArticleAutomationRu
 }
 
 function shouldRunPublishGuardAutoRepair(detail: AutomationRunDetail) {
-  if (detail.run.automationLevel === "wechatDraft") {
-    return true;
-  }
   return readBooleanEnv("ARTICLE_AUTOMATION_PUBLISH_GUARD_AUTO_REPAIR", false);
 }
 
@@ -1657,7 +1654,7 @@ export async function resumeArticleAutomationRun(input: {
       }) ?? detail;
     }
     if (!Boolean(publishGuardOutput.canPublish) && detail.run.articleId) {
-      const replayedPublishGuard = await executePublishGuard(detail, promptContext, { allowRepair: true });
+      const replayedPublishGuard = await executePublishGuard(detail, promptContext, { allowRepair: shouldRunPublishGuardAutoRepair(detail) });
       await completeArticleAutomationStageRun({
         runId: detail.run.id,
         userId: detail.run.userId,

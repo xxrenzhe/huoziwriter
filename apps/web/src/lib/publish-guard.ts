@@ -357,6 +357,9 @@ export async function evaluatePublishGuard(input: {
   const evidenceStats = getArticleEvidenceStats(evidenceItems);
   const hookCoverageReady = evidenceStats.hookTagCoverageCount >= 2;
   const missingHookTags = EVIDENCE_HOOK_TAG_OPTIONS.filter((tag) => !evidenceStats.hookTagCoverage.includes(tag));
+  const requiresWechatQualityFloor = Boolean(input.wechatConnectionId);
+  const openingStrengthCheck = openingGuardEvaluation.checks.find((item) => item.key === "opening_strength") ?? null;
+  const openingStrengthReady = openingStrengthCheck?.status === "passed";
   const fourPointAudit = getRecord(strategyCard?.fourPointAudit);
   const fourPointScores = [
     { key: "cognitiveFlip", label: "认知翻转", score: getNumericValue(getRecord(fourPointAudit?.cognitiveFlip)?.score) },
@@ -383,6 +386,7 @@ export async function evaluatePublishGuard(input: {
   });
   const rhythmConsistencyReady = rhythmConsistency.status === "aligned";
   const rhythmConsistencyNeedsAttention = Boolean(strategyCard?.archetype) && rhythmConsistency.status !== "aligned";
+  const proseQualityBlocksWechat = aiNoiseScore >= 70 || aiNoiseHasRigidOutline || aiNoiseHasSummaryEnding;
   const hasCounterEvidence = evidenceStats.counterEvidenceCount > 0 || factCheckCounterEvidenceCount > 0;
   const researchHollowRiskItems = [
     !researchReady ? "研究简报尚未生成，当前还无法确认内容是不是只有表达没有研究。" : null,
@@ -555,6 +559,20 @@ export async function evaluatePublishGuard(input: {
     actionLabel: evidenceStats.ready ? undefined : "去补证据包",
   });
 
+  if (requiresWechatQualityFloor) {
+    pushCheck(checks, blockers, warnings, suggestions, {
+      key: "wechatEvidenceFloor",
+      label: "公众号证据底线",
+      status: evidenceStats.publishReady ? "passed" : "blocked",
+      severity: evidenceStats.publishReady ? "suggestion" : "blocking",
+      detail: evidenceStats.publishReady
+        ? `公众号草稿证据底线已满足：${evidenceStats.verifiableEvidenceCount} 条可核验证据，覆盖 ${evidenceStats.verifiableSourceTypeCount} 类可核验来源。`
+        : `公众号草稿箱发布前至少需要 3 条证据、1 条外部/截图证据，并包含 2 条以上可核验证据且覆盖 2 类可核验来源；当前可核验证据 ${evidenceStats.verifiableEvidenceCount} 条、可核验来源类型 ${evidenceStats.verifiableSourceTypeCount} 类。`,
+      targetStageCode: "evidence",
+      actionLabel: evidenceStats.publishReady ? undefined : "去补高质量信源",
+    });
+  }
+
   pushCheck(checks, blockers, warnings, suggestions, {
     key: "hookCoverage",
     label: "爆点覆盖度",
@@ -599,6 +617,20 @@ export async function evaluatePublishGuard(input: {
 
   for (const check of openingGuardEvaluation.checks) {
     pushCheck(checks, blockers, warnings, suggestions, check);
+  }
+
+  if (requiresWechatQualityFloor) {
+    pushCheck(checks, blockers, warnings, suggestions, {
+      key: "wechatOpeningFloor",
+      label: "公众号开头底线",
+      status: openingStrengthReady ? "passed" : "blocked",
+      severity: openingStrengthReady ? "suggestion" : "blocking",
+      detail: openingStrengthReady
+        ? "公众号草稿开头底线已满足，第一屏钩子强度可用于发布。"
+        : openingStrengthCheck?.detail || "公众号草稿箱发布前必须先让开头强度体检通过。",
+      targetStageCode: "outlinePlanning",
+      actionLabel: openingStrengthReady ? undefined : "去优化开头",
+    });
   }
 
   pushCheck(checks, blockers, warnings, suggestions, {
@@ -770,6 +802,20 @@ export async function evaluatePublishGuard(input: {
     actionLabel: rhythmConsistencyReady ? undefined : "去校准执行卡",
   });
 
+  if (requiresWechatQualityFloor) {
+    pushCheck(checks, blockers, warnings, suggestions, {
+      key: "wechatRhythmFloor",
+      label: "公众号原型节奏底线",
+      status: rhythmConsistencyNeedsAttention ? "blocked" : "passed",
+      severity: rhythmConsistencyNeedsAttention ? "blocking" : "suggestion",
+      detail: rhythmConsistencyNeedsAttention
+        ? `公众号草稿箱发布前必须先让策略原型和正文节奏对齐：${rhythmConsistency.detail}`
+        : "公众号草稿原型节奏已对齐，可以进入发布准备。",
+      targetStageCode: "deepWriting",
+      actionLabel: rhythmConsistencyNeedsAttention ? "去校准执行卡" : undefined,
+    });
+  }
+
   pushCheck(checks, blockers, warnings, suggestions, {
     key: "factCheck",
     label: "事实核查",
@@ -891,6 +937,25 @@ export async function evaluatePublishGuard(input: {
     targetStageCode: "prosePolish",
     actionLabel: aiNoiseNeedsAttention ? "去精修段落" : undefined,
   });
+
+  if (requiresWechatQualityFloor) {
+    pushCheck(checks, blockers, warnings, suggestions, {
+      key: "wechatProseFloor",
+      label: "公众号文稿质感底线",
+      status: proseQualityBlocksWechat ? "blocked" : "passed",
+      severity: proseQualityBlocksWechat ? "blocking" : "suggestion",
+      detail: proseQualityBlocksWechat
+        ? [
+            "公众号草稿箱发布前必须先清掉明显机器化质感",
+            aiNoiseScore >= 70 ? `AI 噪声得分 ${aiNoiseScore}` : null,
+            aiNoiseHasRigidOutline ? "段落推进过于工整" : null,
+            aiNoiseHasSummaryEnding ? "结尾仍是总结腔" : null,
+          ].filter(Boolean).join("，")
+        : "公众号文稿质感底线已满足，未发现高风险机器化节奏。",
+      targetStageCode: "prosePolish",
+      actionLabel: proseQualityBlocksWechat ? "去精修段落" : undefined,
+    });
+  }
 
   const coverImageRequired = Boolean(input.wechatConnectionId);
   pushCheck(checks, blockers, warnings, suggestions, {
@@ -1037,13 +1102,17 @@ export async function evaluatePublishGuard(input: {
       stageCode: "evidence",
       title: "证据包",
       status:
-        evidenceStats.ready
+        requiresWechatQualityFloor && !evidenceStats.publishReady
+          ? "blocked"
+          : evidenceStats.ready
           ? evidenceStats.status === "warning" || !hookCoverageReady
             ? "needs_attention"
             : "ready"
           : "blocked",
       detail: evidenceStats.ready
-        ? evidenceStats.status === "warning"
+        ? requiresWechatQualityFloor && !evidenceStats.publishReady
+          ? `公众号草稿箱要求至少 2 条可核验证据且覆盖 2 类可核验来源；当前可核验证据 ${evidenceStats.verifiableEvidenceCount} 条、可核验来源类型 ${evidenceStats.verifiableSourceTypeCount} 类。`
+          : evidenceStats.status === "warning"
           ? `证据包已确认，但仍建议处理：${evidenceStats.flags.join("；")}。`
           : !hookCoverageReady
             ? `证据包已确认，但爆点标签只覆盖 ${evidenceStats.hookTagCoverageCount} 类，建议继续补到至少 2 类。`
@@ -1066,21 +1135,27 @@ export async function evaluatePublishGuard(input: {
       title: "深度写作",
       status:
         deepWritingArtifact?.status === "ready" && hasArtifactPayload(deepWritingArtifact)
-          ? historyReferencePlan.length > 0 && !rhythmConsistencyNeedsAttention && !openingNeedsAttention
-            ? "ready"
-            : "needs_attention"
+          ? requiresWechatQualityFloor && (rhythmConsistencyNeedsAttention || !openingStrengthReady)
+            ? "blocked"
+            : historyReferencePlan.length > 0 && !rhythmConsistencyNeedsAttention && !openingNeedsAttention
+              ? "ready"
+              : "needs_attention"
           : "blocked",
       detail:
         deepWritingArtifact?.status === "ready" && hasArtifactPayload(deepWritingArtifact)
-          ? openingHasBlockingIssues
-            ? "执行卡已准备，但开头体检仍命中阻断项。"
-            : openingNeedsAttention
-              ? "执行卡已准备，但开头首段仍建议继续收紧钩子与第一屏节奏。"
-            : rhythmConsistencyNeedsAttention
-            ? "执行卡已准备，但当前正文原型和策略原型还没完全对齐。"
-            : historyReferencePlan.length > 0
-              ? "执行卡、系列承接与关键事实都已准备。"
-              : "执行卡已准备，但系列旧文承接仍可补强。"
+          ? requiresWechatQualityFloor && !openingStrengthReady
+            ? "公众号草稿箱发布前，开头强度必须先通过体检。"
+            : requiresWechatQualityFloor && rhythmConsistencyNeedsAttention
+              ? "公众号草稿箱发布前，策略原型和正文节奏必须先对齐。"
+              : openingHasBlockingIssues
+                ? "执行卡已准备，但开头体检仍命中阻断项。"
+                : openingNeedsAttention
+                  ? "执行卡已准备，但开头首段仍建议继续收紧钩子与第一屏节奏。"
+                  : rhythmConsistencyNeedsAttention
+                    ? "执行卡已准备，但当前正文原型和策略原型还没完全对齐。"
+                    : historyReferencePlan.length > 0
+                      ? "执行卡、系列承接与关键事实都已准备。"
+                      : "执行卡已准备，但系列旧文承接仍可补强。"
           : "先生成写作执行卡。",
     },
     {
@@ -1106,13 +1181,17 @@ export async function evaluatePublishGuard(input: {
       title: "文笔润色",
       status:
         prosePolishArtifact?.status === "ready" && hasArtifactPayload(prosePolishArtifact)
-          ? aiNoiseNeedsAttention || languageGuardHits.length > 0
+          ? requiresWechatQualityFloor && proseQualityBlocksWechat
+            ? "blocked"
+            : aiNoiseNeedsAttention || languageGuardHits.length > 0
             ? "needs_attention"
             : "ready"
           : "needs_attention",
       detail:
         prosePolishArtifact?.status === "ready" && hasArtifactPayload(prosePolishArtifact)
-          ? aiNoiseNeedsAttention || languageGuardHits.length > 0
+          ? requiresWechatQualityFloor && proseQualityBlocksWechat
+            ? "公众号草稿箱发布前，需要先处理段落过工整、总结腔或高 AI 噪声。"
+            : aiNoiseNeedsAttention || languageGuardHits.length > 0
             ? "润色已完成，但仍建议处理 AI 噪声、结构过整齐或总结式收尾问题。"
             : "表达质量已基本收口。"
           : "可直接发布，但建议先做一次润色收口。",
@@ -1124,7 +1203,11 @@ export async function evaluatePublishGuard(input: {
         !strategyCardReady
           || humanSignalScore < 2
           || !evidenceStats.ready
+          || (requiresWechatQualityFloor && !evidenceStats.publishReady)
           || openingHasBlockingIssues
+          || (requiresWechatQualityFloor && !openingStrengthReady)
+          || (requiresWechatQualityFloor && rhythmConsistencyNeedsAttention)
+          || (requiresWechatQualityFloor && proseQualityBlocksWechat)
           ? "blocked"
           : coverImage
             && connectionHealth.status === "valid"
@@ -1150,8 +1233,16 @@ export async function evaluatePublishGuard(input: {
             ? "人类信号不足，正文还没有稳固的作者真实感，发布仍处于阻断状态。"
           : !evidenceStats.ready
             ? "证据包尚未确认到发布标准，发布仍处于阻断状态。"
+          : requiresWechatQualityFloor && !evidenceStats.publishReady
+            ? "可核验证据不足，不能推送公众号草稿箱。"
           : openingHasBlockingIssues
             ? "开头体检未通过，发布仍处于阻断状态。"
+          : requiresWechatQualityFloor && !openingStrengthReady
+            ? "开头强度未通过，不能推送公众号草稿箱。"
+          : requiresWechatQualityFloor && rhythmConsistencyNeedsAttention
+            ? "策略原型和正文节奏未对齐，不能推送公众号草稿箱。"
+          : requiresWechatQualityFloor && proseQualityBlocksWechat
+            ? "文稿仍有明显机器化质感，不能推送公众号草稿箱。"
           : coverImage
             && connectionHealth.status === "valid"
             && hookCoverageReady
