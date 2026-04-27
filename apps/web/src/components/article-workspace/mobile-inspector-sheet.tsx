@@ -54,6 +54,10 @@ type MobileInspectorSheetProps = {
   hasNodeVisualSuggestions: boolean;
   onSaveImagePromptAssets: () => void | Promise<void>;
   savingImagePrompts: boolean;
+  onGenerateInlineImages: () => void | Promise<void>;
+  generatingInlineImages: boolean;
+  onInsertVisualAssets: () => void | Promise<void>;
+  insertingVisualAssets: boolean;
   onGenerateCoverImage: () => void | Promise<void>;
   coverImageButtonDisabled: boolean;
   coverImageButtonLabel: string;
@@ -85,6 +89,10 @@ export function MobileInspectorSheet({
   hasNodeVisualSuggestions,
   onSaveImagePromptAssets,
   savingImagePrompts,
+  onGenerateInlineImages,
+  generatingInlineImages,
+  onInsertVisualAssets,
+  insertingVisualAssets,
   onGenerateCoverImage,
   coverImageButtonDisabled,
   coverImageButtonLabel,
@@ -300,9 +308,15 @@ export function MobileInspectorSheet({
               <div className="mt-3 flex flex-wrap gap-2">
                 {hasNodeVisualSuggestions ? (
                   <Button onClick={() => void onSaveImagePromptAssets()} disabled={savingImagePrompts} variant="secondary" size="sm">
-                    {savingImagePrompts ? "保存中…" : "保存配图提示词"}
+                    {savingImagePrompts ? "规划中…" : "规划 brief"}
                   </Button>
                 ) : null}
+                <Button onClick={() => void onGenerateInlineImages()} disabled={generatingInlineImages} variant="secondary" size="sm">
+                  {generatingInlineImages ? "生成中…" : "生成文中图"}
+                </Button>
+                <Button onClick={() => void onInsertVisualAssets()} disabled={insertingVisualAssets} variant="secondary" size="sm">
+                  {insertingVisualAssets ? "插入中…" : "插入终稿"}
+                </Button>
                 <Button
                   onClick={() => {
                     onClose();

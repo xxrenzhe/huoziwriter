@@ -123,6 +123,8 @@ export function useArticleWorkspaceClientState(input: UseArticleWorkspaceClientS
   const [generatingCover, setGeneratingCover] = useState(false);
   const [selectingCoverCandidateId, setSelectingCoverCandidateId] = useState<number | null>(null);
   const [savingImagePrompts, setSavingImagePrompts] = useState(false);
+  const [generatingInlineImages, setGeneratingInlineImages] = useState(false);
+  const [insertingVisualAssets, setInsertingVisualAssets] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [retryingPublish, setRetryingPublish] = useState(false);
   const [loadingDiffId, setLoadingDiffId] = useState<number | null>(null);
@@ -478,6 +480,10 @@ export function useArticleWorkspaceClientState(input: UseArticleWorkspaceClientS
     setSelectingCoverCandidateId,
     savingImagePrompts,
     setSavingImagePrompts,
+    generatingInlineImages,
+    setGeneratingInlineImages,
+    insertingVisualAssets,
+    setInsertingVisualAssets,
     publishing,
     setPublishing,
     retryingPublish,

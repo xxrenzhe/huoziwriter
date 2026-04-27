@@ -179,6 +179,8 @@ export function buildArticleWorkspaceActionBundleInput(
       setSelectingCoverCandidateId: input.setSelectingCoverCandidateId,
       setCoverImage: input.setCoverImage,
       setSavingImagePrompts: input.setSavingImagePrompts,
+      setGeneratingInlineImages: input.setGeneratingInlineImages,
+      setInsertingVisualAssets: input.setInsertingVisualAssets,
       setImagePrompts: input.setImagePrompts,
       setApplyingLayout: input.setApplyingLayout,
       updateWorkflow: input.updateWorkflow,

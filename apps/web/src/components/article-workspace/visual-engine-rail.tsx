@@ -37,6 +37,10 @@ type VisualEngineRailProps = {
   nodeVisualSuggestions: VisualSuggestionItemLike[];
   onSaveImagePromptAssets: () => void | Promise<void>;
   savingImagePrompts: boolean;
+  onGenerateInlineImages: () => void | Promise<void>;
+  generatingInlineImages: boolean;
+  onInsertVisualAssets: () => void | Promise<void>;
+  insertingVisualAssets: boolean;
   onGenerateCoverImage: () => void | Promise<void>;
   coverImageButtonDisabled: boolean;
   coverImageButtonVariant: "primary" | "secondary";
@@ -67,6 +71,10 @@ export function VisualEngineRail({
   nodeVisualSuggestions,
   onSaveImagePromptAssets,
   savingImagePrompts,
+  onGenerateInlineImages,
+  generatingInlineImages,
+  onInsertVisualAssets,
+  insertingVisualAssets,
   onGenerateCoverImage,
   coverImageButtonDisabled,
   coverImageButtonVariant,
@@ -100,7 +108,7 @@ export function VisualEngineRail({
               variant="secondary"
               size="sm"
             >
-              {savingImagePrompts ? "保存中…" : "保存为资产"}
+              {savingImagePrompts ? "规划中…" : "规划 brief"}
             </Button>
           </div>
           {nodeVisualSuggestions.map((item) => (
@@ -119,6 +127,20 @@ export function VisualEngineRail({
           className={coverImageButtonMuted ? "text-inkMuted hover:border-lineStrong hover:bg-surface hover:text-inkMuted" : ""}
         >
           {coverImageButtonLabel}
+        </Button>
+        <Button
+          onClick={() => void onGenerateInlineImages()}
+          disabled={generatingInlineImages || imageAssetStorageLimitReached}
+          variant="secondary"
+        >
+          {generatingInlineImages ? "生成中…" : "生成文中图"}
+        </Button>
+        <Button
+          onClick={() => void onInsertVisualAssets()}
+          disabled={insertingVisualAssets}
+          variant="secondary"
+        >
+          {insertingVisualAssets ? "插入中…" : "插入终稿"}
         </Button>
       </div>
       {canUseCoverImageReference ? (
@@ -202,7 +224,12 @@ export function VisualEngineRail({
       ) : null}
       {imagePrompts.length > 0 ? (
         <div className="mt-4 space-y-3 border-t border-line pt-4">
-          <div className="text-xs uppercase tracking-[0.2em] text-inkMuted">已保存的文中配图提示词资产</div>
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-xs uppercase tracking-[0.2em] text-inkMuted">已保存的文中配图视觉 brief</div>
+            <Button onClick={() => void onGenerateInlineImages()} disabled={generatingInlineImages} variant="secondary" size="sm">
+              {generatingInlineImages ? "生成中…" : "批量生成"}
+            </Button>
+          </div>
           {imagePrompts.map((item) => (
             <div key={item.id} className="border border-lineStrong bg-surface px-4 py-3">
               <div className="text-xs uppercase tracking-[0.18em] text-inkMuted">

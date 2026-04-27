@@ -111,6 +111,8 @@ type ArticleWorkspaceAssetActionsDeps = {
   setSelectingCoverCandidateId: (value: number | null) => void;
   setCoverImage: (value: CoverImageState) => void;
   setSavingImagePrompts: (value: boolean) => void;
+  setGeneratingInlineImages: (value: boolean) => void;
+  setInsertingVisualAssets: (value: boolean) => void;
   setImagePrompts: (value: Array<Record<string, unknown>>) => void;
   setApplyingLayout: (value: boolean) => void;
   updateWorkflow: (stageCode: string, action?: "set" | "complete" | "fail", silent?: boolean) => Promise<void>;
@@ -169,6 +171,8 @@ export function createArticleWorkspaceAssetActions({
   setSelectingCoverCandidateId,
   setCoverImage,
   setSavingImagePrompts,
+  setGeneratingInlineImages,
+  setInsertingVisualAssets,
   setImagePrompts,
   setApplyingLayout,
   updateWorkflow,
@@ -315,6 +319,61 @@ export function createArticleWorkspaceAssetActions({
     }
   }
 
+  async function generateInlineImages() {
+    setGeneratingInlineImages(true);
+    setMessage("");
+    try {
+      const response = await fetch(`/api/articles/${articleId}/visuals/generate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scope: "inline", insert: false }),
+      });
+      const json = await response.json();
+      if (!response.ok || !json.success) {
+        throw new Error(json.error || "文中配图生成失败");
+      }
+      const generatedCount = Array.isArray(json.data?.generated) ? json.data.generated.length : 0;
+      const warningCount = Array.isArray(json.data?.warnings) ? json.data.warnings.length : 0;
+      refreshRouter();
+      setMessage(
+        warningCount > 0
+          ? `已生成 ${generatedCount} 张文中图，${warningCount} 个警告可在视觉资产中查看。`
+          : `已生成 ${generatedCount} 张文中图。`,
+      );
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "文中配图生成失败");
+    } finally {
+      setGeneratingInlineImages(false);
+    }
+  }
+
+  async function insertVisualAssets() {
+    setInsertingVisualAssets(true);
+    setMessage("");
+    try {
+      const response = await fetch(`/api/articles/${articleId}/visuals/insert`, {
+        method: "POST",
+      });
+      const json = await response.json();
+      if (!response.ok || !json.success) {
+        throw new Error(json.error || "插入视觉资产失败");
+      }
+      const insertedCount = Array.isArray(json.data?.inserted) ? json.data.inserted.length : 0;
+      await reloadArticleMeta();
+      const nextPreview = await requestPublishPreview({ silent: true, setLoading: false });
+      if (nextPreview) {
+        setPublishPreview(nextPreview);
+        setHtmlPreview(nextPreview.finalHtml || "");
+      }
+      refreshRouter();
+      setMessage(insertedCount > 0 ? `已插入 ${insertedCount} 张文中图并刷新排版预览。` : "没有需要插入的新文中图。");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "插入视觉资产失败");
+    } finally {
+      setInsertingVisualAssets(false);
+    }
+  }
+
   async function applyLayoutTemplate() {
     setApplyingLayout(true);
     setMessage("");
@@ -346,6 +405,8 @@ export function createArticleWorkspaceAssetActions({
     generateCoverImage,
     selectCoverCandidate,
     saveImagePromptAssets,
+    generateInlineImages,
+    insertVisualAssets,
     applyLayoutTemplate,
   };
 }
