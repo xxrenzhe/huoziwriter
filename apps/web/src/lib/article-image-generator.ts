@@ -1,6 +1,7 @@
 import { syncArticleVisualAssetToAssetFiles } from "./asset-files";
 import { buildArticleDiagramSvg, svgToDataUrl } from "./article-svg-diagram";
 import { updateArticleVisualBriefStatus } from "./article-visual-repository";
+import { evaluateVisualAssetQuality } from "./article-visual-quality";
 import type { ArticleVisualBrief } from "./article-visual-types";
 import { generateCoverImage } from "./image-generation";
 import { persistArticleVisualImageAssetSet } from "./image-assets";
@@ -61,6 +62,25 @@ export async function generateArticleVisualAsset(brief: ArticleVisualBrief) {
       visualScope: brief.visualScope,
       visualType: brief.visualType,
     };
+    const quality = evaluateVisualAssetQuality({
+      brief,
+      asset: {
+        id: 0,
+        visualBriefId: brief.id,
+        articleNodeId: brief.articleNodeId ?? null,
+        assetType,
+        publicUrl: persisted.imageUrl,
+        altText: brief.altText,
+        caption: brief.caption ?? null,
+        insertAnchor: brief.targetAnchor,
+        status: "ready",
+        manifest,
+      },
+      requirePublishReady: true,
+    });
+    if (quality.status === "blocked") {
+      throw new Error(quality.blockers.join("；") || "图片质量门槛未通过");
+    }
     const assetFileId = await syncArticleVisualAssetToAssetFiles({
       assetScope: "visual_brief",
       sourceRecordId: brief.id,

@@ -4,6 +4,7 @@ import { EVIDENCE_HOOK_TAG_OPTIONS, getArticleEvidenceStats } from "./article-ev
 import { getStrategyCardMissingFields, isStrategyCardComplete, STRATEGY_ARCHETYPE_OPTIONS } from "./article-strategy";
 import { getArticleNodes } from "./article-outline";
 import { getArticleStageArtifact, getArticleStageArtifactsByDocumentIds } from "./article-stage-artifacts";
+import { evaluateArticleVisualQuality } from "./article-visual-quality";
 import { getActiveTemplateById } from "./layout-templates";
 import { evaluateOpeningGuardChecks as evaluateOpeningPatternGuardChecks } from "./opening-patterns";
 import { getArticleById, getArticleEvidenceItems, getArticlesByUser, getArticleStrategyCard, getLatestArticleCoverImage, getLatestWechatSyncLogForArticle, getWechatConnectionRaw } from "./repositories";
@@ -256,6 +257,11 @@ export async function evaluatePublishGuard(input: {
       wechatConnectionId: input.wechatConnectionId ?? null,
     }),
   ]);
+  const visualQuality = await evaluateArticleVisualQuality({
+    articleId: input.articleId,
+    userId: input.userId,
+    requireCover: Boolean(input.wechatConnectionId),
+  });
 
   const checks: PublishGuardCheck[] = [];
   const blockers: string[] = [];
@@ -897,6 +903,21 @@ export async function evaluatePublishGuard(input: {
     actionLabel: coverImage ? undefined : "去选封面图",
   });
 
+  if (visualQuality.checkedBriefCount > 0) {
+    pushCheck(checks, blockers, warnings, suggestions, {
+      key: "articleVisualQuality",
+      label: "视觉资产质检",
+      status: visualQuality.status,
+      severity: visualQuality.status === "blocked" ? "blocking" : visualQuality.status === "warning" ? "warning" : "suggestion",
+      detail:
+        visualQuality.status === "passed"
+          ? `已检查 ${visualQuality.checkedAssetCount} 个视觉资产，URL、alt、prompt manifest 和衍生图可用于发布。`
+          : visualQuality.blockers[0] || visualQuality.warnings[0] || "视觉资产仍有未处理风险。",
+      targetStageCode: visualQuality.status === "passed" ? undefined : "inlineImageGenerate",
+      actionLabel: visualQuality.status === "passed" ? undefined : "去处理视觉资产",
+    });
+  }
+
   pushCheck(checks, blockers, warnings, suggestions, {
     key: "template",
     label: "排版模板",
@@ -1111,6 +1132,7 @@ export async function evaluatePublishGuard(input: {
             && fourPointAuditLockable
             && !rhythmConsistencyNeedsAttention
             && !openingNeedsAttention
+            && visualQuality.status !== "blocked"
             ? "ready"
             : coverImage
               || connectionHealth.status === "valid"
@@ -1118,6 +1140,7 @@ export async function evaluatePublishGuard(input: {
               || !fourPointAuditLockable
               || rhythmConsistencyNeedsAttention
               || openingNeedsAttention
+              || visualQuality.status === "blocked"
               ? "needs_attention"
               : "blocked",
       detail:
@@ -1141,6 +1164,7 @@ export async function evaluatePublishGuard(input: {
                 !hookCoverageReady ? "爆点覆盖度不足" : null,
                 !fourPointAuditLockable ? "四元强度未达锁定线" : null,
                 rhythmConsistencyNeedsAttention ? "原型节奏还未对齐" : null,
+                visualQuality.status === "blocked" ? "视觉资产质检未通过" : null,
                 !coverImage ? "缺封面图" : null,
                 connectionHealth.status !== "valid" ? "公众号连接待确认" : null,
               ]

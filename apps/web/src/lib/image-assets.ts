@@ -28,6 +28,7 @@ type DerivedAssetSet = {
 
 function detectExtension(contentType: string) {
   const normalized = contentType.toLowerCase();
+  if (normalized.includes("svg")) return "svg";
   if (normalized.includes("png")) return "png";
   if (normalized.includes("jpeg") || normalized.includes("jpg")) return "jpg";
   if (normalized.includes("webp")) return "webp";
@@ -64,7 +65,15 @@ async function createImageDerivatives(downloaded: DownloadedBinaryAsset): Promis
     throw new Error("无法识别图片尺寸");
   }
 
-  const derivedFormat = pickDerivedFormat(metadata);
+  const sourceIsSvg = normalizeContentType(downloaded.contentType).includes("svg");
+  const derivedFormat = sourceIsSvg
+    ? {
+        extension: "webp",
+        contentType: "image/webp",
+        encode: (instance: sharp.Sharp) => instance.webp({ quality: 88, effort: 4 }),
+        thumbnailEncode: (instance: sharp.Sharp) => instance.webp({ quality: 78, effort: 4 }),
+      }
+    : pickDerivedFormat(metadata);
   const compressedPipeline = derivedFormat
     .encode(
       sharp(downloaded.buffer, { failOn: "none", animated: false })
@@ -263,6 +272,21 @@ export async function persistCoverImageAssetSet(input: {
       byteLength: derivatives.thumbnail.byteLength,
       width: derivatives.thumbnail.width,
       height: derivatives.thumbnail.height,
+    },
+    svgOriginal: derivatives.original.contentType.includes("svg")
+      ? {
+          objectKey: original.objectKey,
+          publicUrl: original.publicUrl,
+          contentType: derivatives.original.contentType,
+          byteLength: derivatives.original.byteLength,
+        }
+      : null,
+    publishDerivative: {
+      objectKey: compressed.objectKey,
+      publicUrl: compressed.publicUrl,
+      contentType: derivatives.compressed.contentType,
+      width: derivatives.compressed.width,
+      height: derivatives.compressed.height,
     },
   };
 
