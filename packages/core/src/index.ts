@@ -199,6 +199,18 @@ export const DEFAULT_MODEL_ROUTES: readonly ModelRouteDefinition[] = [
     description: "封面图视觉 brief、负面提示词、alt text 与风格约束生成",
   },
   {
+    sceneCode: "inlineImagePlan",
+    primaryModel: "gpt-5.4-mini",
+    fallbackModel: "gpt-5.4-nano",
+    description: "文中配图规划、baoyu 维度选择、插图锚点与事实来源绑定",
+  },
+  {
+    sceneCode: "inlineImageGenerate",
+    primaryModel: "gpt-5.4-mini",
+    fallbackModel: "gpt-5.4-nano",
+    description: "文中配图生成前的质量守门、失败降级与插图插入策略",
+  },
+  {
     sceneCode: "layoutExtract",
     primaryModel: "gemini-3.0-flash",
     fallbackModel: "gpt-5.4-mini",

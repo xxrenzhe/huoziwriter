@@ -6,8 +6,15 @@ type ImageRequestMode = "generations" | "edits" | "chatCompletions" | "geminiGen
 const GEMINI_NATIVE_IMAGE_RETRYABLE_STATUS_CODES = new Set([408, 429, 500, 502, 503, 504]);
 const GEMINI_NATIVE_IMAGE_RETRY_DELAYS_MS = [250, 800];
 
-function resolveOutputSize(outputResolution?: string | null) {
+function resolveOutputSize(outputResolution?: string | null, aspectRatio?: string | null) {
   const normalized = String(outputResolution || process.env.COVER_IMAGE_OUTPUT_RESOLUTION || "1K").trim().toLowerCase();
+  const aspect = String(aspectRatio || "").trim();
+  if ((normalized === "1k" || normalized === "1024") && aspect) {
+    if (aspect === "16:9") return "1536x1024";
+    if (aspect === "3:4") return "1024x1536";
+    if (aspect === "4:3") return "1024x768";
+    if (aspect === "1:1") return "1024x1024";
+  }
   if (!normalized) {
     return "1024x1024";
   }
@@ -728,19 +735,24 @@ export async function generateCoverImage(input: {
   referenceImageDataUrl?: string | null;
   authoringContext?: ImageAuthoringStyleContext | null;
   outputResolution?: string | null;
+  aspectRatio?: string | null;
+  promptOverride?: string | null;
+  negativePrompt?: string | null;
 }) {
   const engine = await getGlobalCoverImageEngineSecret();
   if (!engine || !engine.isEnabled || !engine.baseUrl || !engine.apiKey) {
     throw new Error("请先由运营后台在后台配置全局生图 AI 引擎的 Base_URL 和 API Key");
   }
 
-  const prompt = buildImagePrompt(
-    input.title || "Huozi Writer",
-    Boolean(input.referenceImageDataUrl),
-    undefined,
-    input.authoringContext,
-  );
-  const size = resolveOutputSize(input.outputResolution);
+  const prompt = input.promptOverride
+    ? `${input.promptOverride}${input.negativePrompt ? `\n负面提示：${input.negativePrompt}` : ""}`
+    : buildImagePrompt(
+        input.title || "Huozi Writer",
+        Boolean(input.referenceImageDataUrl),
+        undefined,
+        input.authoringContext,
+      );
+  const size = resolveOutputSize(input.outputResolution, input.aspectRatio);
   const { endpoint, requestInit, mode } = buildImageRequest({
     providerName: engine.providerName,
     baseUrl: engine.baseUrl,

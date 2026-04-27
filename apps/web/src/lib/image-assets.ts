@@ -167,13 +167,15 @@ export async function persistCoverImageAssetSet(input: {
   batchToken?: string | null;
   variantLabel?: string | null;
   source: string;
+  assetNamespace?: string | null;
+  assetLabel?: string | null;
 }) {
   const downloaded = await downloadBinaryAsset(input.source);
   const articleScope = input.articleId ? `article-${input.articleId}` : "unbound";
   const batchScope = sanitizeSegment(input.batchToken || "single");
-  const variantScope = sanitizeSegment(input.variantLabel || "cover");
+  const variantScope = sanitizeSegment(input.assetLabel || input.variantLabel || "cover");
   const digest = createHash("sha1").update(downloaded.buffer).digest("hex").slice(0, 12);
-  const basePrefix = `cover-images/user-${input.userId}/${articleScope}/${batchScope}/${variantScope}-${digest}`;
+  const basePrefix = `${sanitizeSegment(input.assetNamespace || "cover-images")}/user-${input.userId}/${articleScope}/${batchScope}/${variantScope}-${digest}`;
   let derivativeMode = "sharp";
   let derivativeWarning: string | null = null;
   let derivatives: DerivedAssetSet;
@@ -286,6 +288,24 @@ export async function persistArticleCoverImageAssetSet(input: {
     articleId: input.articleId ?? null,
     batchToken: input.batchToken,
     variantLabel: input.variantLabel,
+    source: input.source,
+  });
+}
+
+export async function persistArticleVisualImageAssetSet(input: {
+  userId: number;
+  articleId: number;
+  visualBriefId: number;
+  assetType: string;
+  source: string;
+}) {
+  return persistCoverImageAssetSet({
+    userId: input.userId,
+    articleId: input.articleId,
+    batchToken: "article-visuals",
+    variantLabel: input.assetType,
+    assetNamespace: "article-images",
+    assetLabel: `${input.assetType}-${input.visualBriefId}`,
     source: input.source,
   });
 }

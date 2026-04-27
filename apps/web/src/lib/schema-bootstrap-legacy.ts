@@ -320,7 +320,17 @@ export async function applyLegacySchemaCompat({
   await ensureColumn("asset_files", "byte_length", "INTEGER");
   await ensureColumn("asset_files", "status", "TEXT NOT NULL DEFAULT 'ready'");
   await ensureColumn("asset_files", "manifest_json", getDatabase().type === "postgres" ? "JSONB" : "TEXT");
+  await ensureColumn("asset_files", "visual_brief_id", getDatabase().type === "postgres" ? "BIGINT" : "INTEGER");
+  await ensureColumn("asset_files", "article_node_id", getDatabase().type === "postgres" ? "BIGINT" : "INTEGER");
+  await ensureColumn("asset_files", "insert_anchor", "TEXT");
+  await ensureColumn("asset_files", "alt_text", "TEXT");
+  await ensureColumn("asset_files", "caption", "TEXT");
   await ensureColumn("asset_files", "updated_at", `${getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "NOW()" : "(datetime('now'))"}`);
+  await ensureColumn("article_image_prompts", "visual_brief_id", getDatabase().type === "postgres" ? "BIGINT" : "INTEGER");
+  await ensureColumn("article_image_prompts", "status", "TEXT NOT NULL DEFAULT 'prompt_ready'");
+  await ensureColumn("article_image_prompts", "insert_anchor", "TEXT");
+  await ensureColumn("article_image_prompts", "alt_text", "TEXT");
+  await ensureColumn("article_image_prompts", "caption", "TEXT");
   await ensureColumn("writing_asset_rollouts", "auto_mode", "TEXT NOT NULL DEFAULT 'manual'");
   await ensureColumn("writing_asset_rollouts", "rollout_observe_only", `${getDatabase().type === "postgres" ? "BOOLEAN" : "INTEGER"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "FALSE" : "0"}`);
   await ensureColumn("ai_call_observations", "call_mode", "TEXT NOT NULL DEFAULT 'primary'");
@@ -1235,6 +1245,11 @@ export function buildLegacySchemaCreateTableStatements(databaseType: SchemaBoots
       byte_length INTEGER,
       status TEXT NOT NULL DEFAULT 'ready',
       manifest_json ${dbType === "postgres" ? "JSONB" : "TEXT"},
+      visual_brief_id ${dbType === "postgres" ? "BIGINT" : "INTEGER"},
+      article_node_id ${dbType === "postgres" ? "BIGINT" : "INTEGER"},
+      insert_anchor TEXT,
+      alt_text TEXT,
+      caption TEXT,
       created_at ${dbType === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${dbType === "postgres" ? "NOW()" : "(datetime('now'))"},
       updated_at ${dbType === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${dbType === "postgres" ? "NOW()" : "(datetime('now'))"},
       UNIQUE(asset_scope, source_record_id)
@@ -1259,10 +1274,72 @@ export function buildLegacySchemaCreateTableStatements(databaseType: SchemaBoots
       asset_type TEXT NOT NULL DEFAULT 'inline',
       title TEXT NOT NULL,
       prompt TEXT NOT NULL,
+      visual_brief_id ${dbType === "postgres" ? "BIGINT" : "INTEGER"},
+      status TEXT NOT NULL DEFAULT 'prompt_ready',
+      insert_anchor TEXT,
+      alt_text TEXT,
+      caption TEXT,
       created_at ${dbType === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${dbType === "postgres" ? "NOW()" : "(datetime('now'))"},
       updated_at ${dbType === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${dbType === "postgres" ? "NOW()" : "(datetime('now'))"},
       UNIQUE(article_id, article_node_id, asset_type)
     )`,
+    `CREATE TABLE IF NOT EXISTS article_visual_briefs (
+      id ${dbType === "postgres" ? "BIGSERIAL" : "INTEGER"} PRIMARY KEY ${dbType === "postgres" ? "" : "AUTOINCREMENT"},
+      user_id ${dbType === "postgres" ? "BIGINT" : "INTEGER"} NOT NULL,
+      article_id ${dbType === "postgres" ? "BIGINT" : "INTEGER"} NOT NULL,
+      article_node_id ${dbType === "postgres" ? "BIGINT" : "INTEGER"},
+      visual_scope TEXT NOT NULL,
+      target_anchor TEXT NOT NULL,
+      baoyu_skill TEXT NOT NULL,
+      visual_type TEXT NOT NULL,
+      layout_code TEXT,
+      style_code TEXT,
+      palette_code TEXT,
+      rendering_code TEXT,
+      text_level TEXT,
+      mood_code TEXT,
+      font_code TEXT,
+      aspect_ratio TEXT NOT NULL DEFAULT '16:9',
+      output_resolution TEXT NOT NULL DEFAULT '1K',
+      title TEXT NOT NULL,
+      purpose TEXT NOT NULL,
+      alt_text TEXT NOT NULL,
+      caption TEXT,
+      labels_json ${dbType === "postgres" ? "JSONB" : "TEXT"},
+      source_facts_json ${dbType === "postgres" ? "JSONB" : "TEXT"},
+      prompt_text TEXT,
+      negative_prompt TEXT,
+      prompt_hash TEXT,
+      prompt_manifest_json ${dbType === "postgres" ? "JSONB" : "TEXT"},
+      status TEXT NOT NULL DEFAULT 'planned',
+      error_message TEXT,
+      generated_asset_file_id ${dbType === "postgres" ? "BIGINT" : "INTEGER"},
+      inserted_at ${dbType === "postgres" ? "TIMESTAMPTZ" : "TEXT"},
+      created_at ${dbType === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${dbType === "postgres" ? "NOW()" : "(datetime('now'))"},
+      updated_at ${dbType === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${dbType === "postgres" ? "NOW()" : "(datetime('now'))"},
+      UNIQUE(user_id, article_id, visual_scope, target_anchor, visual_type),
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (article_id) REFERENCES articles(id) ON DELETE CASCADE,
+      FOREIGN KEY (article_node_id) REFERENCES article_nodes(id) ON DELETE SET NULL
+    )`,
+    `CREATE TABLE IF NOT EXISTS article_image_generation_jobs (
+      id ${dbType === "postgres" ? "BIGSERIAL" : "INTEGER"} PRIMARY KEY ${dbType === "postgres" ? "" : "AUTOINCREMENT"},
+      user_id ${dbType === "postgres" ? "BIGINT" : "INTEGER"} NOT NULL,
+      article_id ${dbType === "postgres" ? "BIGINT" : "INTEGER"} NOT NULL,
+      job_scope TEXT NOT NULL DEFAULT 'article_visuals',
+      status TEXT NOT NULL DEFAULT 'pending',
+      total_count INTEGER NOT NULL DEFAULT 0,
+      success_count INTEGER NOT NULL DEFAULT 0,
+      failed_count INTEGER NOT NULL DEFAULT 0,
+      error_message TEXT,
+      job_payload_json ${dbType === "postgres" ? "JSONB" : "TEXT"},
+      created_at ${dbType === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${dbType === "postgres" ? "NOW()" : "(datetime('now'))"},
+      updated_at ${dbType === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${dbType === "postgres" ? "NOW()" : "(datetime('now'))"},
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (article_id) REFERENCES articles(id) ON DELETE CASCADE
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_article_visual_briefs_article ON article_visual_briefs(user_id, article_id, visual_scope, status)`,
+    `CREATE INDEX IF NOT EXISTS idx_article_visual_assets ON asset_files(user_id, article_id, asset_scope, asset_type)`,
     `CREATE TABLE IF NOT EXISTS global_ai_engines (
       id ${dbType === "postgres" ? "BIGSERIAL" : "INTEGER"} PRIMARY KEY ${dbType === "postgres" ? "" : "AUTOINCREMENT"},
       engine_code TEXT NOT NULL UNIQUE,

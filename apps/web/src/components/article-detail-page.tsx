@@ -257,6 +257,11 @@ export async function ArticleDetailPage({
         assetType: item.asset_type,
         title: item.title,
         prompt: item.prompt,
+        status: item.status,
+        insertAnchor: item.insert_anchor,
+        altText: item.alt_text,
+        caption: item.caption,
+        visualBriefId: item.visual_brief_id,
         createdAt: item.created_at,
         updatedAt: item.updated_at,
       }))}

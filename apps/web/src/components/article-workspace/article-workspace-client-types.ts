@@ -154,6 +154,11 @@ export type ArticleImagePromptItem = {
   assetType: string;
   title: string;
   prompt: string;
+  status?: string | null;
+  insertAnchor?: string | null;
+  altText?: string | null;
+  caption?: string | null;
+  visualBriefId?: number | null;
   createdAt: string;
   updatedAt: string;
 };

@@ -9,7 +9,11 @@ import {
   runPublishAutoRepair,
 } from "./article-automation-publish-repair";
 import { generateArticleStageArtifact, getArticleStageArtifact, updateArticleStageArtifactPayload } from "./article-stage-artifacts";
+import { generateArticleVisualAsset } from "./article-image-generator";
+import { insertArticleVisualAssetsIntoMarkdown } from "./article-image-inserter";
 import { getResearchBriefGenerationGate } from "./article-research";
+import { planArticleVisualBriefs } from "./article-visual-planner";
+import { listArticleVisualBriefs, replaceArticleVisualBriefs } from "./article-visual-repository";
 import {
   bindArticleToAutomationRun,
   completeArticleAutomationStageRun,
@@ -97,6 +101,7 @@ const DRAFT_PREVIEW_FAST_SKIPPED_STAGE_CODES = new Set([
   "deepWrite",
   "languageGuardAudit",
   "coverImageBrief",
+  "inlineImageGenerate",
 ]);
 
 function isFastDraftPreview(detail: AutomationRunDetail) {
@@ -1112,6 +1117,116 @@ async function executeLayoutApply(detail: AutomationRunDetail): Promise<StageExe
   };
 }
 
+async function executeInlineImagePlan(detail: AutomationRunDetail): Promise<StageExecutionResult> {
+  if (!detail.run.articleId) {
+    throw new AutomationStageBlockedError("缺少稿件记录，无法规划文中配图。");
+  }
+  const article = await getArticleById(detail.run.articleId, detail.run.userId);
+  if (!article) {
+    throw new AutomationStageBlockedError("稿件不存在，无法规划文中配图。");
+  }
+  const planned = await planArticleVisualBriefs({
+    userId: detail.run.userId,
+    articleId: article.id,
+    title: article.title,
+    markdown: article.markdown_content,
+    includeCover: true,
+    includeInline: true,
+  });
+  const saved = await replaceArticleVisualBriefs({
+    userId: detail.run.userId,
+    articleId: article.id,
+    briefs: planned,
+  });
+  const inlineBriefs = saved.filter((brief) => brief.visualScope !== "cover");
+  return {
+    outputJson: {
+      imageCount: inlineBriefs.length,
+      briefs: inlineBriefs.map((brief) => ({
+        id: brief.id,
+        visualScope: brief.visualScope,
+        visualType: brief.visualType,
+        baoyuSkill: brief.baoyuSkill,
+        targetAnchor: brief.targetAnchor,
+        title: brief.title,
+        purpose: brief.purpose,
+        promptHash: brief.promptHash,
+        status: brief.status,
+      })),
+      promptHashes: inlineBriefs.map((brief) => brief.promptHash).filter(Boolean),
+    },
+    qualityJson: {
+      provider: "local",
+      baoyuPresetVersion: "2026-04-27",
+      coverBriefPlanned: saved.some((brief) => brief.visualScope === "cover"),
+    },
+    provider: "local",
+    model: "baoyu-compatible-planner",
+  };
+}
+
+async function executeInlineImageGenerate(detail: AutomationRunDetail): Promise<StageExecutionResult> {
+  if (!detail.run.articleId) {
+    throw new AutomationStageBlockedError("缺少稿件记录，无法生成文中配图。");
+  }
+  const article = await getArticleById(detail.run.articleId, detail.run.userId);
+  if (!article) {
+    throw new AutomationStageBlockedError("稿件不存在，无法生成文中配图。");
+  }
+  let briefs = (await listArticleVisualBriefs(detail.run.userId, article.id)).filter((brief) => brief.visualScope !== "cover");
+  if (briefs.length === 0) {
+    const planned = await planArticleVisualBriefs({
+      userId: detail.run.userId,
+      articleId: article.id,
+      title: article.title,
+      markdown: article.markdown_content,
+      includeCover: false,
+      includeInline: true,
+    });
+    briefs = (await replaceArticleVisualBriefs({
+      userId: detail.run.userId,
+      articleId: article.id,
+      briefs: planned,
+    })).filter((brief) => brief.visualScope !== "cover");
+  }
+
+  const generated: Array<Record<string, unknown>> = [];
+  const warnings: string[] = [];
+  for (const brief of briefs.filter((item) => item.status !== "generated" && item.status !== "inserted")) {
+    try {
+      generated.push(await generateArticleVisualAsset(brief));
+    } catch (error) {
+      warnings.push(`${brief.title}: ${error instanceof Error ? error.message : "图片生成失败"}`);
+    }
+  }
+
+  const refreshedArticle = await getArticleById(article.id, detail.run.userId);
+  const insertion = refreshedArticle
+    ? await insertArticleVisualAssetsIntoMarkdown({
+        userId: detail.run.userId,
+        articleId: article.id,
+        title: refreshedArticle.title,
+        markdown: refreshedArticle.markdown_content,
+      })
+    : { inserted: [] };
+
+  return {
+    outputJson: {
+      generated,
+      inserted: insertion.inserted,
+      warnings,
+    },
+    qualityJson: {
+      generatedCount: generated.length,
+      insertedCount: insertion.inserted.length,
+      warningCount: warnings.length,
+      nonBlocking: true,
+    },
+    provider: generated.some((item) => item.assetType !== "diagram_png") ? "coverImageEngine" : "local",
+    model: "article-visual-generator",
+  };
+}
+
 async function executePublishGuard(
   detail: AutomationRunDetail,
   promptContext?: AutomationPromptContext,
@@ -1182,6 +1297,8 @@ async function executeStage(detail: AutomationRunDetail, promptContext: Automati
   if (stageCode === "prosePolish") return await executeProsePolish(detail, promptContext);
   if (stageCode === "languageGuardAudit") return await executeLanguageGuardAudit(detail, promptContext);
   if (stageCode === "coverImageBrief") return await executeCoverImageBrief(detail, promptContext);
+  if (stageCode === "inlineImagePlan") return await executeInlineImagePlan(detail);
+  if (stageCode === "inlineImageGenerate") return await executeInlineImageGenerate(detail);
   if (stageCode === "layoutApply") return await executeLayoutApply(detail);
   if (stageCode === "publishGuard") return await executePublishGuard(detail, promptContext, { allowRepair: shouldRunPublishGuardAutoRepair(detail) });
   throw new Error(`暂不支持的自动化阶段：${stageCode}`);

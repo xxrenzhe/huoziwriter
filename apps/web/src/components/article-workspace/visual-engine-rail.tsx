@@ -20,6 +20,9 @@ type ArticleImagePromptLike = {
   id: number;
   title: string;
   prompt: string;
+  assetType?: string | null;
+  status?: string | null;
+  visualBriefId?: number | null;
   updatedAt: string;
 };
 
@@ -202,7 +205,9 @@ export function VisualEngineRail({
           <div className="text-xs uppercase tracking-[0.2em] text-inkMuted">已保存的文中配图提示词资产</div>
           {imagePrompts.map((item) => (
             <div key={item.id} className="border border-lineStrong bg-surface px-4 py-3">
-              <div className="text-xs uppercase tracking-[0.18em] text-inkMuted">{item.title}</div>
+              <div className="text-xs uppercase tracking-[0.18em] text-inkMuted">
+                {item.title} · {item.assetType || "inline"} · {item.status || "prompt_ready"}
+              </div>
               <div className="mt-2 text-sm leading-7 text-inkSoft">{item.prompt}</div>
               <div className="mt-2 text-xs text-inkMuted">{new Date(item.updatedAt).toLocaleString("zh-CN")}</div>
             </div>

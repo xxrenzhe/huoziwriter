@@ -92,6 +92,20 @@ export const PLAN22_STAGE_PROMPT_DEFINITIONS: readonly Plan22StagePromptDefiniti
     requiredOutputFields: ["prompt", "negativePrompt", "altText", "style"],
   },
   {
+    stageCode: "inlineImagePlan",
+    promptId: "inline_image_plan",
+    sceneCode: "inlineImagePlan",
+    category: "publish",
+    requiredOutputFields: ["briefs", "promptHashes", "imageCount"],
+  },
+  {
+    stageCode: "inlineImageGenerate",
+    promptId: "inline_image_generate",
+    sceneCode: "inlineImageGenerate",
+    category: "publish",
+    requiredOutputFields: ["generated", "inserted", "warnings"],
+  },
+  {
     stageCode: "layoutApply",
     promptId: "layout_apply",
     sceneCode: "layoutExtract",

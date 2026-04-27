@@ -818,10 +818,17 @@ export async function getArticleImagePrompts(userId: number, articleId: number) 
     asset_type: string;
     title: string;
     prompt: string;
+    visual_brief_id: number | null;
+    status: string;
+    insert_anchor: string | null;
+    alt_text: string | null;
+    caption: string | null;
     created_at: string;
     updated_at: string;
   }>(
-    `SELECT id, article_node_id AS article_node_id, asset_type, title, prompt, created_at, updated_at
+    `SELECT
+       id, article_node_id AS article_node_id, asset_type, title, prompt, visual_brief_id,
+       status, insert_anchor, alt_text, caption, created_at, updated_at
      FROM article_image_prompts
      WHERE user_id = ? AND article_id = ?
      ORDER BY COALESCE(article_node_id, 0) ASC, id ASC`,

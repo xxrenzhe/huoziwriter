@@ -1,6 +1,6 @@
 import { getDatabase } from "./db";
 
-type AssetFileScope = "cover" | "candidate";
+type AssetFileScope = "cover" | "candidate" | "visual_brief";
 
 type AssetFileSyncInput = {
   assetScope: AssetFileScope;
@@ -15,6 +15,12 @@ type AssetFileSyncInput = {
   compressedObjectKey?: string | null;
   thumbnailObjectKey?: string | null;
   assetManifestJson?: string | Record<string, unknown> | null;
+  assetType?: string | null;
+  visualBriefId?: number | null;
+  articleNodeId?: number | null;
+  insertAnchor?: string | null;
+  altText?: string | null;
+  caption?: string | null;
   createdAt?: string | null;
 };
 
@@ -55,13 +61,14 @@ export async function syncCoverAssetToAssetFiles(input: AssetFileSyncInput) {
       `INSERT INTO asset_files (
         user_id, article_id, asset_scope, asset_type, source_record_id, batch_token, variant_label,
         storage_provider, public_url, original_object_key, compressed_object_key, thumbnail_object_key,
-        mime_type, byte_length, status, manifest_json, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        mime_type, byte_length, status, manifest_json, visual_brief_id, article_node_id, insert_anchor,
+        alt_text, caption, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         input.userId,
         input.articleId ?? null,
         input.assetScope,
-        "cover_image",
+        input.assetType || "cover_image",
         input.sourceRecordId,
         input.batchToken ?? null,
         input.variantLabel ?? null,
@@ -74,6 +81,11 @@ export async function syncCoverAssetToAssetFiles(input: AssetFileSyncInput) {
         byteLength,
         status,
         manifestJson,
+        input.visualBriefId ?? null,
+        input.articleNodeId ?? null,
+        input.insertAnchor ?? null,
+        input.altText ?? null,
+        input.caption ?? null,
         input.createdAt ?? now,
         now,
       ],
@@ -85,12 +97,13 @@ export async function syncCoverAssetToAssetFiles(input: AssetFileSyncInput) {
     `UPDATE asset_files
      SET user_id = ?, article_id = ?, asset_type = ?, batch_token = ?, variant_label = ?, storage_provider = ?,
          public_url = ?, original_object_key = ?, compressed_object_key = ?, thumbnail_object_key = ?,
-         mime_type = ?, byte_length = ?, status = ?, manifest_json = ?, updated_at = ?
+         mime_type = ?, byte_length = ?, status = ?, manifest_json = ?, visual_brief_id = ?, article_node_id = ?,
+         insert_anchor = ?, alt_text = ?, caption = ?, updated_at = ?
      WHERE asset_scope = ? AND source_record_id = ?`,
     [
       input.userId,
       input.articleId ?? null,
-      "cover_image",
+      input.assetType || "cover_image",
       input.batchToken ?? null,
       input.variantLabel ?? null,
       input.storageProvider ?? null,
@@ -102,6 +115,11 @@ export async function syncCoverAssetToAssetFiles(input: AssetFileSyncInput) {
       byteLength,
       status,
       manifestJson,
+      input.visualBriefId ?? null,
+      input.articleNodeId ?? null,
+      input.insertAnchor ?? null,
+      input.altText ?? null,
+      input.caption ?? null,
       now,
       input.assetScope,
       input.sourceRecordId,
@@ -114,6 +132,27 @@ export async function syncArticleCoverAssetToAssetFiles(input: AssetFileSyncInpu
   return syncCoverAssetToAssetFiles({
     ...input,
     articleId: input.articleId ?? null,
+  });
+}
+
+export async function syncArticleVisualAssetToAssetFiles(input: AssetFileSyncInput & {
+  visualBriefId: number;
+  articleNodeId?: number | null;
+  assetType: "cover_image" | "inline_image" | "infographic" | "diagram_svg" | "diagram_png";
+  insertAnchor?: string | null;
+  altText?: string | null;
+  caption?: string | null;
+}) {
+  return syncCoverAssetToAssetFiles({
+    ...input,
+    assetScope: "visual_brief",
+    sourceRecordId: input.visualBriefId,
+    visualBriefId: input.visualBriefId,
+    articleNodeId: input.articleNodeId ?? null,
+    assetType: input.assetType,
+    insertAnchor: input.insertAnchor ?? null,
+    altText: input.altText ?? null,
+    caption: input.caption ?? null,
   });
 }
 

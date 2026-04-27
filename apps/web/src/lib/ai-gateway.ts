@@ -24,6 +24,8 @@ type SupportedSceneCode =
   | "prosePolish"
   | "languageGuardAudit"
   | "coverImageBrief"
+  | "inlineImagePlan"
+  | "inlineImageGenerate"
   | "layoutExtract"
   | "publishGuard"
   | "topicFission.regularity"

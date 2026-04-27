@@ -91,6 +91,8 @@ export const stageLabels: Record<string, string> = {
   prosePolish: "文笔润色",
   languageGuardAudit: "语言守卫",
   coverImageBrief: "封面 Brief",
+  inlineImagePlan: "文中配图规划",
+  inlineImageGenerate: "文中配图生成",
   layoutApply: "排版应用",
   publishGuard: "发布守门",
 };
