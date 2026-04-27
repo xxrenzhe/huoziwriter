@@ -7,10 +7,11 @@ import {
   setArticleWorkflowPendingPublishIntent,
 } from "./article-workflows";
 import { getArticleStageArtifact } from "./article-stage-artifacts";
+import { ensureArticleVisualsPreparedForWechatDraft } from "./article-visual-publish-preparation";
 import { getActiveTemplateById } from "./layout-templates";
 import { assertWechatTemplateAllowed } from "./plan-access";
 import { evaluatePublishGuard, type PublishGuardResult } from "./publish-guard";
-import { createWechatSyncLog, getArticleById, getLatestWechatSyncLogForArticle, getWechatConnectionRaw, saveArticle, updateWechatConnectionToken } from "./repositories";
+import { createWechatSyncLog, getArticleById, getLatestArticleCoverImage, getLatestWechatSyncLogForArticle, getWechatConnectionRaw, saveArticle, updateWechatConnectionToken } from "./repositories";
 import { encryptSecret } from "./security";
 import { resolveTemplateRenderConfig } from "./template-rendering";
 import { publishWechatDraft } from "./wechat";
@@ -91,10 +92,11 @@ export async function publishArticleToWechat(input: {
   digest?: string | null;
   author?: string | null;
 }) {
-  const article = await getArticleById(input.articleId, input.userId);
-  if (!article) {
+  const initialArticle = await getArticleById(input.articleId, input.userId);
+  if (!initialArticle) {
     throw new WechatPublishError("稿件不存在", { code: "article_missing" });
   }
+  let article = initialArticle;
   const connection = await getWechatConnectionRaw(input.wechatConnectionId, input.userId);
   if (!connection) {
     throw new WechatPublishError("公众号连接不存在", { code: "connection_missing" });
@@ -123,6 +125,12 @@ export async function publishArticleToWechat(input: {
     }));
 
     await assertWechatTemplateAllowed(input.userId, templateId);
+    const visualPreparation = await ensureArticleVisualsPreparedForWechatDraft({
+      articleId: article.id,
+      userId: input.userId,
+      title: effectiveTitle,
+    });
+    article = (await getArticleById(input.articleId, input.userId)) ?? article;
     const articleVersionHash = buildArticleVersionHash({
       articleId: article.id,
       title: effectiveTitle,
@@ -175,10 +183,12 @@ export async function publishArticleToWechat(input: {
     }
 
     const template = templateId ? await getActiveTemplateById(templateId, input.userId) : null;
+    const coverImage = await getLatestArticleCoverImage(input.userId, article.id);
     const result = await publishWechatDraft({
       connection,
       title: effectiveTitle,
       markdownContent: article.markdown_content,
+      coverImageUrl: coverImage?.image_url ?? null,
       digest: input.digest ?? undefined,
       author: input.author ?? undefined,
       templateConfig: resolveTemplateRenderConfig(template),
@@ -196,7 +206,10 @@ export async function publishArticleToWechat(input: {
       wechatConnectionId: connection.id,
       mediaId: result.mediaId,
       status: "success",
-      requestSummary: result.requestSummary,
+      requestSummary: {
+        ...(result.requestSummary && typeof result.requestSummary === "object" ? result.requestSummary : {}),
+        visualPreparation,
+      },
       responseSummary: result.responseSummary,
       articleVersionHash,
       templateId: templateId ?? null,

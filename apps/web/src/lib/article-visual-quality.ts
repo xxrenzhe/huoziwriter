@@ -220,6 +220,7 @@ export async function evaluateArticleVisualQuality(input: {
   userId: number;
   articleId: number;
   requireCover?: boolean;
+  requireInline?: boolean;
 }): Promise<ArticleVisualQualityResult> {
   const [briefs, assets] = await Promise.all([
     listArticleVisualBriefs(input.userId, input.articleId),
@@ -234,10 +235,13 @@ export async function evaluateArticleVisualQuality(input: {
   const issues: ArticleVisualQualityIssue[] = [];
   for (const brief of briefs) {
     if (!brief.id) continue;
+    const requiresBriefPublishReady =
+      (brief.visualScope === "cover" && input.requireCover === true)
+      || (brief.visualScope !== "cover" && input.requireInline === true);
     const scoped = evaluateVisualAssetQuality({
       brief,
       asset: assetByBriefId.get(brief.id) ?? null,
-      requirePublishReady: brief.visualScope === "cover" && input.requireCover === true,
+      requirePublishReady: requiresBriefPublishReady,
     });
     issues.push(...scoped.issues);
   }

@@ -105,6 +105,16 @@ test("evaluateVisualAssetQuality warns when inline source facts are missing", ()
   assert.match(result.warnings.join("；"), /sourceFacts/);
 });
 
+test("evaluateVisualAssetQuality blocks missing inline assets when preparing wechat draft", () => {
+  const result = evaluateVisualAssetQuality({
+    brief: brief({ visualScope: "inline", baoyuSkill: "baoyu-article-illustrator", visualType: "scene" }),
+    asset: null,
+    requirePublishReady: true,
+  });
+  assert.equal(result.status, "blocked");
+  assert.match(result.blockers.join("；"), /文中配图/);
+});
+
 test("sanitizeGeneratedSvg removes scripts, event handlers and remote links", () => {
   const sanitized = sanitizeGeneratedSvg('<svg><script>alert(1)</script><a href="https://bad.test"><rect onclick="x()" /></a></svg>');
   assert.doesNotMatch(sanitized, /script/i);

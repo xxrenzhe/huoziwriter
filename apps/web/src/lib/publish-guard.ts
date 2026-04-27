@@ -263,6 +263,7 @@ export async function evaluatePublishGuard(input: {
     articleId: input.articleId,
     userId: input.userId,
     requireCover: Boolean(input.wechatConnectionId),
+    requireInline: Boolean(input.wechatConnectionId),
   });
 
   const checks: PublishGuardCheck[] = [];
