@@ -12,7 +12,7 @@ export type ArticlePromptQualityBriefStage =
   | "prosePolish";
 
 export type ArticleMaterialRealityMode = "nonfiction" | "fiction";
-export const DEFAULT_ARTICLE_MATERIAL_REALITY_MODE: ArticleMaterialRealityMode = "fiction";
+export const DEFAULT_ARTICLE_MATERIAL_REALITY_MODE: ArticleMaterialRealityMode = "nonfiction";
 
 export type ArticlePromptQualityBriefInput = {
   articleTitle?: string | null;
@@ -157,14 +157,19 @@ function buildSharedLines(input: ArticlePromptQualityBriefInput) {
           ? `真人信号：当前可用 ${humanSignalLabels.join("、")}，可以吸收进开头或段落推进，但不得扩写成输入里不存在的细节。`
           : "真人信号：当前不足，不得伪造第一人称亲历、客户案例、聊天记录或现场对话；没有实感素材时只能写成观察、判断或公开信号。",
         "事实纪律：未验证的数字、金额、比例、时间压缩、收益承诺和效率案例，只能降级为有限观察、趋势信号或待验证线索。",
+        "案例纪律：不得引入素材、来源正文、研究简报或事实锚点中不存在的命名平台、品牌、产品、人物或页面案例；需要举例时只能使用来源已有案例、行业泛例或匿名化抽象例。",
       ];
 
   return [
     "前置质量原则：缺研究、缺张力、缺读者收益的问题必须在上游阶段暴露或补齐，不能留到终稿润色或发布守门再补。",
     `爆文结构蓝图：${viralBlueprint.label}；标题、开头、大纲、正文执行卡必须围绕同一条蓝图生成，不允许各阶段各写各的。`,
     "可写性门槛必须内化到生成结果：研究层至少输出时间脉络、横向比较、交汇洞察各 1 条；标题必须 6 个候选且推荐项打开率分不低于 35；开头必须 3 个候选且推荐项钩子分不低于 65、质量上限不低于 B、无 danger 诊断。",
-    "正文执行卡必须天然可过门槛：sectionBlueprint 至少 3 节；viralNarrativePlan 至少 2 个情绪钩子和 2 个母题回收点；fictionalMaterialPlan 至少 4 条具体素材，并覆盖场景、人物、对话、区间数据、可信锚点和虚构边界。",
-    "爆款叙事前置：必须先规划现场感、真实锚点、复合素材、故事数据交替、情绪钩子和母题回收，再进入正文写作。",
+    materialRealityMode === "fiction"
+      ? "正文执行卡必须天然可过门槛：sectionBlueprint 至少 3 节；viralNarrativePlan 至少 2 个情绪钩子和 2 个母题回收点；fictionalMaterialPlan 至少 4 条具体素材，并覆盖场景、人物、对话、区间数据、可信锚点和虚构边界。"
+      : "正文执行卡必须天然可过门槛：sectionBlueprint 至少 3 节；viralNarrativePlan 至少 2 个情绪钩子和 2 个母题回收点；fictionalMaterialPlan 必须为空数组，不能为了现场感补虚构案例。",
+    materialRealityMode === "fiction"
+      ? "爆款叙事前置：必须先规划现场感、真实锚点、复合素材、故事数据交替、情绪钩子和母题回收，再进入正文写作。"
+      : "爆款叙事前置：必须先规划读者处境、真实锚点、事实和判断交替、情绪钩子和母题回收，再进入正文写作。",
     `素材现实模式：${materialRealityMode}`,
     [
       `研究底座：信源覆盖=${researchSufficiency}`,
@@ -247,7 +252,7 @@ export const ARTICLE_ARTIFACT_QUALITY_SYSTEM_CONTRACT = [
   "任何缺证据、缺读者处境、缺核心张力、缺历史脉络、缺横向比较的问题，都必须在当前阶段暴露、补齐或明确降级表达。",
   ARTICLE_VIRAL_NARRATIVE_SYSTEM_CONTRACT,
   "非虚构、观点、分析、商业和事实型文章：禁止伪造第一人称经历、客户案例、聊天记录、现场细节、数字来源或收益结果。",
-  "当前写作系统默认按虚构类文章处理：真实素材优先作为背景锚点；如果真实素材不足，可以生成拟真的人物、场景、对话、组织细节和区间化数据。",
+  "当前写作系统默认按非虚构、观点、分析、商业和事实型文章处理；只有题目、策略或显式参数明确要求小说、虚构、故事、寓言、剧本等，才进入虚构素材模式。",
   "虚构类文章不得冒充真实新闻、真实采访、真实公司内部数据或真实个人经历；现实品牌、真实人物和公共事件只能作为背景环境，不能编造未证实指控。",
   "标题、开头、结构和正文必须兑现当前素材现实模式：非虚构只承诺证据能兑现的判断；虚构要兑现人物、情节和世界观内部一致性。",
   "如果素材不足，非虚构要指出缺口并降级表达；虚构可以补足设定、复合场景和合理区间数据。",

@@ -401,6 +401,70 @@ test("getArticleViralReadinessGateIssues accepts complete writing prerequisites"
   assert.deepEqual(issues, []);
 });
 
+test("getArticleViralReadinessGateIssues accepts nonfiction writing card without fictional material", () => {
+  const base = {
+    researchBrief: {
+      sourceCoverage: { sufficiency: "ready" },
+      sources: [{ label: "来源正文" }],
+      timelineCards: [{ title: "起点" }],
+      comparisonCards: [{ subject: "路径 A" }],
+      intersectionInsights: [{ insight: "交汇洞察" }],
+    },
+    titleOptimization: {
+      recommendedTitle: "别再只盯关键词了：真正值钱的是搜索意图",
+      recommendedTitleOpenRateScore: 43,
+      titleOptions: Array.from({ length: 6 }, (_, index) => ({
+        title: index === 0 ? "别再只盯关键词了：真正值钱的是搜索意图" : `搜索意图标题 ${index}`,
+        openRateScore: 40,
+        elementsHit: { specific: true, curiosityGap: true, readerView: false },
+        forbiddenHits: [],
+        isRecommended: index === 0,
+      })),
+      forbiddenHits: [],
+    },
+    openingOptimization: {
+      recommendedOpening: "很多投放问题，看起来是关键词问题，最后往往是搜索意图判断错了。",
+      recommendedHookScore: 79,
+      recommendedQualityCeiling: "A",
+      recommendedOpeningDangerCount: 0,
+      openingOptions: [
+        {
+          opening: "很多投放问题，看起来是关键词问题，最后往往是搜索意图判断错了。",
+          hookScore: 79,
+          qualityCeiling: "A",
+          diagnose: { abstractLevel: "pass", paddingLevel: "pass", hookDensity: "pass", informationFrontLoading: "pass" },
+          forbiddenHits: [],
+          isRecommended: true,
+        },
+        { opening: "如果你在做搜索广告，先别急着扩关键词。", hookScore: 70, qualityCeiling: "B+", diagnose: {}, forbiddenHits: [] },
+        { opening: "关键词只是入口，意图才决定后面的转化。", hookScore: 72, qualityCeiling: "B+", diagnose: {}, forbiddenHits: [] },
+      ],
+    },
+    deepWriting: {
+      materialRealityMode: "nonfiction",
+      sectionBlueprint: [{ heading: "一" }, { heading: "二" }, { heading: "三" }],
+      viralNarrativePlan: {
+        coreMotif: "关键词只是表层。",
+        sceneEntry: "从来源事实切入。",
+        storyDataAlternation: "事实后接判断。",
+        emotionalHooks: ["少走弯路", "重新判断流量价值"],
+        motifCallbacks: [{ section: "开头", callback: "抛出母题" }, { section: "结尾", callback: "回收母题" }],
+        boundaryRule: "只使用来源事实和行业泛例。",
+      },
+      fictionalMaterialPlan: [],
+    },
+  };
+
+  assert.deepEqual(getArticleViralReadinessGateIssues(base), []);
+  assert(getArticleViralReadinessGateIssues({
+    ...base,
+    deepWriting: {
+      ...base.deepWriting,
+      fictionalMaterialPlan: [{ scene: "知乎登录页案例" }],
+    },
+  }).some((item) => item.code === "readiness_nonfiction_fictional_material"));
+});
+
 test("getArticleViralReadinessGateIssues blocks fragmented patch-style prerequisites", () => {
   const issues = getArticleViralReadinessGateIssues({
     researchBrief: {

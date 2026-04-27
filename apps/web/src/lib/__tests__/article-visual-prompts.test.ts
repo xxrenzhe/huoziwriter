@@ -3,6 +3,7 @@ import test from "node:test";
 
 import { chooseBaoyuCoverPreset, chooseBaoyuInlinePreset } from "../article-visual-presets";
 import { buildArticleVisualPromptManifest } from "../article-visual-prompts";
+import { sanitizeUserVisibleVisualCaption } from "../article-structure-labels";
 import type { ArticleVisualBrief } from "../article-visual-types";
 
 function baseBrief(overrides: Partial<ArticleVisualBrief> = {}): ArticleVisualBrief {
@@ -79,4 +80,10 @@ test("buildArticleVisualPromptManifest records infographic dimensions", () => {
   assert.match(result.prompt, /type=comparison/);
   assert.match(result.prompt, /layout=binary-comparison/);
   assert.equal(result.manifest.layout, "binary-comparison");
+});
+
+test("sanitizeUserVisibleVisualCaption suppresses internal outline labels", () => {
+  assert.equal(sanitizeUserVisibleVisualCaption("痛点引入"), null);
+  assert.equal(sanitizeUserVisibleVisualCaption(" 核心反转 "), null);
+  assert.equal(sanitizeUserVisibleVisualCaption("搜索意图四象限"), "搜索意图四象限");
 });

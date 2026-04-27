@@ -1,4 +1,5 @@
 import { getArticleNodes } from "./article-outline";
+import { isInternalArticleStructureLabel, sanitizeUserVisibleVisualCaption } from "./article-structure-labels";
 import { chooseBaoyuCoverPreset, chooseBaoyuInlinePreset } from "./article-visual-presets";
 import { buildArticleVisualPromptManifest } from "./article-visual-prompts";
 import type { ArticleVisualBrief } from "./article-visual-types";
@@ -48,6 +49,27 @@ function estimateInlineImageCount(markdown: string) {
   if (plainLength < 1200) return 1;
   if (plainLength < 2800) return 2;
   return 3;
+}
+
+function buildUserFacingNodeTitle(input: {
+  nodeTitle: string;
+  nodeText: string;
+  articleTitle: string;
+  index: number;
+}) {
+  const cleanNodeTitle = sanitizeUserVisibleVisualCaption(input.nodeTitle);
+  if (cleanNodeTitle) {
+    return cleanNodeTitle;
+  }
+  const sourceFact = pickSourceFacts(input.nodeText, 1)[0];
+  if (sourceFact) {
+    return sourceFact.length > 28 ? `${sourceFact.slice(0, 28)}...` : sourceFact;
+  }
+  const label = pickLabels(input.nodeText, 1)[0];
+  if (label) {
+    return label;
+  }
+  return `${input.articleTitle}关键图解 ${input.index + 1}`;
 }
 
 export async function planArticleVisualBriefs(input: {
@@ -107,26 +129,37 @@ export async function planArticleVisualBriefs(input: {
       .filter((node) => node.title.trim())
       .map((node, index) => {
         const nodeText = [node.title, node.description || "", ...node.fragments.map((fragment) => fragment.distilledContent)].join("\n");
+        const substantiveText = [node.description || "", ...node.fragments.map((fragment) => fragment.distilledContent)].join("\n");
         return {
           node,
           index,
           text: nodeText,
+          hasUserFacingTitle: !isInternalArticleStructureLabel(node.title),
+          hasSubstantiveText: stripMarkdown(substantiveText).length >= 24,
           score:
             (/步骤|流程|路径|框架|模型|对比|清单|工具|资源|趋势|阶段|机制|方法论/i.test(nodeText) ? 4 : 1)
             + Math.min(3, Math.floor(stripMarkdown(nodeText).length / 80)),
         };
       })
+      .filter((candidate) => candidate.hasUserFacingTitle || candidate.hasSubstantiveText)
       .sort((left, right) => right.score - left.score || left.index - right.index)
       .slice(0, Math.max(1, Math.min(4, estimateInlineImageCount(input.markdown))));
 
     for (const [index, candidate] of candidates.entries()) {
+      const userFacingTitle = buildUserFacingNodeTitle({
+        nodeTitle: candidate.node.title,
+        nodeText: candidate.text,
+        articleTitle: input.title,
+        index,
+      });
+      const caption = sanitizeUserVisibleVisualCaption(candidate.node.title);
       const preset = chooseBaoyuInlinePreset({
-        title: candidate.node.title,
+        title: userFacingTitle,
         text: candidate.text,
         index,
       });
       const sourceFacts = pickSourceFacts(candidate.text || plain, 4);
-      const labels = pickLabels([candidate.node.title, candidate.text].join(" "), 7);
+      const labels = pickLabels([userFacingTitle, candidate.text].join(" "), 7);
       const brief: ArticleVisualBrief = {
         userId: input.userId,
         articleId: input.articleId,
@@ -144,10 +177,10 @@ export async function planArticleVisualBriefs(input: {
         fontCode: "clean",
         aspectRatio: preset.aspectRatio,
         outputResolution,
-        title: candidate.node.title,
+        title: userFacingTitle,
         purpose: preset.scope === "diagram" ? "用结构图降低读者理解成本" : "把该小节的关键信息转化为可保存、可转发的文中视觉资产",
-        altText: `${candidate.node.title}的文中配图`,
-        caption: candidate.node.title,
+        altText: `${userFacingTitle}的文中配图`,
+        caption,
         labels,
         sourceFacts,
         status: "prompt_ready",

@@ -61,6 +61,11 @@ function getUniqueStrings(value: unknown, limit = 8) {
   return Array.from(new Set(value.map((item) => String(item || "").trim()).filter(Boolean))).slice(0, limit);
 }
 
+function getMaterialRealityMode(value: unknown) {
+  const normalized = getString(value);
+  return normalized === "fiction" || normalized === "nonfiction" ? normalized : null;
+}
+
 export function getOpeningQualityCeilingRank(value: string | null) {
   const normalized = String(value || "").trim().toUpperCase();
   return OPENING_QUALITY_CEILING_RANKS[normalized as keyof typeof OPENING_QUALITY_CEILING_RANKS] ?? -1;
@@ -265,6 +270,7 @@ export function getArticleViralReadinessGateIssues(input: ArticleViralReadinessI
   const sectionCount = getRecordArray(deepWriting.sectionBlueprint).length;
   const titleHasCandidate = Boolean(getString(titleOptimization.recommendedTitle) || getRecordArray(titleOptimization.titleOptions).length > 0);
   const openingHasCandidate = Boolean(getString(openingOptimization.recommendedOpening) || getRecordArray(openingOptimization.openingOptions).length > 0);
+  const materialRealityMode = getMaterialRealityMode(deepWriting.materialRealityMode);
 
   if (researchSufficiency === "blocked" || (!researchSufficiency && sourceCount === 0)) {
     issues.push({
@@ -301,7 +307,16 @@ export function getArticleViralReadinessGateIssues(input: ArticleViralReadinessI
     });
   }
   issues.push(...prefixGateIssues("readiness_viral", getViralNarrativePlanGateIssues(deepWriting)));
-  issues.push(...prefixGateIssues("readiness_fictional", getFictionalMaterialPlanGateIssues(deepWriting)));
+  if (materialRealityMode === "nonfiction") {
+    if (getRecordArray(deepWriting.fictionalMaterialPlan).length > 0) {
+      issues.push({
+        code: "readiness_nonfiction_fictional_material",
+        detail: "非虚构文章不能携带拟真虚构素材包；命名案例必须来自来源正文、研究简报或事实素材。",
+      });
+    }
+  } else {
+    issues.push(...prefixGateIssues("readiness_fictional", getFictionalMaterialPlanGateIssues(deepWriting)));
+  }
 
   return issues;
 }

@@ -14,6 +14,7 @@ import { generateArticleStageArtifact, getArticleStageArtifact, updateArticleSta
 import { generateArticleVisualAsset } from "./article-image-generator";
 import { insertArticleVisualAssetsIntoMarkdown } from "./article-image-inserter";
 import { getResearchBriefGenerationGate } from "./article-research";
+import { attachFragmentToArticleNode, getArticleNodes } from "./article-outline";
 import { planArticleVisualBriefs } from "./article-visual-planner";
 import { listArticleVisualBriefs, replaceArticleVisualBriefs } from "./article-visual-repository";
 import {
@@ -39,8 +40,9 @@ import { collectLanguageGuardHits, getLanguageGuardRules } from "./language-guar
 import { loadPromptWithMeta, type PromptLoadContext } from "./prompt-loader";
 import { PLAN22_STAGE_PROMPT_DEFINITIONS } from "./plan22-prompt-catalog";
 import { evaluatePublishGuard } from "./publish-guard";
-import { createArticle, getLatestArticleCoverImage, getArticleById } from "./repositories";
+import { createArticle, createFragment, getLatestArticleCoverImage, getArticleById } from "./repositories";
 import { saveArticleDraft } from "./article-draft";
+import { fetchWebpageArticle } from "./webpage-reader";
 import { publishArticleToWechat, WechatPublishError } from "./wechat-publish";
 
 type AutomationRunDetail = NonNullable<Awaited<ReturnType<typeof getArticleAutomationRunById>>>;
@@ -98,6 +100,17 @@ const ARTICLE_IMAGE_BATCH_CONCURRENCY = readPositiveIntegerEnv("ARTICLE_IMAGE_BA
 const TITLE_OPTIMIZATION_MAX_ATTEMPTS = readPositiveIntegerEnv("ARTICLE_AUTOMATION_TITLE_OPTIMIZATION_MAX_ATTEMPTS", 2);
 const OPENING_OPTIMIZATION_MAX_ATTEMPTS = readPositiveIntegerEnv("ARTICLE_AUTOMATION_OPENING_OPTIMIZATION_MAX_ATTEMPTS", 2);
 
+type AutomationSourceGrounding = {
+  loaded: boolean;
+  url: string;
+  sourceTitle: string;
+  sourceExcerpt: string;
+  rawTextLength: number;
+  error?: string;
+};
+
+const automationSourceGroundingCache = new Map<string, Promise<AutomationSourceGrounding>>();
+
 function readBooleanEnv(name: string, fallback: boolean) {
   const raw = String(process.env[name] || "").trim().toLowerCase();
   if (!raw) return fallback;
@@ -127,6 +140,110 @@ function shouldUseFastLocalStrategy(detail: AutomationRunDetail) {
 
 function shouldSkipDraftApplyAudit(detail: AutomationRunDetail) {
   return isFastDraftPreview(detail) && readBooleanEnv("ARTICLE_AUTOMATION_SKIP_APPLY_AUDIT", true);
+}
+
+function truncateGroundingText(value: string, limit: number) {
+  const normalized = String(value || "").replace(/\s+/g, " ").trim();
+  return normalized.length <= limit ? normalized : `${normalized.slice(0, Math.max(0, limit - 1)).trim()}…`;
+}
+
+async function loadAutomationSourceGrounding(detail: AutomationRunDetail) {
+  const sourceUrl = String(detail.run.sourceUrl || "").trim();
+  if (detail.run.inputMode !== "url" || !sourceUrl) {
+    return null;
+  }
+  if (!automationSourceGroundingCache.has(sourceUrl)) {
+    automationSourceGroundingCache.set(sourceUrl, (async () => {
+      try {
+        const article = await fetchWebpageArticle(sourceUrl);
+        return {
+          loaded: true,
+          url: article.url || sourceUrl,
+          sourceTitle: article.sourceTitle || "",
+          sourceExcerpt: truncateGroundingText(article.rawText, 8_000),
+          rawTextLength: String(article.rawText || "").trim().length,
+        } satisfies AutomationSourceGrounding;
+      } catch (error) {
+        return {
+          loaded: false,
+          url: sourceUrl,
+          sourceTitle: "",
+          sourceExcerpt: "",
+          rawTextLength: 0,
+          error: error instanceof Error ? error.message : "来源正文抓取失败",
+        } satisfies AutomationSourceGrounding;
+      }
+    })());
+  }
+  return automationSourceGroundingCache.get(sourceUrl)!;
+}
+
+function buildGroundedTopicSeed(detail: AutomationRunDetail, grounding: AutomationSourceGrounding | null) {
+  if (grounding?.loaded) {
+    return grounding.sourceTitle || grounding.sourceExcerpt.slice(0, 80) || grounding.url;
+  }
+  if (detail.run.inputMode === "url" && detail.run.sourceUrl) {
+    return detail.run.sourceUrl;
+  }
+  return detail.run.inputText;
+}
+
+function sourceGroundingAudit(grounding: AutomationSourceGrounding | null, sourceFragmentId?: number | null) {
+  return grounding
+    ? {
+        loaded: grounding.loaded,
+        url: grounding.url,
+        sourceTitle: grounding.sourceTitle,
+        rawTextLength: grounding.rawTextLength,
+        sourceFragmentId: sourceFragmentId ?? null,
+        error: grounding.error || null,
+      }
+    : null;
+}
+
+async function ensureAutomationSourceFragment(detail: AutomationRunDetail, grounding: AutomationSourceGrounding | null) {
+  if (!detail.run.articleId || !grounding?.loaded || !grounding.sourceExcerpt) {
+    return null;
+  }
+  const db = getDatabase();
+  const existing = await db.queryOne<{ id: number }>(
+    `SELECT id
+     FROM fragments
+     WHERE user_id = ? AND source_type = ? AND source_url IN (?, ?)
+     ORDER BY id DESC
+     LIMIT 1`,
+    [detail.run.userId, "url", grounding.url, detail.run.sourceUrl || grounding.url],
+  );
+  const created = existing ?? await createFragment({
+    userId: detail.run.userId,
+    sourceType: "url",
+    title: grounding.sourceTitle || "链接起稿原文",
+    rawContent: grounding.sourceExcerpt,
+    distilledContent: [
+      grounding.sourceTitle ? `来源标题：${grounding.sourceTitle}` : null,
+      `来源正文摘录：${truncateGroundingText(grounding.sourceExcerpt, 2_400)}`,
+    ].filter(Boolean).join("\n"),
+    sourceUrl: grounding.url,
+    sourceMeta: {
+      automationRunId: detail.run.id,
+      source: "article_automation_url_grounding",
+      rawTextLength: grounding.rawTextLength,
+    },
+  });
+  const fragmentId = Number(created?.id || 0);
+  if (!fragmentId) {
+    return null;
+  }
+  const firstNode = (await getArticleNodes(detail.run.articleId))[0];
+  if (firstNode) {
+    await attachFragmentToArticleNode({
+      articleId: detail.run.articleId,
+      nodeId: firstNode.id,
+      fragmentId,
+      usageMode: "rewrite",
+    });
+  }
+  return fragmentId;
 }
 
 function getRecord(value: unknown) {
@@ -241,8 +358,19 @@ function normalizeTopicAnalysisOutput(value: unknown, inputText: string) {
   };
 }
 
-function buildTopicAnalysisFallback(detail: AutomationRunDetail) {
-  const trimmed = detail.run.inputText.trim();
+function buildTopicAnalysisFallback(detail: AutomationRunDetail, grounding: AutomationSourceGrounding | null = null) {
+  const trimmed = buildGroundedTopicSeed(detail, grounding).trim();
+  if (detail.run.inputMode === "url" && grounding && !grounding.loaded) {
+    return {
+      theme: trimmed.slice(0, 48) || "来源链接待核验",
+      coreAssertion: "链接起稿必须先读取来源正文；当前抓取失败，不能把执行流程描述当成文章主题。",
+      whyNow: "需要先恢复来源正文抓取，再基于原文观点、数据和案例判断写作窗口。",
+      readerBenefit: "避免生成偏离原文的公众号文章，确保后续标题、大纲和正文都锚定真实来源。",
+      risk: `来源正文抓取失败：${grounding.error || "未知错误"}`,
+      decision: "hold",
+      repairActions: ["修复或重试来源链接正文抓取。", "抓取成功前不要使用用户流程描述生成正文主题。"],
+    };
+  }
   const short = trimmed.length < 8;
   return {
     theme: trimmed.slice(0, 48) || "待明确主题",
@@ -607,11 +735,12 @@ async function loadFrozenPrompt(stage: ArticleAutomationStageRun, context: Autom
 async function executeTopicAnalysis(detail: AutomationRunDetail, promptContext: AutomationPromptContext): Promise<StageExecutionResult> {
   const stage = getStage(detail, "topicAnalysis");
   const promptMeta = await loadFrozenPrompt(stage, promptContext);
+  const sourceGrounding = await loadAutomationSourceGrounding(detail);
   const systemSegments = buildGatewaySystemSegments([
     { text: promptMeta.content, cacheable: true },
     { text: ARTICLE_ARTIFACT_QUALITY_SYSTEM_CONTRACT, cacheable: true },
   ]);
-  const fallback = buildTopicAnalysisFallback(detail);
+  const fallback = buildTopicAnalysisFallback(detail, sourceGrounding);
   const articleTitle = detail.article?.title || detail.run.inputText;
   const userPrompt = [
     "请输出 JSON，不要解释，不要 markdown。",
@@ -621,6 +750,16 @@ async function executeTopicAnalysis(detail: AutomationRunDetail, promptContext: 
     `当前标题：${articleTitle}`,
     `用户输入：${detail.run.inputText}`,
     detail.run.sourceUrl ? `来源链接：${detail.run.sourceUrl}` : null,
+    sourceGrounding?.loaded
+      ? [
+          "链接起稿约束：必须以来源正文作为选题事实源；用户输入里的流程、发布、草稿箱要求只作为执行约束，不得作为文章主题。",
+          `来源标题：${sourceGrounding.sourceTitle || "未识别标题"}`,
+          `来源正文摘录：${sourceGrounding.sourceExcerpt}`,
+        ].join("\n")
+      : null,
+    sourceGrounding && !sourceGrounding.loaded
+      ? `来源正文抓取失败：${sourceGrounding.error || "未知错误"}。抓取成功前不要把用户的自动化流程描述改写成文章主题，应输出 hold 或 revise。`
+      : null,
   ].filter(Boolean).join("\n");
 
   try {
@@ -634,12 +773,13 @@ async function executeTopicAnalysis(detail: AutomationRunDetail, promptContext: 
       maxAttempts: 1,
       requestTimeoutMs: AUTOMATION_SCENE_REQUEST_TIMEOUT_MS,
     });
-    const output = normalizeTopicAnalysisOutput(extractJsonObject(result.text), detail.run.inputText);
+    const output = normalizeTopicAnalysisOutput(extractJsonObject(result.text), buildGroundedTopicSeed(detail, sourceGrounding));
     return {
       outputJson: output,
       qualityJson: {
         promptVersionRef: promptMeta.ref,
         decision: output.decision,
+        sourceGrounding: sourceGroundingAudit(sourceGrounding),
       },
       provider: result.provider,
       model: result.model,
@@ -651,6 +791,7 @@ async function executeTopicAnalysis(detail: AutomationRunDetail, promptContext: 
         promptVersionRef: promptMeta.ref,
         fallbackUsed: true,
         error: error instanceof Error ? error.message : "topic analysis failed",
+        sourceGrounding: sourceGroundingAudit(sourceGrounding),
       },
       provider: "local",
       model: "fallback-local",
@@ -663,16 +804,25 @@ async function executeResearchBrief(detail: AutomationRunDetail): Promise<StageE
     throw new AutomationStageBlockedError("缺少稿件记录，无法执行研究简报。");
   }
   const topicAnalysis = getRecord(getStage(detail, "topicAnalysis").outputJson) ?? {};
+  const sourceGrounding = await loadAutomationSourceGrounding(detail);
+  const sourceFragmentId = await ensureAutomationSourceFragment(detail, sourceGrounding);
+  const groundedResearchObject = sourceGrounding?.loaded
+    ? sourceGrounding.sourceTitle || truncateGroundingText(sourceGrounding.sourceExcerpt, 80)
+    : detail.article?.title || detail.run.inputText;
+  const sourceMustCoverAngles = sourceGrounding?.loaded
+    ? [`原文核心观点：${truncateGroundingText(sourceGrounding.sourceExcerpt, 160)}`]
+    : [];
   const maxAttempts = Number(process.env.PLAN22_RESEARCH_BRIEF_ATTEMPTS || 1) > 1 && process.env.RESEARCH_SOURCE_SEARCH_ENDPOINT ? 2 : 1;
   let artifact = await generateArticleStageArtifact({
     articleId: detail.run.articleId,
     userId: detail.run.userId,
     stageCode: "researchBrief",
     researchSearchHints: {
-      topicTheme: getString(topicAnalysis.theme) || detail.article?.title || detail.run.inputText,
+      topicTheme: sourceGrounding?.loaded ? groundedResearchObject : getString(topicAnalysis.theme) || groundedResearchObject,
       coreAssertion: getString(topicAnalysis.coreAssertion),
       whyNow: getString(topicAnalysis.whyNow),
-      researchObject: detail.article?.title || detail.run.inputText,
+      researchObject: groundedResearchObject,
+      mustCoverAngles: sourceMustCoverAngles,
     },
   });
   let payload = getRecord(artifact.payload) ?? {};
@@ -684,12 +834,12 @@ async function executeResearchBrief(detail: AutomationRunDetail): Promise<StageE
       userId: detail.run.userId,
       stageCode: "researchBrief",
       researchSearchHints: {
-        topicTheme: getString(topicAnalysis.theme) || detail.article?.title || detail.run.inputText,
+        topicTheme: sourceGrounding?.loaded ? groundedResearchObject : getString(topicAnalysis.theme) || groundedResearchObject,
         coreAssertion: getString(topicAnalysis.coreAssertion),
         whyNow: getString(topicAnalysis.whyNow),
-        researchObject: getString(payload.researchObject) || detail.article?.title || detail.run.inputText,
+        researchObject: getString(payload.researchObject) || groundedResearchObject,
         coreQuestion: getString(payload.coreQuestion),
-        mustCoverAngles: getStringArray(payload.mustCoverAngles, 5),
+        mustCoverAngles: [...getStringArray(payload.mustCoverAngles, 5), ...sourceMustCoverAngles],
         missingCategories: getStringArray(getRecord(payload.sourceCoverage)?.missingCategories, 5),
       },
     });
@@ -726,8 +876,12 @@ async function executeResearchBrief(detail: AutomationRunDetail): Promise<StageE
       researchCoverage: getRecord(payload.sourceCoverage) ?? {},
       researchGate: gate,
       researchAttemptCount: maxAttempts,
+      sourceGrounding: sourceGroundingAudit(sourceGrounding, sourceFragmentId),
     },
-    searchTraceJson: externalResearch,
+    searchTraceJson: {
+      ...externalResearch,
+      sourceGrounding: sourceGroundingAudit(sourceGrounding, sourceFragmentId),
+    },
     provider: artifact.provider,
     model: artifact.model,
   };

@@ -1,6 +1,7 @@
 import { getDatabase } from "./db";
+import { DEFAULT_ARTICLE_NODE_TITLES } from "./article-structure-labels";
 
-const DEFAULT_NODE_TITLES = ["痛点引入", "核心反转", "底层原因", "行动建议"];
+const DEFAULT_NODE_TITLES = [...DEFAULT_ARTICLE_NODE_TITLES];
 
 function parseJsonRecord(value: unknown) {
   if (typeof value === "string") {

@@ -1,4 +1,5 @@
 import { listArticleVisualAssets, updateArticleVisualBriefStatus } from "./article-visual-repository";
+import { sanitizeUserVisibleVisualCaption } from "./article-structure-labels";
 import { saveArticle } from "./repositories";
 
 function escapeRegExp(value: string) {
@@ -12,8 +13,8 @@ function buildMarkdownImage(asset: {
   altText: string | null;
   caption: string | null;
 }) {
-  const alt = String(asset.altText || asset.caption || "文章配图").replace(/[\r\n]+/g, " ").trim();
-  const caption = String(asset.caption || "").replace(/[\r\n]+/g, " ").trim();
+  const caption = sanitizeUserVisibleVisualCaption(asset.caption);
+  const alt = String(asset.altText || caption || "文章配图").replace(/[\r\n]+/g, " ").trim();
   return [
     `<!-- huozi-visual:${asset.id} -->`,
     `![${alt}](${asset.publicUrl})`,
@@ -52,7 +53,7 @@ export async function insertArticleVisualAssetsIntoMarkdown(input: {
       continue;
     }
     const block = buildMarkdownImage(asset);
-    nextMarkdown = insertAfterHeading(nextMarkdown, asset.caption || asset.altText || "", block);
+    nextMarkdown = insertAfterHeading(nextMarkdown, asset.insertAnchor || sanitizeUserVisibleVisualCaption(asset.caption) || asset.altText || "", block);
     inserted.push(asset.id);
     if (asset.visualBriefId) {
       await updateArticleVisualBriefStatus({

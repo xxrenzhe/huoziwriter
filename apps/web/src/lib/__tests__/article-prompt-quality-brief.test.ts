@@ -69,7 +69,7 @@ test("quality brief allows real human signals but still forbids over-expansion",
   assert.match(lines.join("\n"), /开头目标：前三秒先给读者处境、反差或判断/);
 });
 
-test("quality brief defaults to fiction and allows plausible fictional material when real sources are thin", () => {
+test("quality brief infers fiction only from explicit fictional framing", () => {
   const lines = buildArticlePromptQualityBrief("outlinePlanning", {
     articleTitle: "全员 token-maxxing，一场没人敢停的军备竞赛",
     strategyCard: {
@@ -93,6 +93,20 @@ test("quality brief defaults to fiction and allows plausible fictional material 
   assert.match(text, /真实素材不足时，用合理虚构细节补足场景密度/);
 });
 
+test("quality brief defaults to nonfiction and forbids unsupported named cases", () => {
+  const lines = buildArticlePromptQualityBrief("deepWriting", {
+    articleTitle: "谷歌搜索意图的本质",
+    strategyCard: {
+      coreAssertion: "搜索意图比关键词表层更能决定流量价值。",
+    },
+  });
+  const text = lines.join("\n");
+
+  assert.match(text, /素材现实模式：nonfiction/);
+  assert.match(text, /fictionalMaterialPlan 必须为空数组/);
+  assert.match(text, /不得引入素材、来源正文、研究简报或事实锚点中不存在的命名平台/);
+});
+
 test("quality brief front-loads viral narrative mechanics without permitting fake facts", () => {
   const lines = buildArticlePromptQualityBrief("deepWriting", {
     articleTitle: "全员 token-maxxing，一场没人敢停的军备竞赛",
@@ -103,7 +117,7 @@ test("quality brief front-loads viral narrative mechanics without permitting fak
   const text = lines.join("\n");
 
   assert.match(text, /爆款叙事前置/);
-  assert.match(text, /现场感、真实锚点、复合素材、故事数据交替、情绪钩子和母题回收/);
+  assert.match(text, /读者处境、真实锚点、事实和判断交替、情绪钩子和母题回收/);
   assert.match(text, /输出爆款叙事计划/);
   assert.match(ARTICLE_VIRAL_NARRATIVE_SYSTEM_CONTRACT, /第一人称或近距离现场感/);
   assert.match(ARTICLE_VIRAL_NARRATIVE_SYSTEM_CONTRACT, /复合、重构、假设、寓言或虚构口径/);

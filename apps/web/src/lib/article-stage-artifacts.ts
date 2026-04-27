@@ -19,6 +19,8 @@ import { getArticleWritingContext } from "./article-writing-context";
 import {
   ARTICLE_ARTIFACT_QUALITY_SYSTEM_CONTRACT,
   buildArticlePromptQualityBrief,
+  inferArticleMaterialRealityMode,
+  type ArticleMaterialRealityMode,
 } from "./article-prompt-quality-brief";
 import { buildArticleViralBlueprint } from "./article-viral-blueprint";
 import { collectLanguageGuardHits, getLanguageGuardRules, getLanguageGuardTokenBlacklist, type LanguageGuardRule } from "./language-guard";
@@ -350,6 +352,20 @@ export function normalizeFictionalMaterialItems(value: unknown, fallback: unknow
       return true;
     })
     .slice(0, limit);
+}
+
+function getMaterialRealityModeForContext(context: GenerationContext): ArticleMaterialRealityMode {
+  return inferArticleMaterialRealityMode({
+    articleTitle: context.article.title,
+    strategyCard: context.strategyCard,
+    humanSignals: context.humanSignals,
+    researchBrief: context.researchBrief,
+    outlineSelection: context.outlineSelection,
+  });
+}
+
+function normalizeMaterialRealityMode(value: unknown, fallback: ArticleMaterialRealityMode = "nonfiction"): ArticleMaterialRealityMode {
+  return value === "fiction" || value === "nonfiction" ? value : fallback;
 }
 
 function buildFallbackFictionalMaterialItems(context: GenerationContext, sectionLabels: string[] = []) {
@@ -1545,6 +1561,7 @@ function fallbackResearchBrief(
   context: GenerationContext,
   externalResearch?: Parameters<typeof enrichResearchCoverageWithExternalSearch>[1],
 ) {
+  const materialRealityMode = getMaterialRealityModeForContext(context);
   const sourceCoverage = enrichResearchCoverageWithExternalSearch(
     buildResearchCoverage(context),
     externalResearch,
@@ -1552,7 +1569,7 @@ function fallbackResearchBrief(
   const timelineCards = buildResearchTimelineCards(context, sourceCoverage);
   const comparisonCards = buildResearchComparisonCards(context, sourceCoverage);
   const intersectionInsights = buildResearchIntersectionInsights(context, timelineCards, comparisonCards);
-  const fictionalMaterialSeeds = buildFallbackFictionalMaterialItems(context);
+  const fictionalMaterialSeeds = materialRealityMode === "fiction" ? buildFallbackFictionalMaterialItems(context) : [];
   const targetReader =
     context.audienceSelection?.selectedReaderLabel ||
     context.seriesInsight?.label ||
@@ -1561,6 +1578,7 @@ function fallbackResearchBrief(
   const coreAssertion = String(context.outlinePlan?.centralThesis || "").trim() || String(context.article.title || "").trim();
   return {
     summary: "先围绕「" + context.article.title + "」把研究问题、信源覆盖、时间脉络和横向比较补齐，再进入策略判断。",
+    materialRealityMode,
     researchObject: context.article.title,
     coreQuestion: "围绕「" + context.article.title + "」，真正需要研究清楚的不是发生了什么，而是它为什么在今天以这种方式发生。",
     authorHypothesis: context.seriesInsight?.reason || coreAssertion || "先提出一个待验证判断，但不要把它当成已证实结论。",
@@ -1762,13 +1780,17 @@ function fallbackOutlinePlanning(context: GenerationContext) {
           researchAnchor: String(researchBackbone.coreInsightAnchor || "").trim(),
         },
       ];
-  const fictionalScenePlan = buildFallbackFictionalMaterialItems(
-    context,
-    sections.map((section) => String(section.heading || "").trim()).filter(Boolean),
-  );
+  const materialRealityMode = getMaterialRealityModeForContext(context);
+  const fictionalScenePlan = materialRealityMode === "fiction"
+    ? buildFallbackFictionalMaterialItems(
+        context,
+        sections.map((section) => String(section.heading || "").trim()).filter(Boolean),
+      )
+    : [];
 
   return {
     summary: "建议采用“历史转折—横向差异—核心判断—读者动作”的递进结构，把研究卡真正压进大纲骨架里。",
+    materialRealityMode,
     workingTitle: context.article.title,
     titleOptions,
     titleStrategyNotes: [
@@ -2590,6 +2612,7 @@ async function fallbackDeepWriting(
   preferredStateVariantCode?: WritingStateVariantCode | null,
   preferredPrototypeCode?: ArticlePrototypeCode | null,
 ) {
+  const materialRealityMode = getMaterialRealityModeForContext(context);
   const resolvedState = await resolveDeepWritingState(context, preferredStateVariantCode, preferredPrototypeCode);
   const writingState = resolvedState.writingState;
   const preferredResearchSignals = getPreferredResearchSignals(context);
@@ -2699,23 +2722,32 @@ async function fallbackDeepWriting(
       revealRole: getRevealRole(index, sectionBlueprintTotal),
       transition: String((section as Record<string, unknown>).transition || "").trim(),
     }));
-  const fictionalMaterialPlan = buildFallbackFictionalMaterialItems(
-    context,
-    normalizedSectionBlueprint.map((section) => section.heading),
-  );
+  const fictionalMaterialPlan = materialRealityMode === "fiction"
+    ? buildFallbackFictionalMaterialItems(
+        context,
+        normalizedSectionBlueprint.map((section) => section.heading),
+      )
+    : [];
+  const sceneEntry = materialRealityMode === "fiction"
+    ? fictionalMaterialPlan[0]?.scene || "先用一个近距离场景让读者进入主题冲突。"
+    : "先从来源事实或读者真实处境切入，不编造新的命名案例。";
   const viralNarrativePlan = {
     coreMotif: buildTopicAdaptiveViralMotif({
       title: selectedTitle,
       centralThesis,
       targetReader: context.audienceSelection?.selectedReaderLabel || preferredResearchSignals.targetReader,
     }),
-    sceneEntry: fictionalMaterialPlan[0]?.scene || "先用一个近距离场景让读者进入主题冲突。",
+    sceneEntry,
     realWorldAnchors: getSourceFacts(context, 4),
-    compositeVoices: fictionalMaterialPlan
-      .map((item) => String(item.character || "").trim())
-      .filter(Boolean)
-      .slice(0, 4),
-    storyDataAlternation: "每个场景后面接一个判断或区间数据；每个数据后面补一个人物处境或组织冲突，避免连续堆材料。",
+    compositeVoices: materialRealityMode === "fiction"
+      ? fictionalMaterialPlan
+          .map((item) => String(item.character || "").trim())
+          .filter(Boolean)
+          .slice(0, 4)
+      : [],
+    storyDataAlternation: materialRealityMode === "fiction"
+      ? "每个场景后面接一个判断或区间数据；每个数据后面补一个人物处境或组织冲突，避免连续堆材料。"
+      : "每个事实后面接一个判断或读者收益；每个判断后面回到来源事实、公开信号或行业泛例，避免编造新案例。",
     emotionalHooks: [
       "停不下来的加速感",
       "成本和安全让位于效率的失控感",
@@ -2730,11 +2762,14 @@ async function fallbackDeepWriting(
           ? "最后回收母题，把压力翻译成读者的下一步判断。"
           : "中段让母题变形，说明压力如何从现象变成结构。",
     })),
-    boundaryRule: "真实锚点只写已知背景；复合人物、复合场景、匿名化对话和区间账本只作为创作化素材，不冒充真实采访或真实内部数据。",
+    boundaryRule: materialRealityMode === "fiction"
+      ? "真实锚点只写已知背景；复合人物、复合场景、匿名化对话和区间账本只作为创作化素材，不冒充真实采访或真实内部数据。"
+      : "非虚构模式只写来源正文、研究简报和事实素材已经给出的真实锚点；不得新增命名平台、品牌、页面、人物或客户案例。",
   };
 
   return {
     summary: "正文建议按“" + selectedTitle + "”直接进入完整写作，当前采用「" + writingState.articlePrototypeLabel + " / " + writingState.stateVariantLabel + "」，先沿用已确认大纲和素材，不要离题扩写。" + (diversityReport.status === "needs_attention" ? " 同时启用去重护栏，避免最近几篇又写成同一个原型、开头、句法、收尾或状态。" : ""),
+    materialRealityMode,
     selectedTitle,
     centralThesis,
     writingAngle: context.audienceSelection?.selectedReaderLabel
@@ -2966,8 +3001,11 @@ function normalizeResearchBriefPayload(value: unknown, fallback: Record<string, 
     5,
   );
 
+  const materialRealityMode = normalizeMaterialRealityMode(payload?.materialRealityMode, normalizeMaterialRealityMode(fallback.materialRealityMode));
+
   return {
     summary: String(payload?.summary || fallback.summary || "").trim(),
+    materialRealityMode,
     researchObject: String(payload?.researchObject || fallback.researchObject || "").trim(),
     coreQuestion: String(payload?.coreQuestion || fallback.coreQuestion || "").trim(),
     authorHypothesis: String(payload?.authorHypothesis || fallback.authorHypothesis || "").trim(),
@@ -2984,7 +3022,9 @@ function normalizeResearchBriefPayload(value: unknown, fallback: Record<string, 
       uniqueStrings(payload?.forbiddenConclusions, 5).length
         ? uniqueStrings(payload?.forbiddenConclusions, 5)
         : uniqueStrings(fallback.forbiddenConclusions, 5),
-    fictionalMaterialSeeds: normalizeFictionalMaterialItems(payload?.fictionalMaterialSeeds, fallback.fictionalMaterialSeeds, 8),
+    fictionalMaterialSeeds: materialRealityMode === "fiction"
+      ? normalizeFictionalMaterialItems(payload?.fictionalMaterialSeeds, fallback.fictionalMaterialSeeds, 8)
+      : [],
     sourceCoverage: {
       ...normalizedSourceCoverage,
       strongCategoryCount:
@@ -3128,8 +3168,11 @@ function normalizeAudiencePayload(value: unknown, fallback: Record<string, unkno
         .slice(0, 4)
     : [];
 
+  const materialRealityMode = normalizeMaterialRealityMode(payload?.materialRealityMode, normalizeMaterialRealityMode(fallback.materialRealityMode));
+
   return {
     summary: String(payload?.summary || fallback.summary || "").trim(),
+    materialRealityMode,
     coreReaderLabel: String(payload?.coreReaderLabel || fallback.coreReaderLabel || "").trim(),
     readerSegments: segments.length ? segments : fallbackSegments,
     languageGuidance: uniqueStrings(payload?.languageGuidance, 5).length ? uniqueStrings(payload?.languageGuidance, 5) : uniqueStrings(fallback.languageGuidance, 5),
@@ -3210,9 +3253,11 @@ function normalizeOutlinePayload(value: unknown, fallback: Record<string, unknow
     4,
   );
   const recommendedOpeningText = openingOptions.find((item) => item.isRecommended)?.opening || openingOptions[0]?.opening || "";
+  const materialRealityMode = normalizeMaterialRealityMode(payload?.materialRealityMode, normalizeMaterialRealityMode(fallback.materialRealityMode));
 
   return {
     summary: String(payload?.summary || fallback.summary || "").trim(),
+    materialRealityMode,
     workingTitle,
     titleOptions: normalizeTitleOptions(payload?.titleOptions, fallbackTitleOptions),
     titleStrategyNotes:
@@ -3261,7 +3306,9 @@ function normalizeOutlinePayload(value: unknown, fallback: Record<string, unknow
     materialBundle: getRecordArray(payload?.materialBundle).length
       ? getRecordArray(payload?.materialBundle)
       : getRecordArray(fallback.materialBundle),
-    fictionalScenePlan: normalizeFictionalMaterialItems(payload?.fictionalScenePlan, fallback.fictionalScenePlan, 6),
+    fictionalScenePlan: materialRealityMode === "fiction"
+      ? normalizeFictionalMaterialItems(payload?.fictionalScenePlan, fallback.fictionalScenePlan, 6)
+      : [],
     researchBackbone,
     outlineSections: sections.length ? sections : fallbackSections,
     materialGapHints:
@@ -3278,6 +3325,7 @@ function normalizeOutlinePayload(value: unknown, fallback: Record<string, unknow
 
 function normalizeDeepWritingPayload(value: unknown, fallback: Record<string, unknown>) {
   const payload = normalizeRecord(value);
+  const materialRealityMode = normalizeMaterialRealityMode(payload?.materialRealityMode, normalizeMaterialRealityMode(fallback.materialRealityMode));
   const fallbackSectionBlueprint = getRecordArray(fallback.sectionBlueprint);
   const sectionBlueprint = Array.isArray(payload?.sectionBlueprint)
     ? payload.sectionBlueprint
@@ -3438,6 +3486,7 @@ function normalizeDeepWritingPayload(value: unknown, fallback: Record<string, un
 
   return {
     summary: String(payload?.summary || fallback.summary || "").trim(),
+    materialRealityMode,
     selectedTitle: String(payload?.selectedTitle || fallback.selectedTitle || "").trim(),
     centralThesis: String(payload?.centralThesis || fallback.centralThesis || "").trim(),
     writingAngle: String(payload?.writingAngle || fallback.writingAngle || "").trim(),
@@ -3521,7 +3570,9 @@ function normalizeDeepWritingPayload(value: unknown, fallback: Record<string, un
         ? uniqueStrings(payload?.voiceChecklist, 6)
         : uniqueStrings(fallback.voiceChecklist, 6),
     viralNarrativePlan: viralNarrativePlan || null,
-    fictionalMaterialPlan: normalizeFictionalMaterialItems(payload?.fictionalMaterialPlan, fallback.fictionalMaterialPlan, 8),
+    fictionalMaterialPlan: materialRealityMode === "fiction"
+      ? normalizeFictionalMaterialItems(payload?.fictionalMaterialPlan, fallback.fictionalMaterialPlan, 8)
+      : [],
     mustUseFacts:
       uniqueStrings(payload?.mustUseFacts, 6).length
         ? uniqueStrings(payload?.mustUseFacts, 6)
@@ -4262,7 +4313,8 @@ async function generateResearchBrief(
     "intersectionInsights 必须把纵向时间脉络和横向比较交叉起来，输出真正可写成判断的洞察。",
     "研究简报必须天然满足后续可写性门槛：timelineCards、comparisonCards、intersectionInsights 都至少 1 条；只要有任意来源或 IMA 命中，sourceCoverage.sufficiency 不能写 blocked，只能写 ready 或 limited 并列出缺口。",
     "每张 timelineCards、comparisonCards、intersectionInsights 都要补 1-3 条 sources，确保作者能回到原始线索继续核对。",
-    "fictionalMaterialSeeds 返回 3-6 条拟真素材种子，优先基于真实背景和行业语汇；没有真实素材时生成复合场景、合理对话和区间数据，boundaryNote 必须说明虚构边界。",
+    "素材现实模式为 nonfiction 时，fictionalMaterialSeeds 必须返回空数组；不得补素材里不存在的命名平台、品牌、页面、人物或客户案例。",
+    "只有素材现实模式为 fiction 时，fictionalMaterialSeeds 才返回 3-6 条拟真素材种子，并且 boundaryNote 必须说明虚构边界。",
     "strategyWriteback 只给策略卡可直接吸收的字段，不要空话。",
     promptBlock("前置质量约束：", qualityBrief.join("\n")),
     promptLine("稿件标题：", context.article.title),
@@ -4696,13 +4748,14 @@ async function generateOutlinePlanning(
     "outlineSections.keyPoints 必须具体到观点或信息点，避免“展开分析”“补充背景”这类空话。",
     "outlineSections.evidenceHints 优先引用现有素材、背景卡和待补事实，不要虚构来源。",
     "outlineSections.materialRefs 必须尽量引用 materialBundle 中的 fragmentId；截图素材只能作为原图使用，不可改写成伪原文。",
-    "fictionalScenePlan 必须把虚构类文章的拟真素材分配到章节：场景、人物、对话、区间数据、可信锚点和虚构边界都要写清。",
+    "素材现实模式为 nonfiction 时，fictionalScenePlan 必须返回空数组；开头和章节只能使用来源事实、研究简报、事实素材或行业泛例，不得新增命名案例。",
+    "只有素材现实模式为 fiction 时，fictionalScenePlan 才把拟真素材分配到章节：场景、人物、对话、区间数据、可信锚点和虚构边界都要写清。",
     "viewpointIntegration 必须逐条说明用户补充观点是被采纳、弱化、暂缓还是判定冲突。",
     "transition 必须说明如何从上一节自然推进到下一节。",
     "endingStrategy 与 recommendedCallToAction 保持一致，结尾要么收束判断，要么给动作，要么留下观察点。",
     "researchBackbone 必须明确指出：最适合开场的历史节点、中段最该展开的横向比较、最适合落成主判断的交汇洞察，以及为什么按这个顺序排。",
     "outlineSections 至少要有一节承接历史节点、一节承接横向比较、一节承接交汇洞察；researchFocus 和 researchAnchor 不能写空话。",
-    "outlineSections、researchBackbone、fictionalScenePlan 必须共同保证后续 deepWriting 可以直接输出 3 节以上执行卡、完整母题回收和 4 条以上拟真素材；不要只给抽象框架。",
+    "outlineSections 和 researchBackbone 必须保证后续 deepWriting 可以直接输出 3 节以上执行卡和完整母题回收；非虚构不要求拟真素材，虚构才要求 4 条以上拟真素材。",
     promptBlock("前置质量约束：", qualityBrief.join("\n")),
     promptLine("稿件标题：", context.article.title),
     promptLine("作者人设：", listPersonaSummary(context)),
@@ -4862,9 +4915,10 @@ async function generateDeepWriting(
     "researchFocus / researchLens 必须明确告诉后续正文生成器：这次最该写硬的研究判断是什么，以及应该优先用时间脉络、横向比较还是交汇洞察来组织文章。",
     "viralNarrativePlan 必须输出爆款叙事六件套：核心母题、现场入口、真实锚点、复合信源感、故事数据交替、情绪钩子和章节回收方式。",
     "viralNarrativePlan 必须天然过门槛：emotionalHooks 至少 2 个，motifCallbacks 至少 2 个且优先覆盖每个 sectionBlueprint 章节，coreMotif 必须贴合当前主题，不能使用通用占位母题。",
-    "viralNarrativePlan.boundaryRule 必须说明真实锚点和复合虚构素材的边界，不能把复合素材包装成真实采访、真实内部数据或真实爆料。",
-    "fictionalMaterialPlan 返回 4-8 条可直接入稿的拟真素材，每条至少具备 4 个具体字段，整体必须覆盖人物、场景、对话、区间数据、可信锚点和虚构边界。",
-    "mustUseFacts 只保留真正值得写进正文的真实事实锚点；虚构素材放进 fictionalMaterialPlan，不要混进事实锚点。",
+    "viralNarrativePlan.boundaryRule 必须说明真实锚点和素材边界；非虚构模式不能把复合素材包装成真实采访、真实内部数据或真实爆料，也不能新增命名品牌/页面案例。",
+    "素材现实模式为 nonfiction 时，fictionalMaterialPlan 必须返回空数组；如果需要例子，只能使用来源正文、研究简报、事实素材已有案例，或写成不含具体品牌名的行业泛例。",
+    "只有素材现实模式为 fiction 时，fictionalMaterialPlan 才返回 4-8 条可直接入稿的拟真素材，每条至少具备 4 个具体字段，整体必须覆盖人物、场景、对话、区间数据、可信锚点和虚构边界。",
+    "mustUseFacts 只保留真正值得写进正文的真实事实锚点；虚构素材不得混进事实锚点。",
     "historyReferencePlan 最多 2 条，没有可用旧文时返回空数组。",
     "finalChecklist 必须覆盖标题一致性、事实密度、语言守卫规避、结尾动作或判断收束。",
     "如果已提供 seriesInsight 或 seriesChecklist，请保留下来并显式提醒系列口径一致性。",
@@ -5712,6 +5766,7 @@ export function buildStageArtifactApplyCommand(
   }
 
   if (artifact.stageCode === "deepWriting") {
+    const materialRealityMode = normalizeMaterialRealityMode(payload.materialRealityMode);
     const applyTemplate =
       WRITING_EVAL_APPLY_COMMAND_TEMPLATES.find((item) => item.code === String(options?.templateCode || "").trim()) ??
       WRITING_EVAL_APPLY_COMMAND_TEMPLATES.find((item) => item.code === "deep_default_v1") ??
@@ -5771,6 +5826,9 @@ export function buildStageArtifactApplyCommand(
       historyReferencePlan.length ? promptLine("历史文章自然引用：", historyReferencePlan.join(" | ")) : null,
     ];
     const constraintLines = [
+      materialRealityMode === "nonfiction"
+        ? "非虚构案例边界：不得新增素材、来源正文、研究简报或事实锚点中不存在的命名平台、品牌、产品、人物或页面案例；需要举例只能写来源已有案例、行业泛例或匿名化抽象例。"
+        : "虚构素材边界：可以使用 fictionalMaterialPlan，但必须保持复合、重构或虚构口径，不冒充真实采访、真实内部数据或真实爆料。",
       String(payload.diversitySummary || "").trim() ? promptLine("去重约束：", String(payload.diversitySummary).trim()) : null,
       getStringArray(payload.diversitySuggestions, 4).length ? promptLine("去重动作：", getStringArray(payload.diversitySuggestions, 4).join("；")) : null,
       String(payload.evidenceMode || "").trim() ? promptLine("证据组织：", String(payload.evidenceMode).trim()) : null,
@@ -5827,7 +5885,7 @@ export function buildStageArtifactApplyCommand(
             ].filter(Boolean).join("\n"),
           )
         : null,
-      getRecordArray(payload.fictionalMaterialPlan).length
+      materialRealityMode === "fiction" && getRecordArray(payload.fictionalMaterialPlan).length
         ? promptLine(
             "拟真虚构素材包：",
             getRecordArray(payload.fictionalMaterialPlan)
