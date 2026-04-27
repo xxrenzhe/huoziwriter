@@ -1,8 +1,12 @@
 import { appendAuditLog } from "./audit";
 import { getDatabase } from "./db";
 import { getUserPlanContext } from "./plan-access";
+import { getArticlesByUser } from "./repositories";
 import { ensureExtendedProductSchema } from "./schema-bootstrap";
-import type { WritingStyleAnalysis } from "./writing-style-analysis";
+import {
+  extractWritingStyleFromTextSamples,
+  type WritingStyleAnalysis,
+} from "./writing-style-analysis";
 
 type WritingStyleProfileRow = {
   id: number;
@@ -23,6 +27,9 @@ type WritingStyleProfileRow = {
   created_at: string;
   updated_at: string;
 };
+
+const AUTO_PROFILE_MIN_ARTICLE_LENGTH = 600;
+const AUTO_PROFILE_TARGET_SAMPLE_COUNT = 3;
 
 function parseJsonObject(value: string | Record<string, unknown> | null) {
   if (!value) return null;
@@ -139,6 +146,100 @@ export async function getWritingStyleProfiles(userId: number) {
   return rows.map(mapWritingStyleProfile);
 }
 
+function stripMarkdownToPlainText(text: string) {
+  return String(text || "")
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/!\[[^\]]*\]\([^)]+\)/g, " ")
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .replace(/^#{1,6}\s+/gm, "")
+    .replace(/^\s*[-*+]\s+/gm, "")
+    .replace(/^\s*\d+\.\s+/gm, "")
+    .replace(/[>*_~]/g, " ")
+    .replace(/\n{2,}/g, "\n")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function compareWritingStyleProfiles(
+  left: ReturnType<typeof mapWritingStyleProfile>,
+  right: ReturnType<typeof mapWritingStyleProfile>,
+) {
+  const sampleDelta = Number(right.sampleCount || 0) - Number(left.sampleCount || 0);
+  if (sampleDelta !== 0) {
+    return sampleDelta;
+  }
+  const updatedDelta = Date.parse(String(right.updatedAt || "")) - Date.parse(String(left.updatedAt || ""));
+  if (Number.isFinite(updatedDelta) && updatedDelta !== 0) {
+    return updatedDelta;
+  }
+  return Number(right.id || 0) - Number(left.id || 0);
+}
+
+export function pickPreferredWritingStyleProfile<T extends ReturnType<typeof mapWritingStyleProfile>>(
+  profiles: T[],
+  preferredProfileId?: number | null,
+) {
+  if (preferredProfileId != null) {
+    const matched = profiles.find((profile) => profile.id === preferredProfileId);
+    if (matched) {
+      return matched;
+    }
+  }
+  return [...profiles].sort(compareWritingStyleProfiles)[0] ?? null;
+}
+
+function buildAutoWritingStyleProfileName(sampleCount: number) {
+  return sampleCount >= AUTO_PROFILE_TARGET_SAMPLE_COUNT
+    ? formatAutoProfileLabel(`自动沉淀文风（${sampleCount} 篇交叉）`)
+    : formatAutoProfileLabel("自动沉淀文风");
+}
+
+function formatAutoProfileLabel(label: string) {
+  return label.trim() || "自动沉淀文风";
+}
+
+async function buildAutoWritingStyleProfileAnalysis(userId: number) {
+  const articles = await getArticlesByUser(userId);
+  const candidates = articles
+    .map((article) => {
+      const plain = stripMarkdownToPlainText(article.markdown_content);
+      return {
+        id: article.id,
+        title: String(article.title || "").trim() || `稿件 #${article.id}`,
+        status: article.status,
+        plain,
+        createdAt: article.created_at,
+        updatedAt: article.updated_at,
+      };
+    })
+    .filter((article) => article.plain.length >= AUTO_PROFILE_MIN_ARTICLE_LENGTH)
+    .sort((left, right) => {
+      const statusWeight = (right.status === "published" ? 1 : 0) - (left.status === "published" ? 1 : 0);
+      if (statusWeight !== 0) {
+        return statusWeight;
+      }
+      return Date.parse(String(right.updatedAt || right.createdAt || "")) - Date.parse(String(left.updatedAt || left.createdAt || ""));
+    })
+    .slice(0, AUTO_PROFILE_TARGET_SAMPLE_COUNT);
+
+  if (candidates.length === 0) {
+    return null;
+  }
+
+  const analysis = await extractWritingStyleFromTextSamples(
+    candidates.map((article) => ({
+      sourceUrl: `article://${article.id}`,
+      sourceTitle: article.title,
+      rawText: article.plain,
+    })),
+  );
+  return {
+    analysis,
+    sampleCount: candidates.length,
+  };
+}
+
 async function countWritingStyleProfiles(userId: number) {
   const db = getDatabase();
   const row = await db.queryOne<{ count: number }>(
@@ -189,6 +290,35 @@ export async function createWritingStyleProfile(userId: number, analysis: Writin
     ],
   );
   return result.lastInsertRowid ?? null;
+}
+
+export async function ensureAutoWritingStyleProfile(userId: number) {
+  await ensureExtendedProductSchema();
+  const { planSnapshot } = await getUserPlanContext(userId);
+  if (planSnapshot.writingStyleProfileLimit <= 0) {
+    return null;
+  }
+
+  const existingProfiles = await getWritingStyleProfiles(userId);
+  const preferredExisting = pickPreferredWritingStyleProfile(existingProfiles);
+  if (preferredExisting) {
+    return preferredExisting;
+  }
+
+  const built = await buildAutoWritingStyleProfileAnalysis(userId);
+  if (!built) {
+    return null;
+  }
+
+  const createdId = await createWritingStyleProfile(
+    userId,
+    built.analysis,
+    buildAutoWritingStyleProfileName(built.sampleCount),
+  );
+  if (!createdId || !Number.isInteger(Number(createdId))) {
+    return null;
+  }
+  return getWritingStyleProfileById(userId, Number(createdId));
 }
 
 export async function deleteWritingStyleProfile(userId: number, profileId: number) {

@@ -34,6 +34,10 @@ function buildComprehensiveBusinessReport() {
       { articleId: 105, userId: 1, createdAt: "2026-03-08T00:00:00.000Z", seriesId: 11 },
       { articleId: 106, userId: 1, createdAt: "2026-03-15T00:00:00.000Z", seriesId: 11 },
     ],
+    styleProfiles: [
+      { userId: 1, profileId: 1001, sampleCount: 3, createdAt: "2026-04-10T00:00:00.000Z", updatedAt: "2026-04-10T00:00:00.000Z" },
+      { userId: 2, profileId: 1002, sampleCount: 1, createdAt: "2026-04-12T00:00:00.000Z", updatedAt: "2026-04-12T00:00:00.000Z" },
+    ],
     styleUsageEvents: [
       { userId: 1, profileId: 1001, articleId: 105, usageSource: "article.generate", sampleCount: 3, usedAt: "2026-04-10T00:00:00.000Z" },
       { userId: 2, profileId: 1002, articleId: 205, usageSource: "article.command.rewrite", sampleCount: 1, usedAt: "2026-04-12T00:00:00.000Z" },
@@ -109,6 +113,7 @@ test("buildPlan17BusinessReportFromFacts keeps sparse business data truthful", (
     ],
     generatedItems: [],
     articles: [{ articleId: 801, userId: 8, createdAt: "2026-04-18T00:00:00.000Z", seriesId: null }],
+    styleProfiles: [],
     styleUsageEvents: [],
   });
 
@@ -136,6 +141,15 @@ test("buildPlan17BusinessReportFromFacts de-duplicates tokenized style usage and
     reviewedOutcomes: [],
     generatedItems: [],
     articles: [],
+    styleProfiles: [
+      {
+        userId: 9,
+        profileId: 3001,
+        sampleCount: 4,
+        createdAt: "2026-04-18T00:00:00.000Z",
+        updatedAt: "2026-04-18T00:05:00.000Z",
+      },
+    ],
     styleUsageEvents: [
       {
         userId: 9,

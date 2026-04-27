@@ -6,6 +6,7 @@ import {
   setArticleWorkflowCurrentStage,
   setArticleWorkflowPendingPublishIntent,
 } from "./article-workflows";
+import { getArticleStageArtifact } from "./article-stage-artifacts";
 import { getActiveTemplateById } from "./layout-templates";
 import { assertWechatTemplateAllowed } from "./plan-access";
 import { evaluatePublishGuard, type PublishGuardResult } from "./publish-guard";
@@ -103,6 +104,16 @@ export async function publishArticleToWechat(input: {
   }
 
   const templateId = input.templateId ?? article.wechat_template_id;
+  const outlineArtifact = await getArticleStageArtifact(article.id, input.userId, "outlinePlanning").catch(() => null);
+  const outlineSelection =
+    outlineArtifact?.payload
+    && typeof outlineArtifact.payload.selection === "object"
+    && outlineArtifact.payload.selection
+    && !Array.isArray(outlineArtifact.payload.selection)
+      ? (outlineArtifact.payload.selection as Record<string, unknown>)
+      : null;
+  const selectedTitle = String(outlineSelection?.selectedTitle || "").trim();
+  const effectiveTitle = selectedTitle || article.title;
 
   try {
     await withWechatPersistenceRetry(() => setArticleWorkflowCurrentStage({
@@ -114,7 +125,7 @@ export async function publishArticleToWechat(input: {
     await assertWechatTemplateAllowed(input.userId, templateId);
     const articleVersionHash = buildArticleVersionHash({
       articleId: article.id,
-      title: article.title,
+      title: effectiveTitle,
       markdownContent: article.markdown_content,
       templateId: templateId ?? null,
       wechatConnectionId: connection.id,
@@ -166,7 +177,7 @@ export async function publishArticleToWechat(input: {
     const template = templateId ? await getActiveTemplateById(templateId, input.userId) : null;
     const result = await publishWechatDraft({
       connection,
-      title: article.title,
+      title: effectiveTitle,
       markdownContent: article.markdown_content,
       digest: input.digest ?? undefined,
       author: input.author ?? undefined,

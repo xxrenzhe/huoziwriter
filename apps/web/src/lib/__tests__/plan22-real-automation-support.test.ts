@@ -109,10 +109,17 @@ function buildScenario(overrides: Partial<ScenarioReport> = {}): ScenarioReport 
       recommendedTitle: "AI 写作",
       optionCount: 6,
       forbiddenHitCount: 0,
+      recommendedOpenRateScore: 42,
+      recommendedElementsHitCount: 2,
+      recommendedForbiddenHitCount: 0,
     },
     openingSummary: {
       recommendedOpening: "开头",
       optionCount: 3,
+      recommendedHookScore: 76,
+      recommendedQualityCeiling: "A",
+      recommendedForbiddenHitCount: 0,
+      recommendedDangerCount: 0,
     },
     coverImageSummary: {
       prompt: "cover",
@@ -128,6 +135,9 @@ function buildScenario(overrides: Partial<ScenarioReport> = {}): ScenarioReport 
       blockerCount: 0,
       warningCount: 0,
       blockers: [],
+      methodologyBlockedCount: 0,
+      methodologyWarningCount: 0,
+      methodologyGateStatuses: [],
     },
     aiUsageSummary: {
       callCount: 3,
@@ -157,13 +167,17 @@ test("getScenarioAcceptanceIssues blocks high risk and content publish blockers"
         blockerCount: 2,
         warningCount: 0,
         blockers: ["当前最弱层是 L1 硬规则", "尚未选择微信公众号连接"],
+        methodologyBlockedCount: 1,
+        methodologyWarningCount: 0,
+        methodologyGateStatuses: [{ code: "researchSufficiency", status: "blocked" }],
       },
     }),
   });
 
-  assert.equal(issues.length, 2);
+  assert.equal(issues.length, 3);
   assert.match(issues[0] ?? "", /事实核查仍有高风险/);
   assert.match(issues[1] ?? "", /发布守门仍有内容阻塞/);
+  assert.match(issues[2] ?? "", /爆文方法论闸门仍有阻塞/);
 });
 
 test("getScenarioAcceptanceIssues ignores wechat-only blockers for draftPreview", () => {
@@ -175,9 +189,47 @@ test("getScenarioAcceptanceIssues ignores wechat-only blockers for draftPreview"
         blockerCount: 1,
         warningCount: 0,
         blockers: ["尚未选择微信公众号连接"],
+        methodologyBlockedCount: 0,
+        methodologyWarningCount: 0,
+        methodologyGateStatuses: [],
       },
     }),
   });
 
   assert.deepEqual(issues, []);
+});
+
+test("getScenarioAcceptanceIssues blocks weak title and opening quality", () => {
+  const issues = getScenarioAcceptanceIssues({
+    requiresWechatDraft: false,
+    scenario: buildScenario({
+      titleSummary: {
+        recommendedTitle: "关于 AI 写作的一些思考",
+        optionCount: 4,
+        forbiddenHitCount: 1,
+        recommendedOpenRateScore: 30,
+        recommendedElementsHitCount: 1,
+        recommendedForbiddenHitCount: 1,
+      },
+      openingSummary: {
+        recommendedOpening: "在当今 AI 时代，内容创作正在发生深刻变化。",
+        optionCount: 2,
+        recommendedHookScore: 58,
+        recommendedQualityCeiling: "B-",
+        recommendedForbiddenHitCount: 1,
+        recommendedDangerCount: 2,
+      },
+    }),
+  });
+
+  assert.equal(issues.length, 9);
+  assert.match(issues[0] ?? "", /标题优化候选不足/);
+  assert.match(issues[1] ?? "", /推荐标题仍命中禁区/);
+  assert.match(issues[2] ?? "", /推荐标题三要素命中不足/);
+  assert.match(issues[3] ?? "", /推荐标题打开率分偏低/);
+  assert.match(issues[4] ?? "", /开头优化候选不足/);
+  assert.match(issues[5] ?? "", /推荐开头仍命中禁区/);
+  assert.match(issues[6] ?? "", /推荐开头仍有危险诊断项/);
+  assert.match(issues[7] ?? "", /推荐开头钩子分偏低/);
+  assert.match(issues[8] ?? "", /推荐开头质量上限不足/);
 });

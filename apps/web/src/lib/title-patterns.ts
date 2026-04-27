@@ -1,5 +1,7 @@
 export const TITLE_OPTION_LIMIT = 6;
 const TITLE_SCORE_MAX = 50;
+const RECOMMENDED_MIN_OPEN_RATE_SCORE = 35;
+const RECOMMENDED_MIN_ELEMENTS_HIT_COUNT = 2;
 
 export type TitleElementsHit = {
   specific: boolean;
@@ -184,13 +186,22 @@ export function ensureSingleRecommendedTitleOption(options: TitleOption[]) {
   if (options.length === 0) {
     return options;
   }
-  const explicitRecommendedIndex = options.findIndex((item) => item.isRecommended);
+  const isPublishableRecommendedTitle = (item: TitleOption) => (
+    item.forbiddenHits.length === 0
+    && item.openRateScore >= RECOMMENDED_MIN_OPEN_RATE_SCORE
+    && getTitleElementHitCount(item.elementsHit) >= RECOMMENDED_MIN_ELEMENTS_HIT_COUNT
+  );
+  const explicitRecommendedIndex = options.findIndex((item) => item.isRecommended && isPublishableRecommendedTitle(item));
   const recommendedIndex = explicitRecommendedIndex >= 0
     ? explicitRecommendedIndex
     : options.reduce((bestIndex, item, index, list) => {
         const best = list[bestIndex];
+        const itemPublishable = isPublishableRecommendedTitle(item);
+        const bestPublishable = isPublishableRecommendedTitle(best);
         const itemHitCount = getTitleElementHitCount(item.elementsHit);
         const bestHitCount = getTitleElementHitCount(best.elementsHit);
+        if (itemPublishable && !bestPublishable) return index;
+        if (!itemPublishable && bestPublishable) return bestIndex;
         if (item.forbiddenHits.length === 0 && best.forbiddenHits.length > 0) return index;
         if (item.forbiddenHits.length > 0 && best.forbiddenHits.length === 0) return bestIndex;
         if (item.openRateScore > best.openRateScore) return index;
@@ -239,7 +250,7 @@ export function buildFallbackTitleOptions(baseTitle: string) {
         reason: "开头直接立判断，适合把读者拉进“原来问题不在表面”的信息差。",
         riskHint: "正文首段必须快速补上事实锚点，否则容易显得判断先行。",
         openRateScore: 46,
-        elementsHit: { specific: false, curiosityGap: true, readerView: false },
+        elementsHit: { specific: true, curiosityGap: true, readerView: false },
       },
       {
         title: `为什么说${seed}，最容易被误读的不是结果`,
@@ -274,11 +285,11 @@ export function buildFallbackTitleOptions(baseTitle: string) {
         openRateScore: 37,
       },
       {
-        title: `如果你也在关注${seed}，先别急着下结论`,
+        title: `如果你也在关注${seed}，先别急着只看表面结果`,
         styleLabel: "读者提醒型",
         angle: "先拦住惯性判断，再给新视角",
         reason: "更有对话感，适合把读者从已有成见里拉出来。",
-        riskHint: "要在前两段给出“为什么先别急”的事实依据，否则会显得虚。",
+        riskHint: "要在前两段给出“为什么别只看表面”的事实依据，否则会显得虚。",
         openRateScore: 35,
       },
     ],

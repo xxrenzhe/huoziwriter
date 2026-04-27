@@ -45,6 +45,16 @@ import {
   type ScenarioReport,
 } from "./plan22-real-automation-support";
 
+function asNumberOrNull(value: unknown) {
+  const parsed =
+    typeof value === "number" && Number.isFinite(value)
+      ? value
+      : typeof value === "string" && value.trim()
+        ? Number(value)
+        : Number.NaN;
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 async function ensureSeries(userId: number) {
   const existingDefault = await getDefaultSeries(userId);
   if (existingDefault) {
@@ -167,6 +177,7 @@ async function runScenario(input: {
     const coverImageBrief = asRecord(stageMap.get("coverImageBrief")?.outputJson);
     const layoutApply = asRecord(stageMap.get("layoutApply")?.outputJson);
     const publishGuard = asRecord(stageMap.get("publishGuard")?.outputJson);
+    const methodologyGates = asRecordArray(publishGuard.methodologyGates);
     const aiUsageSummary = await summarizeAiUsage(detail.run.articleId);
     const researchSources = asRecordArray(researchBrief.sources);
     const distinctDomains = new Set(
@@ -204,10 +215,17 @@ async function runScenario(input: {
         recommendedTitle: normalizeString(titleOptimization.recommendedTitle) || null,
         optionCount: asRecordArray(titleOptimization.titleOptions).length,
         forbiddenHitCount: asStringArray(titleOptimization.forbiddenHits).length,
+        recommendedOpenRateScore: asNumberOrNull(titleOptimization.recommendedTitleOpenRateScore),
+        recommendedElementsHitCount: Number(titleOptimization.recommendedTitleElementsHitCount ?? 0) || 0,
+        recommendedForbiddenHitCount: Number(titleOptimization.recommendedTitleForbiddenHitCount ?? 0) || 0,
       },
       openingSummary: {
         recommendedOpening: normalizeString(openingOptimization.recommendedOpening) || null,
         optionCount: asRecordArray(openingOptimization.openingOptions).length,
+        recommendedHookScore: asNumberOrNull(openingOptimization.recommendedHookScore),
+        recommendedQualityCeiling: normalizeString(openingOptimization.recommendedQualityCeiling) || null,
+        recommendedForbiddenHitCount: Number(openingOptimization.recommendedOpeningForbiddenHitCount ?? 0) || 0,
+        recommendedDangerCount: Number(openingOptimization.recommendedOpeningDangerCount ?? 0) || 0,
       },
       coverImageSummary: {
         prompt: normalizeString(coverImageBrief.prompt) || null,
@@ -223,6 +241,17 @@ async function runScenario(input: {
         blockerCount: asStringArray(publishGuard.blockers).length,
         warningCount: asStringArray(publishGuard.warnings).length,
         blockers: asStringArray(publishGuard.blockers),
+        methodologyBlockedCount: methodologyGates.filter((item) => normalizeString(item.status) === "blocked").length,
+        methodologyWarningCount: methodologyGates.filter((item) => normalizeString(item.status) === "warning").length,
+        methodologyGateStatuses: methodologyGates.map((item) => ({
+          code: normalizeString(item.code),
+          status:
+            normalizeString(item.status) === "blocked"
+              ? "blocked"
+              : normalizeString(item.status) === "warning"
+                ? "warning"
+                : "passed",
+        })),
       },
       aiUsageSummary,
       stageStatuses: detail.stages.map((stage) => ({
@@ -255,11 +284,11 @@ async function runScenario(input: {
       finalWechatMediaId: null,
       searchSummary: { queryCount: 0, sourceCount: 0, distinctDomainCount: 0, searchUrl: null, searchError: null },
       factCheckSummary: { overallRisk: null, verifiedClaimCount: 0, needsEvidenceCount: 0, highRiskClaimCount: 0 },
-      titleSummary: { recommendedTitle: null, optionCount: 0, forbiddenHitCount: 0 },
-      openingSummary: { recommendedOpening: null, optionCount: 0 },
+      titleSummary: { recommendedTitle: null, optionCount: 0, forbiddenHitCount: 0, recommendedOpenRateScore: null, recommendedElementsHitCount: 0, recommendedForbiddenHitCount: 0 },
+      openingSummary: { recommendedOpening: null, optionCount: 0, recommendedHookScore: null, recommendedQualityCeiling: null, recommendedForbiddenHitCount: 0, recommendedDangerCount: 0 },
       coverImageSummary: { prompt: null, altText: null },
       layoutSummary: { templateId: null, htmlLength: 0, htmlSyncedToArticle: false },
-      publishGuardSummary: { canPublish: null, blockerCount: 0, warningCount: 0, blockers: [] },
+      publishGuardSummary: { canPublish: null, blockerCount: 0, warningCount: 0, blockers: [], methodologyBlockedCount: 0, methodologyWarningCount: 0, methodologyGateStatuses: [] },
       aiUsageSummary: { callCount: 0, totalInputTokens: 0, totalOutputTokens: 0, totalCacheReadTokens: 0, totalLatencyMs: 0 },
       stageStatuses: [],
       error: error instanceof Error ? error.message : String(error),

@@ -4,6 +4,7 @@ import { fail, ok } from "@/lib/http";
 import { getActiveTemplateById } from "@/lib/layout-templates";
 import { assertWechatTemplateAllowed } from "@/lib/plan-access";
 import { evaluateArticlePublishGuard } from "@/lib/publish-guard";
+import { getArticleStageArtifact } from "@/lib/article-stage-artifacts";
 import { getArticleById } from "@/lib/repositories";
 import { renderMarkdownToWechatHtml } from "@/lib/rendering";
 import { resolveTemplateRenderConfig, summarizeTemplateRenderConfig } from "@/lib/template-rendering";
@@ -30,8 +31,17 @@ export async function POST(request: Request, { params }: { params: { id: string 
       return fail("稿件不存在", 404);
     }
 
+    const outlineArtifact = await getArticleStageArtifact(article.id, session.userId, "outlinePlanning").catch(() => null);
+    const outlineSelection =
+      outlineArtifact?.payload
+      && typeof outlineArtifact.payload.selection === "object"
+      && outlineArtifact.payload.selection
+      && !Array.isArray(outlineArtifact.payload.selection)
+        ? (outlineArtifact.payload.selection as Record<string, unknown>)
+        : null;
+    const selectedTitle = String(outlineSelection?.selectedTitle || "").trim();
     const body = await request.json().catch(() => ({}));
-    const title = typeof body.title === "string" && body.title.trim() ? body.title.trim() : article.title;
+    const title = typeof body.title === "string" && body.title.trim() ? body.title.trim() : selectedTitle || article.title;
     const markdownContent =
       typeof body.markdownContent === "string" ? body.markdownContent : article.markdown_content;
     const templateId =

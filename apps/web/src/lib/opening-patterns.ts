@@ -1,5 +1,7 @@
 export const OPENING_OPTION_LIMIT = 3;
 const HOOK_SCORE_MAX = 100;
+const RECOMMENDED_MIN_HOOK_SCORE = 65;
+const RECOMMENDED_MIN_QUALITY_CEILING: OpeningQualityCeiling = "B";
 
 const QUALITY_CEILING_RANKS = {
   C: 0,
@@ -542,18 +544,31 @@ function getQualityCeilingRank(value: string) {
   return QUALITY_CEILING_RANKS[normalizeQualityCeiling(value, "C") as keyof typeof QUALITY_CEILING_RANKS] ?? 0;
 }
 
+function isPublishableRecommendedOpening(option: OpeningOption) {
+  return (
+    option.forbiddenHits.length === 0
+    && countDiagnoseLevel(option.diagnose, "danger") === 0
+    && option.hookScore >= RECOMMENDED_MIN_HOOK_SCORE
+    && getQualityCeilingRank(option.qualityCeiling) >= getQualityCeilingRank(RECOMMENDED_MIN_QUALITY_CEILING)
+  );
+}
+
 export function ensureSingleRecommendedOpeningOption(options: OpeningOption[]) {
   if (options.length === 0) {
     return options;
   }
 
-  const explicitRecommendedIndex = options.findIndex((item) => item.isRecommended && item.forbiddenHits.length === 0);
+  const explicitRecommendedIndex = options.findIndex((item) => item.isRecommended && isPublishableRecommendedOpening(item));
   const recommendedIndex = explicitRecommendedIndex >= 0
     ? explicitRecommendedIndex
     : options.reduce((bestIndex, item, index, list) => {
         const best = list[bestIndex];
         const itemDangerCount = countDiagnoseLevel(item.diagnose, "danger");
         const bestDangerCount = countDiagnoseLevel(best.diagnose, "danger");
+        const itemPublishable = isPublishableRecommendedOpening(item);
+        const bestPublishable = isPublishableRecommendedOpening(best);
+        if (itemPublishable && !bestPublishable) return index;
+        if (!itemPublishable && bestPublishable) return bestIndex;
         if (item.forbiddenHits.length === 0 && best.forbiddenHits.length > 0) return index;
         if (item.forbiddenHits.length > 0 && best.forbiddenHits.length === 0) return bestIndex;
         if (getQualityCeilingRank(item.qualityCeiling) > getQualityCeilingRank(best.qualityCeiling)) return index;
@@ -599,12 +614,12 @@ export function buildFallbackOpeningOptions(baseTitle: string) {
   return normalizeOpeningOptions(
     [
       {
-        opening: `${seed}看起来像是表面变化，真正卡住的是执行顺序和判断口径。先把最容易误判的一步说清，再展开后面的因果。`,
+        opening: `${seed}看起来只是表面变化，真正卡住的是执行顺序、成本账本和判断口径。问题不是要不要跟上，而是谁先发现自己已经被旧流程拖住。`,
         patternCode: "judgement_first",
         patternLabel: OPENING_PATTERN_LABELS.judgement_first,
       },
       {
-        opening: `很多人把${seed}当成一个新机会，但第一批先承压的往往是执行层。问题不在热度，而在成本和动作顺序。`,
+        opening: `问题是，${seed}最先改变的往往不是机会，而是执行层的压力。你以为大家在争一个新入口，实际先暴露出来的是成本、节奏和谁能持续交付。`,
         patternCode: "conflict_entry",
         patternLabel: OPENING_PATTERN_LABELS.conflict_entry,
       },

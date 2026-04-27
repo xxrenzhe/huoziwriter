@@ -11,6 +11,8 @@ import {
   formatDuration,
   formatRelativeTime,
   getAutomationLevelLabel,
+  getStageQualityGateClassName,
+  getStageQualityGateState,
   getRunStatusClassName,
   getStageSearchMetrics,
   mergeRun,
@@ -362,6 +364,8 @@ export function ArticleAutomationCockpit({
                   {(() => {
                     const detailSections = buildStageDetailSections(stage);
                     const searchMetrics = getStageSearchMetrics(stage);
+                    const qualityGateState = getStageQualityGateState(stage);
+                    const quickAction = qualityGateState?.action ?? null;
                     return (
                       <>
                   <div className="flex items-start justify-between gap-3">
@@ -372,6 +376,25 @@ export function ArticleAutomationCockpit({
                     <span className={cn("rounded-full border px-2.5 py-1 text-[11px]", getRunStatusClassName(stage.status))}>{stage.status}</span>
                   </div>
                   <div className="mt-3 text-sm leading-7 text-inkSoft">{buildStageSummary(stage)}</div>
+                  {qualityGateState ? (
+                    <div className={cn("mt-3 rounded-2xl border px-3 py-2 text-xs leading-6", getStageQualityGateClassName(qualityGateState.tone))}>
+                      <div className="font-medium">{qualityGateState.label}</div>
+                      <div className="mt-1">{qualityGateState.detail}</div>
+                      {quickAction ? (
+                        <div className="mt-3">
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            loading={actioningKey === `retry:${quickAction.stageCode}`}
+                            iconLeft={<RotateCcw size={14} />}
+                            onClick={() => handleRunAction("retry", quickAction.stageCode)}
+                          >
+                            {quickAction.label}
+                          </Button>
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
                   <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-inkMuted">
                     <span>{stage.promptId}@{stage.promptVersion}</span>
                     <span>{stage.provider || "待路由"}{stage.model ? ` · ${stage.model}` : ""}</span>
@@ -412,7 +435,7 @@ export function ArticleAutomationCockpit({
                       iconLeft={<RotateCcw size={14} />}
                       onClick={() => handleRunAction("retry", stage.stageCode)}
                     >
-                      重跑本阶段
+                      {quickAction?.stageCode === stage.stageCode ? "重新运行本阶段" : "重跑本阶段"}
                     </Button>
                   </div>
                       </>

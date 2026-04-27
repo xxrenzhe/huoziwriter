@@ -1,7 +1,12 @@
 import { assertPersonaReady } from "./personas";
 import { getArticleById } from "./repositories";
 import { getSeriesById } from "./series";
-import { getWritingStyleProfileById } from "./writing-style-profiles";
+import {
+  ensureAutoWritingStyleProfile,
+  getWritingStyleProfileById,
+  getWritingStyleProfiles,
+  pickPreferredWritingStyleProfile,
+} from "./writing-style-profiles";
 
 export async function getArticleAuthoringStyleContext(userId: number, articleId?: number) {
   const defaultPersona = await assertPersonaReady(userId);
@@ -76,14 +81,25 @@ async function buildArticleAuthoringStyleContext(
   },
 ) {
   const preferredWritingStyleProfileId = options?.preferredWritingStyleProfileId ?? persona?.boundWritingStyleProfileId ?? null;
-  const writingStyleProfile = preferredWritingStyleProfileId
+  const explicitWritingStyleProfile = preferredWritingStyleProfileId
     ? await getWritingStyleProfileById(userId, preferredWritingStyleProfileId)
     : null;
+  const fallbackWritingStyleProfile =
+    explicitWritingStyleProfile
+    ?? pickPreferredWritingStyleProfile(await getWritingStyleProfiles(userId))
+    ?? await ensureAutoWritingStyleProfile(userId);
+  const writingStyleProfile = explicitWritingStyleProfile ?? fallbackWritingStyleProfile;
   const preferredWritingStyleProfileName =
     writingStyleProfile?.name
     ?? options?.preferredWritingStyleProfileName
     ?? persona?.boundWritingStyleProfileName
     ?? null;
+  const bindingSource =
+    explicitWritingStyleProfile
+      ? options?.preferredWritingStyleProfileSource ?? null
+      : writingStyleProfile
+        ? "auto.bestAvailableWritingStyleProfile"
+        : null;
 
   return {
     persona: persona
@@ -101,12 +117,12 @@ async function buildArticleAuthoringStyleContext(
         }
       : null,
     writingStyleProfile: writingStyleProfile
-      ? {
+        ? {
           id: writingStyleProfile.id,
           name: writingStyleProfile.name,
           summary: writingStyleProfile.summary,
           sampleCount: writingStyleProfile.sampleCount ?? null,
-          bindingSource: options?.preferredWritingStyleProfileSource ?? null,
+          bindingSource,
           toneKeywords: writingStyleProfile.toneKeywords,
           sentenceLengthProfile: writingStyleProfile.sentenceLengthProfile,
           paragraphBreathingPattern: writingStyleProfile.paragraphBreathingPattern,

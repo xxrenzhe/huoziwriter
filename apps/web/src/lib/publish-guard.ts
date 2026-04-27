@@ -7,6 +7,7 @@ import { getArticleStageArtifact, getArticleStageArtifactsByDocumentIds } from "
 import { evaluateArticleVisualQuality } from "./article-visual-quality";
 import { getActiveTemplateById } from "./layout-templates";
 import { evaluateOpeningGuardChecks as evaluateOpeningPatternGuardChecks } from "./opening-patterns";
+import { buildPublishMethodologyGates } from "./publish-methodology-gates";
 import { getArticleById, getArticleEvidenceItems, getArticlesByUser, getArticleStrategyCard, getLatestArticleCoverImage, getLatestWechatSyncLogForArticle, getWechatConnectionRaw } from "./repositories";
 import { evaluateTitleGuardChecks } from "./title-patterns";
 import { buildWritingDiversityReport } from "./writing-diversity";
@@ -38,6 +39,7 @@ export type PublishGuardResult = {
   warnings: string[];
   suggestions: string[];
   checks: PublishGuardCheck[];
+  methodologyGates: ReturnType<typeof buildPublishMethodologyGates>;
   stageReadiness: StageReadiness[];
   aiNoise: {
     score: number;
@@ -1264,12 +1266,15 @@ export async function evaluatePublishGuard(input: {
     },
   ];
 
+  const methodologyGates = buildPublishMethodologyGates(checks);
+
   return {
     canPublish: blockers.length === 0,
     blockers,
     warnings,
     suggestions,
     checks,
+    methodologyGates,
     stageReadiness,
     aiNoise: {
       score: Number.isFinite(aiNoiseScore) ? aiNoiseScore : 0,

@@ -1,6 +1,15 @@
 import fs from "node:fs";
 import path from "node:path";
 
+import {
+  getOpeningQualityCeilingRank,
+  OPENING_OPTIMIZATION_MIN_HOOK_SCORE,
+  OPENING_OPTIMIZATION_MIN_OPTION_COUNT,
+  OPENING_OPTIMIZATION_MIN_QUALITY_CEILING,
+  TITLE_OPTIMIZATION_MIN_ELEMENTS_HIT_COUNT,
+  TITLE_OPTIMIZATION_MIN_OPEN_RATE_SCORE,
+  TITLE_OPTIMIZATION_MIN_OPTION_COUNT,
+} from "../apps/web/src/lib/article-automation-optimization-gates";
 import { getCredentialHealthMatrix } from "../apps/web/src/lib/ai-credentials-health";
 import { getDatabase } from "../apps/web/src/lib/db";
 import { searchResearchSources } from "../apps/web/src/lib/research-source-search";
@@ -59,10 +68,17 @@ export type ScenarioReport = {
     recommendedTitle: string | null;
     optionCount: number;
     forbiddenHitCount: number;
+    recommendedOpenRateScore: number | null;
+    recommendedElementsHitCount: number;
+    recommendedForbiddenHitCount: number;
   };
   openingSummary: {
     recommendedOpening: string | null;
     optionCount: number;
+    recommendedHookScore: number | null;
+    recommendedQualityCeiling: string | null;
+    recommendedForbiddenHitCount: number;
+    recommendedDangerCount: number;
   };
   coverImageSummary: {
     prompt: string | null;
@@ -78,6 +94,12 @@ export type ScenarioReport = {
     blockerCount: number;
     warningCount: number;
     blockers: string[];
+    methodologyBlockedCount: number;
+    methodologyWarningCount: number;
+    methodologyGateStatuses: Array<{
+      code: string;
+      status: "passed" | "warning" | "blocked";
+    }>;
   };
   aiUsageSummary: {
     callCount: number;
@@ -375,6 +397,36 @@ export function getScenarioAcceptanceIssues(input: {
   if (scenario.factCheckSummary.overallRisk === "high" || scenario.factCheckSummary.highRiskClaimCount > 0) {
     issues.push(`${prefix} 事实核查仍有高风险，risk=${scenario.factCheckSummary.overallRisk ?? "null"}, highRisk=${scenario.factCheckSummary.highRiskClaimCount}`);
   }
+  if (scenario.titleSummary.optionCount < TITLE_OPTIMIZATION_MIN_OPTION_COUNT) {
+    issues.push(`${prefix} 标题优化候选不足，titleOptions=${scenario.titleSummary.optionCount}`);
+  }
+  if (scenario.titleSummary.recommendedForbiddenHitCount > 0 || scenario.titleSummary.forbiddenHitCount > 0) {
+    issues.push(`${prefix} 推荐标题仍命中禁区，recommendedForbiddenHits=${scenario.titleSummary.recommendedForbiddenHitCount}, totalForbiddenHits=${scenario.titleSummary.forbiddenHitCount}`);
+  }
+  if (scenario.titleSummary.recommendedElementsHitCount < TITLE_OPTIMIZATION_MIN_ELEMENTS_HIT_COUNT) {
+    issues.push(`${prefix} 推荐标题三要素命中不足，elementsHit=${scenario.titleSummary.recommendedElementsHitCount}`);
+  }
+  if ((scenario.titleSummary.recommendedOpenRateScore ?? 0) < TITLE_OPTIMIZATION_MIN_OPEN_RATE_SCORE) {
+    issues.push(`${prefix} 推荐标题打开率分偏低，openRateScore=${scenario.titleSummary.recommendedOpenRateScore ?? 0}`);
+  }
+  if (scenario.openingSummary.optionCount < OPENING_OPTIMIZATION_MIN_OPTION_COUNT) {
+    issues.push(`${prefix} 开头优化候选不足，openingOptions=${scenario.openingSummary.optionCount}`);
+  }
+  if (scenario.openingSummary.recommendedForbiddenHitCount > 0) {
+    issues.push(`${prefix} 推荐开头仍命中禁区，forbiddenHits=${scenario.openingSummary.recommendedForbiddenHitCount}`);
+  }
+  if (scenario.openingSummary.recommendedDangerCount > 0) {
+    issues.push(`${prefix} 推荐开头仍有危险诊断项，dangerCount=${scenario.openingSummary.recommendedDangerCount}`);
+  }
+  if ((scenario.openingSummary.recommendedHookScore ?? 0) < OPENING_OPTIMIZATION_MIN_HOOK_SCORE) {
+    issues.push(`${prefix} 推荐开头钩子分偏低，hookScore=${scenario.openingSummary.recommendedHookScore ?? 0}`);
+  }
+  if (
+    getOpeningQualityCeilingRank(scenario.openingSummary.recommendedQualityCeiling)
+    < getOpeningQualityCeilingRank(OPENING_OPTIMIZATION_MIN_QUALITY_CEILING)
+  ) {
+    issues.push(`${prefix} 推荐开头质量上限不足，qualityCeiling=${scenario.openingSummary.recommendedQualityCeiling ?? "null"}`);
+  }
   if (scenario.layoutSummary.htmlLength <= 0 || !scenario.layoutSummary.htmlSyncedToArticle) {
     issues.push(`${prefix} 排版 HTML 未与文章正文同步，htmlLength=${scenario.layoutSummary.htmlLength}, synced=${scenario.layoutSummary.htmlSyncedToArticle ? "yes" : "no"}`);
   }
@@ -389,6 +441,12 @@ export function getScenarioAcceptanceIssues(input: {
   }
   if (!input.requiresWechatDraft && nonWechatBlockers.length > 0) {
     issues.push(`${prefix} 发布守门仍有内容阻塞：${nonWechatBlockers.slice(0, 2).join("；")}`);
+  }
+  if (scenario.publishGuardSummary.methodologyBlockedCount > 0) {
+    const blockedCodes = scenario.publishGuardSummary.methodologyGateStatuses
+      .filter((item) => item.status === "blocked")
+      .map((item) => item.code);
+    issues.push(`${prefix} 爆文方法论闸门仍有阻塞：${blockedCodes.join("、")}`);
   }
 
   return issues;
@@ -469,10 +527,10 @@ export function buildMarkdownReport(report: AcceptanceReport) {
     lines.push(`- blockedReason: ${sanitizeDiagnosticText(scenario.blockedReason) || "null"}`);
     lines.push(`- search: queries=${scenario.searchSummary.queryCount}, sources=${scenario.searchSummary.sourceCount}, domains=${scenario.searchSummary.distinctDomainCount}, error=${sanitizeDiagnosticText(scenario.searchSummary.searchError) || "null"}`);
     lines.push(`- factCheck: risk=${scenario.factCheckSummary.overallRisk ?? "null"}, needsEvidence=${scenario.factCheckSummary.needsEvidenceCount}, highRisk=${scenario.factCheckSummary.highRiskClaimCount}`);
-    lines.push(`- title: ${scenario.titleSummary.recommendedTitle ?? "null"} (${scenario.titleSummary.optionCount} options)`);
-    lines.push(`- opening: ${scenario.openingSummary.recommendedOpening ?? "null"} (${scenario.openingSummary.optionCount} options)`);
+    lines.push(`- title: ${scenario.titleSummary.recommendedTitle ?? "null"} (${scenario.titleSummary.optionCount} options, score=${scenario.titleSummary.recommendedOpenRateScore ?? "null"}, elements=${scenario.titleSummary.recommendedElementsHitCount}, forbidden=${scenario.titleSummary.recommendedForbiddenHitCount})`);
+    lines.push(`- opening: ${scenario.openingSummary.recommendedOpening ?? "null"} (${scenario.openingSummary.optionCount} options, hook=${scenario.openingSummary.recommendedHookScore ?? "null"}, ceiling=${scenario.openingSummary.recommendedQualityCeiling ?? "null"}, forbidden=${scenario.openingSummary.recommendedForbiddenHitCount}, danger=${scenario.openingSummary.recommendedDangerCount})`);
     lines.push(`- layout: template=${scenario.layoutSummary.templateId ?? "null"}, htmlLength=${scenario.layoutSummary.htmlLength}, synced=${scenario.layoutSummary.htmlSyncedToArticle ? "yes" : "no"}`);
-    lines.push(`- publishGuard: canPublish=${scenario.publishGuardSummary.canPublish == null ? "null" : scenario.publishGuardSummary.canPublish ? "yes" : "no"}, blockers=${scenario.publishGuardSummary.blockerCount}, warnings=${scenario.publishGuardSummary.warningCount}`);
+    lines.push(`- publishGuard: canPublish=${scenario.publishGuardSummary.canPublish == null ? "null" : scenario.publishGuardSummary.canPublish ? "yes" : "no"}, blockers=${scenario.publishGuardSummary.blockerCount}, warnings=${scenario.publishGuardSummary.warningCount}, methodologyBlocked=${scenario.publishGuardSummary.methodologyBlockedCount}, methodologyWarning=${scenario.publishGuardSummary.methodologyWarningCount}`);
     lines.push(`- aiUsage: calls=${scenario.aiUsageSummary.callCount}, input=${scenario.aiUsageSummary.totalInputTokens}, output=${scenario.aiUsageSummary.totalOutputTokens}, cacheRead=${scenario.aiUsageSummary.totalCacheReadTokens}, latencyMs=${scenario.aiUsageSummary.totalLatencyMs}`);
     if (scenario.error) {
       lines.push(`- error: ${sanitizeDiagnosticText(scenario.error)}`);

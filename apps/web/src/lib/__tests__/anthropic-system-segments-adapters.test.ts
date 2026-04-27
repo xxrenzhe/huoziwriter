@@ -9,11 +9,15 @@ import {
 import { buildImaHookPatternSystemSegments } from "../ima-fission-engine";
 import { buildStrategyCardAutoDraftSystemSegments } from "../strategy-card-auto-draft";
 
-test("buildArticleArtifactPromptSystemSegments wraps prompt content as a cacheable system block", () => {
-  assert.deepEqual(
-    buildArticleArtifactPromptSystemSegments("  article prompt body  "),
-    [{ text: "article prompt body", cacheable: true }],
-  );
+test("buildArticleArtifactPromptSystemSegments keeps prompt and shared quality contract cacheable", () => {
+  const segments = buildArticleArtifactPromptSystemSegments("  article prompt body  ");
+
+  assert.equal(segments.length, 2);
+  assert.deepEqual(segments[0], { text: "article prompt body", cacheable: true });
+  assert.equal(segments[1]?.cacheable, true);
+  assert.match(segments[1]?.text || "", /高质量条件前置解决/);
+  assert.match(segments[1]?.text || "", /爆款叙事六件套必须前置/);
+  assert.match(segments[1]?.text || "", /禁止伪造第一人称经历/);
 });
 
 test("buildTitleOptimizerSystemSegments keeps prompt and fixed title rules in cacheable system blocks", () => {

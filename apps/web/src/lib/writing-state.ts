@@ -1,3 +1,6 @@
+import { buildArchetypeRhythmHintText, type ArchetypeRhythmHints } from "./archetype-rhythm";
+import { buildArticleViralBlueprint } from "./article-viral-blueprint";
+
 type HumanSignalsLike = {
   firstHandObservation?: string | null;
   feltMoment?: string | null;
@@ -60,7 +63,7 @@ type StrategyCardLike = {
 } | null;
 
 export const WRITING_STATE_VARIANT_CODES = ["analytical", "animated", "sharp"] as const;
-export const ARTICLE_PROTOTYPE_CODES = ["investigation", "product_walkthrough", "phenomenon_analysis", "tool_share", "methodology", "personal_narrative", "general"] as const;
+export const ARTICLE_PROTOTYPE_CODES = ["ordinary_breakthrough", "investigation", "product_walkthrough", "phenomenon_analysis", "tool_share", "methodology", "personal_narrative", "general"] as const;
 
 export type WritingStateVariantCode = (typeof WRITING_STATE_VARIANT_CODES)[number];
 export type ArticlePrototypeCode = (typeof ARTICLE_PROTOTYPE_CODES)[number];
@@ -172,6 +175,15 @@ function getPreferredResearchSignals(input: {
 }
 
 function getPrototypeBlueprint(prototype: WritingStateKernel["articlePrototype"]) {
+  if (prototype === "ordinary_breakthrough") {
+    return {
+      label: "普通人逆袭型",
+      suitableWhen: "适合写低起点身份借助工具、方法或关键机会，跑出超预期结果，并最终升维到公平、选择或机会结构的文章。",
+      openingMove: "从强结果和低起点身份反差切入，立刻补可信来源，再说明这不是普通努力故事。",
+      sectionRhythm: "按逆袭链推进：结果反差 -> 背景难度 -> 方法路径 -> 边界反转 -> 公共议题 -> 可转发收束。",
+      evidenceMode: "优先放身份差、结果锚点、过程截图、工具名、练习量、人物原话和资源门槛，不把故事写成空泛励志。",
+    };
+  }
   if (prototype === "investigation") {
     return {
       label: "调查实验型",
@@ -243,6 +255,13 @@ function buildPrototypeScoredOptions(input: {
   strategyCard?: StrategyCardLike;
 }) {
   const seed = `${input.title} ${input.markdownContent || ""} ${input.humanSignals?.firstHandObservation || ""} ${input.humanSignals?.realSceneOrDialogue || ""}`.toLowerCase();
+  const viralBlueprint = buildArticleViralBlueprint({
+    articleTitle: input.title,
+    markdownContent: input.markdownContent,
+    strategyCard: input.strategyCard,
+    humanSignals: input.humanSignals,
+    researchBrief: input.researchBrief as unknown as Record<string, unknown> | null,
+  });
   const researchTimelineCount = Array.isArray(input.researchBrief?.timelineCards) ? input.researchBrief.timelineCards.length : 0;
   const researchComparisonCount = Array.isArray(input.researchBrief?.comparisonCards) ? input.researchBrief.comparisonCards.length : 0;
   const researchInsightCount = Array.isArray(input.researchBrief?.intersectionInsights) ? input.researchBrief.intersectionInsights.length : 0;
@@ -252,6 +271,7 @@ function buildPrototypeScoredOptions(input: {
     const blueprint = getPrototypeBlueprint(code);
     const score =
       (code === "product_walkthrough" && includesAny(seed, [/实测|体验|上手|用了|试了|开箱|测了/]) ? 6 : 0)
+      + (code === "ordinary_breakthrough" && viralBlueprint.code === "ordinary_breakthrough" ? 10 : 0)
       + (code === "investigation" && includesAny(seed, [/调查|实验|我去|我买了|我试着|亲手|踩坑|复盘过程/]) ? 6 : 0)
       + (code === "methodology" && includesAny(seed, [/方法|心得|怎么做|工作流|步骤|复盘方法/]) ? 6 : 0)
       + (code === "tool_share" && includesAny(seed, [/prompt|工具|神器|模板|工作流/]) ? 6 : 0)
@@ -268,7 +288,9 @@ function buildPrototypeScoredOptions(input: {
       + (code === "general" ? 1 : 0);
 
     const triggerReason =
-      code === "product_walkthrough" && includesAny(seed, [/实测|体验|上手|用了|试了|开箱|测了/])
+      code === "ordinary_breakthrough" && viralBlueprint.code === "ordinary_breakthrough"
+        ? `爆文蓝图识别为「${viralBlueprint.label}」：${viralBlueprint.reason}`
+        : code === "product_walkthrough" && includesAny(seed, [/实测|体验|上手|用了|试了|开箱|测了/])
         ? "标题、正文或人类信号里已经有明显上手 / 实测 / 体验线索。"
         : code === "investigation" && includesAny(seed, [/调查|实验|我去|我买了|我试着|亲手|踩坑|复盘过程/])
           ? "当前素材更像是在验证一个说法、复盘过程或交代试验链路。"
@@ -411,7 +433,8 @@ function buildProgressiveRevealPlan(input: {
   const hasFirstHandObservation = Boolean(String(input.humanSignals?.firstHandObservation || "").trim() || String(input.humanSignals?.realSceneOrDialogue || "").trim());
   const hasComplaint = Boolean(String(input.humanSignals?.wantToComplain || "").trim() || String(input.humanSignals?.nonDelegableTruth || "").trim());
   const enabled =
-    input.prototype === "investigation"
+    input.prototype === "ordinary_breakthrough"
+    || input.prototype === "investigation"
     || input.prototype === "product_walkthrough"
     || input.prototype === "tool_share"
     || input.prototype === "personal_narrative"
@@ -449,6 +472,8 @@ function buildProgressiveRevealPlan(input: {
     reason:
       input.prototype === "investigation"
         ? "调查实验型最适合按发现链逐步加码，把最强发现留到后面。"
+        : input.prototype === "ordinary_breakthrough"
+          ? "普通人逆袭型必须先让读者看到结果反差，再逐步揭示路径、边界和公共议题，不能一开始就写成道理。"
         : input.prototype === "product_walkthrough"
           ? "体验型文章更适合边上手边升级感受，不要一开始就把所有结论讲完。"
           : input.prototype === "tool_share"
@@ -485,6 +510,11 @@ export function resolveArticlePrototype(input: {
   humanSignals?: HumanSignalsLike;
 }) {
   const seed = `${input.title} ${input.markdownContent || ""} ${input.humanSignals?.firstHandObservation || ""} ${input.humanSignals?.realSceneOrDialogue || ""}`.toLowerCase();
+  if (buildArticleViralBlueprint({
+    articleTitle: input.title,
+    markdownContent: input.markdownContent,
+    humanSignals: input.humanSignals,
+  }).code === "ordinary_breakthrough") return "ordinary_breakthrough";
   if (includesAny(seed, [/实测|体验|上手|用了|试了|开箱|测了/])) return "product_walkthrough";
   if (includesAny(seed, [/调查|实验|我去|我买了|我试着|亲手|踩坑|复盘过程/])) return "investigation";
   if (includesAny(seed, [/那天|有次|后来|当时|说实话|我自己|我那会|一开始|一句话|对话|经历|亲历|回头看/])) return "personal_narrative";
@@ -522,6 +552,13 @@ export function buildWritingStateKernel(input: {
   const selectedPrototype = preferredPrototype ?? recommendedPrototype;
   const prototype = selectedPrototype.code;
   const prototypeBlueprint = getPrototypeBlueprint(prototype);
+  const viralBlueprint = buildArticleViralBlueprint({
+    articleTitle: input.title,
+    markdownContent: input.markdownContent,
+    strategyCard: input.strategyCard,
+    humanSignals: input.humanSignals,
+    researchBrief: input.researchBrief as unknown as Record<string, unknown> | null,
+  });
   const archetypeRhythmHint = input.archetypeRhythmHints ? buildArchetypeRhythmHintText(input.archetypeRhythmHints) : "";
   const articlePrototypeReason =
     preferredPrototype && recommendedPrototype && preferredPrototype.code !== recommendedPrototype.code
@@ -688,6 +725,9 @@ export function buildWritingStateKernel(input: {
       ? `${evidenceMode} 文风资产要求的事实密度是：${String(input.writingStyleProfile?.factDensity).trim()}。`
       : evidenceMode;
   const stateChecklist = [
+    `爆文蓝图：${viralBlueprint.label}；${viralBlueprint.titlePromise}`,
+    `蓝图叙事弧：${viralBlueprint.narrativeArc.join(" -> ")}`,
+    `蓝图证据配方：${viralBlueprint.evidenceRecipe.join("；")}`,
     `先按「${prototypeBlueprint.label}」写，不要把所有题材都写成同一种三段论。`,
     `这次文章原型定为「${prototypeBlueprint.label}」，原因：${articlePrototypeReason}`,
     archetypeRhythmHint ? `当前原型节奏模板：${archetypeRhythmHint}` : null,
@@ -805,4 +845,3 @@ export function buildWritingStateGuide(kernel: WritingStateKernel) {
     `禁忌写法：${kernel.tabooPatterns.join("；")}`,
   ].filter(Boolean).join("\n");
 }
-import { buildArchetypeRhythmHintText, type ArchetypeRhythmHints } from "./archetype-rhythm";

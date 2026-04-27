@@ -1,5 +1,6 @@
 import { getDatabase } from "./db";
 import { ensureExtendedProductSchema } from "./schema-bootstrap";
+import { ensureAutoWritingStyleProfile } from "./writing-style-profiles";
 
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
 const AUTHOR_BASELINE_WINDOW_DAYS = 30;
@@ -61,6 +62,14 @@ export type Plan17BusinessStyleUsageFact = {
   sampleCount: number;
   usedAt: string | null;
   usageToken?: string | null;
+};
+
+export type Plan17BusinessStyleProfileFact = {
+  userId: number;
+  profileId: number;
+  sampleCount: number;
+  createdAt: string | null;
+  updatedAt: string | null;
 };
 
 export type Plan17BusinessBatchDrilldownItem = {
@@ -213,6 +222,7 @@ type Plan17BusinessFacts = {
   reviewedOutcomes: Plan17BusinessReviewedOutcomeFact[];
   generatedItems: Plan17BusinessGeneratedItemFact[];
   articles: Plan17BusinessArticleFact[];
+  styleProfiles: Plan17BusinessStyleProfileFact[];
   styleUsageEvents: Plan17BusinessStyleUsageFact[];
 };
 
@@ -929,6 +939,10 @@ export function buildPlan17BusinessReportFromFacts(input: Plan17BusinessFacts): 
     const timestamp = toTimestamp(item.usedAt);
     return timestamp != null && timestamp >= nowTimestamp - STYLE_USAGE_WINDOW_DAYS * DAY_IN_MS;
   });
+  const recentStyleProfiles = input.styleProfiles.filter((item) => {
+    const timestamp = toTimestamp(item.updatedAt) ?? toTimestamp(item.createdAt);
+    return timestamp != null && timestamp >= nowTimestamp - STYLE_USAGE_WINDOW_DAYS * DAY_IN_MS;
+  });
   const multiSampleUsageEvents = styleUsageEvents.filter((item) => item.sampleCount >= 3);
   const recentMultiSampleUsageEvents = recentStyleUsageEvents.filter((item) => item.sampleCount >= 3);
   const fissionVsRadarDrilldown = reviewedDeduped
@@ -1193,10 +1207,10 @@ export function buildPlan17BusinessReportFromFacts(input: Plan17BusinessFacts): 
       recent30dMultiSampleUsageShare: roundMetric(
         recentStyleUsageEvents.length > 0 ? (recentMultiSampleUsageEvents.length / recentStyleUsageEvents.length) * 100 : null,
       ),
-      profileCount: new Set(styleUsageEvents.map((item) => `${item.userId}@@${item.profileId ?? "none"}`)).size,
-      recent30dProfileCount: new Set(recentStyleUsageEvents.map((item) => `${item.userId}@@${item.profileId ?? "none"}`)).size,
-      authorCount: new Set(styleUsageEvents.map((item) => item.userId)).size,
-      recent30dAuthorCount: new Set(recentStyleUsageEvents.map((item) => item.userId)).size,
+      profileCount: input.styleProfiles.length,
+      recent30dProfileCount: recentStyleProfiles.length,
+      authorCount: new Set(input.styleProfiles.map((item) => item.userId)).size,
+      recent30dAuthorCount: new Set(recentStyleProfiles.map((item) => item.userId)).size,
     },
     batchDrilldown,
     observationGaps: {
@@ -1215,7 +1229,7 @@ export function buildPlan17BusinessReportFromFacts(input: Plan17BusinessFacts): 
 async function getPlan17BusinessFacts(): Promise<Plan17BusinessFacts> {
   await ensureExtendedProductSchema();
   const db = getDatabase();
-  const [reviewedOutcomeRows, generatedItemRows, articleRows, styleUsageRows] = await Promise.all([
+  const [reviewedOutcomeRows, generatedItemRows, articleRows] = await Promise.all([
     db.query<{
       user_id: number;
       article_id: number;
@@ -1268,6 +1282,31 @@ async function getPlan17BusinessFacts(): Promise<Plan17BusinessFacts> {
        FROM articles
        ORDER BY created_at DESC, id DESC`,
     ),
+  ]);
+
+  const bootstrapUserIds = Array.from(
+    new Set([
+      ...reviewedOutcomeRows.map((row) => row.user_id),
+      ...generatedItemRows.map((row) => row.user_id),
+      ...articleRows.map((row) => row.user_id),
+    ].filter((userId): userId is number => typeof userId === "number" && userId > 0)),
+  );
+  for (const userId of bootstrapUserIds) {
+    await ensureAutoWritingStyleProfile(userId).catch(() => null);
+  }
+
+  const [styleProfileRows, styleUsageRows] = await Promise.all([
+    db.query<{
+      id: number;
+      user_id: number | null;
+      analysis_payload_json: string | Record<string, unknown> | null;
+      created_at: string | null;
+      updated_at: string | null;
+    }>(
+      `SELECT id, user_id, analysis_payload_json, created_at, updated_at
+       FROM writing_style_profiles
+       ORDER BY updated_at DESC, id DESC`,
+    ),
     db.query<{
       user_id: number | null;
       target_id: string | null;
@@ -1318,6 +1357,18 @@ async function getPlan17BusinessFacts(): Promise<Plan17BusinessFacts> {
       createdAt: row.created_at,
       seriesId: row.series_id,
     })),
+    styleProfiles: styleProfileRows
+      .filter((row): row is typeof row & { user_id: number } => typeof row.user_id === "number" && row.user_id > 0)
+      .map((row) => {
+        const payload = parseJsonObject(row.analysis_payload_json);
+        return {
+          userId: row.user_id,
+          profileId: row.id,
+          sampleCount: Math.max(Number(payload?.sampleCount || 0), 0),
+          createdAt: row.created_at,
+          updatedAt: row.updated_at,
+        } satisfies Plan17BusinessStyleProfileFact;
+      }),
     styleUsageEvents: styleUsageRows
       .filter((row): row is typeof row & { user_id: number } => typeof row.user_id === "number" && row.user_id > 0)
       .map((row) => {

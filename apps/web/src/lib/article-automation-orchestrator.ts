@@ -1,4 +1,5 @@
 import { extractJsonObject, generateSceneText } from "./ai-gateway";
+import { buildGatewaySystemSegments } from "./ai-gateway-system-segments";
 import { applyArticleStageArtifact } from "./article-stage-apply";
 import {
   ensureCoverImagePreparedForPublish,
@@ -8,6 +9,7 @@ import {
   runLanguageGuardAuditWithRetries,
   runPublishAutoRepair,
 } from "./article-automation-publish-repair";
+import { ARTICLE_ARTIFACT_QUALITY_SYSTEM_CONTRACT } from "./article-prompt-quality-brief";
 import { generateArticleStageArtifact, getArticleStageArtifact, updateArticleStageArtifactPayload } from "./article-stage-artifacts";
 import { generateArticleVisualAsset } from "./article-image-generator";
 import { insertArticleVisualAssetsIntoMarkdown } from "./article-image-inserter";
@@ -25,6 +27,12 @@ import {
   type ArticleAutomationRunStatus,
   type ArticleAutomationStageRun,
 } from "./article-automation-runs";
+import {
+  formatOptimizationGateIssues,
+  getArticleViralReadinessGateIssues,
+  getOpeningOptimizationGateIssues,
+  getTitleOptimizationGateIssues,
+} from "./article-automation-optimization-gates";
 import { findUserById, getEffectivePlanCodeForUser } from "./auth";
 import { getDatabase } from "./db";
 import { collectLanguageGuardHits, getLanguageGuardRules } from "./language-guard";
@@ -87,6 +95,8 @@ function readPositiveIntegerEnv(name: string, fallback: number) {
 
 const AUTOMATION_SCENE_REQUEST_TIMEOUT_MS = readPositiveIntegerEnv("ARTICLE_AUTOMATION_SCENE_REQUEST_TIMEOUT_MS", 120_000);
 const ARTICLE_IMAGE_BATCH_CONCURRENCY = readPositiveIntegerEnv("ARTICLE_IMAGE_BATCH_CONCURRENCY", 2);
+const TITLE_OPTIMIZATION_MAX_ATTEMPTS = readPositiveIntegerEnv("ARTICLE_AUTOMATION_TITLE_OPTIMIZATION_MAX_ATTEMPTS", 2);
+const OPENING_OPTIMIZATION_MAX_ATTEMPTS = readPositiveIntegerEnv("ARTICLE_AUTOMATION_OPENING_OPTIMIZATION_MAX_ATTEMPTS", 2);
 
 function readBooleanEnv(name: string, fallback: boolean) {
   const raw = String(process.env[name] || "").trim().toLowerCase();
@@ -97,8 +107,6 @@ function readBooleanEnv(name: string, fallback: boolean) {
 }
 
 const DRAFT_PREVIEW_FAST_SKIPPED_STAGE_CODES = new Set([
-  "titleOptimization",
-  "openingOptimization",
   "deepWrite",
   "languageGuardAudit",
   "coverImageBrief",
@@ -135,6 +143,20 @@ function getString(value: unknown) {
 
 function getStringArray(value: unknown, limit = 8) {
   return Array.isArray(value) ? value.map((item) => String(item || "").trim()).filter(Boolean).slice(0, limit) : [];
+}
+
+function getBoolean(value: unknown, fallback = false) {
+  return typeof value === "boolean" ? value : fallback;
+}
+
+function getNullableNumber(value: unknown) {
+  const parsed =
+    typeof value === "number" && Number.isFinite(value)
+      ? value
+      : typeof value === "string" && value.trim()
+        ? Number(value)
+        : Number.NaN;
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 function hasUsableTitleOptions(payload: Record<string, unknown>) {
@@ -355,6 +377,12 @@ function mapTitleOptimizationOutput(payload: Record<string, unknown>) {
     title: getString(item.title) || getString(item.text),
     angle: getString(item.angle),
     rationale: getString(item.rationale) || getString(item.recommendReason),
+    openRateScore: getNullableNumber(item.openRateScore),
+    elementsHit: {
+      specific: getBoolean(getRecord(item.elementsHit)?.specific),
+      curiosityGap: getBoolean(getRecord(item.elementsHit)?.curiosityGap),
+      readerView: getBoolean(getRecord(item.elementsHit)?.readerView),
+    },
     forbiddenHits: getStringArray(item.forbiddenHits, 4),
     isRecommended: Boolean(item.isRecommended),
   }));
@@ -365,9 +393,15 @@ function mapTitleOptimizationOutput(payload: Record<string, unknown>) {
     ?? titleOptions.find((item) => item.isRecommended)
     ?? titleOptions[0]
     ?? null;
+  const recommendedElementsHitCount = recommended
+    ? ["specific", "curiosityGap", "readerView"].filter((key) => recommended.elementsHit[key as keyof typeof recommended.elementsHit]).length
+    : 0;
   return {
     titleOptions,
     recommendedTitle: recommended?.title ?? getString(payload.workingTitle),
+    recommendedTitleOpenRateScore: recommended?.openRateScore ?? null,
+    recommendedTitleElementsHitCount: recommendedElementsHitCount,
+    recommendedTitleForbiddenHitCount: recommended?.forbiddenHits.length ?? 0,
     forbiddenHits: titleOptions.flatMap((item) => item.forbiddenHits).slice(0, 6),
   };
 }
@@ -377,7 +411,9 @@ function mapOpeningOptimizationOutput(payload: Record<string, unknown>) {
     opening: getString(item.text) || getString(item.opening),
     patternCode: getString(item.patternCode),
     patternLabel: getString(item.patternLabel),
-    hookScore: Number(item.hookScore || 0) || null,
+    hookScore: getNullableNumber(item.hookScore),
+    qualityCeiling: getString(item.qualityCeiling),
+    diagnose: getRecord(item.diagnose) ?? {},
     forbiddenHits: getStringArray(item.forbiddenHits, 4),
     isRecommended: Boolean(item.isRecommended),
   }));
@@ -388,10 +424,18 @@ function mapOpeningOptimizationOutput(payload: Record<string, unknown>) {
     ?? openingOptions.find((item) => item.isRecommended)
     ?? openingOptions[0]
     ?? null;
+  const recommendedDiagnose = getRecord(recommended?.diagnose) ?? {};
+  const recommendedDangerCount = Object.values(recommendedDiagnose).filter((item) => item === "danger").length;
+  const recommendedWarnCount = Object.values(recommendedDiagnose).filter((item) => item === "warn").length;
   return {
     openingOptions,
     recommendedOpening: recommended?.opening ?? getString(payload.openingHook),
-    diagnose: getRecord(recommended ? getRecordArray(payload.openingOptions).find((item) => (getString(item.text) || getString(item.opening)) === recommended.opening)?.diagnose : null) ?? {},
+    recommendedHookScore: recommended?.hookScore ?? null,
+    recommendedQualityCeiling: recommended?.qualityCeiling ?? null,
+    recommendedOpeningForbiddenHitCount: recommended?.forbiddenHits.length ?? 0,
+    recommendedOpeningDangerCount: recommendedDangerCount,
+    recommendedOpeningWarnCount: recommendedWarnCount,
+    diagnose: recommendedDiagnose,
   };
 }
 
@@ -563,6 +607,10 @@ async function loadFrozenPrompt(stage: ArticleAutomationStageRun, context: Autom
 async function executeTopicAnalysis(detail: AutomationRunDetail, promptContext: AutomationPromptContext): Promise<StageExecutionResult> {
   const stage = getStage(detail, "topicAnalysis");
   const promptMeta = await loadFrozenPrompt(stage, promptContext);
+  const systemSegments = buildGatewaySystemSegments([
+    { text: promptMeta.content, cacheable: true },
+    { text: ARTICLE_ARTIFACT_QUALITY_SYSTEM_CONTRACT, cacheable: true },
+  ]);
   const fallback = buildTopicAnalysisFallback(detail);
   const articleTitle = detail.article?.title || detail.run.inputText;
   const userPrompt = [
@@ -579,6 +627,7 @@ async function executeTopicAnalysis(detail: AutomationRunDetail, promptContext: 
     const result = await generateSceneText({
       sceneCode: "topicAnalysis",
       systemPrompt: promptMeta.content,
+      systemSegments,
       userPrompt,
       temperature: 0.2,
       rolloutUserId: detail.run.userId,
@@ -760,34 +809,67 @@ async function executeTitleOptimization(detail: AutomationRunDetail): Promise<St
   }
   const existingArtifact = await getArticleStageArtifact(detail.run.articleId, detail.run.userId, "outlinePlanning");
   const existingPayload = getRecord(existingArtifact?.payload) ?? {};
-  if (existingArtifact?.status === "ready" && hasUsableTitleOptions(existingPayload)) {
+  const outlineOptionRefreshSkipped = existingPayload.outlineOptionRefreshSkipped === true;
+  if (existingArtifact?.status === "ready" && hasUsableTitleOptions(existingPayload) && !outlineOptionRefreshSkipped) {
     const outputJson = mapTitleOptimizationOutput(existingPayload);
-    const stageMeta = getStageProviderMeta(existingPayload, "titleOptimizer", existingArtifact.provider, existingArtifact.model);
-    return {
-      outputJson,
-      qualityJson: {
-        titleAuditedAt: getString(existingPayload.titleAuditedAt),
-        titleOptionCount: getRecordArray(existingPayload.titleOptions).length,
-        reusedFromOutlinePlanning: true,
-      },
-      provider: stageMeta.provider,
-      model: stageMeta.model,
-    };
+    const qualityIssues = getTitleOptimizationGateIssues(outputJson);
+    if (qualityIssues.length === 0) {
+      const stageMeta = getStageProviderMeta(existingPayload, "titleOptimizer", existingArtifact.provider, existingArtifact.model);
+      return {
+        outputJson,
+        qualityJson: {
+          titleAuditedAt: getString(existingPayload.titleAuditedAt),
+          titleOptionCount: getRecordArray(existingPayload.titleOptions).length,
+          reusedFromOutlinePlanning: true,
+          qualityRetryCount: 0,
+          qualityGatePassed: true,
+        },
+        provider: stageMeta.provider,
+        model: stageMeta.model,
+      };
+    }
   }
-  const artifact = await generateArticleStageArtifact({
+
+  let artifact = await generateArticleStageArtifact({
     articleId: detail.run.articleId,
     userId: detail.run.userId,
     stageCode: "outlinePlanning",
     outlineTitleOptionsOnly: true,
   });
-  const payload = getRecord(artifact.payload) ?? {};
+  let payload = getRecord(artifact.payload) ?? {};
+  let outputJson = mapTitleOptimizationOutput(payload);
+  let qualityIssues = getTitleOptimizationGateIssues(outputJson);
+  let attemptCount = 1;
+
+  while (qualityIssues.length > 0 && attemptCount < TITLE_OPTIMIZATION_MAX_ATTEMPTS) {
+    artifact = await generateArticleStageArtifact({
+      articleId: detail.run.articleId,
+      userId: detail.run.userId,
+      stageCode: "outlinePlanning",
+      outlineTitleOptionsOnly: true,
+    });
+    payload = getRecord(artifact.payload) ?? {};
+    outputJson = mapTitleOptimizationOutput(payload);
+    qualityIssues = getTitleOptimizationGateIssues(outputJson);
+    attemptCount += 1;
+  }
+
+  if (qualityIssues.length > 0) {
+    throw new AutomationStageBlockedError(
+      `标题优化未达到质量门槛：${formatOptimizationGateIssues(qualityIssues)}`,
+      "title_optimization_quality_blocked",
+    );
+  }
+
   const stageMeta = getStageProviderMeta(payload, "titleOptimizer", artifact.provider, artifact.model);
   return {
-    outputJson: mapTitleOptimizationOutput(payload),
+    outputJson,
     qualityJson: {
       titleAuditedAt: getString(payload.titleAuditedAt),
       titleOptionCount: getRecordArray(payload.titleOptions).length,
       reusedFromOutlinePlanning: false,
+      qualityRetryCount: Math.max(0, attemptCount - 1),
+      qualityGatePassed: true,
     },
     provider: stageMeta.provider,
     model: stageMeta.model,
@@ -800,34 +882,67 @@ async function executeOpeningOptimization(detail: AutomationRunDetail): Promise<
   }
   const existingArtifact = await getArticleStageArtifact(detail.run.articleId, detail.run.userId, "outlinePlanning");
   const existingPayload = getRecord(existingArtifact?.payload) ?? {};
-  if (existingArtifact?.status === "ready" && hasUsableOpeningOptions(existingPayload)) {
+  const outlineOptionRefreshSkipped = existingPayload.outlineOptionRefreshSkipped === true;
+  if (existingArtifact?.status === "ready" && hasUsableOpeningOptions(existingPayload) && !outlineOptionRefreshSkipped) {
     const outputJson = mapOpeningOptimizationOutput(existingPayload);
-    const stageMeta = getStageProviderMeta(existingPayload, "openingOptimizer", existingArtifact.provider, existingArtifact.model);
-    return {
-      outputJson,
-      qualityJson: {
-        openingAuditedAt: getString(existingPayload.openingAuditedAt),
-        openingOptionCount: getRecordArray(existingPayload.openingOptions).length,
-        reusedFromOutlinePlanning: true,
-      },
-      provider: stageMeta.provider,
-      model: stageMeta.model,
-    };
+    const qualityIssues = getOpeningOptimizationGateIssues(outputJson);
+    if (qualityIssues.length === 0) {
+      const stageMeta = getStageProviderMeta(existingPayload, "openingOptimizer", existingArtifact.provider, existingArtifact.model);
+      return {
+        outputJson,
+        qualityJson: {
+          openingAuditedAt: getString(existingPayload.openingAuditedAt),
+          openingOptionCount: getRecordArray(existingPayload.openingOptions).length,
+          reusedFromOutlinePlanning: true,
+          qualityRetryCount: 0,
+          qualityGatePassed: true,
+        },
+        provider: stageMeta.provider,
+        model: stageMeta.model,
+      };
+    }
   }
-  const artifact = await generateArticleStageArtifact({
+
+  let artifact = await generateArticleStageArtifact({
     articleId: detail.run.articleId,
     userId: detail.run.userId,
     stageCode: "outlinePlanning",
     outlineOpeningOptionsOnly: true,
   });
-  const payload = getRecord(artifact.payload) ?? {};
+  let payload = getRecord(artifact.payload) ?? {};
+  let outputJson = mapOpeningOptimizationOutput(payload);
+  let qualityIssues = getOpeningOptimizationGateIssues(outputJson);
+  let attemptCount = 1;
+
+  while (qualityIssues.length > 0 && attemptCount < OPENING_OPTIMIZATION_MAX_ATTEMPTS) {
+    artifact = await generateArticleStageArtifact({
+      articleId: detail.run.articleId,
+      userId: detail.run.userId,
+      stageCode: "outlinePlanning",
+      outlineOpeningOptionsOnly: true,
+    });
+    payload = getRecord(artifact.payload) ?? {};
+    outputJson = mapOpeningOptimizationOutput(payload);
+    qualityIssues = getOpeningOptimizationGateIssues(outputJson);
+    attemptCount += 1;
+  }
+
+  if (qualityIssues.length > 0) {
+    throw new AutomationStageBlockedError(
+      `开头优化未达到质量门槛：${formatOptimizationGateIssues(qualityIssues)}`,
+      "opening_optimization_quality_blocked",
+    );
+  }
+
   const stageMeta = getStageProviderMeta(payload, "openingOptimizer", artifact.provider, artifact.model);
   return {
-    outputJson: mapOpeningOptimizationOutput(payload),
+    outputJson,
     qualityJson: {
       openingAuditedAt: getString(payload.openingAuditedAt),
       openingOptionCount: getRecordArray(payload.openingOptions).length,
       reusedFromOutlinePlanning: false,
+      qualityRetryCount: Math.max(0, attemptCount - 1),
+      qualityGatePassed: true,
     },
     provider: stageMeta.provider,
     model: stageMeta.model,
@@ -837,6 +952,10 @@ async function executeOpeningOptimization(detail: AutomationRunDetail): Promise<
 async function executeDeepWrite(detail: AutomationRunDetail, promptContext: AutomationPromptContext): Promise<StageExecutionResult> {
   const stage = getStage(detail, "deepWrite");
   const promptMeta = await loadFrozenPrompt(stage, promptContext);
+  const systemSegments = buildGatewaySystemSegments([
+    { text: promptMeta.content, cacheable: true },
+    { text: ARTICLE_ARTIFACT_QUALITY_SYSTEM_CONTRACT, cacheable: true },
+  ]);
   const topicAnalysis = getRecord(getStage(detail, "topicAnalysis").outputJson) ?? {};
   const research = getRecord(getStage(detail, "researchBrief").outputJson) ?? {};
   const audience = getRecord(getStage(detail, "audienceAnalysis").outputJson) ?? {};
@@ -860,6 +979,7 @@ async function executeDeepWrite(detail: AutomationRunDetail, promptContext: Auto
     const result = await generateSceneText({
       sceneCode: "deepWrite",
       systemPrompt: promptMeta.content,
+      systemSegments,
       userPrompt,
       temperature: 0.2,
       rolloutUserId: detail.run.userId,
@@ -899,6 +1019,19 @@ async function executeArticleWrite(detail: AutomationRunDetail, promptContext: A
     userId: detail.run.userId,
     stageCode: "deepWriting",
   });
+  const payload = getRecord(artifact.payload) ?? {};
+  const readinessIssues = getArticleViralReadinessGateIssues({
+    researchBrief: getRecord(getStage(detail, "researchBrief").outputJson),
+    titleOptimization: getRecord(getStage(detail, "titleOptimization").outputJson),
+    openingOptimization: getRecord(getStage(detail, "openingOptimization").outputJson),
+    deepWriting: payload,
+  });
+  if (readinessIssues.length > 0) {
+    throw new AutomationStageBlockedError(
+      `爆款文章可写性未达到质量门槛：${formatOptimizationGateIssues(readinessIssues)}`,
+      "article_viral_readiness_quality_blocked",
+    );
+  }
   const applied = await applyArticleStageArtifact({
     articleId: detail.run.articleId,
     userId: detail.run.userId,
@@ -906,7 +1039,6 @@ async function executeArticleWrite(detail: AutomationRunDetail, promptContext: A
     stageCode: "deepWriting",
     skipLanguageGuardAudit: shouldSkipDraftApplyAudit(detail),
   });
-  const payload = getRecord(artifact.payload) ?? {};
   const usedEvidenceIds = Array.from(
     new Set(
       getRecordArray(payload.sectionBlueprint)
@@ -915,6 +1047,7 @@ async function executeArticleWrite(detail: AutomationRunDetail, promptContext: A
         .filter((item) => Number.isInteger(item) && item > 0),
     ),
   );
+  const viralNarrativePlan = getRecord(payload.viralNarrativePlan) ?? {};
   return {
     outputJson: {
       markdown: applied.markdownContent,
@@ -926,6 +1059,14 @@ async function executeArticleWrite(detail: AutomationRunDetail, promptContext: A
       applyMode: applied.applyMode,
       command: applied.command,
       applyAuditSkipped: shouldSkipDraftApplyAudit(detail),
+      articleViralReadinessGatePassed: true,
+      viralNarrativeGatePassed: true,
+      viralNarrativeCoreMotif: getString(viralNarrativePlan.coreMotif),
+      viralNarrativeEmotionalHookCount: getStringArray(viralNarrativePlan.emotionalHooks, 8).length,
+      viralNarrativeMotifCallbackCount: getRecordArray(viralNarrativePlan.motifCallbacks).length,
+      viralNarrativeBoundaryRule: getString(viralNarrativePlan.boundaryRule),
+      fictionalMaterialCount: getRecordArray(payload.fictionalMaterialPlan).length,
+      fictionalMaterialGatePassed: true,
       promptVersionRefs: getStringArray(getRecord(payload.runtimeMeta)?.promptVersionRefs, 8),
     },
     provider: artifact.provider,
@@ -1351,11 +1492,13 @@ async function executePublishGuard(
       blockers: result.blockers,
       warnings: result.warnings,
       repairActions: result.suggestions,
+      methodologyGates: result.methodologyGates,
     },
     qualityJson: {
       checkCount: result.checks.length,
       stageReadiness: result.stageReadiness,
       connectionHealth: result.connectionHealth,
+      methodologyGates: result.methodologyGates,
       autoPreparedAtStages: repairApplied,
       autoPrepareErrors: repairErrors,
     },
@@ -1473,6 +1616,20 @@ async function applyStagePreventivePreparation(
           selection: nextSelection,
         },
       });
+      const nextTitle = getString(nextSelection.selectedTitle);
+      if (nextTitle && nextTitle !== detail.article.title) {
+        await saveArticleDraft({
+          articleId: detail.run.articleId,
+          userId: detail.run.userId,
+          body: {
+            title: nextTitle,
+            markdownContent: detail.article.markdown_content,
+            status: detail.article.status,
+            seriesId: detail.article.series_id,
+            wechatTemplateId: detail.article.wechat_template_id,
+          },
+        });
+      }
       return;
     }
     if (stageCode === "factCheck") {

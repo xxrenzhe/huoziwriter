@@ -73,6 +73,12 @@ export type WritingStyleAnalysis = {
   confidenceProfile?: WritingStyleConfidenceProfile | null;
 };
 
+export type WritingStyleTextSample = {
+  sourceUrl: string;
+  sourceTitle: string;
+  rawText: string;
+};
+
 function uniqueTrimmed(values: unknown, limit = 5) {
   if (!Array.isArray(values)) return [] as string[];
   return Array.from(
@@ -314,13 +320,12 @@ function deriveFallbackAnalysis(input: { sourceUrl: string; sourceTitle: string;
   } satisfies WritingStyleAnalysis;
 }
 
-export async function extractWritingStyleFromUrl(url: string) {
+async function extractWritingStyleFromTextSample(sample: WritingStyleTextSample) {
   await ensureBootstrapData();
-  const article = await fetchWebpageArticle(url);
   const fallback = deriveFallbackAnalysis({
-    sourceUrl: url,
-    sourceTitle: article.sourceTitle,
-    rawText: article.rawText,
+    sourceUrl: sample.sourceUrl,
+    sourceTitle: sample.sourceTitle,
+    rawText: sample.rawText,
   });
 
   try {
@@ -333,10 +338,10 @@ export async function extractWritingStyleFromUrl(url: string) {
       "verbatimPhraseBanks 尽量从原文逐字抽取，若样本里没有足够短语，返回少量高置信表达，不要编造作者没写过的话。",
       "必须基于正文内容，不要空泛夸赞，不要出现“该文风很好”这类废话。",
       formatPromptTemplate("sourceTitle: {{sourceTitle}}", {
-        sourceTitle: article.sourceTitle || "未命名文章",
+        sourceTitle: sample.sourceTitle || "未命名文章",
       }),
       "",
-      article.rawText,
+      sample.rawText,
     ].join("\n");
 
     const result = await generateSceneText({
@@ -348,8 +353,8 @@ export async function extractWritingStyleFromUrl(url: string) {
     const payload = extractJsonObject(result.text) as Record<string, unknown>;
 
     return {
-      sourceUrl: url,
-      sourceTitle: article.sourceTitle,
+      sourceUrl: sample.sourceUrl,
+      sourceTitle: sample.sourceTitle,
       styleName: String(payload.styleName || fallback.styleName).trim(),
       summary: String(payload.summary || fallback.summary).trim(),
       toneKeywords: uniqueTrimmed(payload.toneKeywords, 5).length ? uniqueTrimmed(payload.toneKeywords, 5) : fallback.toneKeywords,
@@ -376,16 +381,16 @@ export async function extractWritingStyleFromUrl(url: string) {
       statePresets: uniqueTrimmed(payload.statePresets, 5).length ? uniqueTrimmed(payload.statePresets, 5) : fallback.statePresets,
       antiOutlineRules: uniqueTrimmed(payload.antiOutlineRules, 5).length ? uniqueTrimmed(payload.antiOutlineRules, 5) : fallback.antiOutlineRules,
       imitationPrompt: String(payload.imitationPrompt || fallback.imitationPrompt).trim(),
-      sourceExcerpt: article.rawText.slice(0, 220),
+      sourceExcerpt: sample.rawText.slice(0, 220),
       model: result.model,
       provider: result.provider,
       degradedReason: null,
       sampleCount: 1,
-      sampleUrls: [url],
-      sampleTitles: [article.sourceTitle],
+      sampleUrls: [sample.sourceUrl],
+      sampleTitles: [sample.sourceTitle],
       sampleSources: [{
-        url,
-        title: article.sourceTitle || "未命名文章",
+        url: sample.sourceUrl,
+        title: sample.sourceTitle || "未命名文章",
         summary: String(payload.summary || fallback.summary).trim(),
         degradedReason: null,
       }],
@@ -394,19 +399,12 @@ export async function extractWritingStyleFromUrl(url: string) {
   } catch {
     return {
       ...fallback,
-      sourceExcerpt: article.rawText.slice(0, 220),
+      sourceExcerpt: sample.rawText.slice(0, 220),
     } satisfies WritingStyleAnalysis;
   }
 }
 
-export async function extractWritingStyleFromUrls(urls: string[]) {
-  await ensureBootstrapData();
-  const normalizedUrls = Array.from(new Set(urls.map((item) => String(item || "").trim()).filter(Boolean)));
-  if (normalizedUrls.length === 0) {
-    throw new Error("至少提供 1 篇文章链接");
-  }
-
-  const analyses = await Promise.all(normalizedUrls.map((url) => extractWritingStyleFromUrl(url)));
+async function aggregateWritingStyleAnalyses(analyses: WritingStyleAnalysis[]) {
   if (analyses.length === 1) {
     return analyses[0]!;
   }
@@ -524,4 +522,42 @@ export async function extractWritingStyleFromUrls(urls: string[]) {
     })),
     confidenceProfile,
   } satisfies WritingStyleAnalysis;
+}
+
+export async function extractWritingStyleFromUrl(url: string) {
+  await ensureBootstrapData();
+  const article = await fetchWebpageArticle(url);
+  return extractWritingStyleFromTextSample({
+    sourceUrl: url,
+    sourceTitle: article.sourceTitle,
+    rawText: article.rawText,
+  });
+}
+
+export async function extractWritingStyleFromUrls(urls: string[]) {
+  await ensureBootstrapData();
+  const normalizedUrls = Array.from(new Set(urls.map((item) => String(item || "").trim()).filter(Boolean)));
+  if (normalizedUrls.length === 0) {
+    throw new Error("至少提供 1 篇文章链接");
+  }
+
+  const analyses = await Promise.all(normalizedUrls.map((url) => extractWritingStyleFromUrl(url)));
+  return aggregateWritingStyleAnalyses(analyses);
+}
+
+export async function extractWritingStyleFromTextSamples(samples: WritingStyleTextSample[]) {
+  await ensureBootstrapData();
+  const normalizedSamples = samples
+    .map((item) => ({
+      sourceUrl: String(item.sourceUrl || "").trim(),
+      sourceTitle: String(item.sourceTitle || "").trim(),
+      rawText: String(item.rawText || "").trim(),
+    }))
+    .filter((item) => item.sourceUrl && item.rawText);
+  if (normalizedSamples.length === 0) {
+    throw new Error("至少提供 1 篇有效样本文本");
+  }
+
+  const analyses = await Promise.all(normalizedSamples.map((sample) => extractWritingStyleFromTextSample(sample)));
+  return aggregateWritingStyleAnalyses(analyses);
 }

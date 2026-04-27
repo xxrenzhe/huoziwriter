@@ -72,6 +72,18 @@ export type AutomationStageDetailSection = {
   items: string[];
 };
 
+export type AutomationStageQuickAction = {
+  stageCode: string;
+  label: string;
+};
+
+export type AutomationStageQualityGateState = {
+  tone: "passed" | "warning" | "blocked";
+  label: string;
+  detail: string;
+  action?: AutomationStageQuickAction | null;
+};
+
 export type AutomationStageSearchMetrics = {
   queryCount: number;
   domainCount: number;
@@ -170,6 +182,126 @@ function formatDomainLabel(url: string) {
   }
 }
 
+function getNumber(value: unknown) {
+  const parsed =
+    typeof value === "number" && Number.isFinite(value)
+      ? value
+      : typeof value === "string" && value.trim()
+        ? Number(value)
+        : Number.NaN;
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function isQualityGateBlocked(stage: AutomationStage) {
+  return /_quality_blocked$/i.test(getString(stage.errorCode)) || /质量门槛|质量门禁/.test(getString(stage.errorMessage));
+}
+
+function buildStageQualityGateMetricItems(stage: AutomationStage) {
+  const output = getRecord(stage.outputJson) ?? {};
+  const quality = getRecord(stage.qualityJson) ?? {};
+  const gateState = getStageQualityGateState(stage);
+  if (!gateState && !["titleOptimization", "openingOptimization", "articleWrite"].includes(stage.stageCode)) {
+    return [] as string[];
+  }
+
+  if (stage.stageCode === "titleOptimization") {
+    const titleOptionCount = getNumber(quality.titleOptionCount) ?? getRecordArray(output.titleOptions).length;
+    const openRateScore = getNumber(output.recommendedTitleOpenRateScore);
+    const elementsHitCount = getNumber(output.recommendedTitleElementsHitCount);
+    const forbiddenHitCount = getNumber(output.recommendedTitleForbiddenHitCount);
+    return [
+      titleOptionCount ? `候选：${titleOptionCount} 个` : "",
+      openRateScore !== null ? `打开率分：${openRateScore}` : "",
+      elementsHitCount !== null ? `标题三要素：${elementsHitCount}/3` : "",
+      forbiddenHitCount !== null ? `禁区命中：${forbiddenHitCount}` : "",
+    ].filter(Boolean);
+  }
+
+  if (stage.stageCode === "openingOptimization") {
+    const openingOptionCount = getNumber(quality.openingOptionCount) ?? getRecordArray(output.openingOptions).length;
+    const hookScore = getNumber(output.recommendedHookScore);
+    const qualityCeiling = getString(output.recommendedQualityCeiling);
+    const dangerCount = getNumber(output.recommendedOpeningDangerCount);
+    const forbiddenHitCount = getNumber(output.recommendedOpeningForbiddenHitCount);
+    return [
+      openingOptionCount ? `候选：${openingOptionCount} 个` : "",
+      hookScore !== null ? `钩子分：${hookScore}` : "",
+      qualityCeiling ? `质量上限：${qualityCeiling}` : "",
+      dangerCount !== null ? `Danger：${dangerCount}` : "",
+      forbiddenHitCount !== null ? `禁区命中：${forbiddenHitCount}` : "",
+    ].filter(Boolean);
+  }
+
+  if (stage.stageCode === "articleWrite") {
+    const fictionalMaterialCount = getNumber(quality.fictionalMaterialCount);
+    const emotionalHookCount = getNumber(quality.viralNarrativeEmotionalHookCount);
+    const motifCallbackCount = getNumber(quality.viralNarrativeMotifCallbackCount);
+    return [
+      getString(quality.viralNarrativeCoreMotif) ? `核心母题：${getString(quality.viralNarrativeCoreMotif)}` : "",
+      emotionalHookCount !== null ? `情绪钩子：${emotionalHookCount} 个` : "",
+      motifCallbackCount !== null ? `母题回收：${motifCallbackCount} 处` : "",
+      fictionalMaterialCount !== null ? `拟真素材：${fictionalMaterialCount} 条` : "",
+      getString(quality.viralNarrativeBoundaryRule) ? `边界：${getString(quality.viralNarrativeBoundaryRule)}` : "",
+    ].filter(Boolean);
+  }
+
+  return [] as string[];
+}
+
+export function getStageQualityGateState(stage: AutomationStage): AutomationStageQualityGateState | null {
+  const quality = getRecord(stage.qualityJson) ?? {};
+  const qualityRetryCount = getNumber(quality.qualityRetryCount) ?? 0;
+  const qualityGatePassed = quality.qualityGatePassed === true;
+  const qualityRetryAction =
+    stage.stageCode === "titleOptimization"
+      ? { stageCode: "titleOptimization", label: "重跑标题优化" }
+      : stage.stageCode === "openingOptimization"
+        ? { stageCode: "openingOptimization", label: "重跑开头优化" }
+        : stage.stageCode === "articleWrite" && /^(article_viral_readiness|viral_narrative|fictional_material)_quality_blocked$/i.test(getString(stage.errorCode))
+          ? { stageCode: "articleWrite", label: "重跑正文生成" }
+          : null;
+
+  if (isQualityGateBlocked(stage)) {
+    return {
+      tone: "blocked",
+      label: "质量门禁阻断",
+      detail: getString(stage.errorMessage) || "该阶段未通过质量门槛，需要回到这一层重新生成。",
+      action: qualityRetryAction,
+    };
+  }
+  if (stage.stageCode === "articleWrite" && (quality.articleViralReadinessGatePassed === true || quality.viralNarrativeGatePassed === true || quality.fictionalMaterialGatePassed === true)) {
+    return {
+      tone: "passed",
+      label: "爆款可写性门禁通过",
+      detail: "研究、标题、开头、叙事计划和拟真素材包已通过正文生成前总门槛。",
+      action: null,
+    };
+  }
+  if (qualityGatePassed && qualityRetryCount > 0) {
+    return {
+      tone: "warning",
+      label: "自动补救后通过",
+      detail: `该阶段因质量不足自动重跑 ${qualityRetryCount} 次，最终通过门槛。`,
+      action: qualityRetryAction,
+    };
+  }
+  if (qualityGatePassed) {
+    return {
+      tone: "passed",
+      label: "一次通过",
+      detail: "该阶段首次生成即通过质量门槛。",
+      action: qualityRetryAction,
+    };
+  }
+  return null;
+}
+
+export function getStageQualityGateClassName(tone: AutomationStageQualityGateState["tone"]) {
+  if (tone === "passed") return "border-emerald-200 bg-emerald-50 text-emerald-700";
+  if (tone === "warning") return "border-amber-200 bg-amber-50 text-amber-700";
+  return "border-cinnabar/20 bg-cinnabar/5 text-cinnabar";
+}
+
 export function getStageSearchMetrics(stage: AutomationStage): AutomationStageSearchMetrics | null {
   const urls = [...collectStageUrls(stage.searchTraceJson)];
   const queries = [...collectStageQueries(stage.searchTraceJson)];
@@ -265,9 +397,14 @@ export function buildStageDetailSections(stage: AutomationStage): AutomationStag
     ...getStringArray(quality.promptVersionRefs, 3).map((item) => `Prompt：${item}`),
     ...getStringArray(quality.repairActions, 3).map((item) => `动作：${item}`),
     getString(quality.decision) ? `决策：${getString(quality.decision)}` : null,
+    (() => {
+      const gateState = getStageQualityGateState(stage);
+      return gateState ? `门禁：${gateState.label} · ${gateState.detail}` : null;
+    })(),
+    ...buildStageQualityGateMetricItems(stage).map((item) => `门禁指标：${item}`),
     quality.fallbackUsed ? "已启用 fallback 输出" : null,
     getString(quality.error) ? `回退原因：${getString(quality.error)}` : null,
-  ], 5);
+  ], 8);
 
   const searchMetrics = getStageSearchMetrics(stage);
   if (searchMetrics) {
@@ -318,6 +455,7 @@ export function getAutomationLevelLabel(level: AutomationLevel) {
 
 export function buildStageSummary(stage: AutomationStage) {
   const output = getRecord(stage.outputJson) ?? {};
+  const qualityGateState = getStageQualityGateState(stage);
   if (stage.stageCode === "topicAnalysis") {
     return getString(output.coreAssertion) || getString(output.theme) || "自动判断主题收益和 why now。";
   }
@@ -331,10 +469,18 @@ export function buildStageSummary(stage: AutomationStage) {
     return sections > 0 ? `已规划 ${sections} 个正文段落。` : "自动设计结构和论证递进。";
   }
   if (stage.stageCode === "titleOptimization") {
-    return getString(output.recommendedTitle) || "自动筛选最佳标题。";
+    if (qualityGateState?.tone === "blocked") {
+      return qualityGateState.detail;
+    }
+    const title = getString(output.recommendedTitle) || "自动筛选最佳标题。";
+    return qualityGateState?.tone === "warning" ? `${qualityGateState.label}：${title}` : title;
   }
   if (stage.stageCode === "openingOptimization") {
-    return getString(output.recommendedOpening).slice(0, 56) || "自动筛选最佳开头。";
+    if (qualityGateState?.tone === "blocked") {
+      return qualityGateState.detail;
+    }
+    const opening = getString(output.recommendedOpening).slice(0, 56) || "自动筛选最佳开头。";
+    return qualityGateState?.tone === "warning" ? `${qualityGateState.label}：${opening}` : opening;
   }
   if (stage.stageCode === "factCheck") {
     const risks = getStringArray(output.highRiskClaims, 2);

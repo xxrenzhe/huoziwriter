@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  detectUnsafePromptInterpolations,
   evaluatePlan17BusinessAcceptance,
   evaluateFissionVsRadarAcceptance,
   evaluatePlan17FunctionalAcceptance,
@@ -32,7 +33,7 @@ function buildFunctionalAcceptanceFixture(input?: {
   return {
     presentPromptIds: new Set(promptIds),
     activePromptIds: new Set(input?.activePromptIds ?? promptIds),
-    navLabels: input?.navLabels ?? ["作战台", "稿件", "复盘", "设置"],
+    navLabels: input?.navLabels ?? ["作战台", "自动驾驶", "稿件", "复盘", "设置"],
   };
 }
 
@@ -493,6 +494,29 @@ test("evaluatePlan17FunctionalAcceptance passes when required prompt scenes and 
   assert.equal(section.items.every((item) => item.status === "passed"), true);
 });
 
+test("evaluatePlan17FunctionalAcceptance keeps core nav stable when automation is inserted", () => {
+  const section = evaluatePlan17FunctionalAcceptance(
+    buildFunctionalAcceptanceFixture({
+      navLabels: ["作战台", "自动驾驶", "稿件", "复盘", "设置"],
+    }),
+  );
+
+  assert.equal(section.items.find((item) => item.key === "writerNavStable")?.status, "passed");
+  assert.match(section.items.find((item) => item.key === "writerNavStable")?.detail ?? "", /自动驾驶入口/);
+});
+
+test("detectUnsafePromptInterpolations ignores normal template strings outside prompt construction", () => {
+  const matches = detectUnsafePromptInterpolations("const summary = `${title}：${url}`;");
+
+  assert.equal(matches.length, 0);
+});
+
+test("detectUnsafePromptInterpolations catches raw prompt interpolation", () => {
+  const matches = detectUnsafePromptInterpolations("generateSceneText({ userPrompt: `标题：${title}` });");
+
+  assert.equal(matches.length, 1);
+});
+
 test("evaluatePlan17QualityAcceptance marks blocked when any quality gate is below hard threshold", () => {
   const section = evaluatePlan17QualityAcceptance({
     report: buildPlan17QualityReportFixture({
@@ -635,6 +659,23 @@ test("evaluatePlan17QualityAcceptance marks partial when buckets exist but true 
   assert.equal(section.items.find((item) => item.key === "rhythmCorrelation")?.status, "partial");
 });
 
+test("evaluatePlan17QualityAcceptance keeps rhythm gate partial when eval samples are ready but live outcome pairs are still accumulating", () => {
+  const section = evaluatePlan17QualityAcceptance({
+    report: buildPlan17QualityReportFixture({
+      rhythm: {
+        sampleCount: 28,
+        linkedFeedbackCount: 0,
+        pairSampleCount: 0,
+        correlation: null,
+        pValue: null,
+      },
+    }),
+  });
+
+  assert.equal(section.items.find((item) => item.key === "rhythmCorrelation")?.status, "partial");
+  assert.match(section.items.find((item) => item.key === "rhythmCorrelation")?.detail ?? "", /观察窗积累阶段/);
+});
+
 test("evaluatePlan17QualityAcceptance passes when all four quality gates meet final thresholds", () => {
   const section = evaluatePlan17QualityAcceptance({
     report: buildPlan17QualityReportFixture({
@@ -756,6 +797,36 @@ test("evaluatePlan17BusinessAcceptance marks partial when comparison windows exi
   assert.equal(section.items.find((item) => item.key === "fissionVsRadar")?.status, "partial");
   assert.equal(section.items.find((item) => item.key === "matrixWeeklyOutput")?.status, "partial");
   assert.equal(section.items.find((item) => item.key === "styleHeatmapUsage")?.status, "passed");
+});
+
+test("evaluatePlan17BusinessAcceptance keeps activation and usage gates partial during observation buildup", () => {
+  const section = evaluatePlan17BusinessAcceptance({
+    report: buildPlan17BusinessReportFixture({
+      authorLift: {
+        activatedAuthorCount: 1,
+        comparableAuthorCount: 0,
+      },
+      matrix: {
+        matrixAuthorCount: 1,
+        comparableAuthorCount: 0,
+        qualityComparableAuthorCount: 0,
+        batchCount: 2,
+        batchLinkedArticleCount: 4,
+      },
+      styleUsage: {
+        profileCount: 2,
+        recent30dProfileCount: 2,
+        recent30dUsageEventCount: 0,
+        recent30dMultiSampleUsageEventCount: 0,
+        recent30dMultiSampleUsageShare: null,
+      },
+    }),
+  });
+
+  assert.equal(section.status, "partial");
+  assert.equal(section.items.find((item) => item.key === "authorLiftVsBaseline")?.status, "partial");
+  assert.equal(section.items.find((item) => item.key === "matrixWeeklyOutput")?.status, "partial");
+  assert.equal(section.items.find((item) => item.key === "styleHeatmapUsage")?.status, "partial");
 });
 
 test("evaluatePlan17BusinessAcceptance passes when all four business gates meet final thresholds", () => {

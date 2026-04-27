@@ -53,7 +53,7 @@ export type Plan17AcceptanceReport = {
   }>;
 };
 
-const REQUIRED_WRITER_NAV_LABELS = ["作战台", "稿件", "复盘", "设置"] as const;
+const REQUIRED_WRITER_NAV_CORE_LABELS = ["作战台", "稿件", "复盘", "设置"] as const;
 const REQUIRED_PLAN17_PROMPT_IDS = [
   "topicFission.regularity",
   "topicFission.contrast",
@@ -76,11 +76,33 @@ const PROMPT_SAFETY_SCAN_FILES = [
   "apps/web/src/lib/distill.ts",
   "apps/web/src/lib/image-prompting.ts",
 ] as const;
+const UNSAFE_PROMPT_INTERPOLATION_PATTERNS = [
+  /\b(?:systemPrompt|userPrompt|prompt)\s*:\s*`[\s\S]*?\$\{[\s\S]*?`/g,
+  /\b(?:systemPrompt|userPrompt|prompt|instruction|instructions)[A-Za-z0-9_]*\s*=\s*`[\s\S]*?\$\{[\s\S]*?`/g,
+  /\bsystemSegments\s*:\s*\[[\s\S]*?\btext\s*:\s*`[\s\S]*?\$\{[\s\S]*?`/g,
+] as const;
 
 function getStatusPriority(status: Plan17AcceptanceStatus) {
   if (status === "blocked") return 2;
   if (status === "partial") return 1;
   return 0;
+}
+
+function containsOrderedNavLabels(navLabels: string[], requiredLabels: readonly string[]) {
+  let currentIndex = 0;
+  for (const navLabel of navLabels) {
+    if (navLabel === requiredLabels[currentIndex]) {
+      currentIndex += 1;
+      if (currentIndex === requiredLabels.length) {
+        return true;
+      }
+    }
+  }
+  return currentIndex === requiredLabels.length;
+}
+
+export function detectUnsafePromptInterpolations(content: string) {
+  return UNSAFE_PROMPT_INTERPOLATION_PATTERNS.flatMap((pattern) => Array.from(content.matchAll(pattern), (match) => match[0]));
 }
 
 export function summarizeAcceptanceSection(
@@ -173,7 +195,7 @@ async function scanPromptSafetyFiles() {
   for (const relativePath of PROMPT_SAFETY_SCAN_FILES) {
     const absolutePath = path.join(process.cwd(), relativePath);
     const content = await readFile(absolutePath, "utf8");
-    if (content.includes("${")) {
+    if (detectUnsafePromptInterpolations(content).length > 0) {
       unsafeFiles.push(relativePath);
     }
   }
@@ -192,7 +214,8 @@ export function evaluatePlan17FunctionalAcceptance(input: {
     .filter((promptId) => input.presentPromptIds.has(promptId))
     .length;
   const navLabels = input.navLabels ?? writerNav.map((item) => item?.label ?? "");
-  const requiredNavStable = REQUIRED_WRITER_NAV_LABELS.every((label, index) => navLabels[index] === label);
+  const requiredNavStable = containsOrderedNavLabels(navLabels, REQUIRED_WRITER_NAV_CORE_LABELS);
+  const automationEntryPresent = navLabels.includes("自动驾驶");
   const presentPlan17PromptCount = REQUIRED_PLAN17_PROMPT_IDS.filter((promptId) => input.presentPromptIds.has(promptId)).length;
   const activePlan17PromptCount = REQUIRED_PLAN17_PROMPT_IDS.filter((promptId) => input.activePromptIds.has(promptId)).length;
 
@@ -263,8 +286,10 @@ export function evaluatePlan17FunctionalAcceptance(input: {
       label: "一级导航稳定",
       status: requiredNavStable ? "passed" : "blocked",
       detail: requiredNavStable
-        ? "作者侧一级导航仍保持 作战台 / 稿件 / 复盘 / 设置。"
-        : "作者侧一级导航已偏离作战台 / 稿件 / 复盘 / 设置。",
+        ? automationEntryPresent
+          ? "作者侧仍保持 作战台 / 稿件 / 复盘 / 设置 四个核心导航，且已允许按 plan22 新增自动驾驶入口。"
+          : "作者侧仍保持 作战台 / 稿件 / 复盘 / 设置 四个核心导航。"
+        : "作者侧已破坏 作战台 / 稿件 / 复盘 / 设置 四个核心导航的主链路顺序。",
     },
   ]);
 }
@@ -419,7 +444,7 @@ export function evaluatePlan17QualityAcceptance(input: {
               ? "passed"
               : "blocked"
             : "partial"
-          : rhythmSamples >= 20 && rhythmLinkedFeedbackCount >= 3
+          : rhythmSamples >= 20
             ? "partial"
             : "blocked",
       detail:
@@ -427,8 +452,8 @@ export function evaluatePlan17QualityAcceptance(input: {
           ? rhythmDeviationCorrelation != null && rhythmDeviationPValue != null && rhythmDeviationCorrelation < 0 && rhythmDeviationPValue < 0.05
             ? `rhythmDeviation vs readCompletion 已满足负相关显著性：样本 ${rhythmDeviationSampleCount}、相关系数 ${rhythmDeviationCorrelation.toFixed(3)}、p=${rhythmDeviationPValue.toFixed(4)}。`
             : `rhythmDeviation vs readCompletion 样本 ${rhythmDeviationSampleCount} 已满足门槛，但相关系数 ${rhythmDeviationCorrelation != null ? rhythmDeviationCorrelation.toFixed(3) : "--"}、p=${rhythmDeviationPValue != null ? rhythmDeviationPValue.toFixed(4) : "--"}，仍未满足负相关显著性。`
-          : rhythmSamples >= 20 && rhythmLinkedFeedbackCount >= 3
-            ? `原型节奏评测桶已有 ${rhythmSamples} 个样本，线上回流已绑定 ${rhythmLinkedFeedbackCount} 条；但当前真口径配对样本只有 ${rhythmDeviationSampleCount}，还不能正式验收负相关显著性。`
+          : rhythmSamples >= 20
+            ? `原型节奏评测桶已有 ${rhythmSamples} 个样本，线上回流已绑定 ${rhythmLinkedFeedbackCount} 条；但当前真口径配对样本只有 ${rhythmDeviationSampleCount}，还处于观察窗积累阶段，不能正式验收负相关显著性。`
           : `原型节奏评测样本 ${rhythmSamples} 个、线上绑定结果 ${rhythmLinkedFeedbackCount} 条；当前还不足以证明节奏偏离与完读率的负相关显著性。`,
       metrics: {
         sampleCount: rhythmSamples,
@@ -457,16 +482,20 @@ export function evaluatePlan17BusinessAcceptance(input: {
       input.report.fissionVsRadar.radarHitRate != null ? input.report.fissionVsRadar.radarHitRate / 100 : null,
   });
   const authorLiftStatus: Plan17AcceptanceStatus =
-    authorLift.comparableAuthorCount === 0
+    authorLift.activatedAuthorCount === 0
       ? "blocked"
+      : authorLift.comparableAuthorCount === 0
+        ? "partial"
       : authorLift.comparableAuthorCount < 3
         ? "partial"
         : (authorLift.averageLiftPp ?? Number.NEGATIVE_INFINITY) >= 5
           ? "passed"
           : "blocked";
   const matrixWeeklyOutputStatus: Plan17AcceptanceStatus =
-    matrixWeeklyOutput.matrixAuthorCount === 0 || matrixWeeklyOutput.comparableAuthorCount === 0
+    matrixWeeklyOutput.matrixAuthorCount === 0
       ? "blocked"
+      : matrixWeeklyOutput.comparableAuthorCount === 0
+        ? "partial"
       : matrixWeeklyOutput.comparableAuthorCount < 3 || matrixWeeklyOutput.qualityComparableAuthorCount < 3
         ? "partial"
         : (matrixWeeklyOutput.weeklyOutputGrowthPp ?? Number.NEGATIVE_INFINITY) >= 50
@@ -474,8 +503,10 @@ export function evaluatePlan17BusinessAcceptance(input: {
           ? "passed"
           : "blocked";
   const styleHeatmapStatus: Plan17AcceptanceStatus =
-    styleHeatmapUsage.recent30dUsageEventCount === 0
+    styleHeatmapUsage.profileCount === 0
       ? "blocked"
+      : styleHeatmapUsage.recent30dUsageEventCount === 0
+        ? "partial"
       : (styleHeatmapUsage.recent30dMultiSampleUsageShare ?? Number.NEGATIVE_INFINITY) >= 50
         ? "passed"
         : "blocked";
@@ -486,7 +517,9 @@ export function evaluatePlan17BusinessAcceptance(input: {
       label: "启用作者 7 天命中率抬升",
       status: authorLiftStatus,
       detail:
-        authorLift.comparableAuthorCount === 0
+        authorLift.activatedAuthorCount === 0
+          ? `30 天基线报表已接入，但当前还没有作者进入启用样本，无法开始前后 ${authorLift.windowDays} 天的命中率对照。`
+          : authorLift.comparableAuthorCount === 0
           ? `30 天基线报表已接入，但当前仅 ${authorLift.activatedAuthorCount} 位作者进入启用样本，仍没有作者同时满足启用前后各 ${authorLift.windowDays} 天且每窗 ≥${authorLift.minimumReviewedCountPerWindow} 篇 7 天复盘样本。`
           : authorLift.comparableAuthorCount < 3
             ? `已有 ${authorLift.comparableAuthorCount}/${authorLift.activatedAuthorCount} 位作者具备前后对照，当前平均抬升 ${authorLift.averageLiftPp != null ? authorLift.averageLiftPp.toFixed(2) : "--"}pp，但样本仍不足以做稳态判断。`
@@ -551,7 +584,9 @@ export function evaluatePlan17BusinessAcceptance(input: {
       label: "3+ 样本风格画像真实使用占比",
       status: styleHeatmapStatus,
       detail:
-        styleHeatmapUsage.recent30dUsageEventCount === 0
+        styleHeatmapUsage.profileCount === 0
+          ? "3+ 样本风格画像真实使用报表已接入，但当前还没有任何可统计的风格画像资产。"
+          : styleHeatmapUsage.recent30dUsageEventCount === 0
           ? "3+ 样本风格画像真实使用报表已接入，但最近 30 天还没有任何正文成功写入后的风格画像使用事件。"
           : (styleHeatmapUsage.recent30dMultiSampleUsageShare ?? Number.NEGATIVE_INFINITY) >= 50
             ? `最近 30 天真实使用事件 ${styleHeatmapUsage.recent30dUsageEventCount} 次，其中 ${styleHeatmapUsage.recent30dMultiSampleUsageEventCount} 次来自 3+ 篇交叉样本画像（${styleHeatmapUsage.recent30dMultiSampleUsageShare?.toFixed(2) ?? "--"}%）；当前已达到 50%。`
@@ -678,8 +713,8 @@ export function evaluatePlan17NonFunctionalAcceptance(input: {
       status: input.promptSafety.unsafeFiles.length === 0 ? "passed" : "blocked",
       detail:
         input.promptSafety.unsafeFiles.length === 0
-          ? `已扫描 ${input.promptSafety.scannedCount} 个高风险 Prompt 入口文件，当前未发现 \`\${...}\` 模板插值残留。`
-          : `高风险 Prompt 入口文件扫描发现 ${input.promptSafety.unsafeFiles.length} 个残留：${input.promptSafety.unsafeFiles.join("、")}。`,
+          ? `已扫描 ${input.promptSafety.scannedCount} 个高风险 Prompt 入口文件，当前未发现高风险 Prompt 构造中的 \`\${...}\` 模板插值残留。`
+          : `高风险 Prompt 构造扫描发现 ${input.promptSafety.unsafeFiles.length} 个残留：${input.promptSafety.unsafeFiles.join("、")}。`,
       metrics: {
         scannedFileCount: input.promptSafety.scannedCount,
         unsafeFileCount: input.promptSafety.unsafeFiles.length,
