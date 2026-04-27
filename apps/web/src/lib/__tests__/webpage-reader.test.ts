@@ -46,3 +46,25 @@ test("fetchWebpageArticle extracts WeChat js_content and metadata title", async 
     assert.doesNotMatch(article.rawText, /不应该进入正文的导航/);
   });
 });
+
+test("fetchWebpageArticle rejects login pages as source material", async () => {
+  const html = `
+    <!doctype html>
+    <html>
+      <head><title>登录 / 注册</title></head>
+      <body>
+        <main>
+          <h1>登录 / 注册</h1>
+          <p>手机号登录 密码登录 验证码登录</p>
+        </main>
+      </body>
+    </html>
+  `;
+
+  await withHtmlServer(html, async (url) => {
+    await assert.rejects(
+      () => fetchWebpageArticle(url.replace("/article", "/signin?next=%2Fquestion")),
+      /登录或注册门槛/,
+    );
+  });
+});

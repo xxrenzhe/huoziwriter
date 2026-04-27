@@ -1,5 +1,5 @@
 import { getArticleNodes } from "./article-outline";
-import { isInternalArticleStructureLabel, sanitizeUserVisibleVisualCaption } from "./article-structure-labels";
+import { DEFAULT_ARTICLE_NODE_TITLES, isInternalArticleStructureLabel, sanitizeUserVisibleVisualCaption } from "./article-structure-labels";
 import { chooseBaoyuCoverPreset, chooseBaoyuInlinePreset } from "./article-visual-presets";
 import { buildArticleVisualPromptManifest } from "./article-visual-prompts";
 import type { ArticleVisualBrief } from "./article-visual-types";
@@ -16,6 +16,28 @@ function stripMarkdown(text: string) {
     .trim();
 }
 
+function stripInternalStructureLabels(text: string) {
+  const withoutStandaloneLines = String(text || "")
+    .split(/\r?\n/)
+    .map((line) => {
+      const normalized = line.replace(/\s+/g, "").trim();
+      if (isInternalArticleStructureLabel(normalized)) {
+        return "";
+      }
+      if (/来源类型|来源链接|页面说明|页面导航|抓取失败|登录\/注册|注册即代表同意|signin|login/i.test(line)) {
+        return "";
+      }
+      return line;
+    })
+    .join("\n");
+  return DEFAULT_ARTICLE_NODE_TITLES.reduce(
+    (current, label) => current.replaceAll(label, " "),
+    withoutStandaloneLines,
+  )
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function toAnchor(value: string, fallback: string) {
   const normalized = String(value || "")
     .trim()
@@ -27,19 +49,21 @@ function toAnchor(value: string, fallback: string) {
 }
 
 function pickLabels(text: string, limit: number) {
-  const candidates = stripMarkdown(text)
+  const candidates = stripMarkdown(stripInternalStructureLabels(text))
     .split(/[，。！？；、,.!?;\s]+/)
     .map((item) => item.trim())
     .filter((item) => item.length >= 2 && item.length <= 12)
+    .filter((item) => !/来源|链接|页面|登录|注册|signin|login|zhihu|知乎/i.test(item))
     .filter((item) => !/^(这个|一个|如果|因为|所以|但是|然后|以及|可以|需要)$/.test(item));
   return [...new Set(candidates)].slice(0, limit);
 }
 
 function pickSourceFacts(text: string, limit: number) {
-  const sentences = stripMarkdown(text)
+  const sentences = stripMarkdown(stripInternalStructureLabels(text))
     .split(/[。！？.!?]\s*/)
     .map((item) => item.trim())
     .filter((item) => item.length >= 12)
+    .filter((item) => !/来源类型|来源链接|页面说明|页面导航|抓取失败|登录\/注册|注册即代表同意|signin|login|zhihu|知乎/i.test(item))
     .filter((item) => item.length <= 90 || /\d/.test(item));
   return [...new Set(sentences)].slice(0, limit);
 }
@@ -134,6 +158,7 @@ export async function planArticleVisualBriefs(input: {
           node,
           index,
           text: nodeText,
+          substantiveText,
           hasUserFacingTitle: !isInternalArticleStructureLabel(node.title),
           hasSubstantiveText: stripMarkdown(substantiveText).length >= 24,
           score:
@@ -148,7 +173,7 @@ export async function planArticleVisualBriefs(input: {
     for (const [index, candidate] of candidates.entries()) {
       const userFacingTitle = buildUserFacingNodeTitle({
         nodeTitle: candidate.node.title,
-        nodeText: candidate.text,
+        nodeText: candidate.hasUserFacingTitle ? candidate.text : candidate.substantiveText,
         articleTitle: input.title,
         index,
       });
@@ -158,14 +183,17 @@ export async function planArticleVisualBriefs(input: {
         text: candidate.text,
         index,
       });
-      const sourceFacts = pickSourceFacts(candidate.text || plain, 4);
-      const labels = pickLabels([userFacingTitle, candidate.text].join(" "), 7);
+      const visualText = candidate.hasUserFacingTitle ? candidate.text : candidate.substantiveText;
+      const sourceFacts = pickSourceFacts(visualText || plain, 4);
+      const labels = pickLabels([userFacingTitle, visualText].join(" "), 7);
       const brief: ArticleVisualBrief = {
         userId: input.userId,
         articleId: input.articleId,
         articleNodeId: candidate.node.id,
         visualScope: preset.scope,
-        targetAnchor: toAnchor(candidate.node.title, `node-${candidate.node.id}`),
+        targetAnchor: candidate.hasUserFacingTitle
+          ? toAnchor(candidate.node.title, `node-${candidate.node.id}`)
+          : toAnchor(userFacingTitle, `node-${candidate.node.id}`),
         baoyuSkill: preset.baoyuSkill,
         visualType: preset.type,
         layoutCode: preset.layoutCode,

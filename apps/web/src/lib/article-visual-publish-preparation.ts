@@ -5,6 +5,33 @@ import { listArticleVisualBriefs, replaceArticleVisualBriefs } from "./article-v
 import { ensureCoverImagePreparedForPublish } from "./article-automation-publish-repair";
 import { getArticleById } from "./repositories";
 
+function readPositiveIntegerEnv(name: string, fallback: number) {
+  const raw = String(process.env[name] || "").trim();
+  if (!raw) return fallback;
+  const value = Number(raw);
+  return Number.isFinite(value) && value > 0 ? Math.round(value) : fallback;
+}
+
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  mapper: (item: T, index: number) => Promise<R>,
+) {
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+  const workerCount = Math.max(1, Math.min(concurrency, items.length || 1));
+  await Promise.all(Array.from({ length: workerCount }, async () => {
+    while (nextIndex < items.length) {
+      const currentIndex = nextIndex;
+      nextIndex += 1;
+      results[currentIndex] = await mapper(items[currentIndex], currentIndex);
+    }
+  }));
+  return results;
+}
+
+const WECHAT_VISUAL_PREP_CONCURRENCY = readPositiveIntegerEnv("WECHAT_VISUAL_PREP_CONCURRENCY", 2);
+
 export async function ensureArticleVisualsPreparedForWechatDraft(input: {
   userId: number;
   articleId: number;
@@ -15,7 +42,7 @@ export async function ensureArticleVisualsPreparedForWechatDraft(input: {
     throw new Error("稿件不存在，无法准备微信草稿图片。");
   }
 
-  const cover = await ensureCoverImagePreparedForPublish({
+  const coverPromise = ensureCoverImagePreparedForPublish({
     userId: input.userId,
     articleId: input.articleId,
     title: input.title,
@@ -40,14 +67,28 @@ export async function ensureArticleVisualsPreparedForWechatDraft(input: {
 
   const pendingInlineBriefs = briefs.filter((brief) => brief.visualScope !== "cover" && brief.status !== "generated" && brief.status !== "inserted");
   const warnings: string[] = [];
-  const generated: Array<Awaited<ReturnType<typeof generateArticleVisualAsset>>> = [];
-  for (const brief of pendingInlineBriefs) {
+  const generationResults = await mapWithConcurrency(pendingInlineBriefs, WECHAT_VISUAL_PREP_CONCURRENCY, async (brief) => {
     try {
-      generated.push(await generateArticleVisualAsset(brief));
+      return {
+        ok: true as const,
+        value: await generateArticleVisualAsset(brief),
+      };
     } catch (error) {
-      warnings.push(`${brief.title}: ${error instanceof Error ? error.message : "图片生成失败"}`);
+      return {
+        ok: false as const,
+        warning: `${brief.title}: ${error instanceof Error ? error.message : "图片生成失败"}`,
+      };
+    }
+  });
+  const generated: Array<Awaited<ReturnType<typeof generateArticleVisualAsset>>> = [];
+  for (const result of generationResults) {
+    if (result.ok) {
+      generated.push(result.value);
+    } else {
+      warnings.push(result.warning);
     }
   }
+  const cover = await coverPromise;
 
   const refreshedArticle = await getArticleById(input.articleId, input.userId);
   const insertion = refreshedArticle
@@ -67,6 +108,7 @@ export async function ensureArticleVisualsPreparedForWechatDraft(input: {
     pendingInlineCount: pendingInlineBriefs.length,
     generatedInlineCount: generated.length,
     insertedInlineCount: insertion.inserted.length,
+    concurrency: WECHAT_VISUAL_PREP_CONCURRENCY,
     warnings,
   };
 }

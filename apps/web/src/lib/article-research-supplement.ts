@@ -1242,6 +1242,13 @@ export async function supplementArticleResearchSources(input: {
           title: null,
           url,
         });
+        if (distilled.retryRecommended || distilled.degradedReason) {
+          return {
+            url,
+            distilled: null,
+            error: distilled.degradedReason || "研究补源链接不可用",
+          };
+        }
         return {
           url,
           distilled,

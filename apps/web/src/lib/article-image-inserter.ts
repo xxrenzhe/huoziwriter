@@ -1,4 +1,4 @@
-import { listArticleVisualAssets, updateArticleVisualBriefStatus } from "./article-visual-repository";
+import { listArticleVisualAssets, listArticleVisualBriefs, updateArticleVisualBriefStatus } from "./article-visual-repository";
 import { sanitizeUserVisibleVisualCaption } from "./article-structure-labels";
 import { saveArticle } from "./repositories";
 
@@ -42,9 +42,18 @@ export async function insertArticleVisualAssetsIntoMarkdown(input: {
   title: string;
   markdown: string;
 }) {
+  const briefs = await listArticleVisualBriefs(input.userId, input.articleId);
+  const insertableBriefIds = new Set(
+    briefs
+      .filter((brief) => brief.status !== "failed")
+      .map((brief) => brief.id)
+      .filter((id): id is number => typeof id === "number"),
+  );
   const assets = (await listArticleVisualAssets(input.userId, input.articleId))
     .filter((asset) => asset.assetType !== "cover_image")
-    .filter((asset) => asset.publicUrl && asset.status === "ready");
+    .filter((asset) => asset.publicUrl && asset.status === "ready")
+    .filter((asset) => !asset.visualBriefId || insertableBriefIds.has(asset.visualBriefId))
+    .filter((asset) => !/已移除|不可用|登录页|抓取失败|来源类型|来源链接/i.test([asset.altText, asset.caption, asset.insertAnchor].filter(Boolean).join(" ")));
   let nextMarkdown = input.markdown;
   const inserted: number[] = [];
 

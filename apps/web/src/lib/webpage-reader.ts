@@ -142,6 +142,23 @@ function extractSourceTitle(html: string) {
   return title.replace(/\s+/g, " ").trim();
 }
 
+function isLikelyAuthWall(input: {
+  url: string;
+  sourceTitle: string;
+  rawText: string;
+  articleBody: string;
+}) {
+  const url = input.url.toLowerCase();
+  const title = input.sourceTitle.replace(/\s+/g, "").trim();
+  const text = input.rawText.replace(/\s+/g, " ").trim();
+  const authUrl = /\/(?:signin|login|passport|account|auth)(?:[/?#]|$)|[?&](?:login|signin)=/i.test(url);
+  const authTitle = /^(登录|注册|登录\/注册|登录注册|sign in|log in|login)$/i.test(title);
+  const authText =
+    /(登录|注册|验证码|手机号|密码|扫码登录|第三方登录|sign in|log in|create account)/i.test(text)
+    && !/[。！？.!?；;].{20,}/.test(text);
+  return !input.articleBody && (authUrl || authTitle) && authText;
+}
+
 export async function fetchWebpageArticle(url: string) {
   const response = await fetchExternalText({
     url,
@@ -156,6 +173,14 @@ export async function fetchWebpageArticle(url: string) {
 
   if (!rawText) {
     throw new Error("文章正文抓取为空");
+  }
+  if (isLikelyAuthWall({
+    url: response.finalUrl,
+    sourceTitle,
+    rawText,
+    articleBody,
+  })) {
+    throw new Error("页面是登录或注册门槛，不可作为正文素材");
   }
 
   return {

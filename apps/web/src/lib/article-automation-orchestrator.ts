@@ -110,6 +110,14 @@ type AutomationSourceGrounding = {
 };
 
 const automationSourceGroundingCache = new Map<string, Promise<AutomationSourceGrounding>>();
+type CoverPreparationResult = {
+  ok: boolean;
+  changed: boolean;
+  provider: string | null;
+  model: string | null;
+  error: string | null;
+};
+const coverPreparationTasks = new Map<string, Promise<CoverPreparationResult>>();
 
 function readBooleanEnv(name: string, fallback: boolean) {
   const raw = String(process.env[name] || "").trim().toLowerCase();
@@ -1444,6 +1452,7 @@ async function executeCoverImageBrief(detail: AutomationRunDetail, promptContext
       baoyuPresetVersion: "2026-04-27",
       promptManifestRecorded: Boolean(coverBrief.promptManifest),
       reusedExistingVisualBrief: Boolean(existingCoverBrief),
+      coverPreparationMode: "async-prewarm",
     },
     provider: "local",
     model: "baoyu-compatible-cover-planner",
@@ -1616,8 +1625,12 @@ async function executePublishGuard(
   if (!article) {
     throw new AutomationStageBlockedError("稿件不存在，无法执行发布守门。");
   }
+  const coverPreparation = await waitForCoverPreparation(detail);
   let repairApplied: string[] = [];
   let repairErrors: string[] = [];
+  if (coverPreparation?.ok === false && coverPreparation.error) {
+    repairErrors.push(`coverImage:${coverPreparation.error}`);
+  }
   let result = await evaluatePublishGuard({
     articleId: article.id,
     userId: detail.run.userId,
@@ -1655,6 +1668,7 @@ async function executePublishGuard(
       methodologyGates: result.methodologyGates,
       autoPreparedAtStages: repairApplied,
       autoPrepareErrors: repairErrors,
+      coverPreparation,
     },
     provider: "local",
     model: "publish-guard",
@@ -1794,11 +1808,7 @@ async function applyStagePreventivePreparation(
       return;
     }
     if (stageCode === "coverImageBrief") {
-      await ensureCoverImagePreparedForPublish({
-        articleId: detail.run.articleId,
-        userId: detail.run.userId,
-        title: detail.article.title,
-      });
+      startCoverPreparation(detail);
     }
   } catch {
     return;
@@ -1827,6 +1837,54 @@ function classifyStageFailureStatus(error: unknown): Extract<ArticleAutomationRu
 
 function shouldRunPublishGuardAutoRepair(detail: AutomationRunDetail) {
   return readBooleanEnv("ARTICLE_AUTOMATION_PUBLISH_GUARD_AUTO_REPAIR", false);
+}
+
+function coverPreparationTaskKey(userId: number, articleId: number) {
+  return `${userId}:${articleId}`;
+}
+
+function startCoverPreparation(detail: AutomationRunDetail) {
+  if (!detail.run.articleId || !detail.article) {
+    return null;
+  }
+  const key = coverPreparationTaskKey(detail.run.userId, detail.run.articleId);
+  const existing = coverPreparationTasks.get(key);
+  if (existing) {
+    return existing;
+  }
+  const task = ensureCoverImagePreparedForPublish({
+    articleId: detail.run.articleId,
+    userId: detail.run.userId,
+    title: detail.article.title,
+  })
+    .then((result) => ({
+      ok: true,
+      changed: result.changed,
+      provider: result.provider,
+      model: result.model,
+      error: null,
+    }))
+    .catch((error) => ({
+      ok: false,
+      changed: false,
+      provider: null,
+      model: null,
+      error: error instanceof Error ? error.message : String(error),
+    }))
+    .finally(() => {
+      coverPreparationTasks.delete(key);
+    });
+  coverPreparationTasks.set(key, task);
+  return task;
+}
+
+async function waitForCoverPreparation(detail: AutomationRunDetail) {
+  if (!detail.run.articleId) {
+    return null;
+  }
+  const key = coverPreparationTaskKey(detail.run.userId, detail.run.articleId);
+  const task = coverPreparationTasks.get(key);
+  return task ? await task : null;
 }
 
 export async function resumeArticleAutomationRun(input: {
