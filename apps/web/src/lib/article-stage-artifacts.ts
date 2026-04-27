@@ -1878,6 +1878,114 @@ function buildMinimumDeepWritingSections(input: {
       },
     ];
   }
+  if (input.viralBlueprint?.code === "money_path") {
+    return [
+      {
+        heading: "先把钱流和结果反差摆出来",
+        goal: "开头直接交代钱从哪里来、谁付钱、为什么这个路径现在值得看，避免空喊赚钱。",
+        keyPoints: ["收益场景", "付款方", "机会窗口"],
+        evidenceHints: [input.coreInsightAnchor, input.openingTimelineAnchor].filter(Boolean),
+        materialRefs: [],
+        transition: "从钱流进入路径拆解",
+      },
+      {
+        heading: "拆开获客、信任和转化链路",
+        goal: "把流量来源、Offer、信任建立、落地页或沟通动作讲清楚，让读者看到可验证路径。",
+        keyPoints: ["流量来源", "信任机制", "转化动作"],
+        evidenceHints: [input.middleComparisonAnchor].filter(Boolean),
+        materialRefs: [],
+        transition: "从可行路径进入真实成本",
+      },
+      {
+        heading: "把失败成本写透",
+        goal: "写清平台规则、封号、退单、语言、时差、现金和持续交付压力，避免财富幻觉。",
+        keyPoints: ["试错成本", "平台风险", "交付压力"],
+        evidenceHints: [input.middleComparisonAnchor, input.coreInsightAnchor].filter(Boolean),
+        materialRefs: [],
+        transition: "从失败成本进入适配人群",
+      },
+      {
+        heading: "给出低风险验证动作",
+        goal: "收束成读者 24-72 小时内能做的小实验，而不是让读者直接重仓投入。",
+        keyPoints: ["适合谁", "不适合谁", "第一步验证"],
+        evidenceHints: [input.coreInsightAnchor || input.title].filter(Boolean),
+        materialRefs: [],
+        transition: "用风险边界收束全文",
+      },
+    ];
+  }
+  if (input.viralBlueprint?.code === "career_crossroads") {
+    return [
+      {
+        heading: "先进入一个职场瞬间",
+        goal: "用会议、面试、裁员、绩效或薪资谈判场景让读者代入，而不是先讲大道理。",
+        keyPoints: ["具体场景", "读者代入", "安全感被触发"],
+        evidenceHints: [input.openingTimelineAnchor].filter(Boolean),
+        materialRefs: [],
+        transition: "从场景进入表层误解",
+      },
+      {
+        heading: "拆掉表层解释",
+        goal: "说明大家通常以为问题出在哪里，再指出真正起作用的组织规则或岗位供需。",
+        keyPoints: ["常见误解", "组织激励", "岗位供需"],
+        evidenceHints: [input.middleComparisonAnchor].filter(Boolean),
+        materialRefs: [],
+        transition: "从规则进入角色分化",
+      },
+      {
+        heading: "写清不同角色的命运差异",
+        goal: "把新人、骨干、管理者、外包或自由职业者分开写，避免一刀切职场结论。",
+        keyPoints: ["谁受益", "谁承压", "谁被误伤"],
+        evidenceHints: [input.middleComparisonAnchor, input.coreInsightAnchor].filter(Boolean),
+        materialRefs: [],
+        transition: "从角色分化进入选择标准",
+      },
+      {
+        heading: "落到下一步选择标准",
+        goal: "告诉读者该检查什么能力、位置和风险，而不是泛泛鼓励努力。",
+        keyPoints: ["能力定价", "位置判断", "行动标准"],
+        evidenceHints: [input.coreInsightAnchor || input.title].filter(Boolean),
+        materialRefs: [],
+        transition: "用一个具体判断标准收束全文",
+      },
+    ];
+  }
+  if (input.viralBlueprint?.code === "ai_product_disruption") {
+    return [
+      {
+        heading: "先给一个产品或工作流现场",
+        goal: "从具体使用、组织动作或成本反差切入，让读者看到旧流程已经松动。",
+        keyPoints: ["具体产品", "具体场景", "成本反差"],
+        evidenceHints: [input.openingTimelineAnchor, input.coreInsightAnchor].filter(Boolean),
+        materialRefs: [],
+        transition: "从现场回到旧规则",
+      },
+      {
+        heading: "解释旧流程靠什么成立",
+        goal: "把旧的人力、预算、工具栈或责任边界讲清楚，为后面的重排建立参照。",
+        keyPoints: ["旧流程", "旧成本", "旧责任边界"],
+        evidenceHints: [input.middleComparisonAnchor].filter(Boolean),
+        materialRefs: [],
+        transition: "从旧规则进入新杠杆",
+      },
+      {
+        heading: "拆出 AI 产品替换的具体成本",
+        goal: "说明 AI 产品具体改变的是速度、质量、成本、责任还是协作顺序，不写成模型新闻。",
+        keyPoints: ["替换环节", "成本变化", "使用边界"],
+        evidenceHints: [input.middleComparisonAnchor, input.coreInsightAnchor].filter(Boolean),
+        materialRefs: [],
+        transition: "从成本变化进入组织后果",
+      },
+      {
+        heading: "落到岗位、预算和产品边界重排",
+        goal: "把影响写到岗位、采购、交付和用户行为上，并给出一个领先观察指标。",
+        keyPoints: ["岗位变化", "预算变化", "领先指标"],
+        evidenceHints: [input.coreInsightAnchor || input.title].filter(Boolean),
+        materialRefs: [],
+        transition: "用一个可观察指标收束全文",
+      },
+    ];
+  }
   return [
     {
       heading: "先把关键转折讲清楚",

@@ -8,7 +8,12 @@ export type ArticleViralBlueprintStage =
   | "factCheck"
   | "prosePolish";
 
-export type ArticleViralBlueprintCode = "ordinary_breakthrough" | "structural_tension";
+export type ArticleViralBlueprintCode =
+  | "ordinary_breakthrough"
+  | "money_path"
+  | "career_crossroads"
+  | "ai_product_disruption"
+  | "structural_tension";
 
 export type ArticleViralBlueprint = {
   code: ArticleViralBlueprintCode;
@@ -21,6 +26,8 @@ export type ArticleViralBlueprint = {
   emotionalCurve: string[];
   shareTrigger: string;
   materialRequirements: string[];
+  premiseChecklist: string[];
+  mediocrityRisk: string;
   boundaryRule: string;
 };
 
@@ -99,7 +106,25 @@ export function inferArticleViralBlueprintCode(input: ArticleViralBlueprintInput
   const hasFairnessFrame = includesAny(seed, [
     /公平|信息差|经济差|资源差|门槛|预算|免费|付费|订阅|阶层|机会|平等|普通人/,
   ]);
+  const hasMoneyPath = includesAny(seed, [
+    /海外赚美金|赚美金|美金|美元|副业|赚钱|变现|联盟营销|affiliate|出海|跨境|独立站|佣金|现金流|收入|客单价|转化率|漏斗/i,
+  ]);
+  const hasCareerPath = includesAny(seed, [
+    /职场|裁员|跳槽|晋升|老板|同事|工资|涨薪|简历|面试|绩效|组织|团队|打工人|中年危机|职业/,
+  ]);
+  const hasAiProductPath = includesAny(seed, [
+    /AI产品|AI 产品|AI\s*(agent|应用|工作流|SaaS|产品化|产品)|agent|智能体|SaaS|工作流|自动化|模型|OpenAI|Claude|Gemini|Cursor|产品经理|PMF|订阅/i,
+  ]);
 
+  if (hasMoneyPath) {
+    return "money_path";
+  }
+  if (hasAiProductPath) {
+    return "ai_product_disruption";
+  }
+  if (hasCareerPath) {
+    return "career_crossroads";
+  }
   if ((hasLowStart && hasHighOutcome) || (hasToolLeverage && hasFairnessFrame && (hasLowStart || hasHighOutcome))) {
     return "ordinary_breakthrough";
   }
@@ -144,7 +169,137 @@ export function buildArticleViralBlueprint(input: ArticleViralBlueprintInput): A
         "方法差：具体动作、工具边界、真人反馈和自我练习。",
         "价值观原话：一句能把个人故事抬成公共情绪的表达。",
       ],
+      premiseChecklist: [
+        "能一句话说清：谁在低起点里拿到了什么反常结果。",
+        "能说清杠杆是什么：工具、方法、信息差、关系或选择。",
+        "能证明路径不是鸡汤：至少有时间线、动作和失败卡点。",
+        "能升维到公共情绪：公平、机会、门槛或自我定义。",
+      ],
+      mediocrityRisk: "最容易写成工具软文或励志鸡汤；必须让路径、限制和边界承担可信度。",
       boundaryRule: "真实人物、学校、成绩、收入、录取和截图必须来自真实素材；素材不足时只能写成复合人物或虚构故事，不能冒充真实专访。",
+    };
+  }
+
+  if (code === "money_path") {
+    return {
+      code,
+      label: "赚钱路径拆解型",
+      reason: "当前题材涉及海外赚美金、副业、联盟营销、出海变现或收入路径，爆点不在“能赚钱”，而在机会窗口、可信路径、失败成本和普通人能否复制。",
+      titlePromise: "标题必须同时给出目标收益场景、具体路径或平台切口、普通读者最关心的门槛，不要只喊赚钱结果。",
+      openingEngine: "开头先给一个具体账本、订单、佣金、转化或失败成本场景，再立刻说明这不是无脑暴富机会。",
+      narrativeArc: [
+        "结果或账本开场：先给一个可视化的钱流或成本反差。",
+        "机会窗口：解释为什么这个路径现在出现，而不是一直存在。",
+        "路径拆解：流量来源、信任建立、产品/Offer、转化动作和交付成本。",
+        "失败成本：写清封号、退单、获客、语言、时差、合规或持续输出压力。",
+        "复制边界：什么人适合做，什么人别碰。",
+        "行动收束：给读者一个低风险验证动作。",
+      ],
+      evidenceRecipe: [
+        "至少准备 1 个钱流锚点，例如订单、佣金区间、客单价、转化率或成本结构。",
+        "至少准备 2 个路径锚点，例如平台规则、流量渠道、Offer 来源、落地页、邮件序列或交付流程。",
+        "至少准备 1 个失败样本或反例，说明这不是稳赚机会。",
+        "必须把合规、平台规则和可复制边界写清楚。",
+      ],
+      emotionalCurve: ["眼前一亮", "怀疑", "看懂门槛", "谨慎想试"],
+      shareTrigger: "读者转发的理由是这篇文章把赚钱机会从玄学拆成了可验证路径和风险边界。",
+      materialRequirements: [
+        "收益差：钱从哪里来、谁付钱、为什么愿意付。",
+        "路径差：流量、信任、转化、交付四段链路。",
+        "成本差：时间、现金、语言、规则和试错成本。",
+        "失败差：至少一个做不成或不适合的原因。",
+        "验证动作：读者 24-72 小时内能做的小实验。",
+      ],
+      premiseChecklist: [
+        "能回答：这不是暴富故事，而是哪条具体钱流。",
+        "能回答：普通人第一步如何低成本验证。",
+        "能回答：最大坑在哪里，为什么多数人做不成。",
+        "能回答：读者凭什么相信这个路径有现实窗口。",
+      ],
+      mediocrityRisk: "最容易写成割韭菜式财富叙事；必须把钱流、路径、成本和失败边界同时写出来。",
+      boundaryRule: "收益、佣金、转化率、平台政策和案例若来自真实主体必须可核验；素材不足时只能写成模拟账本、复合案例或假设路径。",
+    };
+  }
+
+  if (code === "career_crossroads") {
+    return {
+      code,
+      label: "职场转折型",
+      reason: "当前题材涉及裁员、跳槽、晋升、组织变化或职业选择，爆点来自个人安全感和组织规则之间的冲突。",
+      titlePromise: "标题必须给出一个职场关键处境、一个反常识判断和一个读者能立即对照自己的选择标准。",
+      openingEngine: "开头先进入一个办公室、会议、面试、裁员通知或工资谈判场景，再抛出真正改变规则的变量。",
+      narrativeArc: [
+        "具体职场场景开场。",
+        "表层解释：大家通常以为问题出在哪。",
+        "规则反转：真正起作用的是组织激励、岗位供需或能力定价。",
+        "角色分化：新人、骨干、管理者、外包或自由职业者分别受什么影响。",
+        "选择标准：什么动作值得做，什么努力只是自我感动。",
+        "安全感收束：给读者一个可执行判断。",
+      ],
+      evidenceRecipe: [
+        "至少准备 1 个职场场景锚点，例如面试、绩效、裁员、汇报或薪资谈判。",
+        "至少准备 2 个规则锚点，例如招聘 JD、薪资带、组织调整、岗位消失或新技能要求。",
+        "至少准备 1 个角色对比，说明不同人为什么感受完全不同。",
+        "必须给出可执行的职业判断标准。",
+      ],
+      emotionalCurve: ["代入", "不安", "看清规则", "重新评估自己"],
+      shareTrigger: "读者转发的理由是这篇文章替他说清了职场焦虑背后的规则，而不是单纯安慰。",
+      materialRequirements: [
+        "场景差：一个读者能代入的职场瞬间。",
+        "规则差：组织为什么这么做。",
+        "角色差：谁受益、谁承压、谁被误伤。",
+        "能力差：哪些能力被重新定价。",
+        "选择标准：读者下一步该检查什么。",
+      ],
+      premiseChecklist: [
+        "能回答：这个职场变化打到了哪类人。",
+        "能回答：表面原因和真实规则有什么不同。",
+        "能回答：读者如何判断自己是危险、机会还是旁观者。",
+        "能回答：结尾能给出行动标准，而不是空泛鼓励。",
+      ],
+      mediocrityRisk: "最容易写成情绪安慰或职场鸡汤；必须把组织规则、角色分化和选择标准写硬。",
+      boundaryRule: "真实公司裁员、薪资、绩效和内部对话必须有来源；素材不足时只能写成匿名化复合场景或虚构职场故事。",
+    };
+  }
+
+  if (code === "ai_product_disruption") {
+    return {
+      code,
+      label: "AI产品重排型",
+      reason: "当前题材涉及 AI 产品、智能体、SaaS、工具或工作流变化，爆点来自旧流程、旧成本、旧岗位和旧产品边界被重排。",
+      titlePromise: "标题必须点名具体产品/工作流/角色，并给出一个清晰的旧规则失效判断。",
+      openingEngine: "开头先给一个真实使用场景、成本反差或组织动作，再说明这不是模型又强了一点，而是流程顺序变了。",
+      narrativeArc: [
+        "场景或产品动作开场。",
+        "旧规则：过去这个流程靠什么成立。",
+        "新杠杆：AI 产品具体替换了哪一步成本。",
+        "组织后果：岗位、预算、采购、交付或产品形态如何变化。",
+        "反例边界：哪些场景仍然跑不通。",
+        "判断收束：读者应该观察哪一个领先指标。",
+      ],
+      evidenceRecipe: [
+        "至少准备 1 个产品/工作流使用锚点。",
+        "至少准备 1 个成本或效率锚点，例如时间、人力、预算、token、订阅或转化。",
+        "至少准备 1 个组织后果锚点，例如岗位变化、采购变化、工具栈变化或用户行为变化。",
+        "必须给出限制条件，避免写成 AI 万能叙事。",
+      ],
+      emotionalCurve: ["新鲜", "失控感", "理解变化", "想重新判断机会"],
+      shareTrigger: "读者转发的理由是这篇文章帮他看懂 AI 产品变化背后的岗位、预算和流程重排。",
+      materialRequirements: [
+        "旧流程：原来怎么做、成本在哪里。",
+        "新动作：AI 产品替换了哪一步。",
+        "成本差：时间、人力、预算或质量变化。",
+        "组织差：谁的工作被重排。",
+        "边界差：哪里仍然不能自动化。",
+      ],
+      premiseChecklist: [
+        "能回答：具体哪个旧流程失效了。",
+        "能回答：AI 产品真正改变的是成本、速度、质量还是责任边界。",
+        "能回答：谁会因此受益或承压。",
+        "能回答：读者该看哪个指标判断趋势继续。",
+      ],
+      mediocrityRisk: "最容易写成产品介绍或模型新闻复述；必须落到流程、成本、组织后果和边界。",
+      boundaryRule: "产品数据、公司采用情况、融资和内部使用案例必须有来源；素材不足时只能写成使用体验、模拟工作流或趋势推演。",
     };
   }
 
@@ -169,6 +324,13 @@ export function buildArticleViralBlueprint(input: ArticleViralBlueprintInput): A
     emotionalCurve: ["疑问", "理解", "紧迫", "清晰"],
     shareTrigger: "读者愿意转发，是因为这篇文章替他讲清了一个原本模糊的结构性判断。",
     materialRequirements: ["时间节点", "横向比较", "反例限制", "读者行动标准"],
+    premiseChecklist: [
+      "能回答：被误读的对象是什么。",
+      "能回答：真正起作用的结构变量是什么。",
+      "能回答：为什么现在值得写。",
+      "能回答：读者读完能复述哪一句判断。",
+    ],
+    mediocrityRisk: "最容易写成概念综述或资料搬运；必须用反常识信号、变量拆解和读者判断标准撑住。",
     boundaryRule: "事实型判断必须有来源；无法核验的内容只能写成观察、推演或复合素材。",
   };
 }
@@ -185,6 +347,8 @@ export function buildArticleViralBlueprintPromptLines(
     `情绪曲线：${blueprint.emotionalCurve.join(" -> ")}`,
     `传播触发：${blueprint.shareTrigger}`,
     `素材要求：${blueprint.materialRequirements.join("；")}`,
+    `爆款前提清单：${blueprint.premiseChecklist.join("；")}`,
+    `平庸风险：${blueprint.mediocrityRisk}`,
     `边界规则：${blueprint.boundaryRule}`,
   ];
 

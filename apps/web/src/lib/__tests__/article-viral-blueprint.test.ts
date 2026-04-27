@@ -76,3 +76,49 @@ test("stage prompt lines map ordinary breakthrough to evidence and fact-check re
   assert.match(researchLines, /结果锚点/);
   assert.match(factCheckLines, /结果锚点、身份标签、数字、截图和人物原话/);
 });
+
+test("viral blueprint detects money path articles and front-loads risk-aware material recipe", () => {
+  const blueprint = buildArticleViralBlueprint({
+    articleTitle: "普通人做联盟营销，怎么低成本赚到第一笔美金",
+  });
+
+  assert.equal(blueprint.code, "money_path");
+  assert.equal(blueprint.label, "赚钱路径拆解型");
+  assert.match(blueprint.titlePromise, /目标收益场景/);
+  assert(blueprint.evidenceRecipe.some((item) => /钱流锚点/.test(item)));
+  assert(blueprint.premiseChecklist.some((item) => /低成本验证/.test(item)));
+  assert.match(blueprint.mediocrityRisk, /割韭菜/);
+});
+
+test("viral blueprint maps career and ai product topics to specialized upstream prompts", () => {
+  const careerLines = buildArticleViralBlueprintPromptLines("outlinePlanning", {
+    articleTitle: "这一轮裁员后，职场人真正要担心的不是 AI",
+  }).join("\n");
+  const aiProductLines = buildArticleViralBlueprintPromptLines("deepWriting", {
+    articleTitle: "AI Agent 正在重做 SaaS 产品的工作流",
+  }).join("\n");
+
+  assert.match(careerLines, /职场转折型/);
+  assert.match(careerLines, /组织规则.*角色分化/);
+  assert.match(aiProductLines, /AI产品重排型/);
+  assert.match(aiProductLines, /流程、成本、组织后果和边界/);
+});
+
+test("writing state maps high-value vertical blueprints to stronger article prototypes", () => {
+  const moneyKernel = buildWritingStateKernel({
+    title: "海外赚美金副业：普通人如何验证第一条联盟营销路径",
+  });
+  const careerKernel = buildWritingStateKernel({
+    title: "裁员之后，职场人的安全感为什么突然失效",
+  });
+  const aiProductKernel = buildWritingStateKernel({
+    title: "AI 产品正在把内容团队的工作流重排一遍",
+  });
+
+  assert.equal(moneyKernel.articlePrototype, "investigation");
+  assert.match(moneyKernel.stateChecklist.join("\n"), /赚钱路径拆解型/);
+  assert.equal(careerKernel.articlePrototype, "phenomenon_analysis");
+  assert.match(careerKernel.stateChecklist.join("\n"), /职场转折型/);
+  assert.equal(aiProductKernel.articlePrototype, "product_walkthrough");
+  assert.match(aiProductKernel.stateChecklist.join("\n"), /AI产品重排型/);
+});

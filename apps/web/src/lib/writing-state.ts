@@ -272,6 +272,13 @@ function buildPrototypeScoredOptions(input: {
     const score =
       (code === "product_walkthrough" && includesAny(seed, [/实测|体验|上手|用了|试了|开箱|测了/]) ? 6 : 0)
       + (code === "ordinary_breakthrough" && viralBlueprint.code === "ordinary_breakthrough" ? 10 : 0)
+      + (code === "investigation" && viralBlueprint.code === "money_path" ? 8 : 0)
+      + (code === "methodology" && viralBlueprint.code === "money_path" ? 5 : 0)
+      + (code === "phenomenon_analysis" && viralBlueprint.code === "career_crossroads" ? 8 : 0)
+      + (code === "personal_narrative" && viralBlueprint.code === "career_crossroads" ? 4 : 0)
+      + (code === "product_walkthrough" && viralBlueprint.code === "ai_product_disruption" ? 8 : 0)
+      + (code === "product_walkthrough" && includesAny(seed, [/ai\s*产品|ai产品|agent|智能体|saas|工作流|自动化|cursor|claude|openai|gemini/]) ? 7 : 0)
+      + (code === "phenomenon_analysis" && viralBlueprint.code === "ai_product_disruption" ? 5 : 0)
       + (code === "investigation" && includesAny(seed, [/调查|实验|我去|我买了|我试着|亲手|踩坑|复盘过程/]) ? 6 : 0)
       + (code === "methodology" && includesAny(seed, [/方法|心得|怎么做|工作流|步骤|复盘方法/]) ? 6 : 0)
       + (code === "tool_share" && includesAny(seed, [/prompt|工具|神器|模板|工作流/]) ? 6 : 0)
@@ -290,6 +297,20 @@ function buildPrototypeScoredOptions(input: {
     const triggerReason =
       code === "ordinary_breakthrough" && viralBlueprint.code === "ordinary_breakthrough"
         ? `爆文蓝图识别为「${viralBlueprint.label}」：${viralBlueprint.reason}`
+        : code === "investigation" && viralBlueprint.code === "money_path"
+          ? `爆文蓝图识别为「${viralBlueprint.label}」：赚钱题材必须先把钱流、路径、成本和失败边界查清，适合按调查拆解推进。`
+        : code === "methodology" && viralBlueprint.code === "money_path"
+          ? `爆文蓝图识别为「${viralBlueprint.label}」：如果素材足够明确，可转成低风险验证动作和方法论。`
+        : code === "phenomenon_analysis" && viralBlueprint.code === "career_crossroads"
+          ? `爆文蓝图识别为「${viralBlueprint.label}」：职场题材必须先解释组织规则和角色分化。`
+        : code === "personal_narrative" && viralBlueprint.code === "career_crossroads"
+          ? `爆文蓝图识别为「${viralBlueprint.label}」：如果有足够场景，可从一个职场瞬间长出判断。`
+        : code === "product_walkthrough" && viralBlueprint.code === "ai_product_disruption"
+          ? `爆文蓝图识别为「${viralBlueprint.label}」：AI 产品题材必须落到具体工作流和使用场景。`
+        : code === "product_walkthrough" && includesAny(seed, [/ai\s*产品|ai产品|agent|智能体|saas|工作流|自动化|cursor|claude|openai|gemini/])
+          ? "当前题材涉及 AI 产品、智能体或工作流，优先落到具体使用场景和流程变化。"
+        : code === "phenomenon_analysis" && viralBlueprint.code === "ai_product_disruption"
+          ? `爆文蓝图识别为「${viralBlueprint.label}」：AI 产品变化也需要解释流程、成本和组织后果。`
         : code === "product_walkthrough" && includesAny(seed, [/实测|体验|上手|用了|试了|开箱|测了/])
         ? "标题、正文或人类信号里已经有明显上手 / 实测 / 体验线索。"
         : code === "investigation" && includesAny(seed, [/调查|实验|我去|我买了|我试着|亲手|踩坑|复盘过程/])
@@ -510,11 +531,15 @@ export function resolveArticlePrototype(input: {
   humanSignals?: HumanSignalsLike;
 }) {
   const seed = `${input.title} ${input.markdownContent || ""} ${input.humanSignals?.firstHandObservation || ""} ${input.humanSignals?.realSceneOrDialogue || ""}`.toLowerCase();
-  if (buildArticleViralBlueprint({
+  const viralBlueprintCode = buildArticleViralBlueprint({
     articleTitle: input.title,
     markdownContent: input.markdownContent,
     humanSignals: input.humanSignals,
-  }).code === "ordinary_breakthrough") return "ordinary_breakthrough";
+  }).code;
+  if (viralBlueprintCode === "ordinary_breakthrough") return "ordinary_breakthrough";
+  if (viralBlueprintCode === "money_path") return "investigation";
+  if (viralBlueprintCode === "career_crossroads") return "phenomenon_analysis";
+  if (viralBlueprintCode === "ai_product_disruption") return "product_walkthrough";
   if (includesAny(seed, [/实测|体验|上手|用了|试了|开箱|测了/])) return "product_walkthrough";
   if (includesAny(seed, [/调查|实验|我去|我买了|我试着|亲手|踩坑|复盘过程/])) return "investigation";
   if (includesAny(seed, [/那天|有次|后来|当时|说实话|我自己|我那会|一开始|一句话|对话|经历|亲历|回头看/])) return "personal_narrative";
