@@ -331,7 +331,8 @@ export async function evaluatePublishGuard(input: {
     : getStringArray(localAiNoise.suggestions, 4);
   const aiNoiseHasRigidOutline = localAiNoise.outlineRigidityRisk === "high";
   const aiNoiseHasSummaryEnding = localAiNoise.summaryEndingRisk === "high";
-  const aiNoiseNeedsAttention = aiNoiseScore >= 70 || aiNoiseHasRigidOutline || aiNoiseHasSummaryEnding;
+  const aiNoiseHasDidacticTone = localAiNoise.didacticToneRisk === "high";
+  const aiNoiseNeedsAttention = aiNoiseScore >= 70 || aiNoiseHasRigidOutline || aiNoiseHasSummaryEnding || aiNoiseHasDidacticTone;
   const missingEvidence = getStringArray(factCheckArtifact?.payload?.missingEvidence, 6);
   const overallRisk = getString(factCheckArtifact?.payload?.overallRisk);
   const personaAlignment = getString(factCheckArtifact?.payload?.personaAlignment);
@@ -389,7 +390,7 @@ export async function evaluatePublishGuard(input: {
   });
   const rhythmConsistencyReady = rhythmConsistency.status === "aligned";
   const rhythmConsistencyNeedsAttention = Boolean(strategyCard?.archetype) && rhythmConsistency.status !== "aligned";
-  const proseQualityBlocksWechat = aiNoiseScore >= 70 || aiNoiseHasRigidOutline || aiNoiseHasSummaryEnding;
+  const proseQualityBlocksWechat = aiNoiseScore >= 70 || aiNoiseHasRigidOutline || aiNoiseHasSummaryEnding || aiNoiseHasDidacticTone;
   const hasCounterEvidence = evidenceStats.counterEvidenceCount > 0 || factCheckCounterEvidenceCount > 0;
   const researchHollowRiskItems = [
     !researchReady ? "研究简报尚未生成，当前还无法确认内容是不是只有表达没有研究。" : null,
@@ -935,6 +936,7 @@ export async function evaluatePublishGuard(input: {
             aiNoiseScore >= 70 ? "空话或模板痕迹偏重" : null,
             aiNoiseHasRigidOutline ? "段落推进过于工整，像按施工图展开" : null,
             aiNoiseHasSummaryEnding ? "结尾仍带明显总结腔" : null,
+            aiNoiseHasDidacticTone ? "说教姿态偏重，像在培训读者" : null,
           ].filter(Boolean).join("，")
         : `AI 噪声得分 ${aiNoiseScore}，当前风险可控。`,
     targetStageCode: "prosePolish",
@@ -953,6 +955,7 @@ export async function evaluatePublishGuard(input: {
             aiNoiseScore >= 70 ? `AI 噪声得分 ${aiNoiseScore}` : null,
             aiNoiseHasRigidOutline ? "段落推进过于工整" : null,
             aiNoiseHasSummaryEnding ? "结尾仍是总结腔" : null,
+            aiNoiseHasDidacticTone ? "说教姿态偏重，缺少读者代价和现场冲突" : null,
           ].filter(Boolean).join("，")
         : "公众号文稿质感底线已满足，未发现高风险机器化节奏。",
       targetStageCode: "prosePolish",
@@ -1193,9 +1196,9 @@ export async function evaluatePublishGuard(input: {
       detail:
         prosePolishArtifact?.status === "ready" && hasArtifactPayload(prosePolishArtifact)
           ? requiresWechatQualityFloor && proseQualityBlocksWechat
-            ? "公众号草稿箱发布前，需要先处理段落过工整、总结腔或高 AI 噪声。"
+            ? "公众号草稿箱发布前，需要先处理段落过工整、总结腔、说教姿态或高 AI 噪声。"
             : aiNoiseNeedsAttention || languageGuardHits.length > 0
-            ? "润色已完成，但仍建议处理 AI 噪声、结构过整齐或总结式收尾问题。"
+            ? "润色已完成，但仍建议处理 AI 噪声、结构过整齐、说教姿态或总结式收尾问题。"
             : "表达质量已基本收口。"
           : "可直接发布，但建议先做一次润色收口。",
     },

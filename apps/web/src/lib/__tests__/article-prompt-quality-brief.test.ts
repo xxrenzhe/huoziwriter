@@ -103,8 +103,10 @@ test("quality brief defaults to nonfiction and forbids unsupported named cases",
   const text = lines.join("\n");
 
   assert.match(text, /素材现实模式：nonfiction/);
-  assert.match(text, /fictionalMaterialPlan 必须为空数组/);
+  assert.match(text, /fictionalMaterialPlan 可以为空/);
+  assert.match(text, /作者视角推演、匿名复合观察或假设场景/);
   assert.match(text, /不得引入素材、来源正文、研究简报或事实锚点中不存在的命名平台/);
+  assert.match(text, /带边界声明的作者视角复合素材/);
 });
 
 test("quality brief front-loads viral narrative mechanics without permitting fake facts", () => {
@@ -117,10 +119,23 @@ test("quality brief front-loads viral narrative mechanics without permitting fak
   const text = lines.join("\n");
 
   assert.match(text, /爆款叙事前置/);
+  assert.match(text, /文章生长原则/);
+  assert.match(text, /organicGrowthKernel/);
+  assert.match(text, /规则、清单、禁词、边界只负责护栏/);
+  assert.match(text, /规则、清单、禁词、边界只负责护栏，不负责决定文章方向/);
   assert.match(text, /读者处境、真实锚点、事实和判断交替、情绪钩子和母题回收/);
+  assert.match(text, /反说教前置/);
+  assert.match(text, /读者损失、认知冲突、复盘现场或转发句/);
   assert.match(text, /输出爆款叙事计划/);
+  assert.match(text, /不得连续输出命令句和框架灌输/);
   assert.match(ARTICLE_VIRAL_NARRATIVE_SYSTEM_CONTRACT, /第一人称或近距离现场感/);
+  assert.match(ARTICLE_VIRAL_NARRATIVE_SYSTEM_CONTRACT, /不能是教程姿态/);
+  assert.match(ARTICLE_VIRAL_NARRATIVE_SYSTEM_CONTRACT, /读者正在付出的代价/);
   assert.match(ARTICLE_VIRAL_NARRATIVE_SYSTEM_CONTRACT, /复合、重构、假设、寓言或虚构口径/);
   assert.match(ARTICLE_ARTIFACT_QUALITY_SYSTEM_CONTRACT, /爆款叙事六件套必须前置/);
+  assert.match(ARTICLE_ARTIFACT_QUALITY_SYSTEM_CONTRACT, /深写作必须输出 organicGrowthKernel/);
+  assert.match(ARTICLE_ARTIFACT_QUALITY_SYSTEM_CONTRACT, /只作为护栏，不得替代文章的生长方向/);
+  assert.match(ARTICLE_ARTIFACT_QUALITY_SYSTEM_CONTRACT, /方法清单或作者向读者灌输建议/);
+  assert.match(ARTICLE_ARTIFACT_QUALITY_SYSTEM_CONTRACT, /作者视角的匿名复合观察/);
   assert.match(ARTICLE_ARTIFACT_QUALITY_SYSTEM_CONTRACT, /不得编造真实主体的未证实行为/);
 });

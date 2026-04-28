@@ -17,6 +17,9 @@ test("buildArticleArtifactPromptSystemSegments keeps prompt and shared quality c
   assert.equal(segments[1]?.cacheable, true);
   assert.match(segments[1]?.text || "", /高质量条件前置解决/);
   assert.match(segments[1]?.text || "", /爆款叙事六件套必须前置/);
+  assert.match(segments[1]?.text || "", /不能是教程姿态/);
+  assert.match(segments[1]?.text || "", /读者正在付出的代价/);
+  assert.match(segments[1]?.text || "", /作者视角的匿名复合观察/);
   assert.match(segments[1]?.text || "", /禁止伪造第一人称经历/);
 });
 

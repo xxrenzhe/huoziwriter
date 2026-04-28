@@ -155,7 +155,8 @@ function buildHardRulesLayer(input: WritingQualityInput) {
       - aiNoise.score * 0.7
       - languageGuardHitsCount * 12
       - (aiNoise.preannounceRisk === "high" ? 8 : aiNoise.preannounceRisk === "medium" ? 4 : 0)
-      - (aiNoise.summaryEndingRisk === "high" ? 8 : aiNoise.summaryEndingRisk === "medium" ? 4 : 0),
+      - (aiNoise.summaryEndingRisk === "high" ? 8 : aiNoise.summaryEndingRisk === "medium" ? 4 : 0)
+      - (aiNoise.didacticToneRisk === "high" ? 14 : aiNoise.didacticToneRisk === "medium" ? 7 : 0),
   );
   const issues = [
     languageGuardHitsCount > 0 ? `命中 ${languageGuardHitsCount} 条语言守卫规则。` : null,
@@ -163,6 +164,7 @@ function buildHardRulesLayer(input: WritingQualityInput) {
     aiNoise.matchedPreannouncePhrases.length > 0 ? `仍有预告式起手：${aiNoise.matchedPreannouncePhrases.join(" / ")}` : null,
     aiNoise.matchedSummaryEndingPhrases.length > 0 ? `仍有总结式收尾：${aiNoise.matchedSummaryEndingPhrases.join(" / ")}` : null,
     aiNoise.outlineRigidityRisk === "high" ? "结构工整感过强，已经接近模板稿。" : null,
+    aiNoise.didacticToneRisk === "high" ? "说教姿态过强，正文更像培训稿而不是爆款文章。" : null,
   ].filter(Boolean) as string[];
   const suggestions = [
     languageGuardHitsCount > 0 ? "先清掉语言守卫命中项，再谈节奏优化。" : null,

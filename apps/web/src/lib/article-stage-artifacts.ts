@@ -354,6 +354,51 @@ export function normalizeFictionalMaterialItems(value: unknown, fallback: unknow
     .slice(0, limit);
 }
 
+function buildFallbackAuthorPerspectiveMaterialItems(context: GenerationContext, sectionLabels: string[] = []) {
+  const title = String(context.article.title || "这篇文章").trim();
+  const firstSection = sectionLabels[0] || "开头";
+  const secondSection = sectionLabels[1] || "中段";
+  const thirdSection = sectionLabels[2] || "结尾";
+  return [
+    {
+      type: "author_inference",
+      label: "作者视角的复盘现场",
+      function: "把抽象判断落到读者熟悉的复盘处境，但不冒充真实经历。",
+      scene: `作者可以从一个匿名复盘场景切入：大家都在解释「${title}」的表面问题，却没人先问真正被忽略的变量是什么。`,
+      character: "作者旁白与匿名团队",
+      dialogue: "这不是某个真实会议原话，而是一句复合后的追问：我们是不是一直在修错地方？",
+      dataRange: "不使用精确数字",
+      plausibilityAnchor: "来自题目、研究简报和目标读者的典型工作处境。",
+      useInSection: firstSection,
+      boundaryNote: "作者视角推演素材，不对应真实人物、真实会议或真实聊天记录。",
+    },
+    {
+      type: "scenario_reconstruction",
+      label: "匿名化错配瞬间",
+      function: "给中段补一个可感知的错配画面，增强识别感。",
+      scene: "一个匿名化业务场景里，数据看起来都在动，但结果没有往下走；问题不是某个参数，而是人与场景没有对上。",
+      character: "匿名操盘者、内容负责人或产品负责人",
+      dialogue: "这句对话只能写成作者推演：看起来都对，为什么结果还是不对？",
+      dataRange: "只写相对变化，不写金额、比例或时间压缩",
+      plausibilityAnchor: "来自目标读者常见复盘语境和当前文章主判断。",
+      useInSection: secondSection,
+      boundaryNote: "匿名复合场景，用来表达作者判断，不作为事实案例或客户证言。",
+    },
+    {
+      type: "author_inference",
+      label: "可转发的作者判断",
+      function: "在收束段提供一句作者视角判断，替代教程式行动清单。",
+      scene: "作者把全文收在一个判断上：真正危险的不是一个动作做错，而是一直沿用一个已经解释不了结果的单位。",
+      character: "作者旁白",
+      dialogue: "不是教读者下一步怎么做，而是把误判代价说清楚。",
+      dataRange: "不使用数据",
+      plausibilityAnchor: "基于全文论证自然推出的作者判断。",
+      useInSection: thirdSection,
+      boundaryNote: "作者推演和表达素材，不冒充外部事实或真实采访。",
+    },
+  ];
+}
+
 function getMaterialRealityModeForContext(context: GenerationContext): ArticleMaterialRealityMode {
   return inferArticleMaterialRealityMode({
     articleTitle: context.article.title,
@@ -439,6 +484,68 @@ function buildFallbackFictionalMaterialItems(context: GenerationContext, section
 
 function getTrimmedString(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function buildOrganicGrowthKernel(
+  context: GenerationContext,
+  input: {
+    selectedTitle: string;
+    centralThesis: string;
+    writingState: ReturnType<typeof buildWritingStateKernel>;
+    viralNarrativePlan: Record<string, unknown>;
+    fictionalMaterialPlan: Array<Record<string, unknown>>;
+    researchInsights: string[];
+    preferredResearchSignals: ReturnType<typeof getPreferredResearchSignals>;
+  },
+) {
+  const humanSignal = [
+    context.humanSignals?.realSceneOrDialogue,
+    context.humanSignals?.firstHandObservation,
+    context.humanSignals?.feltMoment,
+    context.humanSignals?.whyThisHitMe,
+    context.humanSignals?.nonDelegableTruth,
+    context.humanSignals?.wantToComplain,
+  ].map((item) => String(item || "").trim()).find(Boolean);
+  const materialSpark = [
+    String(input.viralNarrativePlan.sceneEntry || "").trim(),
+    String(input.fictionalMaterialPlan[0]?.scene || "").trim(),
+    input.researchInsights[0],
+    getSourceFacts(context, 1)[0],
+  ].map((item) => String(item || "").trim()).find(Boolean);
+  const targetReader =
+    context.audienceSelection?.selectedReaderLabel
+    || input.preferredResearchSignals.targetReader
+    || "目标读者";
+  const readerConflict = [
+    humanSignal ? "读者已经能识别的现场：" + humanSignal : null,
+    input.preferredResearchSignals.coreAssertion
+      ? "读者卡住的不是表面问题，而是这条判断背后的错位：" + input.preferredResearchSignals.coreAssertion
+      : null,
+    "围绕「" + input.selectedTitle + "」写出 " + targetReader + " 正在承受的误判代价。",
+  ].filter(Boolean)[0] as string;
+  const authorLens =
+    context.persona?.summary
+      ? "作者以人设视角盯住这件事：" + context.persona.summary
+      : "作者不要站在高处给步骤，而要像刚复盘完一个错位现场一样，把真正刺眼的变量指出来。";
+
+  return {
+    startingState: [
+      "写作从「" + input.writingState.stateVariantLabel + "」进入",
+      input.writingState.stateVariantReason,
+      input.writingState.openingMove,
+    ].map((item) => String(item || "").trim()).filter(Boolean).join("；"),
+    readerConflict,
+    materialSpark: materialSpark || "从题目、策略判断和读者处境里挑出最能点燃全文的一粒素材，而不是先套结构。",
+    authorLens,
+    growthPath: [
+      "先让读者看见自己正在付出的代价或误判现场。",
+      "再让素材火花和核心判断互相咬合，形成一个能继续读下去的冲突。",
+      "中段用事实、匿名复合观察或作者推演一层层加压，不把段落写成操作步骤。",
+      "高潮处把最硬的判断说出来，让读者获得可转发的识别感。",
+      "结尾只收成判断、边界或余味，不把全文降级成行动清单。",
+    ],
+    guardrailRole: "标题一致性、事实边界、反说教、禁词和素材现实模式只做护栏，不做方向盘；正文方向由作者状态、读者冲突、素材火花和作者视角共同决定。",
+  };
 }
 
 function getPreferredResearchSignals(context: GenerationContext) {
@@ -1569,7 +1676,9 @@ function fallbackResearchBrief(
   const timelineCards = buildResearchTimelineCards(context, sourceCoverage);
   const comparisonCards = buildResearchComparisonCards(context, sourceCoverage);
   const intersectionInsights = buildResearchIntersectionInsights(context, timelineCards, comparisonCards);
-  const fictionalMaterialSeeds = materialRealityMode === "fiction" ? buildFallbackFictionalMaterialItems(context) : [];
+  const fictionalMaterialSeeds = materialRealityMode === "fiction"
+    ? buildFallbackFictionalMaterialItems(context)
+    : buildFallbackAuthorPerspectiveMaterialItems(context).slice(0, 2);
   const targetReader =
     context.audienceSelection?.selectedReaderLabel ||
     context.seriesInsight?.label ||
@@ -1786,7 +1895,10 @@ function fallbackOutlinePlanning(context: GenerationContext) {
         context,
         sections.map((section) => String(section.heading || "").trim()).filter(Boolean),
       )
-    : [];
+    : buildFallbackAuthorPerspectiveMaterialItems(
+        context,
+        sections.map((section) => String(section.heading || "").trim()).filter(Boolean),
+      ).slice(0, 3);
 
   return {
     summary: "建议采用“历史转折—横向差异—核心判断—读者动作”的递进结构，把研究卡真正压进大纲骨架里。",
@@ -2727,10 +2839,13 @@ async function fallbackDeepWriting(
         context,
         normalizedSectionBlueprint.map((section) => section.heading),
       )
-    : [];
+    : buildFallbackAuthorPerspectiveMaterialItems(
+        context,
+        normalizedSectionBlueprint.map((section) => section.heading),
+      );
   const sceneEntry = materialRealityMode === "fiction"
     ? fictionalMaterialPlan[0]?.scene || "先用一个近距离场景让读者进入主题冲突。"
-    : "先从来源事实或读者真实处境切入，不编造新的命名案例。";
+    : fictionalMaterialPlan[0]?.scene || "先从来源事实、读者真实处境或作者视角推演切入，不编造新的命名案例。";
   const viralNarrativePlan = {
     coreMotif: buildTopicAdaptiveViralMotif({
       title: selectedTitle,
@@ -2744,7 +2859,10 @@ async function fallbackDeepWriting(
           .map((item) => String(item.character || "").trim())
           .filter(Boolean)
           .slice(0, 4)
-      : [],
+      : fictionalMaterialPlan
+          .map((item) => String(item.character || "").trim())
+          .filter(Boolean)
+          .slice(0, 3),
     storyDataAlternation: materialRealityMode === "fiction"
       ? "每个场景后面接一个判断或区间数据；每个数据后面补一个人物处境或组织冲突，避免连续堆材料。"
       : "每个事实后面接一个判断或读者收益；每个判断后面回到来源事实、公开信号或行业泛例，避免编造新案例。",
@@ -2764,8 +2882,17 @@ async function fallbackDeepWriting(
     })),
     boundaryRule: materialRealityMode === "fiction"
       ? "真实锚点只写已知背景；复合人物、复合场景、匿名化对话和区间账本只作为创作化素材，不冒充真实采访或真实内部数据。"
-      : "非虚构模式只写来源正文、研究简报和事实素材已经给出的真实锚点；不得新增命名平台、品牌、页面、人物或客户案例。",
+      : "非虚构模式只把来源正文、研究简报和事实素材当事实锚点；作者视角复合素材只能写成推演、匿名场景或假设观察，不得新增命名平台、品牌、页面、人物或客户案例，也不得冒充真实经历。",
   };
+  const organicGrowthKernel = buildOrganicGrowthKernel(context, {
+    selectedTitle,
+    centralThesis,
+    writingState,
+    viralNarrativePlan,
+    fictionalMaterialPlan,
+    researchInsights,
+    preferredResearchSignals,
+  });
 
   return {
     summary: "正文建议按“" + selectedTitle + "”直接进入完整写作，当前采用「" + writingState.articlePrototypeLabel + " / " + writingState.stateVariantLabel + "」，先沿用已确认大纲和素材，不要离题扩写。" + (diversityReport.status === "needs_attention" ? " 同时启用去重护栏，避免最近几篇又写成同一个原型、开头、句法、收尾或状态。" : ""),
@@ -2835,6 +2962,7 @@ async function fallbackDeepWriting(
         context.persona?.summary ? "贴近人设表达：" + context.persona.summary : null,
       ].map((item) => String(item || "").trim()).filter(Boolean)),
     ).slice(0, 6),
+    organicGrowthKernel,
     viralNarrativePlan,
     fictionalMaterialPlan,
     mustUseFacts: getSourceFacts(context, 6),
@@ -2959,6 +3087,33 @@ function normalizeRecord(value: unknown) {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
 }
 
+function normalizeOrganicGrowthKernel(value: unknown, fallback: unknown) {
+  const payload = normalizeRecord(value);
+  const fallbackKernel = normalizeRecord(fallback) || {};
+  const getKernelString = (key: string, defaultValue: string) =>
+    String(payload?.[key] || fallbackKernel[key] || defaultValue).trim();
+  const payloadGrowthPath = getStringArray(payload?.growthPath, 6);
+  const fallbackGrowthPath = getStringArray(fallbackKernel.growthPath, 6);
+  const growthPath = payloadGrowthPath.length ? payloadGrowthPath : fallbackGrowthPath;
+
+  return {
+    startingState: getKernelString("startingState", "先确认作者进入正文时的状态，不从模板或规则起笔。"),
+    readerConflict: getKernelString("readerConflict", "先找到读者正在承受的误判、损失或复盘冲突。"),
+    materialSpark: getKernelString("materialSpark", "先挑出能点燃全文的一粒事实、场景、作者推演或读者处境。"),
+    authorLens: getKernelString("authorLens", "作者从自己真正盯住的问题进入，不站在高处训导读者。"),
+    growthPath: growthPath.length
+      ? growthPath
+      : [
+          "从读者代价或误判现场进入。",
+          "让素材火花和核心判断互相咬合。",
+          "用事实、匿名复合观察或作者推演逐层加压。",
+          "把最硬判断写成可转发识别感。",
+          "结尾收成判断、边界或余味。",
+        ],
+    guardrailRole: getKernelString("guardrailRole", "规则、禁词、事实边界和清单只做护栏，不做方向盘。"),
+  };
+}
+
 function normalizeResearchBriefPayload(value: unknown, fallback: Record<string, unknown>) {
   const payload = normalizeRecord(value);
   const sourceCoverage = normalizeRecord(payload?.sourceCoverage) || normalizeRecord(fallback.sourceCoverage) || {};
@@ -3022,9 +3177,7 @@ function normalizeResearchBriefPayload(value: unknown, fallback: Record<string, 
       uniqueStrings(payload?.forbiddenConclusions, 5).length
         ? uniqueStrings(payload?.forbiddenConclusions, 5)
         : uniqueStrings(fallback.forbiddenConclusions, 5),
-    fictionalMaterialSeeds: materialRealityMode === "fiction"
-      ? normalizeFictionalMaterialItems(payload?.fictionalMaterialSeeds, fallback.fictionalMaterialSeeds, 8)
-      : [],
+    fictionalMaterialSeeds: normalizeFictionalMaterialItems(payload?.fictionalMaterialSeeds, fallback.fictionalMaterialSeeds, materialRealityMode === "fiction" ? 8 : 3),
     sourceCoverage: {
       ...normalizedSourceCoverage,
       strongCategoryCount:
@@ -3306,9 +3459,7 @@ function normalizeOutlinePayload(value: unknown, fallback: Record<string, unknow
     materialBundle: getRecordArray(payload?.materialBundle).length
       ? getRecordArray(payload?.materialBundle)
       : getRecordArray(fallback.materialBundle),
-    fictionalScenePlan: materialRealityMode === "fiction"
-      ? normalizeFictionalMaterialItems(payload?.fictionalScenePlan, fallback.fictionalScenePlan, 6)
-      : [],
+    fictionalScenePlan: normalizeFictionalMaterialItems(payload?.fictionalScenePlan, fallback.fictionalScenePlan, materialRealityMode === "fiction" ? 6 : 3),
     researchBackbone,
     outlineSections: sections.length ? sections : fallbackSections,
     materialGapHints:
@@ -3569,10 +3720,9 @@ function normalizeDeepWritingPayload(value: unknown, fallback: Record<string, un
       uniqueStrings(payload?.voiceChecklist, 6).length
         ? uniqueStrings(payload?.voiceChecklist, 6)
         : uniqueStrings(fallback.voiceChecklist, 6),
+    organicGrowthKernel: normalizeOrganicGrowthKernel(payload?.organicGrowthKernel, fallback.organicGrowthKernel),
     viralNarrativePlan: viralNarrativePlan || null,
-    fictionalMaterialPlan: materialRealityMode === "fiction"
-      ? normalizeFictionalMaterialItems(payload?.fictionalMaterialPlan, fallback.fictionalMaterialPlan, 8)
-      : [],
+    fictionalMaterialPlan: normalizeFictionalMaterialItems(payload?.fictionalMaterialPlan, fallback.fictionalMaterialPlan, materialRealityMode === "fiction" ? 8 : 3),
     mustUseFacts:
       uniqueStrings(payload?.mustUseFacts, 6).length
         ? uniqueStrings(payload?.mustUseFacts, 6)
@@ -4313,8 +4463,8 @@ async function generateResearchBrief(
     "intersectionInsights 必须把纵向时间脉络和横向比较交叉起来，输出真正可写成判断的洞察。",
     "研究简报必须天然满足后续可写性门槛：timelineCards、comparisonCards、intersectionInsights 都至少 1 条；只要有任意来源或 IMA 命中，sourceCoverage.sufficiency 不能写 blocked，只能写 ready 或 limited 并列出缺口。",
     "每张 timelineCards、comparisonCards、intersectionInsights 都要补 1-3 条 sources，确保作者能回到原始线索继续核对。",
-    "素材现实模式为 nonfiction 时，fictionalMaterialSeeds 必须返回空数组；不得补素材里不存在的命名平台、品牌、页面、人物或客户案例。",
-    "只有素材现实模式为 fiction 时，fictionalMaterialSeeds 才返回 3-6 条拟真素材种子，并且 boundaryNote 必须说明虚构边界。",
+    "素材现实模式为 nonfiction 时，fictionalMaterialSeeds 可以返回 0-3 条作者视角推演素材，只能是 author_inference、匿名复合观察或假设场景；不得补素材里不存在的命名平台、品牌、页面、人物或客户案例，也不得冒充真实经历。",
+    "素材现实模式为 fiction 时，fictionalMaterialSeeds 才返回 3-6 条拟真素材种子，并且 boundaryNote 必须说明虚构边界。",
     "strategyWriteback 只给策略卡可直接吸收的字段，不要空话。",
     promptBlock("前置质量约束：", qualityBrief.join("\n")),
     promptLine("稿件标题：", context.article.title),
@@ -4748,7 +4898,7 @@ async function generateOutlinePlanning(
     "outlineSections.keyPoints 必须具体到观点或信息点，避免“展开分析”“补充背景”这类空话。",
     "outlineSections.evidenceHints 优先引用现有素材、背景卡和待补事实，不要虚构来源。",
     "outlineSections.materialRefs 必须尽量引用 materialBundle 中的 fragmentId；截图素材只能作为原图使用，不可改写成伪原文。",
-    "素材现实模式为 nonfiction 时，fictionalScenePlan 必须返回空数组；开头和章节只能使用来源事实、研究简报、事实素材或行业泛例，不得新增命名案例。",
+    "素材现实模式为 nonfiction 时，fictionalScenePlan 可以返回 0-3 条作者视角复合场景，只能服务开头识别感和段落呼吸；必须写清 boundaryNote，不能新增命名案例或伪造真实经历。",
     "只有素材现实模式为 fiction 时，fictionalScenePlan 才把拟真素材分配到章节：场景、人物、对话、区间数据、可信锚点和虚构边界都要写清。",
     "viewpointIntegration 必须逐条说明用户补充观点是被采纳、弱化、暂缓还是判定冲突。",
     "transition 必须说明如何从上一节自然推进到下一节。",
@@ -4901,10 +5051,14 @@ async function generateDeepWriting(
   });
   const userPrompt = [
     "请输出 JSON，不要解释，不要 markdown。",
-            '字段：{"summary":"字符串","selectedTitle":"字符串","centralThesis":"字符串","writingAngle":"字符串","openingStrategy":"字符串","targetEmotion":"字符串","endingStrategy":"字符串","openingPatternLabel":"字符串","syntaxPatternLabel":"字符串","endingPatternLabel":"字符串","diversitySummary":"字符串","diversityIssues":[""],"diversitySuggestions":[""],"articlePrototype":"字符串","articlePrototypeLabel":"字符串","articlePrototypeReason":"字符串","prototypeOptions":[{"code":"字符串","label":"字符串","suitableWhen":"字符串","triggerReason":"字符串","openingMove":"字符串","sectionRhythm":"字符串","evidenceMode":"字符串"}],"prototypeComparisons":[{"code":"字符串","label":"字符串","reason":"字符串","suitableWhen":"字符串","triggerReason":"字符串","openingMove":"字符串","sectionRhythm":"字符串","evidenceMode":"字符串","recommendedStateVariantLabel":"字符串","openingPatternLabel":"字符串","syntaxPatternLabel":"字符串","endingPatternLabel":"字符串","diversitySummary":"字符串","diversityIssues":[""],"diversitySuggestions":[""],"progressiveRevealLabel":"字符串","progressiveRevealReason":"字符串","isRecommended":true}],"stateVariantCode":"字符串","stateVariantLabel":"字符串","stateVariantReason":"字符串","researchFocus":"字符串","researchLens":"字符串","openingMove":"字符串","sectionRhythm":"字符串","evidenceMode":"字符串","progressiveRevealEnabled":true,"progressiveRevealLabel":"字符串","progressiveRevealReason":"字符串","climaxPlacement":"字符串","escalationRule":"字符串","progressiveRevealSteps":[{"label":"字符串","instruction":"字符串"}],"stateChecklist":[""],"stateOptions":[{"code":"字符串","label":"字符串","suitableWhen":"字符串","triggerReason":"字符串"}],"stateComparisons":[{"code":"字符串","label":"字符串","reason":"字符串","suitableWhen":"字符串","triggerReason":"字符串","openingMove":"字符串","openingPatternLabel":"字符串","syntaxPatternLabel":"字符串","endingPatternLabel":"字符串","diversitySummary":"字符串","diversityIssues":[""],"diversitySuggestions":[""],"progressiveRevealLabel":"字符串","progressiveRevealReason":"字符串","isRecommended":true}],"voiceChecklist":[""],"viralNarrativePlan":{"coreMotif":"字符串","sceneEntry":"字符串","realWorldAnchors":[""],"compositeVoices":[""],"storyDataAlternation":"字符串","emotionalHooks":[""],"motifCallbacks":[{"section":"字符串","callback":"字符串"}],"boundaryRule":"字符串"},"fictionalMaterialPlan":[{"type":"composite_scene|scenario_reconstruction|author_inference","label":"字符串","function":"字符串","scene":"字符串","character":"字符串","dialogue":"字符串","dataRange":"字符串","plausibilityAnchor":"字符串","useInSection":"字符串","boundaryNote":"字符串"}],"mustUseFacts":[""],"bannedWordWatchlist":[""],"sectionBlueprint":[{"heading":"字符串","goal":"字符串","paragraphMission":"字符串","evidenceHints":[""],"materialRefs":[1],"revealRole":"字符串","transition":"字符串"}],"historyReferencePlan":[{"title":"字符串","useWhen":"字符串","bridgeSentence":"字符串"}],"finalChecklist":[""]}',
+            '字段：{"summary":"字符串","selectedTitle":"字符串","centralThesis":"字符串","writingAngle":"字符串","openingStrategy":"字符串","targetEmotion":"字符串","endingStrategy":"字符串","openingPatternLabel":"字符串","syntaxPatternLabel":"字符串","endingPatternLabel":"字符串","diversitySummary":"字符串","diversityIssues":[""],"diversitySuggestions":[""],"articlePrototype":"字符串","articlePrototypeLabel":"字符串","articlePrototypeReason":"字符串","prototypeOptions":[{"code":"字符串","label":"字符串","suitableWhen":"字符串","triggerReason":"字符串","openingMove":"字符串","sectionRhythm":"字符串","evidenceMode":"字符串"}],"prototypeComparisons":[{"code":"字符串","label":"字符串","reason":"字符串","suitableWhen":"字符串","triggerReason":"字符串","openingMove":"字符串","sectionRhythm":"字符串","evidenceMode":"字符串","recommendedStateVariantLabel":"字符串","openingPatternLabel":"字符串","syntaxPatternLabel":"字符串","endingPatternLabel":"字符串","diversitySummary":"字符串","diversityIssues":[""],"diversitySuggestions":[""],"progressiveRevealLabel":"字符串","progressiveRevealReason":"字符串","isRecommended":true}],"stateVariantCode":"字符串","stateVariantLabel":"字符串","stateVariantReason":"字符串","researchFocus":"字符串","researchLens":"字符串","openingMove":"字符串","sectionRhythm":"字符串","evidenceMode":"字符串","progressiveRevealEnabled":true,"progressiveRevealLabel":"字符串","progressiveRevealReason":"字符串","climaxPlacement":"字符串","escalationRule":"字符串","progressiveRevealSteps":[{"label":"字符串","instruction":"字符串"}],"stateChecklist":[""],"stateOptions":[{"code":"字符串","label":"字符串","suitableWhen":"字符串","triggerReason":"字符串"}],"stateComparisons":[{"code":"字符串","label":"字符串","reason":"字符串","suitableWhen":"字符串","triggerReason":"字符串","openingMove":"字符串","openingPatternLabel":"字符串","syntaxPatternLabel":"字符串","endingPatternLabel":"字符串","diversitySummary":"字符串","diversityIssues":[""],"diversitySuggestions":[""],"progressiveRevealLabel":"字符串","progressiveRevealReason":"字符串","isRecommended":true}],"voiceChecklist":[""],"organicGrowthKernel":{"startingState":"字符串","readerConflict":"字符串","materialSpark":"字符串","authorLens":"字符串","growthPath":[""],"guardrailRole":"字符串"},"viralNarrativePlan":{"coreMotif":"字符串","sceneEntry":"字符串","realWorldAnchors":[""],"compositeVoices":[""],"storyDataAlternation":"字符串","emotionalHooks":[""],"motifCallbacks":[{"section":"字符串","callback":"字符串"}],"boundaryRule":"字符串"},"fictionalMaterialPlan":[{"type":"composite_scene|scenario_reconstruction|author_inference","label":"字符串","function":"字符串","scene":"字符串","character":"字符串","dialogue":"字符串","dataRange":"字符串","plausibilityAnchor":"字符串","useInSection":"字符串","boundaryNote":"字符串"}],"mustUseFacts":[""],"bannedWordWatchlist":[""],"sectionBlueprint":[{"heading":"字符串","goal":"字符串","paragraphMission":"字符串","evidenceHints":[""],"materialRefs":[1],"revealRole":"字符串","transition":"字符串"}],"historyReferencePlan":[{"title":"字符串","useWhen":"字符串","bridgeSentence":"字符串"}],"finalChecklist":[""]}',
     "你是在给正文生成器准备一张可执行的写作执行卡，不是在复述大纲。",
+    "organicGrowthKernel 必须先于 sectionBlueprint 形成，回答这篇文章从哪种作者状态、哪一处读者冲突、哪一粒素材火花、哪一个作者视角自然长出来。",
+    "organicGrowthKernel.growthPath 写自然生长路径，不写操作清单；guardrailRole 必须明确规则、禁词、事实边界和反说教要求只做护栏，不做方向盘。",
     "sectionBlueprint 返回 3-6 节，每节都要写清本节任务、段落推进方式和证据提示。",
     "voiceChecklist 返回 3-6 条，必须是可执行的表达约束，不要写空泛风格形容词。",
+    "voiceChecklist 必须包含反说教执行约束：正文不是培训稿、方法清单或作者训导；避免把“你应该/先/再/最后/不要/必须”写成主节奏。",
+    "sectionBlueprint 的每一节必须先从读者损失、矛盾、复盘现场或可转发冲突句进入，再承接判断；不得把章节目标写成连续教读者做事的步骤。",
     "articlePrototype / articlePrototypeLabel / articlePrototypeReason / stateVariantCode / stateVariantLabel / stateVariantReason 必须明确告诉后续正文生成器这次在用哪种原型和状态。",
     "prototypeOptions 返回 2-3 个候选原型，第一项放当前最推荐的；prototypeComparisons 返回 2-3 个原型预览卡，帮助用户比较这篇到底更适合哪种推进骨架。",
     "diversitySummary / diversityIssues / diversitySuggestions 要明确写清这次为了避免最近几篇撞车，执行卡主动换掉了哪些原型、开头、句法、结尾或状态套路。",
@@ -4914,10 +5068,11 @@ async function generateDeepWriting(
     "stateOptions 返回 2-3 个候选状态，第一项放当前最推荐的；stateChecklist 返回 3-5 条能直接执行的状态自检。",
     "researchFocus / researchLens 必须明确告诉后续正文生成器：这次最该写硬的研究判断是什么，以及应该优先用时间脉络、横向比较还是交汇洞察来组织文章。",
     "viralNarrativePlan 必须输出爆款叙事六件套：核心母题、现场入口、真实锚点、复合信源感、故事数据交替、情绪钩子和章节回收方式。",
+    "viralNarrativePlan 必须显式避开说教口吻：sceneEntry 要落到读者正在经历的代价或误判，emotionalHooks 要来自“原来我也这样亏过”的识别感，而不是作者居高临下给方法。",
     "viralNarrativePlan 必须天然过门槛：emotionalHooks 至少 2 个，motifCallbacks 至少 2 个且优先覆盖每个 sectionBlueprint 章节，coreMotif 必须贴合当前主题，不能使用通用占位母题。",
     "viralNarrativePlan.boundaryRule 必须说明真实锚点和素材边界；非虚构模式不能把复合素材包装成真实采访、真实内部数据或真实爆料，也不能新增命名品牌/页面案例。",
-    "素材现实模式为 nonfiction 时，fictionalMaterialPlan 必须返回空数组；如果需要例子，只能使用来源正文、研究简报、事实素材已有案例，或写成不含具体品牌名的行业泛例。",
-    "只有素材现实模式为 fiction 时，fictionalMaterialPlan 才返回 4-8 条可直接入稿的拟真素材，每条至少具备 4 个具体字段，整体必须覆盖人物、场景、对话、区间数据、可信锚点和虚构边界。",
+    "素材现实模式为 nonfiction 时，fictionalMaterialPlan 可以返回 0-3 条作者视角推演素材；只能写匿名复合观察、假设场景或作者判断句，必须带 boundaryNote，不能新增命名品牌/平台/页面/人物/客户案例，不能冒充真实采访、真实聊天或作者亲历。",
+    "素材现实模式为 fiction 时，fictionalMaterialPlan 才返回 4-8 条可直接入稿的完整拟真素材，每条至少具备 4 个具体字段，整体必须覆盖人物、场景、对话、区间数据、可信锚点和虚构边界。",
     "mustUseFacts 只保留真正值得写进正文的真实事实锚点；虚构素材不得混进事实锚点。",
     "historyReferencePlan 最多 2 条，没有可用旧文时返回空数组。",
     "finalChecklist 必须覆盖标题一致性、事实密度、语言守卫规避、结尾动作或判断收束。",
@@ -5794,6 +5949,35 @@ export function buildStageArtifactApplyCommand(
           bridgePart: String(item.bridgeSentence || "").trim() ? "；桥接句：" + String(item.bridgeSentence).trim() : "",
         }),
       );
+    const organicGrowthKernel = normalizeRecord(payload.organicGrowthKernel);
+    const growthLines = organicGrowthKernel
+      ? [
+          promptBlock(
+            "文章生长内核：",
+            [
+              String(organicGrowthKernel.startingState || "").trim()
+                ? promptLine("作者状态：", String(organicGrowthKernel.startingState).trim())
+                : null,
+              String(organicGrowthKernel.readerConflict || "").trim()
+                ? promptLine("读者冲突：", String(organicGrowthKernel.readerConflict).trim())
+                : null,
+              String(organicGrowthKernel.materialSpark || "").trim()
+                ? promptLine("素材火花：", String(organicGrowthKernel.materialSpark).trim())
+                : null,
+              String(organicGrowthKernel.authorLens || "").trim()
+                ? promptLine("作者视角：", String(organicGrowthKernel.authorLens).trim())
+                : null,
+              getStringArray(organicGrowthKernel.growthPath, 6).length
+                ? promptLine("自然展开：", getStringArray(organicGrowthKernel.growthPath, 6).join("；"))
+                : null,
+              String(organicGrowthKernel.guardrailRole || "").trim()
+                ? promptLine("规则身份：", String(organicGrowthKernel.guardrailRole).trim())
+                : null,
+            ].filter(Boolean).join("\n"),
+          ),
+          "正文优先从上面的作者状态、读者冲突、素材火花和作者视角自然长出来；后面的结构、事实边界、表达约束和禁词只作为护栏。",
+        ]
+      : [];
     const coreLines = [
       String(payload.selectedTitle || "").trim() ? promptLine("采用标题：", String(payload.selectedTitle).trim()) : null,
       String(payload.centralThesis || "").trim() ? promptLine("核心观点：", String(payload.centralThesis).trim()) : null,
@@ -5826,8 +6010,9 @@ export function buildStageArtifactApplyCommand(
       historyReferencePlan.length ? promptLine("历史文章自然引用：", historyReferencePlan.join(" | ")) : null,
     ];
     const constraintLines = [
+      "反说教写作姿态：正文不是教程、培训稿或方法清单；不要连续使用命令句、清单化训导和框架灌输。把建议改写成读者已经遭遇的代价、误判路径、复盘冲突或可转发判断句。",
       materialRealityMode === "nonfiction"
-        ? "非虚构案例边界：不得新增素材、来源正文、研究简报或事实锚点中不存在的命名平台、品牌、产品、人物或页面案例；需要举例只能写来源已有案例、行业泛例或匿名化抽象例。"
+        ? "非虚构案例边界：不得新增素材、来源正文、研究简报或事实锚点中不存在的命名平台、品牌、产品、人物或页面案例；可以使用 fictionalMaterialPlan 中的作者视角推演素材，但只能写成匿名复合观察、假设场景或作者判断句，必须保留边界口径，不冒充真实经历。"
         : "虚构素材边界：可以使用 fictionalMaterialPlan，但必须保持复合、重构或虚构口径，不冒充真实采访、真实内部数据或真实爆料。",
       String(payload.diversitySummary || "").trim() ? promptLine("去重约束：", String(payload.diversitySummary).trim()) : null,
       getStringArray(payload.diversitySuggestions, 4).length ? promptLine("去重动作：", getStringArray(payload.diversitySuggestions, 4).join("；")) : null,
@@ -5885,11 +6070,11 @@ export function buildStageArtifactApplyCommand(
             ].filter(Boolean).join("\n"),
           )
         : null,
-      materialRealityMode === "fiction" && getRecordArray(payload.fictionalMaterialPlan).length
+      getRecordArray(payload.fictionalMaterialPlan).length
         ? promptLine(
-            "拟真虚构素材包：",
+            materialRealityMode === "fiction" ? "拟真虚构素材包：" : "作者视角推演素材：",
             getRecordArray(payload.fictionalMaterialPlan)
-              .slice(0, 8)
+              .slice(0, materialRealityMode === "fiction" ? 8 : 3)
               .map((item) =>
                 [
                   String(item.useInSection || item.label || "").trim(),
@@ -5910,10 +6095,10 @@ export function buildStageArtifactApplyCommand(
     ];
     const orderedLines =
       templateMode === "structure_first"
-        ? [templateIntro, ...structureLines, ...coreLines, ...constraintLines]
+        ? [templateIntro, ...growthLines, ...structureLines, ...coreLines, ...constraintLines]
         : templateMode === "constraints_first"
-          ? [templateIntro, ...constraintLines, ...coreLines, ...structureLines]
-          : [templateIntro, ...coreLines, ...structureLines, ...constraintLines];
+          ? [templateIntro, ...growthLines, ...constraintLines, ...coreLines, ...structureLines]
+          : [templateIntro, ...growthLines, ...coreLines, ...structureLines, ...constraintLines];
     return orderedLines.filter(Boolean).join("\n");
   }
 

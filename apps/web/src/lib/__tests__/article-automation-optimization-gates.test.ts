@@ -456,13 +456,26 @@ test("getArticleViralReadinessGateIssues accepts nonfiction writing card without
   };
 
   assert.deepEqual(getArticleViralReadinessGateIssues(base), []);
+  assert.deepEqual(getArticleViralReadinessGateIssues({
+    ...base,
+    deepWriting: {
+      ...base.deepWriting,
+      fictionalMaterialPlan: [{
+        type: "author_inference",
+        scene: "作者可以从一个匿名复盘会切入，写团队表面都在查参数，其实忽略了搜索意图。",
+        character: "作者旁白与匿名团队",
+        dialogue: "这不是某个真实会议原话，而是一句复合后的追问。",
+        boundaryNote: "作者视角推演素材，不对应真实会议或实际对话。",
+      }],
+    },
+  }), []);
   assert(getArticleViralReadinessGateIssues({
     ...base,
     deepWriting: {
       ...base.deepWriting,
       fictionalMaterialPlan: [{ scene: "知乎登录页案例" }],
     },
-  }).some((item) => item.code === "readiness_nonfiction_fictional_material"));
+  }).some((item) => item.code === "readiness_nonfiction_author_perspective_material_boundary"));
 });
 
 test("getArticleViralReadinessGateIssues blocks fragmented patch-style prerequisites", () => {

@@ -208,6 +208,41 @@ export function getFictionalMaterialPlanGateIssues(outputJson: Record<string, un
   return issues;
 }
 
+function getNonfictionAuthorPerspectiveMaterialGateIssues(outputJson: Record<string, unknown>) {
+  const issues: OptimizationGateIssue[] = [];
+  const materials = getRecordArray(outputJson.fictionalMaterialPlan);
+  const allowedTypes = new Set(["author_inference", "composite_scene", "scenario_reconstruction"]);
+  const boundaryPattern = /作者视角|推演|假设|匿名|复合|不对应|不代表|不冒充|非真实/i;
+  const namedCaseRiskPattern = /知乎|登录页|真实采访|真实聊天|真实客户|内部数据|爆料|某某公司|某公司|客户案例/i;
+  const invalidItems = materials.filter((item) => {
+    const type = getString(item.type) || "author_inference";
+    const boundaryNote = getString(item.boundaryNote);
+    const text = [
+      getString(item.label),
+      getString(item.scene),
+      getString(item.character),
+      getString(item.dialogue),
+      getString(item.plausibilityAnchor),
+      boundaryNote,
+    ].join(" ");
+    return (
+      !allowedTypes.has(type)
+      || !getString(item.scene)
+      || !boundaryPattern.test(boundaryNote)
+      || namedCaseRiskPattern.test(text)
+    );
+  });
+
+  if (invalidItems.length > 0) {
+    issues.push({
+      code: "author_perspective_material_boundary",
+      detail: "非虚构文章只能携带作者视角推演、匿名复合观察或假设场景；必须写清虚构边界，且不得新增命名案例、真实采访、真实聊天或客户案例。",
+    });
+  }
+
+  return issues;
+}
+
 export function getViralNarrativePlanGateIssues(outputJson: Record<string, unknown>) {
   const issues: OptimizationGateIssue[] = [];
   const plan = getRecord(outputJson.viralNarrativePlan);
@@ -308,12 +343,7 @@ export function getArticleViralReadinessGateIssues(input: ArticleViralReadinessI
   }
   issues.push(...prefixGateIssues("readiness_viral", getViralNarrativePlanGateIssues(deepWriting)));
   if (materialRealityMode === "nonfiction") {
-    if (getRecordArray(deepWriting.fictionalMaterialPlan).length > 0) {
-      issues.push({
-        code: "readiness_nonfiction_fictional_material",
-        detail: "非虚构文章不能携带拟真虚构素材包；命名案例必须来自来源正文、研究简报或事实素材。",
-      });
-    }
+    issues.push(...prefixGateIssues("readiness_nonfiction", getNonfictionAuthorPerspectiveMaterialGateIssues(deepWriting)));
   } else {
     issues.push(...prefixGateIssues("readiness_fictional", getFictionalMaterialPlanGateIssues(deepWriting)));
   }
