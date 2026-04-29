@@ -3034,6 +3034,10 @@ async function fallbackDeepWriting(
     articlePrototypeLabel: writingState.articlePrototypeLabel,
     articlePrototypeReason: writingState.articlePrototypeReason,
     prototypeHistorySignal: buildDeepWritingOutcomeSignalPayload(resolvedState.selectedPrototypeOutcomeSignal),
+    creativeLensCode: writingState.creativeLensCode,
+    creativeLensLabel: writingState.creativeLensLabel,
+    creativeLensReason: writingState.creativeLensReason,
+    creativeLensInstruction: writingState.creativeLensInstruction,
     stateVariantCode: writingState.stateVariantCode,
     stateVariantLabel: writingState.stateVariantLabel,
     stateVariantReason: writingState.stateVariantReason,
@@ -3071,6 +3075,15 @@ async function fallbackDeepWriting(
       label: item.label,
       suitableWhen: item.suitableWhen,
       triggerReason: item.triggerReason,
+    })),
+    creativeLensOptions: writingState.creativeLensOptions.map((item) => ({
+      code: item.code,
+      label: item.label,
+      suitableWhen: item.suitableWhen,
+      triggerReason: item.triggerReason,
+      openingMove: item.openingMove,
+      sectionRhythm: item.sectionRhythm,
+      evidenceMode: item.evidenceMode,
     })),
     stateComparisons: resolvedState.stateComparisons,
     voiceChecklist: Array.from(
@@ -3827,6 +3840,7 @@ function normalizeDeepWritingPayload(value: unknown, fallback: Record<string, un
     : [];
   const fallbackStateOptions = getRecordArray(fallback.stateOptions);
   const fallbackPrototypeOptions = getRecordArray(fallback.prototypeOptions);
+  const fallbackCreativeLensOptions = getRecordArray(fallback.creativeLensOptions);
   const fallbackPrototypeComparisonMap = new Map(
     getRecordArray(fallback.prototypeComparisons).map((item) => [String(item.code || "").trim(), item] as const),
   );
@@ -3861,6 +3875,22 @@ function normalizeDeepWritingPayload(value: unknown, fallback: Record<string, un
         }))
         .filter((item) => item.label)
         .slice(0, 3)
+    : [];
+  const creativeLensOptions = Array.isArray(payload?.creativeLensOptions)
+    ? payload.creativeLensOptions
+        .map((item) => normalizeRecord(item))
+        .filter(Boolean)
+        .map((item) => ({
+          code: String(item?.code || "").trim(),
+          label: String(item?.label || "").trim(),
+          suitableWhen: String(item?.suitableWhen || "").trim(),
+          triggerReason: String(item?.triggerReason || "").trim(),
+          openingMove: String(item?.openingMove || "").trim(),
+          sectionRhythm: String(item?.sectionRhythm || "").trim(),
+          evidenceMode: String(item?.evidenceMode || "").trim(),
+        }))
+        .filter((item) => item.code && item.label)
+        .slice(0, 4)
     : [];
   const fallbackStateComparisons = getRecordArray(fallback.stateComparisons);
   const fallbackPrototypeComparisons = getRecordArray(fallback.prototypeComparisons);
@@ -4013,6 +4043,13 @@ function normalizeDeepWritingPayload(value: unknown, fallback: Record<string, un
         : String(payload?.articlePrototypeReason || "").trim(),
     ].filter(Boolean).join(" "),
     prototypeHistorySignal: normalizeRecord(payload?.prototypeHistorySignal) || normalizeRecord(fallback.prototypeHistorySignal) || null,
+    creativeLensCode: String(payload?.creativeLensCode || fallback.creativeLensCode || "").trim(),
+    creativeLensLabel: String(payload?.creativeLensLabel || fallback.creativeLensLabel || "").trim(),
+    creativeLensReason: [
+      String(payload?.creativeLensReason || "").trim(),
+      String(fallback.creativeLensReason || "").trim(),
+    ].filter(Boolean).join(" "),
+    creativeLensInstruction: String(payload?.creativeLensInstruction || fallback.creativeLensInstruction || "").trim(),
     stateVariantCode: String(payload?.stateVariantCode || fallback.stateVariantCode || "").trim(),
     stateVariantLabel: String(payload?.stateVariantLabel || fallback.stateVariantLabel || "").trim(),
     stateVariantReason: [
@@ -4047,6 +4084,7 @@ function normalizeDeepWritingPayload(value: unknown, fallback: Record<string, un
     prototypeOptions: prototypeOptions.length ? prototypeOptions : fallbackPrototypeOptions,
     prototypeComparisons: prototypeComparisons.length ? prototypeComparisons : fallbackPrototypeComparisons,
     stateOptions: stateOptions.length ? stateOptions : fallbackStateOptions,
+    creativeLensOptions: creativeLensOptions.length ? creativeLensOptions : fallbackCreativeLensOptions,
     stateComparisons: stateComparisons.length ? stateComparisons : fallbackStateComparisons,
     voiceChecklist:
       uniqueStrings(payload?.voiceChecklist, 6).length
