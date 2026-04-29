@@ -8,8 +8,10 @@ import {
   buildResearchSearchPlans,
   detectVerticalTopicCategory,
   filterReachableCuratedResearchPlans,
+  getResearchSupplementIntensity,
   scoreImaResult,
   scoreResultForCategory,
+  selectResearchCandidateUrls,
 } from "../article-research-supplement";
 
 test("buildResearchSearchPlans expands category-specific research queries", () => {
@@ -93,6 +95,15 @@ test("detectVerticalTopicCategory identifies business-oriented verticals instead
   assert.equal(detectVerticalTopicCategory(["联盟营销", "佣金", "SEO 变现"]), "affiliate_marketing");
   assert.equal(detectVerticalTopicCategory(["AI产品", "Agent 产品化", "Product Hunt"]), "ai_products");
   assert.equal(detectVerticalTopicCategory(["副业赚钱", "第二收入", "个人品牌变现"]), "side_hustles");
+  assert.equal(detectVerticalTopicCategory(["商业案例拆解", "创始人", "融资与营收"]), "business_case");
+  assert.equal(detectVerticalTopicCategory(["工具评测", "值不值得", "效率工具"]), "tool_evaluation");
+  assert.equal(detectVerticalTopicCategory(["实操复盘", "踩坑记录", "亲测流程"]), "operator_log");
+  assert.equal(detectVerticalTopicCategory(["SaaS", "ARR", "留存和续费"]), "saas_growth");
+  assert.equal(detectVerticalTopicCategory(["GitHub项目", "开源工具", "仓库 Star"]), "github_tools");
+  assert.equal(detectVerticalTopicCategory(["解决方案", "工作流", "自动化方案"]), "solution_playbook");
+  assert.equal(detectVerticalTopicCategory(["MCP", "Agent 进生产", "开发者工作流"]), "github_tools");
+  assert.equal(detectVerticalTopicCategory(["体验完三个模型", "值不值得换", "上手对比"]), "tool_evaluation");
+  assert.equal(detectVerticalTopicCategory(["自动化闭环", "接入方案", "生产环境落地"]), "solution_playbook");
 });
 
 test("buildCuratedResearchPlans uses overseas-income source pack for赚美金 topics", () => {
@@ -137,6 +148,27 @@ test("filterReachableCuratedResearchPlans keeps only sources that current fetche
   }
 });
 
+test("selectResearchCandidateUrls keeps seed urls and category diversity within budget", () => {
+  const urls = selectResearchCandidateUrls({
+    seedUrls: ["https://source.example/original"],
+    curatedPlans: [
+      { category: "official", label: "official", url: "https://official.example/doc" },
+      { category: "industry", label: "industry", url: "https://industry.example/report" },
+      { category: "comparison", label: "comparison", url: "https://comparison.example/case" },
+      { category: "userVoice", label: "voice", url: "https://voice.example/thread" },
+    ],
+    discoveredUrls: ["https://search.example/a", "https://search.example/b"],
+    limit: 4,
+  });
+
+  assert.deepEqual(urls, [
+    "https://source.example/original",
+    "https://official.example/doc",
+    "https://industry.example/report",
+    "https://comparison.example/case",
+  ]);
+});
+
 test("buildResearchSearchPlans uses affiliate-specific domains for affiliate marketing topics", () => {
   const plans = buildResearchSearchPlans({
     articleTitle: "联盟营销怎么找到稳定佣金渠道",
@@ -152,6 +184,56 @@ test("buildResearchSearchPlans uses affiliate-specific domains for affiliate mar
   const comparisonPlan = plans.find((item) => item.category === "comparison");
   assert.ok((officialPlan?.preferredDomains || []).some((item) => /amazon|ahrefs|backlinko|authorityhacker/i.test(item)));
   assert.ok((comparisonPlan?.preferredDomains || []).some((item) => /amazon|ahrefs|backlinko|authorityhacker/i.test(item)));
+});
+
+test("buildCuratedResearchPlans uses github-tool source pack for open-source tool topics", () => {
+  const plans = buildCuratedResearchPlans({
+    articleTitle: "GitHub 上哪些开源工具真的值得装进团队工作流",
+    knowledgeCards: [],
+    outlineNodes: [],
+    searchHints: {
+      topicTheme: "GitHub 项目与开发工具",
+      mustCoverAngles: ["release 记录", "issue 反馈", "替代关系"],
+    },
+  });
+
+  assert.ok(plans.some((item) => /github|libhunt|stackshare/i.test(item.url)));
+});
+
+test("getResearchSupplementIntensity raises budgets for sparse commercial tracks", () => {
+  const sparse = getResearchSupplementIntensity({
+    articleTitle: "副业赚钱这件事，第一笔钱到底从哪里来",
+    searchHints: {
+      topicTheme: "副业与个人变现",
+      mustCoverAngles: ["钱从哪里来", "为什么现在", "谁不适合做"],
+    },
+  });
+  const standard = getResearchSupplementIntensity({
+    articleTitle: "AI 产品正在重排内容团队工作流",
+  });
+
+  assert.equal(sparse.sparseTrack, true);
+  assert.equal(sparse.imaLimit > standard.imaLimit, true);
+  assert.equal(sparse.searchLimit > standard.searchLimit, true);
+  assert.equal(sparse.candidateUrlLimit > standard.candidateUrlLimit, true);
+  assert.ok(sparse.requiredAngles.includes("钱从哪里来"));
+});
+
+test("buildResearchSearchPlans uses SaaS-growth domains for retention and pricing topics", () => {
+  const plans = buildResearchSearchPlans({
+    articleTitle: "SaaS 续费为什么比拉新更难",
+    knowledgeCards: [],
+    outlineNodes: [],
+    searchHints: {
+      topicTheme: "ARR、留存与定价策略",
+      mustCoverAngles: ["续费", "获客成本", "定价变化"],
+    },
+  });
+
+  const officialPlan = plans.find((item) => item.category === "official");
+  const industryPlan = plans.find((item) => item.category === "industry");
+  assert.ok((officialPlan?.preferredDomains || []).some((item) => /stripe|intercom|hubspot|chartmogul/i.test(item)));
+  assert.ok((industryPlan?.preferredDomains || []).some((item) => /saastr|openviewpartners|forentrepreneurs|profitwell/i.test(item)));
 });
 
 test("scoreImaResult prefers substantive case-like materials over generic landing-page hits", () => {

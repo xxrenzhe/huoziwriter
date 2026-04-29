@@ -123,6 +123,7 @@ export async function POST(_: Request, { params }: { params: { id: string } }) {
       humanSignals: writingContext.humanSignals,
       outlineNodes: writingContext.outlineNodes,
       knowledgeCards: writingContext.knowledgeCards,
+      authorOutcomeFeedbackLedger: writingContext.authorOutcomeFeedbackLedger,
       imageFragments: writingContext.imageFragments
         .filter((item): item is typeof item & { screenshotPath: string } => Boolean(item.screenshotPath))
         .map((item) => ({
@@ -180,6 +181,8 @@ export async function POST(_: Request, { params }: { params: { id: string } }) {
       markdownContent: saved?.markdown_content,
       htmlContent: saved?.html_content,
       status: saved?.status,
+      personaAudit: generated.personaAudit ?? null,
+      informationGainAudit: generated.informationGainAudit ?? null,
     });
   } catch (error) {
     return fail(error instanceof Error ? error.message : "生成失败", 400);

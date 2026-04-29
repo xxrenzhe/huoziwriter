@@ -79,7 +79,7 @@ function looksLikeUserVoice(text: string) {
 }
 
 function looksLikeContradiction(text: string) {
-  return /(反例|反证|另一面|但也|但是|不过|争议|质疑|有人认为|也有人|相反|然而|instead|however|criticism)/i.test(text);
+  return /(反例|反证|另一面|但也|但是|不过|争议|质疑|有人认为|也有人|相反|然而|缺少|不足|不能|未形成|待验证|弱线索|风险|噪音|低意图|instead|however|criticism)/i.test(text);
 }
 
 function looksLikeCompetitor(text: string) {
@@ -244,6 +244,31 @@ function normalizeEvidenceSourceType(value: unknown) {
   return getString(value).toLowerCase().replace(/[\s-]+/g, "_");
 }
 
+function normalizeEvidenceSourceHost(value: unknown) {
+  const raw = getString(value);
+  if (!raw) {
+    return "";
+  }
+  try {
+    return new URL(raw).hostname.replace(/^www\./i, "").toLowerCase();
+  } catch {
+    return "";
+  }
+}
+
+function getVerifiableSourceTypeKey(item: Partial<ArticleEvidenceItem>) {
+  const sourceType = normalizeEvidenceSourceType(item.sourceType) || "url";
+  const host = normalizeEvidenceSourceHost(item.sourceUrl);
+  if (host && (sourceType === "url" || sourceType === "article" || sourceType === "news" || sourceType === "blog")) {
+    return `${sourceType}:${host}`;
+  }
+  const researchTag = normalizeEvidenceResearchTag(item.researchTag);
+  if (sourceType === "manual" && researchTag) {
+    return `${sourceType}:${researchTag}`;
+  }
+  return sourceType;
+}
+
 function isVerifiableEvidenceItem(item: Partial<ArticleEvidenceItem>) {
   if (getString(item.sourceUrl) || getString(item.screenshotPath) || getString(item.usageMode) === "image") {
     return true;
@@ -256,12 +281,13 @@ export function getArticleEvidenceStats(items: Array<Partial<ArticleEvidenceItem
   const normalizedItems = (items ?? []).filter((item) => getString(item.excerpt) || getString(item.title));
   const uniqueSourceTypes = new Set(normalizedItems.map((item) => getString(item.sourceType) || "manual"));
   const verifiableItems = normalizedItems.filter(isVerifiableEvidenceItem);
-  const verifiableSourceTypes = new Set(verifiableItems.map((item) => getString(item.sourceType) || "url"));
+  const verifiableSourceTypes = new Set(verifiableItems.map(getVerifiableSourceTypeKey));
   const hookTagCoverage = Array.from(new Set(
     normalizedItems.flatMap((item) => {
-      return Array.isArray(item.hookTags)
+      const explicitTags = Array.isArray(item.hookTags)
         ? item.hookTags.map((tag) => normalizeEvidenceHookTag(tag)).filter(Boolean) as EvidenceHookTag[]
         : [];
+      return explicitTags.length > 0 ? explicitTags : inferEvidenceHookTags(item);
     }),
   ));
   const externalEvidenceCount = normalizedItems.filter((item) => getString(item.sourceUrl)).length;

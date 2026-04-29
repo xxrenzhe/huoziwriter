@@ -4,12 +4,35 @@ import test from "node:test";
 import {
   getArticleViralReadinessGateIssues,
   getFictionalMaterialPlanGateIssues,
+  getGeneratedArticleViralQualityGateIssues,
   getOpeningOptimizationGateIssues,
   getTitleOptimizationGateIssues,
+  getViralGenomePackGateIssues,
   getViralNarrativePlanGateIssues,
 } from "../article-automation-optimization-gates";
+import { buildArticleViralGenomePack } from "../article-viral-genome";
 import { buildFallbackOpeningOptions, ensureSingleRecommendedOpeningOption } from "../opening-patterns";
 import { ensureSingleRecommendedTitleOption } from "../title-patterns";
+
+function buildBusinessResearchFields(pack: ReturnType<typeof buildArticleViralGenomePack>) {
+  return {
+    businessQuestions: pack.businessQuestions,
+    businessQuestionAnswers: pack.businessQuestions.map((question) => ({
+      question,
+      answer: `${question} 已用钱流、why now、适用边界和证据锚点回答。`,
+      evidenceNeed: "案例/数字/原话/工具平台证据",
+      status: "answered",
+    })),
+    sparseTrackResearchPlan: {
+      sparseTrack: Boolean(pack.sampleSourceProfile.sparseTrack),
+      sourceIntensity: pack.sampleSourceProfile.sparseTrack ? "elevated" : "standard",
+      requiredAngles: pack.sampleSourceProfile.sparseTrack
+        ? ["钱从哪里来", "为什么现在", "谁不适合做"]
+        : ["钱流/成本", "why now", "适用边界"],
+      note: pack.sparseTrackAlert || pack.sampleSourceProfile.coverageNote,
+    },
+  };
+}
 
 test("getTitleOptimizationGateIssues accepts strong recommended title", () => {
   const issues = getTitleOptimizationGateIssues({
@@ -90,6 +113,25 @@ test("getTitleOptimizationGateIssues rejects weak title pack", () => {
   assert.match(issues[3]?.detail ?? "", /打开率分过低/);
 });
 
+test("getTitleOptimizationGateIssues rejects mechanically spliced recommended title", () => {
+  const badTitle = "搜索意图决定流量价值：关键词只是表面，需求阶段才是转化的…：真正拖住结果的，不是表面这一步";
+  const issues = getTitleOptimizationGateIssues({
+    recommendedTitle: badTitle,
+    recommendedTitleOpenRateScore: 46,
+    titleOptions: Array.from({ length: 6 }, (_, index) => ({
+      title: index === 0 ? badTitle : `搜索意图决定流量价值，为什么不能只看关键词 ${index}`,
+      openRateScore: index === 0 ? 46 : 40,
+      elementsHit: { specific: true, curiosityGap: true, readerView: false },
+      forbiddenHits: [],
+      isRecommended: index === 0,
+    })),
+    forbiddenHits: [],
+  });
+
+  assert.equal(issues.length, 1);
+  assert.match(issues[0]?.detail ?? "", /机械拼接|截断标题拼接/);
+});
+
 test("getOpeningOptimizationGateIssues accepts strong recommended opening", () => {
   const issues = getOpeningOptimizationGateIssues({
     recommendedOpening: "很多团队以为 AI 写作提效，卡点在 Prompt 不够细。真正把产线拖慢的，往往是研究补证、结构兑现和发布前核查这三层没被提前编排。",
@@ -140,6 +182,79 @@ test("getOpeningOptimizationGateIssues accepts strong recommended opening", () =
   assert.deepEqual(issues, []);
 });
 
+test("getOpeningOptimizationGateIssues rejects model-pass opening when local diagnosis finds D2", () => {
+  const weakOpening = "复盘会里，老板盯着广告后台问的还是那句：这个精准词还要不要加价？但真正把预算拖慢的，往往不是出价。词已经够窄了，线索表却越来越钝：有人只是来了解，有人在比较，还有人准备行动，却被你接进了同一个入口。一个词看起来越精准，账户里越容易暴露更难看的问题——点进来的人，未必是你想接的人。半步答案是：先别急着改价，先判断这个词接住的到底是哪一段需求。";
+  const passDiagnose = {
+    abstractLevel: "pass",
+    paddingLevel: "pass",
+    hookDensity: "pass",
+    informationFrontLoading: "pass",
+  };
+  const issues = getOpeningOptimizationGateIssues({
+    recommendedOpening: weakOpening,
+    recommendedHookScore: 82,
+    recommendedQualityCeiling: "A",
+    recommendedOpeningDangerCount: 0,
+    openingOptions: [
+      {
+        opening: weakOpening,
+        hookScore: 82,
+        qualityCeiling: "A",
+        diagnose: passDiagnose,
+        forbiddenHits: [],
+        isRecommended: true,
+      },
+      {
+        opening: "词很精准，质量分也不差，预算还能跑，结果就是不出单。真正该复盘的，是搜索词背后的需求阶段。",
+        hookScore: 76,
+        qualityCeiling: "A",
+        diagnose: passDiagnose,
+        forbiddenHits: [],
+      },
+      {
+        opening: "如果一个精准词长期不赚钱，问题可能不在匹配方式，也不在质量分，而在搜这个词的人还没到成交位置。",
+        hookScore: 74,
+        qualityCeiling: "B+",
+        diagnose: passDiagnose,
+        forbiddenHits: [],
+      },
+    ],
+  });
+
+  assert(issues.some((item) => item.code === "opening_forbidden_hits"));
+  assert.match(issues.find((item) => item.code === "opening_forbidden_hits")?.detail ?? "", /D2 铺垫过长/);
+});
+
+test("getOpeningOptimizationGateIssues requires first-screen object change and consequence", () => {
+  const weakOpening = "Cursor 和 Figma 最近都在发生变化，AI 应用格局也在调整。";
+  const issues = getOpeningOptimizationGateIssues({
+    recommendedOpening: weakOpening,
+    recommendedHookScore: 82,
+    recommendedQualityCeiling: "A",
+    recommendedOpeningDangerCount: 0,
+    openingOptions: [
+      {
+        opening: weakOpening,
+        hookScore: 82,
+        qualityCeiling: "A",
+        diagnose: {
+          abstractLevel: "pass",
+          paddingLevel: "pass",
+          hookDensity: "pass",
+          informationFrontLoading: "pass",
+        },
+        forbiddenHits: [],
+        isRecommended: true,
+      },
+      { opening: "Cursor 和 Figma 都在被重新估值。", hookScore: 75, qualityCeiling: "B+", diagnose: {}, forbiddenHits: [] },
+      { opening: "AI 应用的讨论开始变多。", hookScore: 72, qualityCeiling: "B+", diagnose: {}, forbiddenHits: [] },
+    ],
+  });
+
+  assert(issues.some((item) => item.code === "opening_first_screen_contract"));
+  assert.match(issues.find((item) => item.code === "opening_first_screen_contract")?.detail ?? "", /后果\/机会/);
+});
+
 test("buildFallbackOpeningOptions recommends a gate-ready opening", () => {
   const openingOptions = buildFallbackOpeningOptions("海外赚美金副业");
   const recommendedOpening = openingOptions.find((item) => item.isRecommended);
@@ -156,6 +271,20 @@ test("buildFallbackOpeningOptions recommends a gate-ready opening", () => {
   assert.equal(openingOptions.length, 3);
   assert(recommendedOpening);
   assert.deepEqual(issues, []);
+});
+
+test("buildFallbackOpeningOptions creates concrete search marketing openings", () => {
+  const openingOptions = buildFallbackOpeningOptions("Google Ads 精准词为什么不赚钱");
+  const recommendedOpening = openingOptions.find((item) => item.isRecommended);
+  const text = openingOptions.map((item) => item.opening).join("\n");
+
+  assert.equal(openingOptions.length, 3);
+  assert(recommendedOpening);
+  assert.match(text, /质量分|搜索词|关键词|出单|成交位置/);
+  assert.doesNotMatch(text, /执行顺序|成本账本|旧流程|内容生产|Prompt/);
+  assert.equal(recommendedOpening.forbiddenHits.length, 0);
+  assert.notEqual(recommendedOpening.diagnose.hookDensity, "danger");
+  assert.notEqual(recommendedOpening.diagnose.informationFrontLoading, "danger");
 });
 
 test("ensureSingleRecommendedOpeningOption refuses weak explicit recommendation", () => {
@@ -237,12 +366,13 @@ test("getOpeningOptimizationGateIssues rejects weak opening pack", () => {
     ],
   });
 
-  assert.equal(issues.length, 5);
+  assert.equal(issues.length, 6);
   assert.match(issues[0]?.detail ?? "", /开头候选不足/);
   assert.match(issues[1]?.detail ?? "", /开头命中禁区/);
   assert.match(issues[2]?.detail ?? "", /danger 诊断项/);
   assert.match(issues[3]?.detail ?? "", /钩子分过低/);
   assert.match(issues[4]?.detail ?? "", /质量上限不足/);
+  assert.match(issues[5]?.detail ?? "", /第一屏承诺/);
 });
 
 test("getFictionalMaterialPlanGateIssues accepts concrete fictional material package", () => {
@@ -341,6 +471,12 @@ test("getViralNarrativePlanGateIssues rejects missing motif and boundary", () =>
 });
 
 test("getArticleViralReadinessGateIssues accepts complete writing prerequisites", () => {
+  const viralGenomePack = buildArticleViralGenomePack({
+    title: "为什么 AI 写作真正卡住的，不是 Prompt，而是证据链",
+    centralThesis: "慢的不是写作，而是事实、判断和发布之间的断点。",
+    targetReader: "内容团队负责人",
+    viralBlueprintLabel: "结构张力型",
+  });
   const issues = getArticleViralReadinessGateIssues({
     researchBrief: {
       sourceCoverage: { sufficiency: "ready" },
@@ -348,6 +484,7 @@ test("getArticleViralReadinessGateIssues accepts complete writing prerequisites"
       timelineCards: [{ title: "起点" }],
       comparisonCards: [{ subject: "路径 A" }],
       intersectionInsights: [{ insight: "交汇洞察" }],
+      ...buildBusinessResearchFields(viralGenomePack),
     },
     titleOptimization: {
       recommendedTitle: "为什么 AI 写作真正卡住的，不是 Prompt，而是证据链",
@@ -380,7 +517,16 @@ test("getArticleViralReadinessGateIssues accepts complete writing prerequisites"
       ],
     },
     deepWriting: {
-      sectionBlueprint: [{ heading: "一" }, { heading: "二" }, { heading: "三" }],
+      mustUseFacts: [
+        "同一篇稿子会在终稿前反复补证据。",
+        "写作提速后，核查和发布收口成为新断点。",
+      ],
+      sectionBlueprint: [
+        { heading: "一", evidenceHints: ["终稿前反复补证据"] },
+        { heading: "二", evidenceHints: ["核查和发布收口"] },
+        { heading: "三", evidenceHints: ["流程断点后移"] },
+      ],
+      viralGenomePack,
       viralNarrativePlan: {
         coreMotif: "所有人都跟不上自己制造出来的加速。",
         sceneEntry: "凌晨工位。",
@@ -402,6 +548,12 @@ test("getArticleViralReadinessGateIssues accepts complete writing prerequisites"
 });
 
 test("getArticleViralReadinessGateIssues accepts nonfiction writing card without fictional material", () => {
+  const viralGenomePack = buildArticleViralGenomePack({
+    title: "别再只盯关键词了：真正值钱的是搜索意图",
+    centralThesis: "搜索意图决定投放复盘到底是在修词面，还是在修用户行动阶段。",
+    targetReader: "正在做搜索广告的老板和投手",
+    viralBlueprintLabel: "结构张力型",
+  });
   const base = {
     researchBrief: {
       sourceCoverage: { sufficiency: "ready" },
@@ -409,6 +561,7 @@ test("getArticleViralReadinessGateIssues accepts nonfiction writing card without
       timelineCards: [{ title: "起点" }],
       comparisonCards: [{ subject: "路径 A" }],
       intersectionInsights: [{ insight: "交汇洞察" }],
+      ...buildBusinessResearchFields(viralGenomePack),
     },
     titleOptimization: {
       recommendedTitle: "别再只盯关键词了：真正值钱的是搜索意图",
@@ -423,13 +576,13 @@ test("getArticleViralReadinessGateIssues accepts nonfiction writing card without
       forbiddenHits: [],
     },
     openingOptimization: {
-      recommendedOpening: "很多投放问题，看起来是关键词问题，最后往往是搜索意图判断错了。",
+      recommendedOpening: "词很精准，质量分也不差，预算还能跑，结果就是不出单。这个时候，先别急着调出价，真正该复盘的是搜索词背后的需求阶段。",
       recommendedHookScore: 79,
       recommendedQualityCeiling: "A",
       recommendedOpeningDangerCount: 0,
       openingOptions: [
         {
-          opening: "很多投放问题，看起来是关键词问题，最后往往是搜索意图判断错了。",
+          opening: "词很精准，质量分也不差，预算还能跑，结果就是不出单。这个时候，先别急着调出价，真正该复盘的是搜索词背后的需求阶段。",
           hookScore: 79,
           qualityCeiling: "A",
           diagnose: { abstractLevel: "pass", paddingLevel: "pass", hookDensity: "pass", informationFrontLoading: "pass" },
@@ -442,7 +595,15 @@ test("getArticleViralReadinessGateIssues accepts nonfiction writing card without
     },
     deepWriting: {
       materialRealityMode: "nonfiction",
-      sectionBlueprint: [{ heading: "一" }, { heading: "二" }, { heading: "三" }],
+      mustUseFacts: [
+        "词很精准、质量分不差但仍然不出单。",
+        "搜索词背后的需求阶段会影响成交位置。",
+      ],
+      sectionBlueprint: [
+        { heading: "一", evidenceHints: ["词很精准但不出单"] },
+        { heading: "二", evidenceHints: ["需求阶段不同"] },
+        { heading: "三", evidenceHints: ["成交位置差异"] },
+      ],
       viralNarrativePlan: {
         coreMotif: "关键词只是表层。",
         sceneEntry: "从来源事实切入。",
@@ -451,6 +612,7 @@ test("getArticleViralReadinessGateIssues accepts nonfiction writing card without
         motifCallbacks: [{ section: "开头", callback: "抛出母题" }, { section: "结尾", callback: "回收母题" }],
         boundaryRule: "只使用来源事实和行业泛例。",
       },
+      viralGenomePack,
       fictionalMaterialPlan: [],
     },
   };
@@ -464,8 +626,53 @@ test("getArticleViralReadinessGateIssues accepts nonfiction writing card without
         type: "author_inference",
         scene: "作者可以从一个匿名复盘会切入，写团队表面都在查参数，其实忽略了搜索意图。",
         character: "作者旁白与匿名团队",
-        dialogue: "这不是某个真实会议原话，而是一句复合后的追问。",
-        boundaryNote: "作者视角推演素材，不对应真实会议或实际对话。",
+        dialogue: "这不是某个真实会议原话，也不是任何真实聊天记录，而是一句复合后的追问。",
+        boundaryNote: "作者视角推演素材，不对应真实会议或真实聊天记录。",
+      }],
+    },
+  }), []);
+  assert.deepEqual(getArticleViralReadinessGateIssues({
+    ...base,
+    deepWriting: {
+      ...base.deepWriting,
+      fictionalMaterialPlan: [{
+        type: "author_inference",
+        scene: "作者推演两种查询语境：一种在了解，一种在比较或准备行动。",
+        character: "不出现命名品牌、平台、页面或真实客户。",
+        dialogue: "可写成作者判断句：词面接近，不等于决策阶段接近。",
+        dataRange: "只写相对描述，不写金额和比例。",
+        plausibilityAnchor: "来自研究交汇洞察与现有事实素材中的同类现象。",
+        boundaryNote: "只作概念可视化，不作为真实账户案例或真实查询记录。",
+      }],
+    },
+  }), []);
+  assert.deepEqual(getArticleViralReadinessGateIssues({
+    ...base,
+    deepWriting: {
+      ...base.deepWriting,
+      fictionalMaterialPlan: [{
+        type: "scenario_reconstruction",
+        scene: "两个搜索者输入相似词，一个在了解方案，一个在比较供应商。",
+        character: "匿名化的搜索者A与搜索者B",
+        dialogue: "A：“我先看看有什么方案。” B：“我现在就想比价。”",
+        dataRange: "无具体数字，仅表达阶段差异。",
+        plausibilityAnchor: "与搜索意图和需求阶段的常见分层一致。",
+        boundaryNote: "概念性场景重建，仅用于说明机制，不是实际用户访谈。",
+      }],
+    },
+  }), []);
+  assert.deepEqual(getArticleViralReadinessGateIssues({
+    ...base,
+    deepWriting: {
+      ...base.deepWriting,
+      fictionalMaterialPlan: [{
+        type: "author_inference",
+        scene: "作者推演两种极端：全部依赖 exact match 与全部放开 broad match。",
+        character: "作者判断视角，无具体账户主体",
+        dialogue: "不是越准越好，也不是越宽越好。",
+        dataRange: "只写机制与可能后果，不写真实投放结果数字。",
+        plausibilityAnchor: "Google Ads 三种匹配方式覆盖与控制差异为可确认事实。",
+        boundaryNote: "策略推演，不冒充真实投放结果或客户案例。",
       }],
     },
   }), []);
@@ -476,6 +683,36 @@ test("getArticleViralReadinessGateIssues accepts nonfiction writing card without
       fictionalMaterialPlan: [{ scene: "知乎登录页案例" }],
     },
   }).some((item) => item.code === "readiness_nonfiction_author_perspective_material_boundary"));
+});
+
+test("getViralGenomePackGateIssues requires Plan24 source profile and share reason", () => {
+  assert.deepEqual(getViralGenomePackGateIssues({
+    viralGenomePack: buildArticleViralGenomePack({
+      title: "别再只盯关键词了：真正值钱的是搜索意图",
+      centralThesis: "搜索意图决定投放复盘到底是在修词面，还是在修用户行动阶段。",
+      targetReader: "正在做搜索广告的老板和投手",
+    }),
+  }), []);
+
+  const issues = getViralGenomePackGateIssues({
+    viralGenomePack: {
+      sampleSummary: "百篇样本",
+      mechanismBias: { label: "反常识翻转", reason: "看起来像机制" },
+      firstScreenPromise: "第一屏说清观点。",
+      shareTrigger: "",
+    },
+  });
+
+  assert(issues.some((item) => item.code === "viral_genome_source_profile"));
+  assert(issues.some((item) => item.code === "viral_genome_first_screen_contract"));
+  assert(issues.some((item) => item.code === "viral_genome_share_reason"));
+  assert(issues.some((item) => item.code === "viral_genome_title_directions"));
+  assert(issues.some((item) => item.code === "viral_genome_evidence_priorities"));
+  assert(issues.some((item) => item.code === "viral_genome_emotion_vectors"));
+  assert(issues.some((item) => item.code === "viral_genome_visual_rhythm"));
+  assert(issues.some((item) => item.code === "viral_genome_reader_scene_anchors"));
+  assert(issues.some((item) => item.code === "viral_genome_translation_pairs"));
+  assert(issues.some((item) => item.code === "viral_genome_opening_micro_scenes"));
 });
 
 test("getArticleViralReadinessGateIssues blocks fragmented patch-style prerequisites", () => {
@@ -503,5 +740,48 @@ test("getArticleViralReadinessGateIssues blocks fragmented patch-style prerequis
   assert(issues.some((item) => item.code === "readiness_opening_missing"));
   assert(issues.some((item) => item.code === "readiness_section_blueprint"));
   assert(issues.some((item) => item.code.startsWith("readiness_viral_")));
+  assert(issues.some((item) => item.code.startsWith("readiness_viral_genome_")));
+  assert(issues.some((item) => item.code.startsWith("readiness_evidence_")));
   assert(issues.some((item) => item.code.startsWith("readiness_fictional_")));
+});
+
+test("getGeneratedArticleViralQualityGateIssues rejects preachy distant final article", () => {
+  const issues = getGeneratedArticleViralQualityGateIssues({
+    markdownContent: [
+      "# 搜索投放这些年的变化",
+      "",
+      "痛点引入",
+      "",
+      "搜索投放这些年的变化，说明很多旧解释就是从这里开始松动。这种损失感很具体，解释权也在发生价值分化。你应该先做第一步，然后你需要做第二步，必须先完成方法论拆解。",
+      "",
+      "你应该先做第一步，然后你需要做第二步。我们需要搭建任务矩阵，必须先完成方法论拆解，不要先看账户里的真实订单。",
+      "",
+      "你应该继续按照步骤执行，第一步看流程，第二步看路径，最后做行动建议。",
+    ].join("\n"),
+    htmlContent: "<figure><figcaption>方法总结</figcaption></figure>",
+  });
+
+  assert(issues.some((item) => item.code === "generated_article_first_screen_contract"));
+  assert(issues.some((item) => item.code === "generated_article_didactic_tone"));
+  assert(issues.some((item) => item.code === "generated_article_first_paragraph_didactic_signal"));
+  assert(issues.some((item) => item.code === "generated_article_commercial_evidence_coverage"));
+  assert(issues.some((item) => item.code === "generated_article_distant_tone"));
+  assert(issues.some((item) => item.code === "generated_article_obscure_expression"));
+  assert(issues.some((item) => item.code === "generated_article_internal_label_exposure"));
+});
+
+test("getGeneratedArticleViralQualityGateIssues accepts concrete reader-close final article", () => {
+  const issues = getGeneratedArticleViralQualityGateIssues({
+    markdownContent: [
+      "# 关键词没错，钱还是花没了",
+      "",
+      "一个做 Google Ads 的老板上周把词表翻了三遍，关键词够准，质量分 8 分，后台每天有点击，订单却还是没有动。他在复盘会上说：「钱花得出去，单就是不来。」真正卡住的不是词面，而是搜这个词的人还停在比方案，离下单差了半步。",
+      "",
+      "这类复盘最刺眼的地方，是预算已经花出去了，团队还在围着出价和匹配方式打转。账户里看起来每个指标都有解释，老板要的那张订单却没有出现。",
+      "",
+      "我更愿意把它看成一次搜索意图复盘：同一个词，可以是了解、比较，也可以是准备买。文章后面只讨论这个误判怎么发生，以及它为什么会让投手少赚一轮转化。",
+    ].join("\n"),
+  });
+
+  assert.deepEqual(issues, []);
 });

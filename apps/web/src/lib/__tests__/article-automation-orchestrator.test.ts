@@ -176,6 +176,36 @@ test("resumeArticleAutomationRun completes draftPreview runs end-to-end", async 
   });
 });
 
+test("resumeArticleAutomationRun uses fast publication path for wechatDraft review stages", async () => {
+  await withTempDatabase("wechat-draft-fast-path", async () => {
+    const userId = await createTestUser();
+    const series = await createDefaultSeries(userId);
+    const created = await createArticleAutomationRun({
+      userId,
+      inputMode: "brief",
+      inputText: "为什么 Google Ads 里的精准词不赚钱时，应该先复盘搜索意图",
+      targetSeriesId: series.id,
+      automationLevel: "wechatDraft",
+    });
+
+    const result = await resumeArticleAutomationRun({
+      runId: created.run.id,
+      userId,
+    });
+
+    assert.equal(result.run.status, "blocked");
+    assert.equal(result.run.currentStageCode, "publishGuard");
+    assert.match(result.run.blockedReason || "", /缺少目标公众号连接/);
+    const detail = await getArticleAutomationRunById(created.run.id, userId);
+    assert.equal(detail?.stages.find((item) => item.stageCode === "deepWrite")?.status, "completed");
+    assert.equal(detail?.stages.find((item) => item.stageCode === "factCheck")?.status, "completed");
+    assert.equal(detail?.stages.find((item) => item.stageCode === "prosePolish")?.status, "completed");
+    assert.equal(getRecord(detail?.stages.find((item) => item.stageCode === "factCheck")?.qualityJson)?.fastLocalReview, true);
+    assert.equal(getRecord(detail?.stages.find((item) => item.stageCode === "prosePolish")?.qualityJson)?.fastLocalReview, true);
+    assert.equal(getRecord(detail?.stages.find((item) => item.stageCode === "articleWrite")?.qualityJson)?.applyAuditSkipped, true);
+  });
+});
+
 test("resumeArticleAutomationRun continues past researchBrief when coverage is limited but not blocked", async () => {
   await withTempDatabase("draft-preview-research-gate", async () => {
     const server = http.createServer((_request, response) => {

@@ -11,6 +11,14 @@ const OUTCOME_WINDOWS: Array<{ code: OutcomeWindowCode; label: string }> = [
 type OutcomeBundleLike = {
   outcome: {
     hitStatus?: "pending" | "hit" | "near_miss" | "miss";
+    expressionFeedback?: {
+      likeMe: boolean;
+      unlikeMe: boolean;
+      tooHard: boolean;
+      tooSoft: boolean;
+      tooTutorial: boolean;
+      tooCommentary: boolean;
+    } | null;
     targetPackage?: string | null;
     reviewSummary?: string | null;
     nextAction?: string | null;
@@ -59,6 +67,8 @@ type OutcomeWorkspaceSectionProps = {
   onChangeOutcomeTargetPackage: (value: string) => void;
   outcomeHitStatus: "pending" | "hit" | "near_miss" | "miss";
   onChangeOutcomeHitStatus: (value: "pending" | "hit" | "near_miss" | "miss") => void;
+  outcomeExpressionFeedback: Parameters<typeof OutcomeWorkspacePanel>[0]["outcomeExpressionFeedback"];
+  onToggleOutcomeExpressionFeedback: Parameters<typeof OutcomeWorkspacePanel>[0]["onToggleOutcomeExpressionFeedback"];
   outcomeReviewSummary: string;
   onChangeOutcomeReviewSummary: (value: string) => void;
   outcomeNextAction: string;
@@ -93,6 +103,8 @@ export function OutcomeWorkspaceSection({
   onChangeOutcomeTargetPackage,
   outcomeHitStatus,
   onChangeOutcomeHitStatus,
+  outcomeExpressionFeedback,
+  onToggleOutcomeExpressionFeedback,
   outcomeReviewSummary,
   onChangeOutcomeReviewSummary,
   outcomeNextAction,
@@ -148,6 +160,8 @@ export function OutcomeWorkspaceSection({
       onChangeOutcomeTargetPackage={onChangeOutcomeTargetPackage}
       outcomeHitStatus={outcomeHitStatus}
       onChangeOutcomeHitStatus={onChangeOutcomeHitStatus}
+      outcomeExpressionFeedback={outcomeExpressionFeedback}
+      onToggleOutcomeExpressionFeedback={onToggleOutcomeExpressionFeedback}
       outcomeReviewSummary={outcomeReviewSummary}
       onChangeOutcomeReviewSummary={onChangeOutcomeReviewSummary}
       outcomeNextAction={outcomeNextAction}

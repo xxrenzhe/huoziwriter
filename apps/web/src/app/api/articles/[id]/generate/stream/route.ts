@@ -124,6 +124,7 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
       humanSignals: writingContext.humanSignals,
       outlineNodes: writingContext.outlineNodes,
       knowledgeCards: writingContext.knowledgeCards,
+      authorOutcomeFeedbackLedger: writingContext.authorOutcomeFeedbackLedger,
       imageFragments: writingContext.imageFragments
         .filter((item): item is typeof item & { screenshotPath: string } => Boolean(item.screenshotPath))
         .map((item) => ({
@@ -174,7 +175,9 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
         for (const chunk of chunks) {
           controller.enqueue(`data: ${JSON.stringify({ status: "writing", delta: chunk })}\n\n`);
         }
-        controller.enqueue(`data: ${JSON.stringify({ status: "done", usageToken })}\n\n`);
+        controller.enqueue(
+          `data: ${JSON.stringify({ status: "done", usageToken, personaAudit: generated.personaAudit ?? null, informationGainAudit: generated.informationGainAudit ?? null })}\n\n`,
+        );
         controller.close();
       },
     });

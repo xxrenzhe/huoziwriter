@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { getArticleEvidenceStats } from "../article-evidence";
+import { getArticleEvidenceStats, inferEvidenceResearchTag, inferEvidenceRole, tagEvidenceItemHooks } from "../article-evidence";
 
 test("getArticleEvidenceStats keeps internal notes below WeChat publish floor", () => {
   const stats = getArticleEvidenceStats([
@@ -81,4 +81,86 @@ test("getArticleEvidenceStats marks diverse verifiable sources as WeChat publish
   assert.equal(stats.publishReady, true);
   assert.equal(stats.verifiableEvidenceCount, 3);
   assert.equal(stats.verifiableSourceTypeCount, 3);
+});
+
+test("getArticleEvidenceStats treats different external URL hosts as distinct verifiable sources", () => {
+  const stats = getArticleEvidenceStats([
+    {
+      title: "原始文章",
+      excerpt: "来自用户提供的公众号原文。",
+      sourceType: "url",
+      sourceUrl: "https://mp.weixin.qq.com/s/example",
+    },
+    {
+      title: "Google Ads 官方帮助",
+      excerpt: "来自官方帮助中心的匹配和搜索意图说明。",
+      sourceType: "url",
+      sourceUrl: "https://support.google.com/google-ads/answer/7478529",
+    },
+    {
+      title: "用户反例",
+      excerpt: "来自投放社区的反例反馈。",
+      sourceType: "url",
+      sourceUrl: "https://www.reddit.com/r/PPC/",
+      evidenceRole: "counterEvidence",
+    },
+  ]);
+
+  assert.equal(stats.ready, true);
+  assert.equal(stats.publishReady, true);
+  assert.equal(stats.verifiableSourceTypeCount, 3);
+});
+
+test("getArticleEvidenceStats infers hook coverage for untagged evidence", () => {
+  const stats = getArticleEvidenceStats([
+    {
+      title: "关键词精准但不赚钱",
+      excerpt: "很多老板以为关键词越精准越赚钱，结果广告后台的线索反而下降。",
+      sourceType: "url",
+      sourceUrl: "https://example.com/search-intent",
+    },
+    {
+      title: "复盘现场",
+      excerpt: "晚上 8 点的复盘会里，投手盯着后台问：为什么质量分不差，订单还是没动？",
+      sourceType: "url",
+      sourceUrl: "https://example.org/ppc-case",
+    },
+    {
+      title: "用户反例",
+      excerpt: "也有人反馈，问题不是出价，而是搜这个词的人还在了解阶段。",
+      sourceType: "url",
+      sourceUrl: "https://example.net/forum",
+      evidenceRole: "counterEvidence",
+    },
+  ]);
+
+  assert(stats.hookTagCoverageCount >= 2);
+  assert(stats.hookTagCoverage.includes("反常识"));
+  assert(stats.hookTagCoverage.includes("具身细节"));
+});
+
+test("tagEvidenceItemHooks persists inferred hook tags for automation", () => {
+  const tagged = tagEvidenceItemHooks({
+    title: "复盘现场",
+    excerpt: "晚上 8 点的复盘会里，老板盯着广告后台说：关键词越精准，线索反而越少。",
+    sourceType: "url",
+    sourceUrl: "https://example.com/case",
+  });
+
+  assert(tagged.hookTags.includes("反常识"));
+  assert(tagged.hookTags.includes("具身细节"));
+  assert.equal(tagged.hookTaggedBy, "ai");
+  assert.equal(typeof tagged.hookStrength, "number");
+});
+
+test("inferEvidenceRole treats research boundary notes as counter evidence", () => {
+  const input = {
+    title: "r/PPC 入口",
+    excerpt: "可继续挖掘时间变化与用户复盘，但当前未形成强证据，只能作为弱线索。",
+    rationale: "userVoice",
+    sourceUrl: "https://www.reddit.com/r/PPC/",
+  };
+
+  assert.equal(inferEvidenceResearchTag(input), "contradiction");
+  assert.equal(inferEvidenceRole(input), "counterEvidence");
 });

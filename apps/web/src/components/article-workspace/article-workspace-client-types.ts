@@ -1,4 +1,5 @@
 import type { ReviewSeriesPlaybook } from "@/lib/article-outcomes";
+import type { PersonalEffectiveWritingProfile } from "@/lib/author-outcome-feedback-ledger";
 import type { ImageAuthoringStyleContext } from "@/lib/image-authoring-context";
 import type { LanguageGuardRule } from "@/lib/language-guard-core";
 import type {
@@ -41,6 +42,14 @@ export type ArticleOutcomeItem = {
   scorecard: Record<string, unknown>;
   attribution: Record<string, unknown> | null;
   hitStatus: "pending" | "hit" | "near_miss" | "miss";
+  expressionFeedback: {
+    likeMe: boolean;
+    unlikeMe: boolean;
+    tooHard: boolean;
+    tooSoft: boolean;
+    tooTutorial: boolean;
+    tooCommentary: boolean;
+  } | null;
   reviewSummary: string | null;
   nextAction: string | null;
   playbookTags: string[];
@@ -217,6 +226,7 @@ export type ArticleEditorClientProps = {
   authoringContext: ImageAuthoringStyleContext | null;
   seriesInsight: SeriesInsightItem;
   currentSeriesPlaybook: ReviewSeriesPlaybook | null;
+  effectiveWritingProfile: PersonalEffectiveWritingProfile;
   coverImageQuota: { used: number; limit: number | null; remaining: number | null };
   imageAssetQuota: {
     usedBytes: number;

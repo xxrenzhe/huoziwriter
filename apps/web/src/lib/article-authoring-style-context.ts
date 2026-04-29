@@ -1,3 +1,4 @@
+import { getAuthorOutcomeFeedbackLedger } from "./author-outcome-feedback-ledger";
 import { assertPersonaReady } from "./personas";
 import { getArticleById } from "./repositories";
 import { getSeriesById } from "./series";
@@ -20,55 +21,93 @@ export async function getArticleAuthoringStyleContext(userId: number, articleId?
     if (!article) {
       throw new Error("稿件不存在");
     }
-    if (!article.series_id) {
-      return buildArticleAuthoringStyleContext(defaultPersona, userId, {
-        preferredWritingStyleProfileId,
-        preferredWritingStyleProfileName,
-        preferredWritingStyleProfileSource,
-      });
+    if (article.series_id) {
+      const series = await getSeriesById(userId, article.series_id);
+      if (series) {
+        persona = {
+          id: series.personaId,
+          userId,
+          name: series.personaName,
+          summary: series.personaSummary,
+          identityTags: series.identityTags,
+          writingStyleTags: series.writingStyleTags,
+          domainKeywords: series.domainKeywords,
+          argumentPreferences: series.argumentPreferences,
+          toneConstraints: series.toneConstraints,
+          audienceHints: series.audienceHints,
+          sourceMode: series.sourceMode,
+          boundWritingStyleProfileId: series.boundWritingStyleProfileId,
+          boundWritingStyleProfileName: series.boundWritingStyleProfileName,
+          isDefault: false,
+          createdAt: series.createdAt,
+          updatedAt: series.updatedAt,
+        };
+        preferredWritingStyleProfileId = series.defaultDnaId ?? series.boundWritingStyleProfileId ?? null;
+        preferredWritingStyleProfileName =
+          series.defaultDnaId != null
+            ? `系列默认文风 #${series.defaultDnaId}`
+            : series.boundWritingStyleProfileName ?? null;
+        preferredWritingStyleProfileSource =
+          series.defaultDnaId != null
+            ? "series.defaultDnaId"
+            : series.boundWritingStyleProfileId != null
+              ? "series.boundWritingStyleProfileId"
+              : preferredWritingStyleProfileSource;
+      }
     }
-    const series = await getSeriesById(userId, article.series_id);
-    if (!series) {
-      return buildArticleAuthoringStyleContext(defaultPersona, userId, {
-        preferredWritingStyleProfileId,
-        preferredWritingStyleProfileName,
-      });
-    }
-    persona = {
-      id: series.personaId,
-      userId,
-      name: series.personaName,
-      summary: series.personaSummary,
-      identityTags: series.identityTags,
-      writingStyleTags: series.writingStyleTags,
-      domainKeywords: series.domainKeywords,
-      argumentPreferences: series.argumentPreferences,
-      toneConstraints: series.toneConstraints,
-      audienceHints: series.audienceHints,
-      sourceMode: series.sourceMode,
-      boundWritingStyleProfileId: series.boundWritingStyleProfileId,
-      boundWritingStyleProfileName: series.boundWritingStyleProfileName,
-      isDefault: false,
-      createdAt: series.createdAt,
-      updatedAt: series.updatedAt,
-    };
-    preferredWritingStyleProfileId = series.defaultDnaId ?? series.boundWritingStyleProfileId ?? null;
-    preferredWritingStyleProfileName =
-      series.defaultDnaId != null
-        ? `系列默认文风 #${series.defaultDnaId}`
-        : series.boundWritingStyleProfileName ?? null;
-    preferredWritingStyleProfileSource =
-      series.defaultDnaId != null
-        ? "series.defaultDnaId"
-        : series.boundWritingStyleProfileId != null
-          ? "series.boundWritingStyleProfileId"
-          : preferredWritingStyleProfileSource;
   }
-  return buildArticleAuthoringStyleContext(persona, userId, {
+  const baseContext = await buildArticleAuthoringStyleContext(persona, userId, {
     preferredWritingStyleProfileId,
     preferredWritingStyleProfileName,
     preferredWritingStyleProfileSource,
   });
+  const authorOutcomeFeedbackLedger = await getAuthorOutcomeFeedbackLedger({
+    userId,
+    excludeArticleId: articleId ?? null,
+  });
+  return applyAuthorOutcomeFeedbackToAuthoringStyleContext(baseContext, authorOutcomeFeedbackLedger);
+}
+
+function uniqueStrings(values: Array<string | null | undefined>) {
+  return Array.from(new Set(values.map((item) => String(item || "").trim()).filter(Boolean)));
+}
+
+function applyAuthorOutcomeFeedbackToAuthoringStyleContext(
+  context: Awaited<ReturnType<typeof buildArticleAuthoringStyleContext>>,
+  ledger: Awaited<ReturnType<typeof getAuthorOutcomeFeedbackLedger>>,
+) {
+  if (!ledger) {
+    return context;
+  }
+  const prototypeLabel = ledger.recommendations.prototype?.label ?? null;
+  const stateLabel = ledger.recommendations.stateVariant?.label ?? null;
+  const openingLabel = ledger.recommendations.openingPattern?.label ?? null;
+  const persona = context.persona
+    ? {
+        ...context.persona,
+        argumentPreferences: uniqueStrings([
+          prototypeLabel ? `近期高命中原型：${prototypeLabel}` : null,
+          stateLabel ? `近期高命中状态：${stateLabel}` : null,
+          ...(context.persona.argumentPreferences ?? []),
+        ]),
+      }
+    : null;
+  const writingStyleProfile = context.writingStyleProfile
+    ? {
+        ...context.writingStyleProfile,
+        openingPatterns: uniqueStrings([openingLabel, ...context.writingStyleProfile.openingPatterns]),
+        statePresets: uniqueStrings([
+          stateLabel ? `优先使用${stateLabel}` : null,
+          ...(context.writingStyleProfile.statePresets ?? []),
+        ]),
+      }
+    : null;
+
+  return {
+    ...context,
+    persona,
+    writingStyleProfile,
+  };
 }
 
 async function buildArticleAuthoringStyleContext(
@@ -122,6 +161,7 @@ async function buildArticleAuthoringStyleContext(
           name: writingStyleProfile.name,
           summary: writingStyleProfile.summary,
           sampleCount: writingStyleProfile.sampleCount ?? null,
+          confidenceProfile: writingStyleProfile.confidenceProfile ?? null,
           bindingSource,
           toneKeywords: writingStyleProfile.toneKeywords,
           sentenceLengthProfile: writingStyleProfile.sentenceLengthProfile,

@@ -58,7 +58,39 @@ function pickDerivedFormat(metadata: sharp.Metadata) {
   };
 }
 
-async function createImageDerivatives(downloaded: DownloadedBinaryAsset): Promise<DerivedAssetSet> {
+function parseAspectRatio(value: string | null | undefined) {
+  const match = String(value || "").trim().match(/^(\d+(?:\.\d+)?)\s*:\s*(\d+(?:\.\d+)?)$/);
+  if (!match) return null;
+  const width = Number(match[1]);
+  const height = Number(match[2]);
+  return Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0 ? width / height : null;
+}
+
+function resolveResizeBox(input: {
+  sourceWidth: number;
+  sourceHeight: number;
+  maxWidth: number;
+  maxHeight: number;
+  aspectRatio?: string | null;
+}) {
+  const aspect = parseAspectRatio(input.aspectRatio);
+  if (!aspect) {
+    return { width: input.maxWidth, height: input.maxHeight, fit: "inside" as const };
+  }
+  let width = Math.min(input.maxWidth, input.sourceWidth);
+  let height = Math.round(width / aspect);
+  if (height > input.sourceHeight || height > input.maxHeight) {
+    height = Math.min(input.maxHeight, input.sourceHeight);
+    width = Math.round(height * aspect);
+  }
+  return {
+    width: Math.max(1, width),
+    height: Math.max(1, height),
+    fit: "cover" as const,
+  };
+}
+
+async function createImageDerivatives(downloaded: DownloadedBinaryAsset, aspectRatio?: string | null): Promise<DerivedAssetSet> {
   const image = sharp(downloaded.buffer, { failOn: "none", animated: false }).rotate();
   const metadata = await image.metadata();
   if (!metadata.width || !metadata.height) {
@@ -74,17 +106,31 @@ async function createImageDerivatives(downloaded: DownloadedBinaryAsset): Promis
         thumbnailEncode: (instance: sharp.Sharp) => instance.webp({ quality: 78, effort: 4 }),
       }
     : pickDerivedFormat(metadata);
+  const compressedResize = resolveResizeBox({
+    sourceWidth: metadata.width,
+    sourceHeight: metadata.height,
+    maxWidth: 1600,
+    maxHeight: 1600,
+    aspectRatio,
+  });
+  const thumbnailResize = resolveResizeBox({
+    sourceWidth: metadata.width,
+    sourceHeight: metadata.height,
+    maxWidth: 480,
+    maxHeight: 480,
+    aspectRatio,
+  });
   const compressedPipeline = derivedFormat
     .encode(
       sharp(downloaded.buffer, { failOn: "none", animated: false })
         .rotate()
-        .resize({ width: 1600, height: 1600, fit: "inside", withoutEnlargement: true }),
+        .resize({ ...compressedResize, withoutEnlargement: true }),
     );
   const thumbnailPipeline = derivedFormat
     .thumbnailEncode(
       sharp(downloaded.buffer, { failOn: "none", animated: false })
         .rotate()
-        .resize({ width: 480, height: 480, fit: "inside", withoutEnlargement: true }),
+        .resize({ ...thumbnailResize, withoutEnlargement: true }),
     );
   const [compressedResult, thumbnailResult] = await Promise.all([
     compressedPipeline.toBuffer({ resolveWithObject: true }),
@@ -178,6 +224,7 @@ export async function persistCoverImageAssetSet(input: {
   source: string;
   assetNamespace?: string | null;
   assetLabel?: string | null;
+  aspectRatio?: string | null;
 }) {
   const downloaded = await downloadBinaryAsset(input.source);
   const articleScope = input.articleId ? `article-${input.articleId}` : "unbound";
@@ -190,7 +237,7 @@ export async function persistCoverImageAssetSet(input: {
   let derivatives: DerivedAssetSet;
 
   try {
-    derivatives = await createImageDerivatives(downloaded);
+    derivatives = await createImageDerivatives(downloaded, input.aspectRatio);
   } catch (error) {
     derivativeMode = "passthrough-fallback";
     derivativeWarning = error instanceof Error ? error.message : "图片衍生处理失败";
@@ -306,6 +353,7 @@ export async function persistArticleCoverImageAssetSet(input: {
   batchToken?: string | null;
   variantLabel?: string | null;
   source: string;
+  aspectRatio?: string | null;
 }) {
   return persistCoverImageAssetSet({
     userId: input.userId,
@@ -313,6 +361,7 @@ export async function persistArticleCoverImageAssetSet(input: {
     batchToken: input.batchToken,
     variantLabel: input.variantLabel,
     source: input.source,
+    aspectRatio: input.aspectRatio,
   });
 }
 
@@ -322,6 +371,7 @@ export async function persistArticleVisualImageAssetSet(input: {
   visualBriefId: number;
   assetType: string;
   source: string;
+  aspectRatio?: string | null;
 }) {
   return persistCoverImageAssetSet({
     userId: input.userId,
@@ -331,6 +381,7 @@ export async function persistArticleVisualImageAssetSet(input: {
     assetNamespace: "article-images",
     assetLabel: `${input.assetType}-${input.visualBriefId}`,
     source: input.source,
+    aspectRatio: input.aspectRatio,
   });
 }
 

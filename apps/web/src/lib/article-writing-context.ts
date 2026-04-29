@@ -1,6 +1,8 @@
+import { getAuthorOutcomeFeedbackLedger } from "./author-outcome-feedback-ledger";
 import { getArticleNodes } from "./article-outline";
 import { suggestArticleHistoryReferences } from "./article-history-references";
 import { getRelevantKnowledgeCardsForArticle } from "./knowledge";
+import { buildRetrievalQueryContext, scoreUnifiedRetrievalCandidate } from "./retrieval-ranking";
 import { getArticleById, getArticleStrategyCard, getFragmentsByUser } from "./repositories";
 import { getSeriesById } from "./series";
 
@@ -232,7 +234,7 @@ export async function getArticleWritingContext(input: {
     ).entries(),
   ).map(([, fragment]) => fragment);
 
-  const [knowledgeCards, historySuggestions] = await Promise.all([
+  const [knowledgeCards, historySuggestions, authorOutcomeFeedbackLedger] = await Promise.all([
     getRelevantKnowledgeCardsForArticle(input.userId, {
       articleTitle: input.title,
       markdownContent: input.markdownContent,
@@ -245,12 +247,35 @@ export async function getArticleWritingContext(input: {
       currentTitle: input.title,
       currentMarkdown: input.markdownContent,
     }),
+    getAuthorOutcomeFeedbackLedger({
+      userId: input.userId,
+      excludeArticleId: input.articleId,
+    }),
   ]);
 
   let fragments = attachedFragments.filter((fragment) => fragment.usageMode !== "image").map((fragment) => fragment.distilledContent);
   let evidenceFragments = attachedFragments;
   if (fragments.length === 0) {
-    const fallbackFragments = await getFragmentsByUser(input.userId);
+    const query = buildRetrievalQueryContext({
+      articleTitle: input.title,
+      markdownContent: input.markdownContent,
+      nodeTitles: nodes.map((node) => node.title),
+    });
+    const fallbackFragments = (await getFragmentsByUser(input.userId))
+      .map((fragment) => ({
+        fragment,
+        score: scoreUnifiedRetrievalCandidate(
+          query,
+          {
+            title: fragment.title,
+            content: fragment.distilled_content,
+            updatedAt: fragment.created_at,
+          },
+          { recency: 0.5 },
+        ).score,
+      }))
+      .sort((left, right) => right.score - left.score || right.fragment.id - left.fragment.id)
+      .map((item) => item.fragment);
     fragments = fallbackFragments
       .filter((fragment) => fragment.source_type !== "screenshot")
       .slice(0, 6)
@@ -306,6 +331,7 @@ export async function getArticleWritingContext(input: {
       description: node.description,
     })),
     knowledgeCards: normalizedKnowledgeCards,
+    authorOutcomeFeedbackLedger,
     seriesInsight: buildSeriesInsight({
       articleTitle: input.title,
       articleMarkdown: input.markdownContent,

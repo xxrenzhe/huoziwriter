@@ -161,6 +161,7 @@ export function buildArticleWorkspaceActionBundleInput(
       outcomeNotes: input.outcomeNotes,
       outcomeTargetPackage: input.outcomeTargetPackage,
       outcomeHitStatus: input.outcomeHitStatus,
+      outcomeExpressionFeedback: input.outcomeExpressionFeedback,
       outcomeReviewSummary: input.outcomeReviewSummary,
       outcomeNextAction: input.outcomeNextAction,
       outcomePlaybookTagsInput: input.outcomePlaybookTagsInput,

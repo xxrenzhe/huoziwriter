@@ -193,6 +193,36 @@ export function buildArticleWorkspaceShellBundle(input: BuildArticleWorkspaceShe
       onChangeOutcomeTargetPackage: input.setOutcomeTargetPackage,
       outcomeHitStatus: input.outcomeHitStatus,
       onChangeOutcomeHitStatus: input.setOutcomeHitStatus,
+      outcomeExpressionFeedback: input.outcomeExpressionFeedback,
+      onToggleOutcomeExpressionFeedback: (key) => {
+        input.setOutcomeExpressionFeedback((prev: {
+          likeMe: boolean;
+          unlikeMe: boolean;
+          tooHard: boolean;
+          tooSoft: boolean;
+          tooTutorial: boolean;
+          tooCommentary: boolean;
+        }) => {
+          if (key === "likeMe") {
+            return {
+              ...prev,
+              likeMe: !prev.likeMe,
+              unlikeMe: false,
+            };
+          }
+          if (key === "unlikeMe") {
+            return {
+              ...prev,
+              unlikeMe: !prev.unlikeMe,
+              likeMe: false,
+            };
+          }
+          return {
+            ...prev,
+            [key]: !prev[key],
+          };
+        });
+      },
       outcomeReviewSummary: input.outcomeReviewSummary,
       onChangeOutcomeReviewSummary: input.setOutcomeReviewSummary,
       outcomeNextAction: input.outcomeNextAction,
@@ -336,6 +366,9 @@ export function buildArticleWorkspaceShellBundle(input: BuildArticleWorkspaceShe
     currentStageTitle: input.currentStage?.title || null,
     stageArtifactsCount: input.stageArtifactsCount,
     articleStatusLabel: input.status === "generating" ? "生成中" : formatArticleStatusLabel(input.status),
+    personalEffectiveWritingRailProps: {
+      effectiveWritingProfile: input.effectiveWritingProfile ?? null,
+    },
     showKnowledgeCardsRail: input.showKnowledgeCardsRail,
     knowledgeCardsRailProps: {
       knowledgeCardItems: input.knowledgeCardItems as never,

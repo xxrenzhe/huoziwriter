@@ -1,3 +1,4 @@
+import { refreshAuthorOutcomeFeedbackLedger } from "@/lib/author-outcome-feedback-ledger";
 import { resolveArticleOutcomeBundle } from "@/lib/article-outcomes";
 import { computeArticleOutcomeRefresh } from "@/lib/article-outcome-runtime";
 import { ensureUserSession } from "@/lib/auth";
@@ -21,6 +22,20 @@ function normalizeHitStatus(value: unknown): "pending" | "hit" | "near_miss" | "
     return value;
   }
   return "pending";
+}
+
+function normalizeExpressionFeedback(value: unknown) {
+  const record = value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+  const unlikeMe = Boolean(record.unlikeMe);
+  const normalized = {
+    likeMe: unlikeMe ? false : Boolean(record.likeMe),
+    unlikeMe,
+    tooHard: Boolean(record.tooHard),
+    tooSoft: Boolean(record.tooSoft),
+    tooTutorial: Boolean(record.tooTutorial),
+    tooCommentary: Boolean(record.tooCommentary),
+  };
+  return Object.values(normalized).some(Boolean) ? normalized : null;
 }
 
 export async function POST(request: Request, { params }: { params: { id: string } }) {
@@ -57,6 +72,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
     scorecard: computed.scorecard,
     attribution: computed.attribution,
     hitStatus: body.hitStatus === undefined ? undefined : normalizeHitStatus(body.hitStatus),
+    expressionFeedback: body.expressionFeedback === undefined ? undefined : normalizeExpressionFeedback(body.expressionFeedback),
     reviewSummary: body.reviewSummary === undefined ? undefined : String(body.reviewSummary || "").trim() || null,
     nextAction: body.nextAction === undefined ? undefined : String(body.nextAction || "").trim() || null,
     playbookTags: Array.isArray(body.playbookTags)
@@ -74,6 +90,9 @@ export async function POST(request: Request, { params }: { params: { id: string 
     notes: String(body.notes || "").trim() || null,
     writingStateFeedback: computed.writingStateFeedback,
   });
+  const feedbackLedger = await refreshAuthorOutcomeFeedbackLedger({
+    userId: session.userId,
+  });
 
   const bundle = resolveArticleOutcomeBundle({
     articleId: article.id,
@@ -87,5 +106,6 @@ export async function POST(request: Request, { params }: { params: { id: string 
     completedWindowCodes: bundle.completedWindowCodes,
     missingWindowCodes: bundle.missingWindowCodes,
     nextWindowCode: bundle.nextWindowCode,
+    feedbackLedger,
   });
 }

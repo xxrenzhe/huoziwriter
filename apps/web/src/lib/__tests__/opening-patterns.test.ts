@@ -87,6 +87,17 @@ test("normalizeOpeningOptions aligns quality ceiling with five-tier pattern map"
   assert.equal(normalized[0]?.value, normalized[0]?.opening);
 });
 
+test("buildFallbackOpeningOptions uses commercial opening engines for business topics", () => {
+  const searchOptions = buildFallbackOpeningOptions("搜索广告预算花了很多但没有线索");
+  const genericOptions = buildFallbackOpeningOptions("AI 产品发布后团队工作流被重排");
+
+  assert.equal(searchOptions[0]?.patternCode, "ledger_result");
+  assert.equal(searchOptions[1]?.patternCode, "misjudgment_cost");
+  assert.equal(genericOptions[0]?.patternCode, "entity_action");
+  assert.equal(genericOptions[1]?.patternCode, "misjudgment_cost");
+  assert.ok(searchOptions.every((item) => item.qualityCeiling === "A" || item.patternCode === "judgement_first"));
+});
+
 test("evaluateOpeningGuardChecks blocks forbidden openings", () => {
   const result = evaluateOpeningGuardChecks({
     selectedOpening: "在这个信息爆炸的时代，内容创作正在发生深刻变化，今天想和你聊聊这件事。",

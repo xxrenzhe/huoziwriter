@@ -332,7 +332,8 @@ export async function evaluatePublishGuard(input: {
   const aiNoiseHasRigidOutline = localAiNoise.outlineRigidityRisk === "high";
   const aiNoiseHasSummaryEnding = localAiNoise.summaryEndingRisk === "high";
   const aiNoiseHasDidacticTone = localAiNoise.didacticToneRisk === "high";
-  const aiNoiseNeedsAttention = aiNoiseScore >= 70 || aiNoiseHasRigidOutline || aiNoiseHasSummaryEnding || aiNoiseHasDidacticTone;
+  const aiNoiseHasDistantTone = localAiNoise.distantToneRisk === "high";
+  const aiNoiseNeedsAttention = aiNoiseScore >= 70 || aiNoiseHasRigidOutline || aiNoiseHasSummaryEnding || aiNoiseHasDidacticTone || aiNoiseHasDistantTone;
   const missingEvidence = getStringArray(factCheckArtifact?.payload?.missingEvidence, 6);
   const overallRisk = getString(factCheckArtifact?.payload?.overallRisk);
   const personaAlignment = getString(factCheckArtifact?.payload?.personaAlignment);
@@ -390,7 +391,7 @@ export async function evaluatePublishGuard(input: {
   });
   const rhythmConsistencyReady = rhythmConsistency.status === "aligned";
   const rhythmConsistencyNeedsAttention = Boolean(strategyCard?.archetype) && rhythmConsistency.status !== "aligned";
-  const proseQualityBlocksWechat = aiNoiseScore >= 70 || aiNoiseHasRigidOutline || aiNoiseHasSummaryEnding || aiNoiseHasDidacticTone;
+  const proseQualityBlocksWechat = aiNoiseScore >= 70 || aiNoiseHasRigidOutline || aiNoiseHasSummaryEnding || aiNoiseHasDidacticTone || aiNoiseHasDistantTone;
   const hasCounterEvidence = evidenceStats.counterEvidenceCount > 0 || factCheckCounterEvidenceCount > 0;
   const researchHollowRiskItems = [
     !researchReady ? "研究简报尚未生成，当前还无法确认内容是不是只有表达没有研究。" : null,
@@ -937,6 +938,7 @@ export async function evaluatePublishGuard(input: {
             aiNoiseHasRigidOutline ? "段落推进过于工整，像按施工图展开" : null,
             aiNoiseHasSummaryEnding ? "结尾仍带明显总结腔" : null,
             aiNoiseHasDidacticTone ? "说教姿态偏重，像在培训读者" : null,
+            aiNoiseHasDistantTone ? "读者距离感偏重，像研究摘要而不是公众号现场表达" : null,
           ].filter(Boolean).join("，")
         : `AI 噪声得分 ${aiNoiseScore}，当前风险可控。`,
     targetStageCode: "prosePolish",
@@ -956,6 +958,7 @@ export async function evaluatePublishGuard(input: {
             aiNoiseHasRigidOutline ? "段落推进过于工整" : null,
             aiNoiseHasSummaryEnding ? "结尾仍是总结腔" : null,
             aiNoiseHasDidacticTone ? "说教姿态偏重，缺少读者代价和现场冲突" : null,
+            aiNoiseHasDistantTone ? "读者距离感偏重，缺少账户、预算、复盘会等贴近场景" : null,
           ].filter(Boolean).join("，")
         : "公众号文稿质感底线已满足，未发现高风险机器化节奏。",
       targetStageCode: "prosePolish",

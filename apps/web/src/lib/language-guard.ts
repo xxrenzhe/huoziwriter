@@ -21,6 +21,11 @@ const SYSTEM_LANGUAGE_GUARD_RULES: LanguageGuardRule[] = [
   { id: "system-token-5", scope: "system", source: "system", ruleKind: "token", matchMode: "contains", patternText: "某种意义上", rewriteHint: "删掉缓冲垫，直接说明成立条件。", isEnabled: true, createdAt: null },
   { id: "system-token-6", scope: "system", source: "system", ruleKind: "token", matchMode: "contains", patternText: "换句话说", rewriteHint: "只有在真的换一个层次解释时才保留，否则直接删掉。", isEnabled: true, createdAt: null },
   { id: "system-token-7", scope: "system", source: "system", ruleKind: "token", matchMode: "contains", patternText: "总而言之", rewriteHint: "直接收束观点，不要先喊总结口号。", isEnabled: true, createdAt: null },
+  { id: "system-token-8", scope: "system", source: "system", ruleKind: "token", matchMode: "contains", patternText: "损失感", rewriteHint: "改成读者实际付出的成本，例如钱花了、词改了、单没来。", isEnabled: true, createdAt: null },
+  { id: "system-token-9", scope: "system", source: "system", ruleKind: "token", matchMode: "contains", patternText: "旧解释", rewriteHint: "改成具体排查动作为什么解释不通。", isEnabled: true, createdAt: null },
+  { id: "system-token-10", scope: "system", source: "system", ruleKind: "token", matchMode: "contains", patternText: "解释权", rewriteHint: "改成“这件事到底该怪词、怪出价，还是怪来的人没到下单阶段”。", isEnabled: true, createdAt: null },
+  { id: "system-token-11", scope: "system", source: "system", ruleKind: "token", matchMode: "contains", patternText: "价值分化", rewriteHint: "改成“同样花钱买来的点击，有的能出单，有的只是消耗预算”。", isEnabled: true, createdAt: null },
+  { id: "system-token-12", scope: "system", source: "system", ruleKind: "token", matchMode: "contains", patternText: "搜索投放这些年的变化", rewriteHint: "改成具体平台或账户变化，不要用宏观背景腔。", isEnabled: true, createdAt: null },
   { id: "system-pattern-1", scope: "system", source: "system", ruleKind: "pattern", matchMode: "template", patternText: "不是...而是…", rewriteHint: "只有在前后两部分都足够具体时才保留，否则改成直接判断。", isEnabled: true, createdAt: null },
   { id: "system-pattern-2", scope: "system", source: "system", ruleKind: "pattern", matchMode: "template", patternText: "首先...其次...最后…", rewriteHint: "优先改成自然递进，不要用讲稿式编号。", isEnabled: true, createdAt: null },
 ];

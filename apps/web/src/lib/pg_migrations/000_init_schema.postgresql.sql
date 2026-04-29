@@ -181,6 +181,7 @@ CREATE TABLE IF NOT EXISTS topic_items (
   emotion_labels_json JSONB,
   angle_options_json JSONB,
   topic_verticals_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+  source_meta_json JSONB,
   source_url TEXT,
   published_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -248,6 +249,7 @@ CREATE TABLE IF NOT EXISTS hot_event_clusters (
   primary_source_url TEXT,
   source_names_json JSONB NOT NULL,
   source_urls_json JSONB NOT NULL,
+  source_meta_json JSONB,
   item_count INTEGER NOT NULL DEFAULT 1,
   freshness_score DOUBLE PRECISION NOT NULL DEFAULT 0,
   authority_score DOUBLE PRECISION NOT NULL DEFAULT 0,
@@ -313,6 +315,7 @@ CREATE TABLE IF NOT EXISTS topic_recommendations (
   source_url TEXT,
   related_source_names_json JSONB NOT NULL,
   related_source_urls_json JSONB NOT NULL,
+  source_meta_json JSONB,
   published_at TIMESTAMPTZ,
   recommendation_type TEXT NOT NULL,
   recommendation_reason TEXT NOT NULL,

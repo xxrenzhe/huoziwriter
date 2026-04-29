@@ -42,5 +42,26 @@ test("analyzeAiNoise does not punish reader-centered conflict writing", () => {
   ].join("\n"));
 
   assert.equal(result.didacticToneRisk, "low");
+  assert.equal(result.distantToneRisk, "low");
   assert.equal(result.findings.some((item) => item.includes("说教姿态偏重")), false);
+});
+
+test("analyzeAiNoise flags distant research-style expressions", () => {
+  const result = analyzeAiNoise([
+    "# 别再只盯关键词了：真正值钱的是搜索意图",
+    "",
+    "这种损失感很具体。很多旧解释就是从这里开始松动。",
+    "",
+    "搜索投放这些年的变化，也在把解释权往这里推。",
+    "",
+    "旧常识失效，往往不是因为工具没用，而是因为工具被推到了终局解释的位置。",
+    "",
+    "真正的分水岭，是需求阶段决定商业质量。",
+  ].join("\n"));
+
+  assert.equal(result.distantToneRisk, "high");
+  assert(result.matchedDistantExpressionPhrases.includes("损失感"));
+  assert(result.matchedDistantExpressionPhrases.includes("旧解释"));
+  assert(result.findings.some((item) => item.includes("读者距离感偏重")));
+  assert(result.suggestions.some((item) => item.includes("后台有点击但没有单")));
 });

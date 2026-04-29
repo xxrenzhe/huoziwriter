@@ -1615,6 +1615,20 @@ function normalizeNonNegativeInteger(value: unknown) {
   return Math.round(parsed);
 }
 
+function normalizeExpressionFeedback(value: unknown) {
+  const record = parseJsonRecord(value);
+  const unlikeMe = parseJsonBoolean(record.unlikeMe);
+  const normalized = {
+    likeMe: unlikeMe ? false : parseJsonBoolean(record.likeMe),
+    unlikeMe,
+    tooHard: parseJsonBoolean(record.tooHard),
+    tooSoft: parseJsonBoolean(record.tooSoft),
+    tooTutorial: parseJsonBoolean(record.tooTutorial),
+    tooCommentary: parseJsonBoolean(record.tooCommentary),
+  };
+  return Object.values(normalized).some(Boolean) ? normalized : null;
+}
+
 export type ArticleOutcome = {
   id: number;
   articleId: number;
@@ -1623,6 +1637,14 @@ export type ArticleOutcome = {
   scorecard: Record<string, unknown>;
   attribution: Record<string, unknown> | null;
   hitStatus: "pending" | "hit" | "near_miss" | "miss";
+  expressionFeedback: {
+    likeMe: boolean;
+    unlikeMe: boolean;
+    tooHard: boolean;
+    tooSoft: boolean;
+    tooTutorial: boolean;
+    tooCommentary: boolean;
+  } | null;
   reviewSummary: string | null;
   nextAction: string | null;
   playbookTags: string[];
@@ -1785,6 +1807,7 @@ function mapArticleOutcome(row: {
   scorecard_json: string | Record<string, unknown> | null;
   attribution_json: string | Record<string, unknown> | null;
   hit_status: string;
+  expression_feedback_json: string | Record<string, unknown> | null;
   review_summary: string | null;
   next_action: string | null;
   playbook_tags_json: string | string[] | null;
@@ -1799,6 +1822,7 @@ function mapArticleOutcome(row: {
     scorecard: parseJsonRecord(row.scorecard_json),
     attribution: Object.keys(parseJsonRecord(row.attribution_json)).length > 0 ? parseJsonRecord(row.attribution_json) : null,
     hitStatus: normalizeOutcomeHitStatus(row.hit_status),
+    expressionFeedback: normalizeExpressionFeedback(row.expression_feedback_json),
     reviewSummary: row.review_summary,
     nextAction: row.next_action,
     playbookTags: parseJsonStringArray(row.playbook_tags_json),
@@ -2947,13 +2971,14 @@ export async function getArticleOutcome(articleId: number, userId: number) {
     scorecard_json: string | Record<string, unknown> | null;
     attribution_json: string | Record<string, unknown> | null;
     hit_status: string;
+    expression_feedback_json: string | Record<string, unknown> | null;
     review_summary: string | null;
     next_action: string | null;
     playbook_tags_json: string | string[] | null;
     created_at: string;
     updated_at: string;
   }>(
-    `SELECT id, article_id AS article_id, user_id, target_package, scorecard_json, attribution_json, hit_status, review_summary, next_action, playbook_tags_json, created_at, updated_at
+    `SELECT id, article_id AS article_id, user_id, target_package, scorecard_json, attribution_json, hit_status, expression_feedback_json, review_summary, next_action, playbook_tags_json, created_at, updated_at
      FROM article_outcomes
      WHERE article_id = ? AND user_id = ?
      LIMIT 1`,
@@ -3556,10 +3581,10 @@ async function ensureArticleOutcomeId(input: {
   const db = getDatabase();
   const now = new Date().toISOString();
   await db.exec(
-    `INSERT INTO article_outcomes (article_id, user_id, scorecard_json, attribution_json, hit_status, playbook_tags_json, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO article_outcomes (article_id, user_id, scorecard_json, attribution_json, hit_status, expression_feedback_json, playbook_tags_json, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(article_id) DO NOTHING`,
-    [input.articleId, input.userId, JSON.stringify({}), null, "pending", JSON.stringify([]), now, now],
+    [input.articleId, input.userId, JSON.stringify({}), null, "pending", null, JSON.stringify([]), now, now],
   );
   const outcome = await db.queryOne<{ id: number }>(
     "SELECT id FROM article_outcomes WHERE article_id = ? AND user_id = ?",
@@ -3578,6 +3603,7 @@ export async function upsertArticleOutcome(input: {
   scorecard?: Record<string, unknown>;
   attribution?: Record<string, unknown> | null;
   hitStatus?: "pending" | "hit" | "near_miss" | "miss";
+  expressionFeedback?: ArticleOutcome["expressionFeedback"];
   reviewSummary?: string | null;
   nextAction?: string | null;
   playbookTags?: string[];
@@ -3591,13 +3617,18 @@ export async function upsertArticleOutcome(input: {
   const nextPlaybookTags = input.playbookTags !== undefined ? input.playbookTags : current?.playbookTags ?? [];
   await db.exec(
     `UPDATE article_outcomes
-     SET target_package = ?, scorecard_json = ?, attribution_json = ?, hit_status = ?, review_summary = ?, next_action = ?, playbook_tags_json = ?, updated_at = ?
+     SET target_package = ?, scorecard_json = ?, attribution_json = ?, hit_status = ?, expression_feedback_json = ?, review_summary = ?, next_action = ?, playbook_tags_json = ?, updated_at = ?
      WHERE id = ? AND user_id = ?`,
     [
       input.targetPackage !== undefined ? input.targetPackage : current?.targetPackage ?? null,
       JSON.stringify(nextScorecard),
       nextAttribution ? JSON.stringify(nextAttribution) : null,
       input.hitStatus ?? current?.hitStatus ?? "pending",
+      input.expressionFeedback !== undefined
+        ? (input.expressionFeedback ? JSON.stringify(input.expressionFeedback) : null)
+        : current?.expressionFeedback
+          ? JSON.stringify(current.expressionFeedback)
+          : null,
       input.reviewSummary !== undefined ? input.reviewSummary : current?.reviewSummary ?? null,
       input.nextAction !== undefined ? input.nextAction : current?.nextAction ?? null,
       JSON.stringify(nextPlaybookTags),
@@ -3690,13 +3721,14 @@ export async function getArticleOutcomeBundlesByUser(userId: number) {
     scorecard_json: string | Record<string, unknown> | null;
     attribution_json: string | Record<string, unknown> | null;
     hit_status: string;
+    expression_feedback_json: string | Record<string, unknown> | null;
     review_summary: string | null;
     next_action: string | null;
     playbook_tags_json: string | string[] | null;
     created_at: string;
     updated_at: string;
   }>(
-    `SELECT id, article_id AS article_id, user_id, target_package, scorecard_json, attribution_json, hit_status, review_summary, next_action, playbook_tags_json, created_at, updated_at
+    `SELECT id, article_id AS article_id, user_id, target_package, scorecard_json, attribution_json, hit_status, expression_feedback_json, review_summary, next_action, playbook_tags_json, created_at, updated_at
      FROM article_outcomes
      WHERE user_id = ?
      ORDER BY updated_at DESC, id DESC`,

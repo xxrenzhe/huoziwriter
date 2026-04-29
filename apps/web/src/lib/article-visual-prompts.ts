@@ -98,6 +98,7 @@ export function buildArticleVisualPrompt(brief: ArticleVisualBrief) {
     `画幅：${brief.aspectRatio}，输出分辨率：${brief.outputResolution}。`,
     brief.labels.length ? `图中可出现的中文标签：${brief.labels.join("、")}。` : null,
     brief.sourceFacts.length ? `只能使用这些事实，不要新增数据或案例：${brief.sourceFacts.join("；")}。` : null,
+    "图片必须承担证据、对比、路径或节奏换气作用，不生成“痛点引入”“方法总结”“行动建议”这类内部结构提示卡。",
     "图片要帮助读者理解正文，不做无关装饰；不要出现水印、虚假截图、真实平台收益截图或未经授权品牌标识。",
   ]);
 }

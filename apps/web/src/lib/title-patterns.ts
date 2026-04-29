@@ -91,6 +91,75 @@ function truncateText(text: string, limit = 160) {
   return text.length > limit ? `${text.slice(0, limit)}…` : text;
 }
 
+function getTitleSeparatorCount(title: string) {
+  return (title.match(/[：:]/g) ?? []).length;
+}
+
+function getTitleStructuralForbiddenHits(title: string) {
+  const normalized = String(title || "").trim();
+  const hits: string[] = [];
+  const separatorCount = getTitleSeparatorCount(normalized);
+  if (separatorCount >= 2) {
+    hits.push("机械拼接");
+  }
+  if (/…\s*[：:,，]/.test(normalized)) {
+    hits.push("截断标题拼接");
+  }
+  if (/[，,、；;]\s*[：:]/.test(normalized) || /[：:]\s*[，,、；;]/.test(normalized)) {
+    hits.push("异常标点拼接");
+  }
+  if (/[^\s：:]{4,}[的地得]\s*[：:]/.test(normalized)) {
+    hits.push("断裂助词拼接");
+  }
+  if (normalized.length > 38 && separatorCount >= 1) {
+    hits.push("标题过长拼接");
+  }
+  return hits;
+}
+
+export function normalizeTitleSeed(baseTitle: string) {
+  const normalized = String(baseTitle || "")
+    .replace(/^#+\s*/, "")
+    .replace(/[《》]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!normalized) return "";
+  const firstPart = normalized
+    .split(/[：:；;，,、。！？!?…\n]/)
+    .map((item) => item.trim())
+    .find((item) => item.length >= 4);
+  const seed = truncateText(firstPart || normalized, 18).replace(/[：:；;，,、。！？!?…]+$/g, "").trim();
+  return seed.length >= 8 ? seed.replace(/[的地得]$/g, "").trim() : seed;
+}
+
+export function buildTitleGenerationBrief(input: {
+  articleTitle?: string | null;
+  workingTitle?: string | null;
+  centralThesis?: string | null;
+  titleStrategyNotes?: string[] | null;
+}) {
+  const rawTitles = [input.workingTitle, input.articleTitle]
+    .map((item) => String(item || "").replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+  const titleAxis = normalizeTitleSeed(input.centralThesis || input.workingTitle || input.articleTitle || "");
+  const forbiddenPrefixes = Array.from(new Set([
+    ...rawTitles,
+    ...rawTitles.map((item) => normalizeTitleSeed(item)).filter(Boolean),
+  ]))
+    .map((item) => item.replace(/[：:；;，,、。！？!?…]+$/g, "").replace(/[的地得]$/g, "").trim())
+    .filter((item) => item.length >= 6)
+    .slice(0, 4);
+  const strategyNotes = Array.isArray(input.titleStrategyNotes)
+    ? input.titleStrategyNotes.map((item) => String(item || "").trim()).filter(Boolean).slice(0, 4)
+    : [];
+  return {
+    titleAxis: titleAxis || normalizeTitleSeed(rawTitles[0] || "") || "这件事",
+    forbiddenPrefixes,
+    strategyNotes,
+    rewriteRule: "标题必须围绕主轴重新成句，不得复制工作标题后再接冒号、后半句或万能模板。",
+  };
+}
+
 function parseIsoTimestamp(value: unknown) {
   const text = String(value || "").trim();
   if (!text) return null;
@@ -99,9 +168,12 @@ function parseIsoTimestamp(value: unknown) {
 }
 
 export function detectTitleForbiddenHits(title: string) {
-  return TITLE_FORBIDDEN_RULES
+  return Array.from(new Set([
+    ...TITLE_FORBIDDEN_RULES
     .filter((rule) => rule.pattern.test(title))
-    .map((rule) => rule.label);
+      .map((rule) => rule.label),
+    ...getTitleStructuralForbiddenHits(title),
+  ]));
 }
 
 export function inferTitleElementsHit(title: string): TitleElementsHit {
@@ -138,6 +210,14 @@ function getDefaultTitleRecommendReason(input: {
     return input.openRateScore >= 40 ? "三要素命中稳定，且打开率分更高。" : "至少满足两项关键要素，适合作为保守推荐。";
   }
   return "当前标题信息差或读者视角还不够，建议继续优化。";
+}
+
+function isPublishableTitleOption(item: TitleOption) {
+  return (
+    item.forbiddenHits.length === 0
+    && item.openRateScore >= RECOMMENDED_MIN_OPEN_RATE_SCORE
+    && getTitleElementHitCount(item.elementsHit) >= RECOMMENDED_MIN_ELEMENTS_HIT_COUNT
+  );
 }
 
 function normalizeTitleOptionRecord(
@@ -186,18 +266,13 @@ export function ensureSingleRecommendedTitleOption(options: TitleOption[]) {
   if (options.length === 0) {
     return options;
   }
-  const isPublishableRecommendedTitle = (item: TitleOption) => (
-    item.forbiddenHits.length === 0
-    && item.openRateScore >= RECOMMENDED_MIN_OPEN_RATE_SCORE
-    && getTitleElementHitCount(item.elementsHit) >= RECOMMENDED_MIN_ELEMENTS_HIT_COUNT
-  );
-  const explicitRecommendedIndex = options.findIndex((item) => item.isRecommended && isPublishableRecommendedTitle(item));
+  const explicitRecommendedIndex = options.findIndex((item) => item.isRecommended && isPublishableTitleOption(item));
   const recommendedIndex = explicitRecommendedIndex >= 0
     ? explicitRecommendedIndex
     : options.reduce((bestIndex, item, index, list) => {
         const best = list[bestIndex];
-        const itemPublishable = isPublishableRecommendedTitle(item);
-        const bestPublishable = isPublishableRecommendedTitle(best);
+        const itemPublishable = isPublishableTitleOption(item);
+        const bestPublishable = isPublishableTitleOption(best);
         const itemHitCount = getTitleElementHitCount(item.elementsHit);
         const bestHitCount = getTitleElementHitCount(best.elementsHit);
         if (itemPublishable && !bestPublishable) return index;
@@ -230,17 +305,26 @@ export function normalizeTitleOptions(
   const fallbackNormalized = fallback
     .map((item, index) => normalizeTitleOptionRecord(item, null, index))
     .filter((item) => item.title);
-  const merged = [...normalized];
-  for (const fallbackItem of fallbackNormalized) {
-    if (merged.length >= limit) break;
-    if (merged.some((item) => item.title === fallbackItem.title)) continue;
-    merged.push(fallbackItem);
+  const merged = normalized.filter(isPublishableTitleOption);
+  const appendUnique = (item: TitleOption) => {
+    if (merged.length >= limit) return;
+    if (merged.some((existing) => existing.title === item.title)) return;
+    merged.push(item);
+  };
+  for (const fallbackItem of fallbackNormalized.filter(isPublishableTitleOption)) {
+    appendUnique(fallbackItem);
+  }
+  for (const item of normalized.filter((option) => !isPublishableTitleOption(option))) {
+    appendUnique(item);
+  }
+  for (const fallbackItem of fallbackNormalized.filter((option) => !isPublishableTitleOption(option))) {
+    appendUnique(fallbackItem);
   }
   return ensureSingleRecommendedTitleOption((merged.length > 0 ? merged : fallbackNormalized).slice(0, limit));
 }
 
 export function buildFallbackTitleOptions(baseTitle: string) {
-  const seed = truncateText(baseTitle, 28) || "这件事";
+  const seed = normalizeTitleSeed(baseTitle) || "这件事";
   return normalizeTitleOptions(
     [
       {

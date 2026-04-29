@@ -139,6 +139,24 @@ function buildScenario(overrides: Partial<ScenarioReport> = {}): ScenarioReport 
       methodologyWarningCount: 0,
       methodologyGateStatuses: [],
     },
+    viralReadinessSummary: {
+      issueCount: 0,
+      issues: [],
+    },
+    generatedArticleQualitySummary: {
+      issueCount: 0,
+      issues: [],
+      aiNoise: {
+        score: 0,
+        level: "low",
+        didacticToneRisk: "low",
+        distantToneRisk: "low",
+        didacticCueCount: 0,
+        distantExpressionCount: 0,
+        readerClosenessCueCount: 6,
+        matchedDistantExpressionPhrases: [],
+      },
+    },
     aiUsageSummary: {
       callCount: 3,
       totalInputTokens: 0,
@@ -232,4 +250,34 @@ test("getScenarioAcceptanceIssues blocks weak title and opening quality", () => 
   assert.match(issues[6] ?? "", /推荐开头仍有危险诊断项/);
   assert.match(issues[7] ?? "", /推荐开头钩子分偏低/);
   assert.match(issues[8] ?? "", /推荐开头质量上限不足/);
+});
+
+test("getScenarioAcceptanceIssues blocks viral readiness and final article quality issues", () => {
+  const issues = getScenarioAcceptanceIssues({
+    requiresWechatDraft: false,
+    scenario: buildScenario({
+      viralReadinessSummary: {
+        issueCount: 1,
+        issues: [{ code: "readiness_viral_genome_share_reason", detail: "缺少读者转发理由" }],
+      },
+      generatedArticleQualitySummary: {
+        issueCount: 1,
+        issues: [{ code: "generated_article_didactic_tone", detail: "说教姿态过重" }],
+        aiNoise: {
+          score: 72,
+          level: "medium",
+          didacticToneRisk: "high",
+          distantToneRisk: "low",
+          didacticCueCount: 11,
+          distantExpressionCount: 0,
+          readerClosenessCueCount: 5,
+          matchedDistantExpressionPhrases: [],
+        },
+      },
+    }),
+  });
+
+  assert.equal(issues.length, 2);
+  assert.match(issues[0] ?? "", /爆款上游准备度仍有阻塞/);
+  assert.match(issues[1] ?? "", /终稿爆款质量仍有阻塞/);
 });

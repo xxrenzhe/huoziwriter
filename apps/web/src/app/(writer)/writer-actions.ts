@@ -294,6 +294,7 @@ export async function generateCoverImageAction(input: {
       batchToken,
       variantLabel: candidate.variantLabel,
       source: candidate.imageUrl,
+      aspectRatio: "16:9",
     });
     const result = await db.exec(
       `INSERT INTO cover_image_candidates (

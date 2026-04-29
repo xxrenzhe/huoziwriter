@@ -241,6 +241,7 @@ export async function ArticleDetailPage({
       authoringContext={authoringContext}
       seriesInsight={writingContext.seriesInsight ?? null}
       currentSeriesPlaybook={currentSeriesPlaybook}
+      effectiveWritingProfile={writingContext.authorOutcomeFeedbackLedger?.effectiveWritingProfile ?? null}
       coverImageQuota={coverImageQuota}
       imageAssetQuota={imageAssetQuota}
       initialCoverImageCandidates={coverImageCandidates.map((candidate) => ({

@@ -153,6 +153,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
       layoutStrategy,
       outlineNodes: writingContext.outlineNodes,
       knowledgeCards: writingContext.knowledgeCards,
+      authorOutcomeFeedbackLedger: writingContext.authorOutcomeFeedbackLedger,
       imageFragments: writingContext.imageFragments
         .filter((item): item is typeof item & { screenshotPath: string } => Boolean(item.screenshotPath))
         .map((item) => ({
@@ -171,6 +172,8 @@ export async function POST(request: Request, { params }: { params: { id: string 
     return ok({
       previewMarkdown: generated.markdown,
       promptVersionRefs: generated.promptVersionRefs,
+      personaAudit: generated.personaAudit ?? null,
+      informationGainAudit: generated.informationGainAudit ?? null,
       scoringProfile: activeScoringProfile
         ? {
             code: activeScoringProfile.code,

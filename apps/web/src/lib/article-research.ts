@@ -25,9 +25,37 @@ export function getResearchBriefGenerationGate(payload: unknown) {
   const timelineCount = getRecordArray(researchBrief?.timelineCards).length;
   const comparisonCount = getRecordArray(researchBrief?.comparisonCards).length;
   const insightCount = getRecordArray(researchBrief?.intersectionInsights).length;
-  const generationBlocked = Boolean(researchBrief && sourceCoverage) && (sufficiency === "blocked" || coveredCategoryCount <= 1);
+  const businessQuestions = getStringArray(researchBrief?.businessQuestions, 7);
+  const businessQuestionAnswers = getRecordArray(researchBrief?.businessQuestionAnswers);
+  const answeredBusinessQuestionCount = businessQuestionAnswers.filter((item) =>
+    getString(item.question) && getString(item.answer) && getString(item.status) !== "needs_source",
+  ).length;
+  const sparseTrackResearchPlan = getRecord(researchBrief?.sparseTrackResearchPlan);
+  const sparseTrack = Boolean(sparseTrackResearchPlan?.sparseTrack);
+  const sparseRequiredAngles = getStringArray(sparseTrackResearchPlan?.requiredAngles, 6);
+  const sparseAnglesCovered = sparseRequiredAngles.filter((angle) =>
+    businessQuestionAnswers.some((item) => `${getString(item.question)} ${getString(item.answer)} ${getString(item.evidenceNeed)}`.includes(angle)),
+  ).length;
+  const businessQuestionBlocked = businessQuestions.length >= 5 && answeredBusinessQuestionCount < Math.min(5, businessQuestions.length);
+  const sparseTrackBlocked = sparseTrack && sparseAnglesCovered < Math.min(3, sparseRequiredAngles.length || 3);
+  const generationBlocked = Boolean(researchBrief && sourceCoverage) && (
+    sufficiency === "blocked"
+    || coveredCategoryCount <= 1
+    || businessQuestionBlocked
+    || sparseTrackBlocked
+  );
   const generationBlockReason = generationBlocked
-    ? `研究简报的信源覆盖仍不足，当前更像观点草稿，不适合直接生成判断型正文${missingCategories.length ? `。建议先补：${missingCategories.join("、")}` : "。"}`
+    ? [
+        sufficiency === "blocked" || coveredCategoryCount <= 1
+          ? `研究简报的信源覆盖仍不足，当前更像观点草稿${missingCategories.length ? `。建议先补：${missingCategories.join("、")}` : "。"}`
+          : null,
+        businessQuestionBlocked
+          ? `商业七问只回答 ${answeredBusinessQuestionCount}/${businessQuestions.length}，还不能进入泛教程式正文。`
+          : null,
+        sparseTrackBlocked
+          ? "稀疏题材还没有补齐钱流、why now、不适合谁等专门证据。"
+          : null,
+      ].filter(Boolean).join(" ")
     : "";
 
   return {
@@ -38,6 +66,10 @@ export function getResearchBriefGenerationGate(payload: unknown) {
     timelineCount,
     comparisonCount,
     insightCount,
+    businessQuestionCount: businessQuestions.length,
+    answeredBusinessQuestionCount,
+    sparseTrack,
+    sparseRequiredAngles,
     generationBlocked,
     generationBlockReason,
   };

@@ -3,6 +3,7 @@ import { DEFAULT_ARTICLE_NODE_TITLES, isInternalArticleStructureLabel, sanitizeU
 import { chooseBaoyuCoverPreset, chooseBaoyuInlinePreset } from "./article-visual-presets";
 import { buildArticleVisualPromptManifest } from "./article-visual-prompts";
 import type { ArticleVisualBrief } from "./article-visual-types";
+import { buildViralVisualRhythmSlots, scoreVisualRhythmPosition } from "./article-viral-genome";
 
 function stripMarkdown(text: string) {
   return String(text || "")
@@ -149,11 +150,18 @@ export async function planArticleVisualBriefs(input: {
 
   if (input.includeInline !== false) {
     const nodes = await getArticleNodes(input.articleId);
+    const inlineImageCount = Math.max(1, Math.min(4, estimateInlineImageCount(input.markdown)));
+    const visualRhythmSlots = buildViralVisualRhythmSlots(inlineImageCount);
     const candidates = nodes
       .filter((node) => node.title.trim())
-      .map((node, index) => {
+      .map((node, index, allNodes) => {
         const nodeText = [node.title, node.description || "", ...node.fragments.map((fragment) => fragment.distilledContent)].join("\n");
         const substantiveText = [node.description || "", ...node.fragments.map((fragment) => fragment.distilledContent)].join("\n");
+        const rhythmScore = scoreVisualRhythmPosition({
+          nodeIndex: index,
+          totalNodes: allNodes.length,
+          slots: visualRhythmSlots,
+        });
         return {
           node,
           index,
@@ -163,14 +171,17 @@ export async function planArticleVisualBriefs(input: {
           hasSubstantiveText: stripMarkdown(substantiveText).length >= 24,
           score:
             (/步骤|流程|路径|框架|模型|对比|清单|工具|资源|趋势|阶段|机制|方法论/i.test(nodeText) ? 4 : 1)
-            + Math.min(3, Math.floor(stripMarkdown(nodeText).length / 80)),
+            + Math.min(3, Math.floor(stripMarkdown(nodeText).length / 80))
+            + rhythmScore,
         };
       })
       .filter((candidate) => candidate.hasUserFacingTitle || candidate.hasSubstantiveText)
       .sort((left, right) => right.score - left.score || left.index - right.index)
-      .slice(0, Math.max(1, Math.min(4, estimateInlineImageCount(input.markdown))));
+      .slice(0, inlineImageCount)
+      .sort((left, right) => left.index - right.index);
 
     for (const [index, candidate] of candidates.entries()) {
+      const rhythmSlot = visualRhythmSlots[Math.min(index, visualRhythmSlots.length - 1)] || null;
       const userFacingTitle = buildUserFacingNodeTitle({
         nodeTitle: candidate.node.title,
         nodeText: candidate.hasUserFacingTitle ? candidate.text : candidate.substantiveText,
@@ -206,7 +217,7 @@ export async function planArticleVisualBriefs(input: {
         aspectRatio: preset.aspectRatio,
         outputResolution,
         title: userFacingTitle,
-        purpose: preset.scope === "diagram" ? "用结构图降低读者理解成本" : "把该小节的关键信息转化为可保存、可转发的文中视觉资产",
+        purpose: rhythmSlot?.purpose || (preset.scope === "diagram" ? "用结构图降低读者理解成本" : "把该小节的关键信息转化为可保存、可转发的文中视觉资产"),
         altText: `${userFacingTitle}的文中配图`,
         caption,
         labels,

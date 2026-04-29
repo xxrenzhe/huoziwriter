@@ -90,3 +90,59 @@ test("getArticleWritingContext carries source localization metadata into evidenc
     assert.deepEqual(localized?.factPointsZh, ["作者把路径拆成远程工作、自由职业和可复用数字资产三层。"]);
   });
 });
+
+test("getArticleWritingContext fallback fragments prefer relevance over recency order", async () => {
+  await withTempDatabase("fallback-retrieval-ranking", async () => {
+    const db = getDatabase();
+    const now = new Date().toISOString();
+    await db.exec(
+      "INSERT INTO users (id, email, password_hash, role, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+      [1, "fallback-ranking@example.com", "test-hash", "admin", now, now],
+    );
+    await ensureExtendedProductSchema();
+
+    const articleInsert = await db.exec(
+      `INSERT INTO articles (user_id, title, markdown_content, html_content, status, series_id, wechat_template_id, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        1,
+        "AI 写作 workflow 的判断成本",
+        "这篇文章要讨论 AI 写作 workflow 里真正贵的不是生成速度，而是判断成本和取舍责任。",
+        "",
+        "draft",
+        null,
+        null,
+        now,
+        now,
+      ],
+    );
+    const articleId = Number(articleInsert.lastInsertRowid);
+    await ensureDefaultArticleNodes(articleId);
+
+    await createFragment({
+      userId: 1,
+      sourceType: "url",
+      title: "AI 写作 workflow 的判断成本",
+      distilledContent: "AI 写作 workflow 的核心不是提效，而是把判断成本和责任前移给操作者。",
+    });
+
+    for (const index of Array.from({ length: 7 }, (_, value) => value + 1)) {
+      await createFragment({
+        userId: 1,
+        sourceType: "url",
+        title: `无关素材 ${index}`,
+        distilledContent: `这是第 ${index} 条无关素材，讨论旅行装备、早餐选择和天气变化。`,
+      });
+    }
+
+    const context = await getArticleWritingContext({
+      userId: 1,
+      articleId,
+      title: "AI 写作 workflow 的判断成本",
+      markdownContent: "这篇文章要讨论 AI 写作 workflow 里真正贵的不是生成速度，而是判断成本和取舍责任。",
+    });
+
+    assert.ok(context.fragments.some((fragment) => fragment.includes("判断成本和责任前移")));
+    assert.ok(context.evidenceFragments.some((fragment) => fragment.title === "AI 写作 workflow 的判断成本"));
+  });
+});

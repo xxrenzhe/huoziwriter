@@ -6,6 +6,7 @@ import test from "node:test";
 
 import { closeDatabase, getDatabase } from "../db";
 import { getArticleAuthoringStyleContext } from "../article-authoring-style-context";
+import { upsertArticleOutcome, upsertArticleOutcomeSnapshot } from "../repositories";
 import { ensureExtendedProductSchema } from "../schema-bootstrap";
 import { ensureAutoWritingStyleProfile, getWritingStyleProfiles } from "../writing-style-profiles";
 import { runPendingMigrations } from "../../../../../scripts/db-flow";
@@ -179,7 +180,120 @@ test("getArticleAuthoringStyleContext auto-selects best available style profile 
 
     assert.ok(context.writingStyleProfile);
     assert.equal(context.writingStyleProfile?.sampleCount, 3);
+    assert.ok(context.writingStyleProfile?.confidenceProfile);
     assert.equal(context.writingStyleProfile?.bindingSource, "auto.bestAvailableWritingStyleProfile");
     assert.equal(context.persona?.boundWritingStyleProfileName, context.writingStyleProfile?.name);
+  });
+});
+
+test("getArticleAuthoringStyleContext writes author outcome preferences back into runtime persona and style hints", async () => {
+  await withTempDatabase("outcome-feedback-runtime-writeback", async () => {
+    const userId = 23;
+    await seedUser(userId);
+    await seedDefaultPersona(userId);
+    await seedArticle({
+      userId,
+      title: "当前稿件",
+      markdownContent: buildLongMarkdown("当前稿件"),
+      status: "draft",
+      createdAt: "2026-04-28T00:00:00.000Z",
+    });
+    await seedArticle({
+      userId,
+      title: "历史样本",
+      markdownContent: buildLongMarkdown("历史样本"),
+      createdAt: "2026-04-26T00:00:00.000Z",
+    });
+
+    const db = getDatabase();
+    const now = new Date().toISOString();
+    await db.exec(
+      `INSERT INTO writing_style_profiles (
+        id, user_id, name, source_url, source_title, summary, tone_keywords_json, structure_patterns_json,
+        language_habits_json, opening_patterns_json, ending_patterns_json, do_not_write_json, imitation_prompt,
+        source_excerpt, analysis_payload_json, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        501,
+        userId,
+        "绑定文风",
+        null,
+        null,
+        "测试用绑定文风",
+        JSON.stringify(["克制"]),
+        JSON.stringify(["先判断后展开"]),
+        JSON.stringify(["短句"]),
+        JSON.stringify(["背景铺垫", "问题起手"]),
+        JSON.stringify(["回到判断"]),
+        JSON.stringify(["避免空话"]),
+        "保持克制判断。",
+        null,
+        JSON.stringify({
+          statePresets: ["克制分析态"],
+          sampleCount: 2,
+        }),
+        now,
+        now,
+      ],
+    );
+    await db.exec(
+      "UPDATE personas SET bound_writing_style_profile_id = ?, updated_at = ? WHERE user_id = ? AND is_default = 1",
+      [501, now, userId],
+    );
+
+    await db.exec(
+      `INSERT INTO article_stage_artifacts (
+        article_id, stage_code, status, summary, payload_json, model, provider, error_message, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        2,
+        "deepWriting",
+        "ready",
+        "deepWriting",
+        JSON.stringify({
+          articlePrototype: "opinion",
+          articlePrototypeLabel: "观点判断",
+          stateVariantCode: "animated",
+          stateVariantLabel: "兴奋分享态",
+          openingPatternLabel: "冲突起手",
+          sectionRhythm: "短段推进",
+        }),
+        null,
+        null,
+        null,
+        now,
+        now,
+      ],
+    );
+    await upsertArticleOutcome({
+      articleId: 2,
+      userId,
+      hitStatus: "hit",
+      scorecard: {},
+      attribution: null,
+    });
+    await upsertArticleOutcomeSnapshot({
+      articleId: 2,
+      userId,
+      windowCode: "7d",
+      readCount: 800,
+      shareCount: 4,
+      likeCount: 16,
+      writingStateFeedback: {
+        adoptedPrototypeCode: "opinion",
+        followedPrototypeRecommendation: true,
+        adoptedVariantCode: "animated",
+        followedRecommendation: true,
+        adoptedOpeningPatternLabel: "冲突起手",
+        recommendedOpeningPatternLabel: "冲突起手",
+      },
+    });
+
+    const context = await getArticleAuthoringStyleContext(userId, 1);
+
+    assert.equal(context.persona?.argumentPreferences?.[0], "近期高命中原型：观点判断");
+    assert.equal(context.persona?.argumentPreferences?.[1], "近期高命中状态：兴奋分享态");
+    assert.equal(context.writingStyleProfile?.openingPatterns[0], "冲突起手");
+    assert.equal(context.writingStyleProfile?.statePresets?.[0], "优先使用兴奋分享态");
   });
 });

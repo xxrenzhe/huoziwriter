@@ -12,6 +12,11 @@ const QUALITY_CEILING_RANKS = {
 } as const;
 
 const OPENING_PATTERN_LABELS = {
+  ledger_result: "账本/结果先抛",
+  misjudgment_cost: "误判代价先抛",
+  entity_action: "公司/创始人/产品动作先抛",
+  tool_test_result: "工具实测结论先抛",
+  role_industry_shift: "岗位/行业变化现场先抛",
   scene_entry: "场景切入",
   conflict_entry: "冲突反差",
   judgement_first: "判断前置",
@@ -21,6 +26,11 @@ const OPENING_PATTERN_LABELS = {
 } as const;
 
 const OPENING_PATTERN_QUALITY_CEILINGS = {
+  ledger_result: "A",
+  misjudgment_cost: "A",
+  entity_action: "A",
+  tool_test_result: "A",
+  role_industry_shift: "A",
   scene_entry: "A",
   conflict_entry: "A",
   judgement_first: "B+",
@@ -86,6 +96,14 @@ const CONCRETE_PATTERNS = [
   /晚上/,
   /截图/,
   /数据/,
+  /Google Ads/i,
+  /PPC/i,
+  /搜索词/,
+  /关键词/,
+  /质量分/,
+  /线索/,
+  /出单/,
+  /转化/,
 ] as const;
 
 const HOOK_PATTERNS = [
@@ -240,6 +258,11 @@ function normalizeDiagnoseLevel(value: unknown, fallback: OpeningDiagnoseLevel):
   return value === "pass" || value === "warn" || value === "danger" ? value : fallback;
 }
 
+function stricterDiagnoseLevel(left: OpeningDiagnoseLevel, right: OpeningDiagnoseLevel): OpeningDiagnoseLevel {
+  const ranks = { pass: 0, warn: 1, danger: 2 } as const;
+  return ranks[left] >= ranks[right] ? left : right;
+}
+
 function normalizeQualityCeiling(value: unknown, fallback: OpeningQualityCeiling): OpeningQualityCeiling {
   const normalized = String(value || "").trim().toUpperCase();
   if (normalized === "A" || normalized === "A档") return "A";
@@ -257,6 +280,11 @@ function getOpeningText(value: Record<string, unknown> | null | undefined) {
 function inferOpeningPatternCode(opening: string): OpeningPatternCode {
   const normalized = String(opening || "").replace(/\s+/g, " ").trim();
   const firstSentence = normalized.split(/[。！？!?]/)[0]?.trim() || normalized;
+  if (countPatternHits(firstSentence, [/账本|预算|收入|成本|订单|佣金|ARR|MRR|ROI|结果|出单|续费|留存|转化|提现/]) > 0) return "ledger_result";
+  if (countPatternHits(firstSentence, [/误判|代价|亏|浪费|卡住|不出单|返工|错过|风险|坑/]) > 0) return "misjudgment_cost";
+  if (countPatternHits(firstSentence, [/公司|创始人|CEO|产品|平台|品牌|融资|收购|上线|发布|改版|删掉/]) > 0) return "entity_action";
+  if (countPatternHits(firstSentence, [/实测|亲测|试了|上手|跑了一遍|替换|工具|GitHub|仓库|插件|Cursor|Figma|Notion/]) > 0) return "tool_test_result";
+  if (countPatternHits(firstSentence, [/岗位|团队|投手|运营|销售|行业|组织|老板|同事|绩效|周会|复盘会/]) > 0) return "role_industry_shift";
   if (countPatternHits(firstSentence, [/[？?]/, /为什么|怎么|是不是|到底|凭什么|要不要|该不该/]) > 0) return "question_hook";
   if (countPatternHits(firstSentence, [/那天|有次|这次|刚开始|刚上手|上周|昨晚|第一次|前几天|我试了|我后来/]) > 0) return "scene_entry";
   if (countPatternHits(firstSentence, [/先说结论|一句话说|我的判断|我先下个判断|直接说结论/]) > 0) return "judgement_first";
@@ -334,9 +362,10 @@ function buildOpeningDiagnose(opening: string): OpeningDiagnose {
   const paddingLevel: OpeningDiagnoseLevel =
     isStrongScene
       ? "pass"
-      : startsWithPadding || (normalized.length >= 48 && (firstHookIndex === null || firstHookIndex > 28))
+      : startsWithPadding || (normalized.length > 120 && (firstHookIndex === null || firstHookIndex > 28))
       ? "danger"
-      : normalized.length >= 36 && (firstHookIndex === null || firstHookIndex > 18)
+      : (normalized.length >= 48 && (firstHookIndex === null || firstHookIndex > 28))
+        || (normalized.length >= 36 && (firstHookIndex === null || firstHookIndex > 18))
         ? "warn"
         : "pass";
 
@@ -473,21 +502,33 @@ function normalizeOpeningOptionRecord(
   const valueDiagnose = getRecord(value?.diagnose);
   const fallbackDiagnose = shouldUseFallbackMetrics ? getRecord(fallback?.diagnose) : null;
   const diagnose = {
-    abstractLevel: normalizeDiagnoseLevel(
-      valueDiagnose?.abstractLevel,
-      normalizeDiagnoseLevel(fallbackDiagnose?.abstractLevel, inferredDiagnose.abstractLevel),
+    abstractLevel: stricterDiagnoseLevel(
+      normalizeDiagnoseLevel(
+        valueDiagnose?.abstractLevel,
+        normalizeDiagnoseLevel(fallbackDiagnose?.abstractLevel, inferredDiagnose.abstractLevel),
+      ),
+      inferredDiagnose.abstractLevel,
     ),
-    paddingLevel: normalizeDiagnoseLevel(
-      valueDiagnose?.paddingLevel,
-      normalizeDiagnoseLevel(fallbackDiagnose?.paddingLevel, inferredDiagnose.paddingLevel),
+    paddingLevel: stricterDiagnoseLevel(
+      normalizeDiagnoseLevel(
+        valueDiagnose?.paddingLevel,
+        normalizeDiagnoseLevel(fallbackDiagnose?.paddingLevel, inferredDiagnose.paddingLevel),
+      ),
+      inferredDiagnose.paddingLevel,
     ),
-    hookDensity: normalizeDiagnoseLevel(
-      valueDiagnose?.hookDensity,
-      normalizeDiagnoseLevel(fallbackDiagnose?.hookDensity, inferredDiagnose.hookDensity),
+    hookDensity: stricterDiagnoseLevel(
+      normalizeDiagnoseLevel(
+        valueDiagnose?.hookDensity,
+        normalizeDiagnoseLevel(fallbackDiagnose?.hookDensity, inferredDiagnose.hookDensity),
+      ),
+      inferredDiagnose.hookDensity,
     ),
-    informationFrontLoading: normalizeDiagnoseLevel(
-      valueDiagnose?.informationFrontLoading,
-      normalizeDiagnoseLevel(fallbackDiagnose?.informationFrontLoading, inferredDiagnose.informationFrontLoading),
+    informationFrontLoading: stricterDiagnoseLevel(
+      normalizeDiagnoseLevel(
+        valueDiagnose?.informationFrontLoading,
+        normalizeDiagnoseLevel(fallbackDiagnose?.informationFrontLoading, inferredDiagnose.informationFrontLoading),
+      ),
+      inferredDiagnose.informationFrontLoading,
     ),
   } satisfies OpeningDiagnose;
   const forbiddenHits = uniqueStrings(
@@ -611,17 +652,40 @@ export function normalizeOpeningOptions(
 
 export function buildFallbackOpeningOptions(baseTitle: string) {
   const seed = shortenOpeningSeed(baseTitle);
+  const isSearchMarketing = /(搜索广告|搜索意图|关键词|搜索词|谷歌广告|google ads|ppc|sem|质量分|转化|线索|出单)/i.test(baseTitle);
+  if (isSearchMarketing) {
+    return normalizeOpeningOptions(
+      [
+        {
+          opening: "词很精准，质量分也不差，预算还能跑，结果就是不出单。这个时候，先别急着调出价，真正该复盘的是搜索词背后的需求阶段。",
+          patternCode: "ledger_result",
+          patternLabel: OPENING_PATTERN_LABELS.ledger_result,
+        },
+        {
+          opening: "很多账户最贵的浪费，不是买错关键词，而是把“正在了解的人”当成“马上要买的人”。词面越精准，这个误判有时越隐蔽。",
+          patternCode: "misjudgment_cost",
+          patternLabel: OPENING_PATTERN_LABELS.misjudgment_cost,
+        },
+        {
+          opening: "如果一个精准词长期不赚钱，问题可能不在匹配方式，也不在质量分。它更可能说明：搜这个词的人，还没走到你以为的成交位置。",
+          patternCode: "judgement_first",
+          patternLabel: OPENING_PATTERN_LABELS.judgement_first,
+        },
+      ],
+      [],
+    );
+  }
   return normalizeOpeningOptions(
     [
       {
         opening: `${seed}看起来只是表面变化，真正卡住的是执行顺序、成本账本和判断口径。问题不是要不要跟上，而是谁先发现自己已经被旧流程拖住。`,
-        patternCode: "judgement_first",
-        patternLabel: OPENING_PATTERN_LABELS.judgement_first,
+        patternCode: "entity_action",
+        patternLabel: OPENING_PATTERN_LABELS.entity_action,
       },
       {
         opening: `问题是，${seed}最先改变的往往不是机会，而是执行层的压力。你以为大家在争一个新入口，实际先暴露出来的是成本、节奏和谁能持续交付。`,
-        patternCode: "conflict_entry",
-        patternLabel: OPENING_PATTERN_LABELS.conflict_entry,
+        patternCode: "misjudgment_cost",
+        patternLabel: OPENING_PATTERN_LABELS.misjudgment_cost,
       },
       {
         opening: `如果你也在盯着${seed}，先别急着站队。最值得拆开的不是立场，而是那个被忽略的关键细节。`,

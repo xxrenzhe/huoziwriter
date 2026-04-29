@@ -289,6 +289,16 @@ function EmptyState({
   );
 }
 
+function getEffectiveWritingConfidenceLabel(value: "early" | "medium" | "high") {
+  if (value === "high") {
+    return "高置信";
+  }
+  if (value === "medium") {
+    return "中置信";
+  }
+  return "早期样本";
+}
+
 export default async function ReviewsPage({
   searchParams,
 }: {
@@ -306,7 +316,7 @@ export default async function ReviewsPage({
     getWritingEvalDatasets(),
     getWritingEvalCaseQualityLabels({ limit: 1000 }),
   ]);
-  const { publishedArticles, outcomeArticles, hitCandidates, nearMisses, seriesPlaybooks, playbooks, attributionViews } = reviewData;
+  const { publishedArticles, outcomeArticles, hitCandidates, nearMisses, seriesPlaybooks, playbooks, attributionViews, effectiveWritingProfile } = reviewData;
   const visibleHitCandidates = hitCandidates.slice(0, 6);
   const visibleNearMisses = nearMisses.slice(0, 6);
   const isFirstReviewState = publishedArticles.length === 0;
@@ -574,6 +584,103 @@ export default async function ReviewsPage({
             />
           ) : null}
         </div>
+      </section>
+
+      <section id="effective-writing-profile" className={cn(standardSurfaceClassName, scrollTargetClassName)}>
+        <SectionHeader
+          eyebrow="个人有效写法"
+          title="把系统已经学到的高命中写法显式摊开。"
+          summary={effectiveWritingProfile ? "作者级结果摘要" : "等待更多结果样本"}
+        />
+        {effectiveWritingProfile ? (
+          <>
+            <p className={cn("mt-4", bodyCopyClassName)}>{effectiveWritingProfile.summary}</p>
+            <div className="mt-6 grid gap-4 xl:grid-cols-2">
+              {[
+                effectiveWritingProfile.opening
+                  ? {
+                      key: "opening",
+                      eyebrow: "开头方式",
+                      title: effectiveWritingProfile.opening.label,
+                      summary: effectiveWritingProfile.opening.summary,
+                      reason: effectiveWritingProfile.opening.reason,
+                      sampleCount: effectiveWritingProfile.opening.sampleCount,
+                      positiveSampleCount: effectiveWritingProfile.opening.positiveSampleCount,
+                      confidence: effectiveWritingProfile.opening.confidence,
+                    }
+                  : null,
+                effectiveWritingProfile.judgement
+                  ? {
+                      key: "judgement",
+                      eyebrow: "判断强度",
+                      title: effectiveWritingProfile.judgement.label,
+                      summary: effectiveWritingProfile.judgement.summary,
+                      reason: effectiveWritingProfile.judgement.reason,
+                      sampleCount: effectiveWritingProfile.judgement.sampleCount,
+                      positiveSampleCount: effectiveWritingProfile.judgement.positiveSampleCount,
+                      confidence: effectiveWritingProfile.judgement.confidence,
+                    }
+                  : null,
+                effectiveWritingProfile.rhythm
+                  ? {
+                      key: "rhythm",
+                      eyebrow: "段落节奏",
+                      title: effectiveWritingProfile.rhythm.label,
+                      summary: effectiveWritingProfile.rhythm.summary,
+                      reason: effectiveWritingProfile.rhythm.reason,
+                      sampleCount: effectiveWritingProfile.rhythm.sampleCount,
+                      positiveSampleCount: effectiveWritingProfile.rhythm.positiveSampleCount,
+                      confidence: effectiveWritingProfile.rhythm.confidence,
+                    }
+                  : null,
+                effectiveWritingProfile.prototype
+                  ? {
+                      key: "prototype",
+                      eyebrow: "文章原型",
+                      title: effectiveWritingProfile.prototype.label,
+                      summary: effectiveWritingProfile.prototype.summary,
+                      reason: effectiveWritingProfile.prototype.reason,
+                      sampleCount: effectiveWritingProfile.prototype.sampleCount,
+                      positiveSampleCount: effectiveWritingProfile.prototype.positiveSampleCount,
+                      confidence: effectiveWritingProfile.prototype.confidence,
+                    }
+                  : null,
+              ].filter((item): item is {
+                key: string;
+                eyebrow: string;
+                title: string;
+                summary: string;
+                reason: string;
+                sampleCount: number;
+                positiveSampleCount: number;
+                confidence: "early" | "medium" | "high";
+              } => Boolean(item))
+                .map((item) => (
+                  <article key={item.key} className={highlightSurfaceClassName}>
+                    <div className={sectionEyebrowClassName}>{item.eyebrow}</div>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <span className={metricChipClassName}>{item.title}</span>
+                      <span className={mutedMetricChipClassName}>{getEffectiveWritingConfidenceLabel(item.confidence)}</span>
+                      <span className={mutedMetricChipClassName}>样本 {item.sampleCount}</span>
+                      <span className={mutedMetricChipClassName}>正向 {item.positiveSampleCount}</span>
+                    </div>
+                    <h3 className="mt-4 font-serifCn text-2xl text-ink text-balance">{item.summary}</h3>
+                    <p className={cn("mt-3", bodyCopyClassName)}>{item.reason}</p>
+                  </article>
+                ))}
+            </div>
+          </>
+        ) : (
+          <EmptyState
+            eyebrow="个人有效写法"
+            title="结果样本还不够，暂时不能形成作者级高命中写法。"
+            detail="先继续补命中判定和结果快照。等同一作者积累起结果样本后，这里会直接沉淀出更适合他的开头、判断强度、节奏和文章原型。"
+            actionHref="/reviews#outcome-tagging"
+            actionLabel="去补结果标签"
+            secondaryHref="/warroom"
+            secondaryLabel="回作战台"
+          />
+        )}
       </section>
 
       <section id="outcome-tagging" className={cn(standardSurfaceClassName, scrollTargetClassName)}>

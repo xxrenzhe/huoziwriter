@@ -113,3 +113,85 @@ test("runAdminTopicSync ingests structured topics from Hacker News and Remotive 
     }
   });
 });
+
+test("runAdminTopicSync persists chinese hotspot metadata and score evidence", async () => {
+  await withTempDatabase("chinese-hotspot", async () => {
+    const db = getDatabase();
+    const now = "2026-04-29T08:00:00.000Z";
+    await db.exec("DELETE FROM topic_sources");
+    await db.exec(
+      `INSERT INTO topic_sources (owner_user_id, name, homepage_url, source_type, priority, is_active, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        null,
+        "百度热点",
+        "https://top.baidu.com/board?tab=realtime",
+        "chinese-hotspot",
+        92,
+        true,
+        now,
+        now,
+      ],
+    );
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({
+          data: [
+            {
+              title: "AI 搜索投放突然升温",
+              url: "https://top.baidu.com/item/ai-search-ads",
+              rank: 2,
+              heatValue: 260000,
+              heatLabel: "热",
+            },
+          ],
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      )) as typeof fetch;
+
+    try {
+      const result = await runAdminTopicSync({ limitPerSource: 2 });
+      assert.equal(result.failedSourceCount, 0);
+      assert.equal(result.completedSourceCount, 1);
+
+      const item = await db.queryOne<{
+        source_name: string;
+        title: string;
+        source_meta_json: string;
+      }>("SELECT source_name, title, source_meta_json FROM topic_items ORDER BY id DESC LIMIT 1");
+      assert.equal(item?.source_name, "百度热点");
+      assert.equal(item?.title, "AI 搜索投放突然升温");
+      const sourceMeta = JSON.parse(item?.source_meta_json || "{}") as Record<string, unknown>;
+      assert.equal(sourceMeta.provider, "baidu");
+      assert.equal(sourceMeta.rank, 2);
+      assert.equal(sourceMeta.heatValue, 260000);
+
+      const evidence = await db.queryOne<{ evidence_payload_json: string }>(
+        "SELECT evidence_payload_json FROM hot_event_evidence_items ORDER BY id DESC LIMIT 1",
+      );
+      const payload = JSON.parse(evidence?.evidence_payload_json || "{}") as {
+        sourceMeta?: Record<string, unknown>;
+        hotspotScore?: { score?: number; reasons?: string[] };
+      };
+      assert.equal(payload.sourceMeta?.provider, "baidu");
+      assert.equal(payload.hotspotScore?.score !== undefined, true);
+      assert(payload.hotspotScore?.reasons?.some((reason) => reason.includes("最高排名第 2")));
+
+      const cluster = await db.queryOne<{ source_meta_json: string }>(
+        "SELECT source_meta_json FROM hot_event_clusters ORDER BY id DESC LIMIT 1",
+      );
+      const clusterMeta = JSON.parse(cluster?.source_meta_json || "{}") as {
+        sourceKind?: string;
+        provider?: string;
+        hotspotScore?: { reasons?: string[] };
+      };
+      assert.equal(clusterMeta.sourceKind, "chinese_hotspot_cluster");
+      assert.equal(clusterMeta.provider, "baidu");
+      assert(clusterMeta.hotspotScore?.reasons?.some((reason) => reason.includes("最高排名第 2")));
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+});

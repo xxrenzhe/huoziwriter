@@ -1,3 +1,4 @@
+import { getAuthorOutcomeFeedbackLedger } from "./author-outcome-feedback-ledger";
 import { buildArticleScorecard, type ArticleScorecard } from "./article-scorecard";
 import { STRATEGY_ARCHETYPE_OPTIONS } from "./article-strategy";
 import { getArticleStageArtifacts } from "./article-stage-artifacts";
@@ -343,6 +344,7 @@ export function resolveArticleOutcomeBundle(input: {
             scorecard: input.scorecard,
             attribution: null,
             hitStatus: "pending" as const,
+            expressionFeedback: null,
             reviewSummary: null,
             nextAction: null,
             playbookTags: [],
@@ -412,11 +414,12 @@ export async function getCurrentSeriesPlaybook(userId: number, seriesId: number 
 }
 
 export async function getReviewData(userId: number) {
-  const [articles, outcomeBundles, playbooks, series] = await Promise.all([
+  const [articles, outcomeBundles, playbooks, series, authorOutcomeFeedbackLedger] = await Promise.all([
     getArticlesByUser(userId),
     getArticleOutcomeBundlesByUser(userId),
     getAuthorPlaybooks(userId),
     getSeries(userId),
+    getAuthorOutcomeFeedbackLedger({ userId, refreshIfMissing: true }),
   ]);
   const publishedArticles = articles.filter((article) => article.status === "published");
   const outcomeBundleMap = new Map(outcomeBundles.map((bundle) => [bundle.outcome?.articleId, bundle] as const));
@@ -450,5 +453,6 @@ export async function getReviewData(userId: number) {
     seriesPlaybooks,
     playbooks,
     attributionViews,
+    effectiveWritingProfile: authorOutcomeFeedbackLedger?.effectiveWritingProfile ?? null,
   };
 }

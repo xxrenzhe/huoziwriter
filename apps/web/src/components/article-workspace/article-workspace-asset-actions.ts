@@ -10,6 +10,14 @@ type ArticleOutcomeItem = {
   scorecard: Record<string, unknown>;
   attribution: Record<string, unknown> | null;
   hitStatus: "pending" | "hit" | "near_miss" | "miss";
+  expressionFeedback: {
+    likeMe: boolean;
+    unlikeMe: boolean;
+    tooHard: boolean;
+    tooSoft: boolean;
+    tooTutorial: boolean;
+    tooCommentary: boolean;
+  } | null;
   reviewSummary: string | null;
   nextAction: string | null;
   playbookTags: string[];
@@ -93,6 +101,7 @@ type ArticleWorkspaceAssetActionsDeps = {
   outcomeNotes: string;
   outcomeTargetPackage: string;
   outcomeHitStatus: "pending" | "hit" | "near_miss" | "miss";
+  outcomeExpressionFeedback: NonNullable<ArticleOutcomeItem>["expressionFeedback"];
   outcomeReviewSummary: string;
   outcomeNextAction: string;
   outcomePlaybookTagsInput: string;
@@ -153,6 +162,7 @@ export function createArticleWorkspaceAssetActions({
   outcomeNotes,
   outcomeTargetPackage,
   outcomeHitStatus,
+  outcomeExpressionFeedback,
   outcomeReviewSummary,
   outcomeNextAction,
   outcomePlaybookTagsInput,
@@ -204,6 +214,7 @@ export function createArticleWorkspaceAssetActions({
           notes: outcomeNotes,
           targetPackage: outcomeTargetPackage,
           hitStatus: outcomeHitStatus,
+          expressionFeedback: outcomeExpressionFeedback,
           reviewSummary: outcomeReviewSummary,
           nextAction: outcomeNextAction,
           playbookTags: outcomePlaybookTagsInput

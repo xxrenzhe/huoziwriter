@@ -42,6 +42,8 @@ import { PLAN22_STAGE_PROMPT_DEFINITIONS } from "./plan22-prompt-catalog";
 import { evaluatePublishGuard } from "./publish-guard";
 import { createArticle, createFragment, getLatestArticleCoverImage, getArticleById } from "./repositories";
 import { saveArticleDraft } from "./article-draft";
+import { buildFallbackTitleOptions, detectTitleForbiddenHits } from "./title-patterns";
+import { buildFallbackOpeningOptions } from "./opening-patterns";
 import { fetchWebpageArticle } from "./webpage-reader";
 import { publishArticleToWechat, WechatPublishError } from "./wechat-publish";
 
@@ -134,12 +136,22 @@ const DRAFT_PREVIEW_FAST_SKIPPED_STAGE_CODES = new Set([
   "inlineImageGenerate",
 ]);
 
+const WECHAT_DRAFT_FAST_SKIPPED_STAGE_CODES = new Set<string>([
+]);
+
 function isFastDraftPreview(detail: AutomationRunDetail) {
   return detail.run.automationLevel === "draftPreview" && readBooleanEnv("ARTICLE_AUTOMATION_FAST_DRAFT_PREVIEW", true);
 }
 
+function isFastWechatDraft(detail: AutomationRunDetail) {
+  return detail.run.automationLevel === "wechatDraft" && readBooleanEnv("ARTICLE_AUTOMATION_FAST_WECHAT_DRAFT", true);
+}
+
 function shouldUseFastLocalReview(detail: AutomationRunDetail) {
-  return isFastDraftPreview(detail) && readBooleanEnv("ARTICLE_AUTOMATION_FAST_LOCAL_REVIEW", true);
+  if (isFastDraftPreview(detail)) {
+    return readBooleanEnv("ARTICLE_AUTOMATION_FAST_LOCAL_REVIEW", true);
+  }
+  return isFastWechatDraft(detail) && readBooleanEnv("ARTICLE_AUTOMATION_FAST_WECHAT_LOCAL_REVIEW", true);
 }
 
 function shouldUseFastLocalStrategy(detail: AutomationRunDetail) {
@@ -147,7 +159,10 @@ function shouldUseFastLocalStrategy(detail: AutomationRunDetail) {
 }
 
 function shouldSkipDraftApplyAudit(detail: AutomationRunDetail) {
-  return isFastDraftPreview(detail) && readBooleanEnv("ARTICLE_AUTOMATION_SKIP_APPLY_AUDIT", true);
+  if (isFastDraftPreview(detail)) {
+    return readBooleanEnv("ARTICLE_AUTOMATION_SKIP_APPLY_AUDIT", true);
+  }
+  return isFastWechatDraft(detail) && readBooleanEnv("ARTICLE_AUTOMATION_FAST_WECHAT_SKIP_APPLY_AUDIT", true);
 }
 
 function truncateGroundingText(value: string, limit: number) {
@@ -452,6 +467,14 @@ function mapResearchBriefOutput(payload: Record<string, unknown>) {
     researchObject: getString(payload.researchObject),
     coreQuestion: getString(payload.coreQuestion),
     mustCoverAngles: getStringArray(payload.mustCoverAngles, 6),
+    businessQuestions: getStringArray(payload.businessQuestions, 7),
+    businessQuestionAnswers: getRecordArray(payload.businessQuestionAnswers).map((item) => ({
+      question: getString(item.question),
+      answer: getString(item.answer),
+      evidenceNeed: getString(item.evidenceNeed),
+      status: getString(item.status),
+    })).filter((item) => item.question || item.answer),
+    sparseTrackResearchPlan: getRecord(payload.sparseTrackResearchPlan) ?? null,
     sourceCoverage: getRecord(payload.sourceCoverage) ?? {},
     timelineCards,
     comparisonCards,
@@ -519,7 +542,10 @@ function mapTitleOptimizationOutput(payload: Record<string, unknown>) {
       curiosityGap: getBoolean(getRecord(item.elementsHit)?.curiosityGap),
       readerView: getBoolean(getRecord(item.elementsHit)?.readerView),
     },
-    forbiddenHits: getStringArray(item.forbiddenHits, 4),
+    forbiddenHits: Array.from(new Set([
+      ...getStringArray(item.forbiddenHits, 4),
+      ...detectTitleForbiddenHits(getString(item.title) || getString(item.text)),
+    ])).slice(0, 6),
     isRecommended: Boolean(item.isRecommended),
   }));
   const safeOptions = titleOptions.filter((item) => !hasUnsupportedSpecificClaim(item.title));
@@ -652,6 +678,9 @@ function getSupportedStageCodes(detail: AutomationRunDetail) {
   const allStageCodes = PLAN22_STAGE_PROMPT_DEFINITIONS.map((item) => item.stageCode);
   if (isFastDraftPreview(detail)) {
     return new Set(allStageCodes.filter((stageCode) => !DRAFT_PREVIEW_FAST_SKIPPED_STAGE_CODES.has(stageCode)));
+  }
+  if (isFastWechatDraft(detail)) {
+    return new Set(allStageCodes.filter((stageCode) => !WECHAT_DRAFT_FAST_SKIPPED_STAGE_CODES.has(stageCode)));
   }
   return new Set(allStageCodes);
 }
@@ -1017,6 +1046,44 @@ async function executeTitleOptimization(detail: AutomationRunDetail): Promise<St
   }
 
   if (qualityIssues.length > 0) {
+    const fallbackOutputJson = mapTitleOptimizationOutput({
+      titleOptions: buildFallbackTitleOptions([
+        detail.article?.title,
+        detail.run.inputText,
+      ].map((item) => getString(item)).filter(Boolean).join("\n")),
+    });
+    const fallbackQualityIssues = getTitleOptimizationGateIssues(fallbackOutputJson);
+    if (fallbackQualityIssues.length === 0) {
+      if (detail.run.articleId && fallbackOutputJson.recommendedTitle) {
+        await saveArticleDraft({
+          articleId: detail.run.articleId,
+          userId: detail.run.userId,
+          body: {
+            title: fallbackOutputJson.recommendedTitle,
+            status: detail.article?.status || "draft",
+            seriesId: detail.article?.series_id,
+            wechatTemplateId: detail.article?.wechat_template_id,
+          },
+        });
+      }
+      return {
+        outputJson: fallbackOutputJson,
+        qualityJson: {
+          titleAuditedAt: new Date().toISOString(),
+          titleOptionCount: getRecordArray(fallbackOutputJson.titleOptions).length,
+          reusedFromOutlinePlanning: false,
+          qualityRetryCount: attemptCount,
+          qualityGatePassed: true,
+          localFallbackUsed: true,
+          replacedQualityIssues: qualityIssues.map((item) => item.code),
+        },
+        provider: "local",
+        model: "fallback-local",
+      };
+    }
+  }
+
+  if (qualityIssues.length > 0) {
     throw new AutomationStageBlockedError(
       `标题优化未达到质量门槛：${formatOptimizationGateIssues(qualityIssues)}`,
       "title_optimization_quality_blocked",
@@ -1087,6 +1154,32 @@ async function executeOpeningOptimization(detail: AutomationRunDetail): Promise<
     outputJson = mapOpeningOptimizationOutput(payload);
     qualityIssues = getOpeningOptimizationGateIssues(outputJson);
     attemptCount += 1;
+  }
+
+  if (qualityIssues.length > 0) {
+    const fallbackOutputJson = mapOpeningOptimizationOutput({
+      openingOptions: buildFallbackOpeningOptions([
+        detail.article?.title,
+        detail.run.inputText,
+      ].map((item) => getString(item)).filter(Boolean).join("\n")),
+    });
+    const fallbackQualityIssues = getOpeningOptimizationGateIssues(fallbackOutputJson);
+    if (fallbackQualityIssues.length === 0) {
+      return {
+        outputJson: fallbackOutputJson,
+        qualityJson: {
+          openingAuditedAt: new Date().toISOString(),
+          openingOptionCount: getRecordArray(fallbackOutputJson.openingOptions).length,
+          reusedFromOutlinePlanning: false,
+          qualityRetryCount: attemptCount,
+          qualityGatePassed: true,
+          localFallbackUsed: true,
+          replacedQualityIssues: qualityIssues.map((item) => item.code),
+        },
+        provider: "local",
+        model: "fallback-local",
+      };
+    }
   }
 
   if (qualityIssues.length > 0) {
@@ -1638,11 +1731,17 @@ async function executePublishGuard(
     wechatConnectionId: detail.run.targetWechatConnectionId,
   });
   if (!result.canPublish && options?.allowRepair !== false && promptContext) {
+    const languageGuardStage = detail.stages.find((stage) => stage.stageCode === "languageGuardAudit") ?? null;
     const repair = await runPublishAutoRepair({
       runId: detail.run.id,
       articleId: article.id,
       userId: detail.run.userId,
       promptContext,
+      publishGuard: result,
+      skipLanguageGuardRepair:
+        isFastWechatDraft(detail)
+        && languageGuardStage?.status === "completed"
+        && !readBooleanEnv("ARTICLE_AUTOMATION_PUBLISH_GUARD_REPEAT_LANGUAGE_REPAIR", false),
     });
     repairApplied = repair.appliedFixes;
     repairErrors = repair.errors;
@@ -1836,7 +1935,9 @@ function classifyStageFailureStatus(error: unknown): Extract<ArticleAutomationRu
 }
 
 function shouldRunPublishGuardAutoRepair(detail: AutomationRunDetail) {
-  return readBooleanEnv("ARTICLE_AUTOMATION_PUBLISH_GUARD_AUTO_REPAIR", false);
+  return detail.run.automationLevel === "wechatDraft"
+    ? readBooleanEnv("ARTICLE_AUTOMATION_PUBLISH_GUARD_AUTO_REPAIR", true)
+    : readBooleanEnv("ARTICLE_AUTOMATION_PUBLISH_GUARD_AUTO_REPAIR", false);
 }
 
 function coverPreparationTaskKey(userId: number, articleId: number) {

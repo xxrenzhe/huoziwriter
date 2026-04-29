@@ -136,6 +136,7 @@ export function buildWorkspaceSidebarProps(input: {
   currentStageTitle: string | null;
   stageArtifactsCount: number;
   articleStatusLabel: string;
+  personalEffectiveWritingRailProps: ComponentProps<typeof WorkspaceSidebar>["personalEffectiveWritingRailProps"];
   showKnowledgeCardsRail: boolean;
   knowledgeCardsRailProps: ComponentProps<typeof WorkspaceSidebar>["knowledgeCardsRailProps"];
   showLanguageGuardRail: boolean;
@@ -176,6 +177,7 @@ export function buildWorkspaceSidebarProps(input: {
       stageArtifactsCount: input.stageArtifactsCount,
       articleStatusLabel: input.articleStatusLabel,
     },
+    personalEffectiveWritingRailProps: input.personalEffectiveWritingRailProps,
     showKnowledgeCardsRail: input.showKnowledgeCardsRail,
     knowledgeCardsRailProps: input.knowledgeCardsRailProps,
     showLanguageGuardRail: input.showLanguageGuardRail,

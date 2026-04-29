@@ -1,4 +1,5 @@
 import { listArticleVisualAssets, listArticleVisualBriefs } from "./article-visual-repository";
+import { isInternalArticleStructureLabel } from "./article-structure-labels";
 import type { ArticleVisualAsset, ArticleVisualBrief } from "./article-visual-types";
 
 export type ArticleVisualQualityStatus = "passed" | "warning" | "blocked";
@@ -97,6 +98,22 @@ export function evaluateVisualAssetQuality(input: {
   }
 
   if (input.brief.visualScope !== "cover") {
+    const userVisibleTexts = [
+      input.brief.title,
+      input.brief.caption,
+      input.brief.altText,
+      ...input.brief.labels,
+    ].map((item) => getString(item)).filter(Boolean);
+    const internalLabelHits = userVisibleTexts.filter((item) => isInternalArticleStructureLabel(item));
+    if (internalLabelHits.length > 0) {
+      pushIssue(issues, {
+        key: "visual_internal_label_exposed",
+        status: input.requirePublishReady ? "blocked" : "warning",
+        detail: `文中配图暴露了内部结构标签：${Array.from(new Set(internalLabelHits)).join("、")}。配图必须围绕证据、对比、路径或现场信息命名。`,
+        visualBriefId: briefId,
+        assetFileId,
+      });
+    }
     if (!input.brief.purpose?.trim()) {
       pushIssue(issues, {
         key: "visual_purpose_missing",

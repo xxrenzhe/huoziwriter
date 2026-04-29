@@ -1,4 +1,19 @@
-export const DEFAULT_ARTICLE_NODE_TITLES = ["痛点引入", "核心反转", "底层原因", "行动建议"] as const;
+export const DEFAULT_ARTICLE_NODE_TITLES = [
+  "痛点引入",
+  "核心反转",
+  "底层原因",
+  "行动建议",
+  "问题提出",
+  "问题拆解",
+  "案例拆解",
+  "解决方案",
+  "方法总结",
+  "观点总结",
+  "情绪共鸣",
+  "读者收益",
+  "转发金句",
+  "结尾升华",
+] as const;
 
 const INTERNAL_ARTICLE_STRUCTURE_LABELS = new Set<string>(DEFAULT_ARTICLE_NODE_TITLES);
 

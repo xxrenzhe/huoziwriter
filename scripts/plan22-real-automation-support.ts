@@ -101,6 +101,30 @@ export type ScenarioReport = {
       status: "passed" | "warning" | "blocked";
     }>;
   };
+  viralReadinessSummary: {
+    issueCount: number;
+    issues: Array<{
+      code: string;
+      detail: string;
+    }>;
+  };
+  generatedArticleQualitySummary: {
+    issueCount: number;
+    issues: Array<{
+      code: string;
+      detail: string;
+    }>;
+    aiNoise: {
+      score: number;
+      level: string;
+      didacticToneRisk: string;
+      distantToneRisk: string;
+      didacticCueCount: number;
+      distantExpressionCount: number;
+      readerClosenessCueCount: number;
+      matchedDistantExpressionPhrases: string[];
+    };
+  };
   aiUsageSummary: {
     callCount: number;
     totalInputTokens: number;
@@ -448,6 +472,12 @@ export function getScenarioAcceptanceIssues(input: {
       .map((item) => item.code);
     issues.push(`${prefix} 爆文方法论闸门仍有阻塞：${blockedCodes.join("、")}`);
   }
+  if (scenario.viralReadinessSummary.issueCount > 0) {
+    issues.push(`${prefix} 爆款上游准备度仍有阻塞：${scenario.viralReadinessSummary.issues.slice(0, 4).map((item) => item.code).join("、")}`);
+  }
+  if (scenario.generatedArticleQualitySummary.issueCount > 0) {
+    issues.push(`${prefix} 终稿爆款质量仍有阻塞：${scenario.generatedArticleQualitySummary.issues.slice(0, 4).map((item) => item.code).join("、")}`);
+  }
 
   return issues;
 }
@@ -531,6 +561,14 @@ export function buildMarkdownReport(report: AcceptanceReport) {
     lines.push(`- opening: ${scenario.openingSummary.recommendedOpening ?? "null"} (${scenario.openingSummary.optionCount} options, hook=${scenario.openingSummary.recommendedHookScore ?? "null"}, ceiling=${scenario.openingSummary.recommendedQualityCeiling ?? "null"}, forbidden=${scenario.openingSummary.recommendedForbiddenHitCount}, danger=${scenario.openingSummary.recommendedDangerCount})`);
     lines.push(`- layout: template=${scenario.layoutSummary.templateId ?? "null"}, htmlLength=${scenario.layoutSummary.htmlLength}, synced=${scenario.layoutSummary.htmlSyncedToArticle ? "yes" : "no"}`);
     lines.push(`- publishGuard: canPublish=${scenario.publishGuardSummary.canPublish == null ? "null" : scenario.publishGuardSummary.canPublish ? "yes" : "no"}, blockers=${scenario.publishGuardSummary.blockerCount}, warnings=${scenario.publishGuardSummary.warningCount}, methodologyBlocked=${scenario.publishGuardSummary.methodologyBlockedCount}, methodologyWarning=${scenario.publishGuardSummary.methodologyWarningCount}`);
+    lines.push(`- viralReadiness: issues=${scenario.viralReadinessSummary.issueCount}`);
+    for (const issue of scenario.viralReadinessSummary.issues.slice(0, 6)) {
+      lines.push(`  - ${issue.code}: ${sanitizeDiagnosticText(issue.detail)}`);
+    }
+    lines.push(`- generatedArticleQuality: issues=${scenario.generatedArticleQualitySummary.issueCount}, aiNoise=${scenario.generatedArticleQualitySummary.aiNoise.score}/${scenario.generatedArticleQualitySummary.aiNoise.level}, didactic=${scenario.generatedArticleQualitySummary.aiNoise.didacticToneRisk}(${scenario.generatedArticleQualitySummary.aiNoise.didacticCueCount}), distant=${scenario.generatedArticleQualitySummary.aiNoise.distantToneRisk}(${scenario.generatedArticleQualitySummary.aiNoise.distantExpressionCount}), closeness=${scenario.generatedArticleQualitySummary.aiNoise.readerClosenessCueCount}`);
+    for (const issue of scenario.generatedArticleQualitySummary.issues.slice(0, 6)) {
+      lines.push(`  - ${issue.code}: ${sanitizeDiagnosticText(issue.detail)}`);
+    }
     lines.push(`- aiUsage: calls=${scenario.aiUsageSummary.callCount}, input=${scenario.aiUsageSummary.totalInputTokens}, output=${scenario.aiUsageSummary.totalOutputTokens}, cacheRead=${scenario.aiUsageSummary.totalCacheReadTokens}, latencyMs=${scenario.aiUsageSummary.totalLatencyMs}`);
     if (scenario.error) {
       lines.push(`- error: ${sanitizeDiagnosticText(scenario.error)}`);

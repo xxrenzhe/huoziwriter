@@ -4,6 +4,7 @@ import { getUserAccessScope } from "./access-scope";
 import { fetchExternalText } from "./external-fetch";
 import { assertTopicSourceQuota } from "./plan-access";
 import { ensureExtendedProductSchema } from "./schema-bootstrap";
+import { scoreChineseHotspot } from "./chinese-hotspot-score";
 import {
   recordSourceConnectorSyncFailure,
   recordSourceConnectorSyncSuccess,
@@ -38,6 +39,7 @@ type ParsedTopic = {
   sourceUrl: string | null;
   summary?: string | null;
   publishedAt?: string | null;
+  sourceMeta?: Record<string, unknown> | null;
 };
 
 type TopicEventSourceRow = {
@@ -51,6 +53,7 @@ type TopicEventSourceRow = {
   summary: string | null;
   emotion_labels_json: string | string[] | null;
   angle_options_json: string | string[] | null;
+  source_meta_json: string | Record<string, unknown> | null;
   source_url: string | null;
   published_at: string | null;
   created_at: string;
@@ -70,6 +73,7 @@ type TopicEventRow = {
   source_url: string | null;
   source_names_json?: string | string[] | null;
   source_urls_json?: string | string[] | null;
+  source_meta_json?: string | Record<string, unknown> | null;
   published_at: string | null;
   item_count: number;
 };
@@ -190,7 +194,7 @@ function clampScore(value: number, max = 100) {
 
 function normalizeTopicSourceType(value: string | null | undefined) {
   const normalized = String(value || "news").trim().toLowerCase();
-  if (["youtube", "reddit", "community", "podcast", "spotify", "news", "blog", "rss"].includes(normalized)) {
+  if (["youtube", "reddit", "community", "podcast", "spotify", "chinese-hotspot", "hotspot", "news", "blog", "rss"].includes(normalized)) {
     return normalized;
   }
   return "news";
@@ -240,6 +244,68 @@ function parseJsonArray(value: string | string[] | null) {
   }
 }
 
+function parseJsonRecord(value: unknown) {
+  if (!value) return null;
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value) as Record<string, unknown>;
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null;
+    } catch {
+      return null;
+    }
+  }
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
+function getNumber(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function getString(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function getHotspotSourceMetas(rows: TopicEventSourceRow[]) {
+  const sourceMetas = rows.map((row) => parseJsonRecord(row.source_meta_json)).filter((item): item is Record<string, unknown> => Boolean(item));
+  return sourceMetas.filter((meta) => getString(meta.sourceKind) === "chinese_hotspot" || getString(meta.provider));
+}
+
+function buildHotspotScoreForRows(rows: TopicEventSourceRow[], primaryPriority: number) {
+  const hotspotMetas = getHotspotSourceMetas(rows);
+  if (hotspotMetas.length === 0) return null;
+  const providers = Array.from(new Set(hotspotMetas.map((meta) => getString(meta.provider)).filter(Boolean)));
+  const capturedTimes = hotspotMetas
+    .map((meta) => getString(meta.capturedAt))
+    .map((value) => Date.parse(value))
+    .filter((value) => Number.isFinite(value));
+  const capturedAt = capturedTimes.length ? new Date(Math.max(...capturedTimes)).toISOString() : null;
+  return scoreChineseHotspot({
+    title: rows[0]?.title || "",
+    providerCount: Math.max(providers.length, hotspotMetas.length),
+    ranks: hotspotMetas.map((meta) => getNumber(meta.rank)),
+    heatValues: hotspotMetas.map((meta) => getNumber(meta.heatValue)),
+    capturedAt,
+    topicFitScore: 10,
+    sourceReliabilityScore: Math.max(4, Math.min(12, Math.round(primaryPriority / 10))),
+  });
+}
+
+function buildHotEventClusterSourceMeta(rows: TopicEventSourceRow[], hotspotScore: ReturnType<typeof buildHotspotScoreForRows>) {
+  const hotspotMetas = getHotspotSourceMetas(rows);
+  if (hotspotMetas.length === 0 && !hotspotScore) return null;
+  const primaryMeta = hotspotMetas[0] ?? {};
+  const providers = Array.from(new Set(hotspotMetas.map((meta) => getString(meta.provider)).filter(Boolean)));
+  return {
+    ...primaryMeta,
+    sourceKind: "chinese_hotspot_cluster",
+    providerCount: Math.max(providers.length, hotspotMetas.length, hotspotScore?.providerCount ?? 0),
+    hotspotSources: hotspotMetas.slice(0, 12),
+    hotspotScore,
+  };
+}
+
 function normalizeTopicTitleForEvent(title: string) {
   return title
     .trim()
@@ -272,6 +338,7 @@ async function getTopicEventSourceRows(ownerUserId?: number | null) {
          ti.summary,
          ti.emotion_labels_json,
          ti.angle_options_json,
+         ti.source_meta_json,
          ti.source_url,
          ti.published_at,
          ti.created_at
@@ -296,6 +363,7 @@ async function getTopicEventSourceRows(ownerUserId?: number | null) {
        ti.summary,
        ti.emotion_labels_json,
        ti.angle_options_json,
+       ti.source_meta_json,
        ti.source_url,
        ti.published_at,
        ti.created_at
@@ -386,11 +454,13 @@ export async function rebuildTopicEvents(options?: { ownerUserId?: number | null
       primaryPriority: primarySourcePriority,
       itemCount: groupedRows.length,
     });
+    const hotspotScore = buildHotspotScoreForRows(groupedRows, primarySourcePriority);
     const emotionPayload = JSON.stringify(emotionLabels.length > 0 ? emotionLabels : pickEmotionLabels(primary.title));
     const anglePayload = JSON.stringify(angleOptions.length > 0 ? angleOptions : buildAngleOptions(primary.title, emotionLabels));
     const topicVerticalsPayload = JSON.stringify(topicVerticals);
     const sourceNamesPayload = JSON.stringify(sourceNames);
     const sourceUrlsPayload = JSON.stringify(sourceUrls);
+    const clusterSourceMetaPayload = JSON.stringify(buildHotEventClusterSourceMeta(groupedRows, hotspotScore));
 
     await db.exec(
       `INSERT INTO topic_events (
@@ -426,9 +496,9 @@ export async function rebuildTopicEvents(options?: { ownerUserId?: number | null
       `INSERT INTO hot_event_clusters (
         cluster_key, owner_user_id, canonical_title, normalized_title, summary, emotion_labels_json, angle_options_json, topic_verticals_json,
         primary_source_name, primary_source_type, primary_source_priority, primary_source_url,
-        source_names_json, source_urls_json, item_count, freshness_score, authority_score, priority_score,
+        source_names_json, source_urls_json, source_meta_json, item_count, freshness_score, authority_score, priority_score,
         first_seen_at, last_seen_at, latest_published_at, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         eventKey,
         ownerUserId,
@@ -444,10 +514,11 @@ export async function rebuildTopicEvents(options?: { ownerUserId?: number | null
         primary.source_url,
         sourceNamesPayload,
         sourceUrlsPayload,
+        clusterSourceMetaPayload,
         groupedRows.length,
         scoring.freshnessScore,
         scoring.authorityScore,
-        scoring.priorityScore,
+        hotspotScore ? Math.max(scoring.priorityScore, hotspotScore.score) : scoring.priorityScore,
         firstSeenAt,
         lastSeenAt,
         latestPublishedAt,
@@ -477,6 +548,8 @@ export async function rebuildTopicEvents(options?: { ownerUserId?: number | null
           JSON.stringify({
             emotionLabels: parseJsonArray(row.emotion_labels_json),
             angleOptions: parseJsonArray(row.angle_options_json),
+            sourceMeta: parseJsonRecord(row.source_meta_json),
+            hotspotScore,
             sourceName: row.source_name,
           }),
           now,
@@ -557,6 +630,7 @@ export async function getVisibleTopicEvents(userId: number) {
        primary_source_url as source_url,
        source_names_json,
        source_urls_json,
+       source_meta_json,
        latest_published_at as published_at,
        item_count
      FROM hot_event_clusters
@@ -807,13 +881,14 @@ async function insertTopicItem(input: {
   topicVerticals: string[];
   sourceUrl: string | null;
   publishedAt?: string | null;
+  sourceMeta?: Record<string, unknown> | null;
 }) {
   const db = getDatabase();
   const now = new Date().toISOString();
   await db.exec(
     `INSERT INTO topic_items (
-      owner_user_id, source_name, title, summary, emotion_labels_json, angle_options_json, topic_verticals_json, source_url, published_at, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      owner_user_id, source_name, title, summary, emotion_labels_json, angle_options_json, topic_verticals_json, source_meta_json, source_url, published_at, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       input.ownerUserId ?? null,
       input.sourceName,
@@ -822,6 +897,7 @@ async function insertTopicItem(input: {
       input.emotionLabels,
       input.angleOptions,
       input.topicVerticals,
+      input.sourceMeta ? JSON.stringify(input.sourceMeta) : null,
       input.sourceUrl,
       input.publishedAt ?? now,
       now,
@@ -914,6 +990,7 @@ async function syncTopicItemsForSource(source: TopicSourceRow, limitPerSource: n
       topicVerticals,
       sourceUrl: topic.sourceUrl,
       publishedAt: topic.publishedAt ?? null,
+      sourceMeta: topic.sourceMeta ?? null,
     });
     inserted += 1;
   }

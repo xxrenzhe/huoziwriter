@@ -1,10 +1,16 @@
 import { fetchExternalText } from "./external-fetch";
+import {
+  inferChineseHotspotProvider,
+  mapChineseHotspotItemsToCandidates,
+  parseChineseHotspotPayload,
+} from "./chinese-hotspot-sources";
 
 export type FetchedTopicCandidate = {
   title: string;
   sourceUrl: string | null;
   summary?: string | null;
   publishedAt?: string | null;
+  sourceMeta?: Record<string, unknown> | null;
 };
 
 type TopicSourceAdapterInput = {
@@ -80,6 +86,7 @@ function uniqueCandidates(items: FetchedTopicCandidate[]) {
       sourceUrl: item.sourceUrl ? String(item.sourceUrl).trim() : null,
       summary: item.summary ? String(item.summary).trim() : null,
       publishedAt: item.publishedAt ? String(item.publishedAt).trim() : null,
+      sourceMeta: item.sourceMeta && typeof item.sourceMeta === "object" && !Array.isArray(item.sourceMeta) ? item.sourceMeta : null,
     });
   }
   return deduped;
@@ -286,6 +293,29 @@ async function fetchV2exTopics(input: TopicSourceAdapterInput) {
   ).slice(0, input.limit);
 }
 
+async function fetchChineseHotspotTopics(input: TopicSourceAdapterInput) {
+  const provider = inferChineseHotspotProvider(input);
+  if (!provider) {
+    return null;
+  }
+  const response = await fetchExternalText({
+    url: input.homepageUrl,
+    timeoutMs: 20_000,
+    maxAttempts: 2,
+    cache: "no-store",
+    accept: "application/json,text/json;q=0.9,text/html;q=0.8,*/*;q=0.5",
+  });
+  const capturedAt = new Date().toISOString();
+  const items = parseChineseHotspotPayload({
+    provider,
+    text: response.text,
+    sourceUrl: response.finalUrl || input.homepageUrl,
+    capturedAt,
+    limit: input.limit,
+  });
+  return mapChineseHotspotItemsToCandidates(items);
+}
+
 function shouldUseRssAdapter(input: TopicSourceAdapterInput) {
   const sourceType = String(input.sourceType || "").trim().toLowerCase();
   return sourceType === "rss" || /\/feed\/?$|\.xml(?:\?|$)|feeds\./i.test(input.homepageUrl);
@@ -304,6 +334,10 @@ function shouldUseV2exAdapter(input: TopicSourceAdapterInput) {
 }
 
 export async function fetchTopicsFromSourceAdapter(input: TopicSourceAdapterInput) {
+  const hotspotTopics = await fetchChineseHotspotTopics(input);
+  if (hotspotTopics) {
+    return uniqueCandidates(hotspotTopics).slice(0, input.limit);
+  }
   if (shouldUseHackerNewsAdapter(input)) {
     return fetchHackerNewsTopics(input);
   }

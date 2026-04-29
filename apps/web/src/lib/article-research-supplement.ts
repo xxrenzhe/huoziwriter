@@ -4,7 +4,12 @@ import { createFragment } from "./repositories";
 import { distillCaptureInput } from "./distill";
 import { searchResearchSources } from "./research-source-search";
 import { fetchWebpageArticle } from "./webpage-reader";
-import { detectVerticalTopicCategory, type VerticalTopicCategory } from "./business-verticals";
+import {
+  detectVerticalTopicCategories,
+  detectVerticalTopicCategory,
+  type VerticalTopicCategory,
+} from "./business-verticals";
+import { inferPlan24Vertical } from "./article-viral-genome-corpus";
 import { localizeSourceMaterialToChinese } from "./source-localization";
 export { detectVerticalTopicCategory } from "./business-verticals";
 
@@ -63,8 +68,75 @@ type VerticalSourcePack = {
 const CURATED_SOURCE_REACHABILITY_TTL_MS = 1000 * 60 * 60 * 12;
 const curatedSourceReachabilityCache = new Map<string, CuratedSourceReachability>();
 
+function readPositiveIntegerEnv(name: string, fallback: number) {
+  const raw = String(process.env[name] || "").trim();
+  if (!raw) return fallback;
+  const value = Number(raw);
+  return Number.isFinite(value) && value > 0 ? Math.round(value) : fallback;
+}
+
+const RESEARCH_SOURCE_LOCALIZATION_CONCURRENCY = readPositiveIntegerEnv("ARTICLE_RESEARCH_SOURCE_LOCALIZATION_CONCURRENCY", 3);
+const RESEARCH_SUPPLEMENT_MAX_DISTILL_URLS = readPositiveIntegerEnv("ARTICLE_RESEARCH_SUPPLEMENT_MAX_DISTILL_URLS", 6);
+const SPARSE_RESEARCH_SUPPLEMENT_MAX_DISTILL_URLS = readPositiveIntegerEnv("ARTICLE_SPARSE_RESEARCH_SUPPLEMENT_MAX_DISTILL_URLS", Math.max(9, RESEARCH_SUPPLEMENT_MAX_DISTILL_URLS));
+
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  mapper: (item: T, index: number) => Promise<R>,
+) {
+  const results: R[] = new Array(items.length);
+  let cursor = 0;
+  const workerCount = Math.max(1, Math.min(concurrency, items.length || 1));
+  await Promise.all(Array.from({ length: workerCount }, async () => {
+    while (cursor < items.length) {
+      const index = cursor;
+      cursor += 1;
+      results[index] = await mapper(items[index]!, index);
+    }
+  }));
+  return results;
+}
+
 function tokenizeSeed(value: string) {
   return Array.from(new Set((String(value || "").toLowerCase().match(/[\u4e00-\u9fa5]{2,}|[a-z0-9]{2,}/g) ?? []).filter(Boolean)));
+}
+
+export function selectResearchCandidateUrls(input: {
+  seedUrls: string[];
+  curatedPlans: CuratedSourcePlan[];
+  discoveredUrls: string[];
+  limit?: number;
+}) {
+  const limit = Math.max(1, Math.round(Number(input.limit ?? RESEARCH_SUPPLEMENT_MAX_DISTILL_URLS) || RESEARCH_SUPPLEMENT_MAX_DISTILL_URLS));
+  const selected: string[] = [];
+  const seen = new Set<string>();
+  const add = (url: string | null | undefined) => {
+    const normalized = String(url || "").trim();
+    if (!normalized || seen.has(normalized) || selected.length >= limit) {
+      return;
+    }
+    seen.add(normalized);
+    selected.push(normalized);
+  };
+
+  for (const url of input.seedUrls) {
+    add(url);
+  }
+
+  const categoryOrder: ResearchCoverageCategory[] = ["official", "industry", "comparison", "userVoice", "timeline"];
+  for (const category of categoryOrder) {
+    const plan = input.curatedPlans.find((item) => item.category === category && !seen.has(item.url));
+    add(plan?.url);
+  }
+
+  for (const plan of input.curatedPlans) {
+    add(plan.url);
+  }
+  for (const url of input.discoveredUrls) {
+    add(url);
+  }
+
+  return selected;
 }
 
 function isGenericResearchLandingPage(input: {
@@ -163,6 +235,138 @@ const EMPTY_RESEARCH_BUCKET = (): Record<ResearchCoverageCategory, string[]> => 
 });
 
 const VERTICAL_SOURCE_PACKS: Record<VerticalTopicCategory, VerticalSourcePack> = {
+  business_case: {
+    domains: {
+      official: ["openai.com", "anthropic.com", "about.meta.com", "blog.google"],
+      industry: ["a16z.com", "cbinsights.com", "techcrunch.com", "fortune.com"],
+      comparison: ["a16z.com", "techcrunch.com", "cbinsights.com", "fortune.com"],
+      userVoice: ["news.ycombinator.com", "reddit.com", "zhihu.com", "v2ex.com"],
+      timeline: ["openai.com", "anthropic.com", "blog.google", "techcrunch.com"],
+    },
+    facets: {
+      official: ["公司动作", "创始人", "融资", "营收"],
+      industry: ["商业案例", "创业拆解", "品牌策略", "组织变化"],
+      comparison: ["模式对比", "增长路径", "公司对比", "产品路线"],
+      userVoice: ["创业复盘", "行业讨论", "用户反馈", "管理评论"],
+      timeline: ["公司时间线", "融资进展", "产品演进", "组织变化"],
+    },
+    curatedSources: [
+      { category: "industry", label: "a16z Startups", url: "https://a16z.com/tag/startups/" },
+      { category: "industry", label: "TechCrunch Startups", url: "https://techcrunch.com/category/startups/" },
+      { category: "timeline", label: "OpenAI News", url: "https://openai.com/news/" },
+      { category: "timeline", label: "Anthropic News", url: "https://www.anthropic.com/news" },
+    ],
+  },
+  tool_evaluation: {
+    domains: {
+      official: ["openai.com", "anthropic.com", "notion.so", "figma.com"],
+      industry: ["zapier.com", "g2.com", "capterra.com", "lennysnewsletter.com"],
+      comparison: ["g2.com", "capterra.com", "zapier.com", "toolfinder.co"],
+      userVoice: ["reddit.com", "youtube.com", "github.com", "news.ycombinator.com"],
+      timeline: ["openai.com", "anthropic.com", "github.com", "figma.com"],
+    },
+    facets: {
+      official: ["产品说明", "功能更新", "定价", "能力边界"],
+      industry: ["工具评测", "效率工具", "产品对比", "替代方案"],
+      comparison: ["好不好用", "值不值得", "最佳场景", "最差场景"],
+      userVoice: ["真实体验", "续费反馈", "吐槽点", "试用感受"],
+      timeline: ["版本更新", "功能变化", "定价变化", "能力演进"],
+    },
+    curatedSources: [
+      { category: "comparison", label: "G2 Reviews", url: "https://www.g2.com/" },
+      { category: "comparison", label: "Capterra", url: "https://www.capterra.com/" },
+      { category: "industry", label: "Zapier Blog", url: "https://zapier.com/blog/" },
+      { category: "timeline", label: "GitHub Changelog", url: "https://github.blog/changelog/" },
+    ],
+  },
+  operator_log: {
+    domains: {
+      official: ["docs.anthropic.com", "platform.openai.com", "developers.weixin.qq.com", "docs.github.com"],
+      industry: ["indiehackers.com", "zapier.com", "n8n.io", "make.com"],
+      comparison: ["zapier.com", "n8n.io", "make.com", "langchain.com"],
+      userVoice: ["reddit.com", "news.ycombinator.com", "v2ex.com", "zhihu.com"],
+      timeline: ["github.com", "platform.openai.com", "docs.anthropic.com", "developers.weixin.qq.com"],
+    },
+    facets: {
+      official: ["接口限制", "官方文档", "发布变化", "错误边界"],
+      industry: ["实操复盘", "工作流", "自动化", "案例记录"],
+      comparison: ["方案对比", "流程差异", "成本差异", "适用场景"],
+      userVoice: ["踩坑", "亲测", "复盘", "体验反馈"],
+      timeline: ["更新日志", "版本变化", "能力演进", "修复记录"],
+    },
+    curatedSources: [
+      { category: "industry", label: "Indie Hackers", url: "https://www.indiehackers.com/" },
+      { category: "comparison", label: "n8n Workflows", url: "https://n8n.io/workflows/" },
+      { category: "comparison", label: "Make Templates", url: "https://www.make.com/en/templates" },
+      { category: "official", label: "OpenAI Platform Docs", url: "https://platform.openai.com/docs/overview" },
+    ],
+  },
+  saas_growth: {
+    domains: {
+      official: ["stripe.com", "intercom.com", "hubspot.com", "profitwell.com"],
+      industry: ["openviewpartners.com", "profitwell.com", "forentrepreneurs.com", "saastr.com"],
+      comparison: ["profitwell.com", "saastr.com", "openviewpartners.com", "chartmogul.com"],
+      userVoice: ["reddit.com", "indiehackers.com", "news.ycombinator.com", "saastr.com"],
+      timeline: ["stripe.com", "intercom.com", "hubspot.com", "chartmogul.com"],
+    },
+    facets: {
+      official: ["ARR", "MRR", "留存", "续费"],
+      industry: ["SaaS 增长", "PLG", "定价策略", "获客成本"],
+      comparison: ["套餐对比", "留存对比", "渠道对比", "转化差异"],
+      userVoice: ["SaaS 复盘", "定价吐槽", "客户反馈", "续费体验"],
+      timeline: ["定价更新", "增长变化", "产品演进", "PLG 趋势"],
+    },
+    curatedSources: [
+      { category: "industry", label: "SaaStr", url: "https://www.saastr.com/" },
+      { category: "comparison", label: "ProfitWell", url: "https://www.paddle.com/resources" },
+      { category: "industry", label: "OpenView", url: "https://openviewpartners.com/blog/" },
+      { category: "timeline", label: "Intercom Blog", url: "https://www.intercom.com/blog/" },
+    ],
+  },
+  github_tools: {
+    domains: {
+      official: ["github.com", "docs.github.com", "github.blog", "marketplace.visualstudio.com"],
+      industry: ["github.blog", "stackshare.io", "libhunt.com", "news.ycombinator.com"],
+      comparison: ["stackshare.io", "libhunt.com", "github.com", "producthunt.com"],
+      userVoice: ["reddit.com", "news.ycombinator.com", "v2ex.com", "github.com"],
+      timeline: ["github.blog", "github.com", "docs.github.com", "marketplace.visualstudio.com"],
+    },
+    facets: {
+      official: ["仓库", "版本说明", "发布记录", "文档"],
+      industry: ["GitHub 项目", "开发工具", "开源工具", "效率插件"],
+      comparison: ["star 对比", "功能对比", "替代关系", "上手门槛"],
+      userVoice: ["issue 反馈", "discussion", "上手体验", "踩坑"],
+      timeline: ["release", "changelog", "star 变化", "维护状态"],
+    },
+    curatedSources: [
+      { category: "official", label: "GitHub Docs", url: "https://docs.github.com/" },
+      { category: "timeline", label: "GitHub Blog Changelog", url: "https://github.blog/changelog/" },
+      { category: "comparison", label: "LibHunt", url: "https://www.libhunt.com/" },
+      { category: "comparison", label: "StackShare", url: "https://stackshare.io/" },
+    ],
+  },
+  solution_playbook: {
+    domains: {
+      official: ["developers.weixin.qq.com", "platform.openai.com", "docs.anthropic.com", "docs.github.com"],
+      industry: ["zapier.com", "n8n.io", "make.com", "langchain.com"],
+      comparison: ["zapier.com", "n8n.io", "make.com", "coda.io"],
+      userVoice: ["reddit.com", "v2ex.com", "zhihu.com", "news.ycombinator.com"],
+      timeline: ["github.com", "platform.openai.com", "developers.weixin.qq.com", "docs.anthropic.com"],
+    },
+    facets: {
+      official: ["解决方案", "官方示例", "接口限制", "实施文档"],
+      industry: ["工作流", "最佳实践", "自动化方案", "落地路径"],
+      comparison: ["方案对比", "实施成本", "替代路径", "工具组合"],
+      userVoice: ["落地踩坑", "一线反馈", "效果复盘", "团队经验"],
+      timeline: ["版本演进", "模板更新", "能力变化", "方案变化"],
+    },
+    curatedSources: [
+      { category: "comparison", label: "Zapier Blog", url: "https://zapier.com/blog/" },
+      { category: "comparison", label: "n8n Workflows", url: "https://n8n.io/workflows/" },
+      { category: "comparison", label: "Make Templates", url: "https://www.make.com/en/templates" },
+      { category: "official", label: "Weixin Dev Docs", url: "https://developers.weixin.qq.com/doc/offiaccount/Getting_Started/Overview.html" },
+    ],
+  },
   overseas_income: {
     domains: {
       official: ["wise.com", "stripe.com", "shopify.com", "indiehackers.com"],
@@ -227,6 +431,29 @@ const VERTICAL_SOURCE_PACKS: Record<VerticalTopicCategory, VerticalSourcePack> =
       { category: "industry", label: "Ahrefs Affiliate Marketing", url: "https://www.ahrefs.com/blog/affiliate-marketing/" },
       { category: "comparison", label: "Backlinko Affiliate Marketing", url: "https://www.backlinko.com/affiliate-marketing" },
       { category: "industry", label: "Authority Hacker Blog", url: "https://www.authorityhacker.com/blog/" },
+    ],
+  },
+  search_marketing: {
+    domains: {
+      official: ["support.google.com", "ads.google.com", "thinkwithgoogle.com", "learn.microsoft.com"],
+      industry: ["searchengineland.com", "wordstream.com", "semrush.com", "ahrefs.com"],
+      comparison: ["searchengineland.com", "wordstream.com", "semrush.com", "ahrefs.com"],
+      userVoice: ["reddit.com", "support.google.com", "ppcchat.co", "zhihu.com"],
+      timeline: ["support.google.com", "ads.google.com", "searchengineland.com", "thinkwithgoogle.com"],
+    },
+    facets: {
+      official: ["Google Ads", "search intent", "keyword match types", "ad relevance", "Quality Score"],
+      industry: ["PPC", "search intent", "keyword intent", "conversion rate", "paid search"],
+      comparison: ["keyword match types", "broad match vs exact match", "Google Ads vs Microsoft Ads", "PPC strategy"],
+      userVoice: ["PPC experience", "Google Ads community", "keyword intent", "conversion feedback"],
+      timeline: ["Google Ads match type update", "broad match evolution", "smart bidding", "keyword matching"],
+    },
+    curatedSources: [
+      { category: "official", label: "Google Ads keyword matching help", url: "https://support.google.com/google-ads/answer/7478529?hl=en" },
+      { category: "official", label: "Google Ads Quality Score help", url: "https://support.google.com/google-ads/answer/6167118?hl=en" },
+      { category: "industry", label: "WordStream PPC University", url: "https://www.wordstream.com/ppc" },
+      { category: "comparison", label: "Search Engine Land PPC", url: "https://searchengineland.com/library/paid-search" },
+      { category: "userVoice", label: "Reddit PPC community", url: "https://www.reddit.com/r/PPC/" },
     ],
   },
   ai_products: {
@@ -404,6 +631,10 @@ function buildCrossLanguageHints(values: string[]) {
   if (/内容生产|内容团队|创作/u.test(seed)) {
     hints.push("content operations");
   }
+  if (/搜索广告|搜索意图|关键词|谷歌广告|投放|质量得分|广告相关性|需求阶段/u.test(seed)) {
+    hints.push("Google Ads search intent keyword match types");
+    hints.push("PPC search intent conversion");
+  }
   if (/公众号|微信/u.test(seed)) {
     hints.push("WeChat Official Account");
   }
@@ -423,10 +654,22 @@ function hasKeyword(seed: string, pattern: RegExp) {
   return pattern.test(seed);
 }
 
+function resolveVerticalCategories(values: string[]) {
+  const detected = detectVerticalTopicCategories(values);
+  if (detected.length > 0) {
+    return detected;
+  }
+  const fallback = detectVerticalTopicCategory(values);
+  return fallback === "generic" ? [] : [fallback];
+}
+
 function buildDomainStrategy(values: string[]) {
   const seed = values.join(" ").toLowerCase();
-  const verticalCategory = detectVerticalTopicCategory(values);
-  const domains = mergeResearchTerms(EMPTY_RESEARCH_BUCKET(), VERTICAL_SOURCE_PACKS[verticalCategory].domains);
+  const verticalCategories = resolveVerticalCategories(values);
+  const domains = verticalCategories.reduce(
+    (bucket, category) => mergeResearchTerms(bucket, VERTICAL_SOURCE_PACKS[category].domains),
+    EMPTY_RESEARCH_BUCKET(),
+  );
 
   if (hasKeyword(seed, /(微信|公众号|wechat)/i)) {
     domains.official.push("developers.weixin.qq.com", "mp.weixin.qq.com");
@@ -434,12 +677,58 @@ function buildDomainStrategy(values: string[]) {
     domains.userVoice.push("zhihu.com", "v2ex.com");
   }
 
-  if (verticalCategory === "ai_products" || hasKeyword(seed, /(自动写作|写作工作流|内容工作流|workflow|automation|pipeline|research retrieval|fact check|ai writing workflow)/i)) {
+  if (verticalCategories.includes("ai_products") || hasKeyword(seed, /(自动写作|写作工作流|内容工作流|workflow|automation|pipeline|research retrieval|fact check|ai writing workflow)/i)) {
     domains.official.push("openai.com", "platform.openai.com", "docs.anthropic.com", "ai.google.dev");
     domains.industry.push("infoq.cn", "36kr.com", "venturebeat.com", "techcrunch.com");
     domains.comparison.push("zapier.com", "n8n.io", "make.com", "langchain.com");
     domains.userVoice.push("reddit.com", "github.com", "news.ycombinator.com");
     domains.timeline.push("openai.com", "platform.openai.com", "docs.anthropic.com", "ai.google.dev");
+  }
+  if (verticalCategories.includes("business_case") || hasKeyword(seed, /(商业案例|案例拆解|创业案例|创始人|融资|营收|估值|收购|品牌动作|公司战略)/i)) {
+    domains.official.push("openai.com", "anthropic.com", "about.meta.com", "blog.google");
+    domains.industry.push("a16z.com", "techcrunch.com", "fortune.com", "cbinsights.com");
+    domains.comparison.push("a16z.com", "fortune.com", "cbinsights.com");
+    domains.userVoice.push("news.ycombinator.com", "reddit.com", "zhihu.com");
+    domains.timeline.push("openai.com", "anthropic.com", "techcrunch.com", "fortune.com");
+  }
+  if (verticalCategories.includes("tool_evaluation") || hasKeyword(seed, /(工具评测|产品评测|效率工具|值不值得|替代方案|横向对比|上手体验)/i)) {
+    domains.official.push("openai.com", "anthropic.com", "figma.com", "notion.so");
+    domains.industry.push("zapier.com", "g2.com", "capterra.com", "lennysnewsletter.com");
+    domains.comparison.push("g2.com", "capterra.com", "zapier.com", "toolfinder.co");
+    domains.userVoice.push("reddit.com", "github.com", "news.ycombinator.com");
+    domains.timeline.push("github.com", "openai.com", "anthropic.com", "figma.com");
+  }
+  if (
+    verticalCategories.includes("operator_log")
+    || verticalCategories.includes("solution_playbook")
+    || hasKeyword(seed, /(实操复盘|踩坑复盘|解决方案|工作流|自动化方案|落地方案|最佳实践|流程设计)/i)
+  ) {
+    domains.official.push("platform.openai.com", "docs.anthropic.com", "developers.weixin.qq.com", "docs.github.com");
+    domains.industry.push("n8n.io", "make.com", "zapier.com", "indiehackers.com");
+    domains.comparison.push("n8n.io", "make.com", "zapier.com", "langchain.com");
+    domains.userVoice.push("reddit.com", "v2ex.com", "news.ycombinator.com", "zhihu.com");
+    domains.timeline.push("github.com", "platform.openai.com", "developers.weixin.qq.com", "docs.anthropic.com");
+  }
+  if (verticalCategories.includes("saas_growth") || hasKeyword(seed, /(saas|arr|mrr|留存|续费|获客成本|plg|试用转化|定价策略)/i)) {
+    domains.official.push("stripe.com", "intercom.com", "hubspot.com", "chartmogul.com");
+    domains.industry.push("saastr.com", "openviewpartners.com", "forentrepreneurs.com", "profitwell.com");
+    domains.comparison.push("profitwell.com", "chartmogul.com", "saastr.com");
+    domains.userVoice.push("indiehackers.com", "reddit.com", "news.ycombinator.com");
+    domains.timeline.push("stripe.com", "intercom.com", "hubspot.com", "chartmogul.com");
+  }
+  if (verticalCategories.includes("github_tools") || hasKeyword(seed, /(github 项目|开源项目|github star|repo|repository|开发工具|cli 工具|vscode 插件|mcp|model context protocol)/i)) {
+    domains.official.push("github.com", "docs.github.com", "github.blog", "marketplace.visualstudio.com");
+    domains.industry.push("github.blog", "stackshare.io", "libhunt.com", "producthunt.com");
+    domains.comparison.push("stackshare.io", "libhunt.com", "github.com");
+    domains.userVoice.push("github.com", "reddit.com", "news.ycombinator.com", "v2ex.com");
+    domains.timeline.push("github.blog", "github.com", "docs.github.com", "marketplace.visualstudio.com");
+  }
+  if (verticalCategories.includes("search_marketing") || hasKeyword(seed, /(搜索广告|搜索意图|关键词|谷歌广告|google ads|ppc|sem|quality score|ad relevance|keyword match|search intent)/i)) {
+    domains.official.push("support.google.com", "ads.google.com", "thinkwithgoogle.com");
+    domains.industry.push("searchengineland.com", "wordstream.com", "semrush.com", "ahrefs.com");
+    domains.comparison.push("wordstream.com", "semrush.com", "searchengineland.com");
+    domains.userVoice.push("reddit.com", "support.google.com", "zhihu.com");
+    domains.timeline.push("support.google.com", "ads.google.com", "searchengineland.com");
   }
 
   if (hasKeyword(seed, /(github|开源)/i)) {
@@ -453,20 +742,69 @@ function buildDomainStrategy(values: string[]) {
 
 function buildTopicFacetKeywords(values: string[]) {
   const seed = values.join(" ");
-  const verticalCategory = detectVerticalTopicCategory(values);
-  const facets = mergeResearchTerms(EMPTY_RESEARCH_BUCKET(), VERTICAL_SOURCE_PACKS[verticalCategory].facets);
+  const verticalCategories = resolveVerticalCategories(values);
+  const facets = verticalCategories.reduce(
+    (bucket, category) => mergeResearchTerms(bucket, VERTICAL_SOURCE_PACKS[category].facets),
+    EMPTY_RESEARCH_BUCKET(),
+  );
 
   if (hasKeyword(seed, /(微信|公众号|wechat)/i)) {
     facets.official.push("公众号", "微信", "草稿箱", "发布接口");
     facets.timeline.push("公众号", "微信", "草稿箱", "更新");
     facets.userVoice.push("公众号", "微信运营");
   }
-  if (verticalCategory === "ai_products" || hasKeyword(seed, /(自动写作|写作工作流|内容工作流|workflow|automation|pipeline|agent 产品|ai 工具)/i)) {
+  if (verticalCategories.includes("ai_products") || hasKeyword(seed, /(自动写作|写作工作流|内容工作流|workflow|automation|pipeline|agent 产品|ai 工具)/i)) {
     facets.official.push("AI写作", "内容工作流");
     facets.industry.push("AI写作", "内容工作流", "自动化");
     facets.comparison.push("AI写作工具", "工作流平台");
     facets.userVoice.push("AI写作", "使用体验");
     facets.timeline.push("AI写作", "版本更新");
+  }
+  if (verticalCategories.includes("business_case") || hasKeyword(seed, /(商业案例|案例拆解|创业案例|创始人|融资|营收|估值|商业模式)/i)) {
+    facets.official.push("公司动作", "财报", "创始人", "产品路线");
+    facets.industry.push("商业案例", "创业拆解", "品牌策略", "组织变化");
+    facets.comparison.push("公司对比", "增长路径", "模式差异");
+    facets.userVoice.push("创业复盘", "行业讨论", "用户反馈");
+    facets.timeline.push("融资进展", "产品演进", "组织变化");
+  }
+  if (verticalCategories.includes("tool_evaluation") || hasKeyword(seed, /(工具评测|产品评测|效率工具|值不值得|替代方案|上手体验)/i)) {
+    facets.official.push("功能说明", "定价", "能力边界");
+    facets.industry.push("工具评测", "效率工具", "产品对比");
+    facets.comparison.push("最佳场景", "最差场景", "替代关系");
+    facets.userVoice.push("真实体验", "吐槽点", "续费反馈");
+    facets.timeline.push("版本更新", "定价变化", "能力演进");
+  }
+  if (
+    verticalCategories.includes("operator_log")
+    || verticalCategories.includes("solution_playbook")
+    || hasKeyword(seed, /(实操复盘|解决方案|工作流|自动化方案|落地方案|最佳实践)/i)
+  ) {
+    facets.official.push("接口限制", "官方示例", "错误边界");
+    facets.industry.push("实操复盘", "自动化", "落地路径");
+    facets.comparison.push("方案对比", "流程差异", "成本差异");
+    facets.userVoice.push("踩坑", "亲测", "复盘");
+    facets.timeline.push("更新日志", "版本变化", "能力演进");
+  }
+  if (verticalCategories.includes("saas_growth") || hasKeyword(seed, /(saas|arr|mrr|留存|续费|获客成本|plg|定价策略)/i)) {
+    facets.official.push("ARR", "MRR", "留存", "续费");
+    facets.industry.push("SaaS 增长", "PLG", "定价策略", "获客成本");
+    facets.comparison.push("套餐对比", "留存对比", "渠道对比");
+    facets.userVoice.push("续费体验", "客户反馈", "SaaS 复盘");
+    facets.timeline.push("定价更新", "增长变化", "产品演进");
+  }
+  if (verticalCategories.includes("github_tools") || hasKeyword(seed, /(github 项目|开源项目|github star|repo|repository|开发工具|cli 工具|vscode 插件|mcp|model context protocol)/i)) {
+    facets.official.push("release", "changelog", "readme");
+    facets.industry.push("GitHub 项目", "开发工具", "开源工具");
+    facets.comparison.push("star 对比", "功能对比", "替代关系");
+    facets.userVoice.push("issue 反馈", "discussion", "上手体验");
+    facets.timeline.push("release", "维护状态", "star 变化");
+  }
+  if (verticalCategories.includes("search_marketing") || hasKeyword(seed, /(搜索广告|搜索意图|关键词|谷歌广告|google ads|ppc|sem|quality score|ad relevance|keyword match|search intent)/i)) {
+    facets.official.push("Google Ads", "搜索意图", "关键词匹配", "广告相关性", "质量得分");
+    facets.industry.push("PPC", "搜索意图", "关键词意图", "转化率");
+    facets.comparison.push("精准匹配", "广泛匹配", "搜索广告平台对比");
+    facets.userVoice.push("投手复盘", "PPC 经验", "Google Ads 社区");
+    facets.timeline.push("关键词匹配演进", "智能出价", "搜索广告更新");
   }
   if (hasKeyword(seed, /(研究|检索|核查|事实|fact check|research retrieval)/i)) {
     facets.official.push("事实核查");
@@ -568,6 +906,37 @@ function buildTopicRelevanceTerms(values: string[]) {
       .filter((value) => value.length >= 4),
     6,
   );
+}
+
+export function getResearchSupplementIntensity(input: {
+  articleTitle: string;
+  searchHints?: ResearchSearchHints;
+}) {
+  const signature = [
+    input.articleTitle,
+    input.searchHints?.topicTheme || "",
+    input.searchHints?.researchObject || "",
+    input.searchHints?.coreQuestion || "",
+    input.searchHints?.coreAssertion || "",
+    ...(input.searchHints?.mustCoverAngles ?? []),
+  ].map((item) => String(item || "").trim()).filter(Boolean).join(" ");
+  const profile = inferPlan24Vertical(signature || input.articleTitle);
+  const sparseTrack = Boolean(profile.sparseTrack);
+  return {
+    vertical: profile.key,
+    category: profile.category,
+    sparseTrack,
+    coverageNote: profile.coverageNote,
+    imaLimit: sparseTrack ? 6 : 4,
+    imaPlanLimit: sparseTrack ? 5 : 3,
+    searchLimit: sparseTrack ? 10 : 6,
+    curatedLimit: sparseTrack ? 10 : 6,
+    candidateUrlLimit: sparseTrack ? SPARSE_RESEARCH_SUPPLEMENT_MAX_DISTILL_URLS : RESEARCH_SUPPLEMENT_MAX_DISTILL_URLS,
+    targetNodeLimit: sparseTrack ? 5 : 4,
+    requiredAngles: sparseTrack
+      ? ["钱从哪里来", "为什么现在", "谁不适合做", "平台规则", "真实案例"]
+      : ["钱流/成本", "why now", "适用边界"],
+  };
 }
 
 export function buildResearchSearchPlans(input: {
@@ -709,10 +1078,11 @@ export function buildCuratedResearchPlans(input: {
   knowledgeCards: Array<{ title: string; summary?: string | null }>;
   outlineNodes: Array<{ title: string; description?: string | null }>;
   searchHints?: ResearchSearchHints;
+  limit?: number;
 }) {
   const coreTerms = buildCoreSearchTerms(input);
   const crossLanguageHints = buildCrossLanguageHints(coreTerms);
-  const verticalCategory = detectVerticalTopicCategory([
+  const verticalCategories = resolveVerticalCategories([
     ...coreTerms,
     ...crossLanguageHints,
     input.articleTitle,
@@ -728,7 +1098,9 @@ export function buildCuratedResearchPlans(input: {
     input.searchHints?.researchObject || "",
   ]);
 
-  const plans: CuratedSourcePlan[] = [...VERTICAL_SOURCE_PACKS[verticalCategory].curatedSources];
+  const plans: CuratedSourcePlan[] = verticalCategories.flatMap(
+    (category) => VERTICAL_SOURCE_PACKS[category].curatedSources,
+  );
   for (const category of Object.keys(domainStrategy) as ResearchCoverageCategory[]) {
     for (const domain of domainStrategy[category]) {
       for (const source of BASE_CURATED_SOURCE_URLS_BY_DOMAIN[domain] ?? []) {
@@ -745,7 +1117,7 @@ export function buildCuratedResearchPlans(input: {
   for (const item of plans) {
     deduped.set(item.url, item);
   }
-  return Array.from(deduped.values()).slice(0, 6);
+  return Array.from(deduped.values()).slice(0, Math.max(1, input.limit ?? 6));
 }
 
 export function scoreImaResult(input: {
@@ -778,7 +1150,7 @@ export function scoreImaResult(input: {
   if (input.sourceUrl) {
     score += 4;
   }
-  if (/(案例|实战|复盘|踩坑|经验|方法|流程|工作流|自动化|发布|草稿箱|公众号|微信|研究|核查|用户|反馈|版本|演进)/i.test(seed)) {
+  if (/(案例|实战|复盘|踩坑|经验|方法|流程|工作流|自动化|发布|草稿箱|公众号|微信|研究|核查|用户|反馈|版本|演进|搜索广告|搜索意图|关键词|google ads|ppc|quality score|match type|ad relevance)/i.test(seed)) {
     score += 8;
   }
   if (isGenericResearchLandingPage({
@@ -803,6 +1175,7 @@ async function discoverImaResearchItems(input: {
   knowledgeCards: Array<{ title: string; summary?: string | null }>;
   outlineNodes: Array<{ title: string; description?: string | null }>;
   limit: number;
+  planLimit?: number;
   searchHints?: ResearchSearchHints;
 }) {
   const plans = buildImaResearchPlans({
@@ -810,7 +1183,7 @@ async function discoverImaResearchItems(input: {
     knowledgeCards: input.knowledgeCards,
     outlineNodes: input.outlineNodes,
     searchHints: input.searchHints,
-  }).slice(0, 3);
+  }).slice(0, Math.max(1, input.planLimit ?? 3));
   const topicTerms = buildTopicRelevanceTerms([
     input.articleTitle,
     input.searchHints?.topicTheme || "",
@@ -1103,6 +1476,10 @@ export async function supplementArticleResearchSources(input: {
     articleTitle: input.articleTitle,
     evidenceFragments: input.evidenceFragments,
   });
+  const supplementIntensity = getResearchSupplementIntensity({
+    articleTitle: input.articleTitle,
+    searchHints: input.searchHints,
+  });
   const nodes = await getArticleNodes(input.articleId);
   const existingAttachedUrls = new Set(
     nodes
@@ -1124,33 +1501,42 @@ export async function supplementArticleResearchSources(input: {
       )
       .filter(Boolean),
   );
-  const imaResult = await discoverImaResearchItems({
-    userId: input.userId,
-    articleTitle: input.articleTitle,
-    knowledgeCards: input.knowledgeCards,
-    outlineNodes: input.outlineNodes,
-    limit: 4,
-    searchHints: input.searchHints,
-  });
-  const curatedPlans = await filterReachableCuratedResearchPlans(buildCuratedResearchPlans({
-    articleTitle: input.articleTitle,
-    knowledgeCards: input.knowledgeCards,
-    outlineNodes: input.outlineNodes,
-    searchHints: input.searchHints,
-  }));
-  const searchResult = await discoverSearchUrls({
-    articleTitle: input.articleTitle,
-    knowledgeCards: input.knowledgeCards,
-    outlineNodes: input.outlineNodes,
-    limit: imaResult.items.length > 0 ? 4 : 6,
-    searchHints: input.searchHints,
-  });
-  const candidateUrls = uniqueStrings([
-    ...seedUrls,
-    ...curatedPlans.map((item) => item.url),
-    ...searchResult.discovered,
-  ], 8).filter((url) => !existingAttachedUrls.has(url));
-  const targetNodes = nodes.slice(0, Math.min(4, nodes.length));
+  const [imaResult, curatedPlans, broadSearchResult] = await Promise.all([
+    discoverImaResearchItems({
+      userId: input.userId,
+      articleTitle: input.articleTitle,
+      knowledgeCards: input.knowledgeCards,
+      outlineNodes: input.outlineNodes,
+      limit: supplementIntensity.imaLimit,
+      planLimit: supplementIntensity.imaPlanLimit,
+      searchHints: input.searchHints,
+    }),
+    filterReachableCuratedResearchPlans(buildCuratedResearchPlans({
+      articleTitle: input.articleTitle,
+      knowledgeCards: input.knowledgeCards,
+      outlineNodes: input.outlineNodes,
+      searchHints: input.searchHints,
+      limit: supplementIntensity.curatedLimit,
+    })),
+    discoverSearchUrls({
+      articleTitle: input.articleTitle,
+      knowledgeCards: input.knowledgeCards,
+      outlineNodes: input.outlineNodes,
+      limit: supplementIntensity.searchLimit,
+      searchHints: input.searchHints,
+    }),
+  ]);
+  const searchResult = {
+    ...broadSearchResult,
+    discovered: broadSearchResult.discovered.slice(0, imaResult.items.length > 0 ? 4 : 6),
+  };
+  const candidateUrls = selectResearchCandidateUrls({
+    seedUrls,
+    curatedPlans,
+    discoveredUrls: searchResult.discovered,
+    limit: supplementIntensity.candidateUrlLimit,
+  }).filter((url) => !existingAttachedUrls.has(url));
+  const targetNodes = nodes.slice(0, Math.min(supplementIntensity.targetNodeLimit, nodes.length));
   const attached: Array<{
     fragmentId: number;
     nodeId: number;
@@ -1175,10 +1561,11 @@ export async function supplementArticleResearchSources(input: {
       failed,
       searchError: searchResult.error,
       searches: searchResult.searches,
+      supplementIntensity,
     };
   }
 
-  for (const [index, item] of imaResult.items.entries()) {
+  const imaItemsToAttach = imaResult.items.filter((item) => {
     const signature = [
       String(item.title || "").trim(),
       String(item.sourceUrl || "").trim(),
@@ -1186,14 +1573,50 @@ export async function supplementArticleResearchSources(input: {
     ].join("::");
     if (existingAttachedImaSignatures.has(signature)) {
       skipped.push(`ima:${item.mediaId}`);
+      return false;
+    }
+    return true;
+  });
+  const localizedImaItems = await mapWithConcurrency(
+    imaItemsToAttach,
+    RESEARCH_SOURCE_LOCALIZATION_CONCURRENCY,
+    async (item) => {
+      try {
+        return {
+          item,
+          localized: await localizeSourceMaterialToChinese({
+            title: item.title,
+            excerpt: item.excerpt,
+            sourceUrl: item.sourceUrl,
+          }),
+          error: null as string | null,
+        };
+      } catch (error) {
+        return {
+          item,
+          localized: null,
+          error: error instanceof Error ? error.message : "IMA 研究补源失败",
+        };
+      }
+    },
+  );
+
+  for (const [index, localizedItem] of localizedImaItems.entries()) {
+    const item = localizedItem.item;
+    const signature = [
+      String(item.title || "").trim(),
+      String(item.sourceUrl || "").trim(),
+      truncateText(String(item.excerpt || "").trim(), 80),
+    ].join("::");
+    if (localizedItem.error || !localizedItem.localized) {
+      failed.push({
+        url: item.sourceUrl || `ima:${item.mediaId}`,
+        error: localizedItem.error || "IMA 研究补源失败",
+      });
       continue;
     }
     try {
-      const localized = await localizeSourceMaterialToChinese({
-        title: item.title,
-        excerpt: item.excerpt,
-        sourceUrl: item.sourceUrl,
-      });
+      const localized = localizedItem.localized;
       const fragment = await createFragment({
         userId: input.userId,
         sourceType: "ima_kb",
@@ -1264,7 +1687,48 @@ export async function supplementArticleResearchSources(input: {
     }),
   );
 
-  for (const [index, result] of distilledResults.entries()) {
+  const localizableDistilledResults = distilledResults
+    .map((result, index) => ({ result, index }))
+    .filter(({ result }) => {
+      if (result.error || !result.distilled) {
+        failed.push({
+          url: result.url,
+          error: result.error || "研究补源抓取失败",
+        });
+        return false;
+      }
+      return true;
+    });
+  const localizedDistilledResults = await mapWithConcurrency(
+    localizableDistilledResults,
+    RESEARCH_SOURCE_LOCALIZATION_CONCURRENCY,
+    async ({ result, index }) => {
+      const distilled = result.distilled!;
+      try {
+        return {
+          result,
+          index,
+          localized: await localizeSourceMaterialToChinese({
+            title: distilled.title,
+            excerpt: distilled.distilledContent,
+            rawContent: distilled.rawContent,
+            sourceUrl: distilled.sourceUrl || result.url,
+          }),
+          error: null as string | null,
+        };
+      } catch (error) {
+        return {
+          result,
+          index,
+          localized: null,
+          error: error instanceof Error ? error.message : "研究补源抓取失败",
+        };
+      }
+    },
+  );
+
+  for (const localizedResult of localizedDistilledResults) {
+    const { result, index } = localizedResult;
     if (result.error || !result.distilled) {
       failed.push({
         url: result.url,
@@ -1272,14 +1736,16 @@ export async function supplementArticleResearchSources(input: {
       });
       continue;
     }
+    if (localizedResult.error || !localizedResult.localized) {
+      failed.push({
+        url: result.url,
+        error: localizedResult.error || "研究补源抓取失败",
+      });
+      continue;
+    }
     try {
       const distilled = result.distilled;
-      const localized = await localizeSourceMaterialToChinese({
-        title: distilled.title,
-        excerpt: distilled.distilledContent,
-        rawContent: distilled.rawContent,
-        sourceUrl: distilled.sourceUrl || result.url,
-      });
+      const localized = localizedResult.localized;
       const fragment = await createFragment({
         userId: input.userId,
         sourceType: "url",
@@ -1332,5 +1798,6 @@ export async function supplementArticleResearchSources(input: {
     failed,
     searchError: searchResult.error,
     searches: searchResult.searches,
+    supplementIntensity,
   };
 }

@@ -2,6 +2,7 @@ import { getDatabase } from "./db";
 import { ensureExtendedProductSchema } from "./schema-bootstrap";
 import { getUserAccessScope } from "./access-scope";
 import { buildKnowledgeIndexSignals } from "./knowledge-indexing";
+import { buildRetrievalQueryContext, scoreUnifiedRetrievalCandidate } from "./retrieval-ranking";
 
 type KnowledgeCardStatus = "draft" | "active" | "conflicted" | "stale" | "archived";
 
@@ -32,6 +33,7 @@ type KnowledgeCardListItem = {
   last_compiled_at: string | null;
   last_verified_at: string | null;
   created_at: string;
+  updated_at: string;
   source_fragment_count: number;
   source_fragment_ids: number[];
 };
@@ -68,19 +70,18 @@ function tokenizeSearchText(value: string) {
   ).slice(0, 36);
 }
 
-function scoreKnowledgeCard(card: KnowledgeCardListItem, context: { attachedFragmentIds: number[]; tokens: string[] }) {
-  let score = 0;
-  const attachedFragmentSet = new Set(context.attachedFragmentIds);
-  const overlapCount = card.source_fragment_ids.filter((fragmentId) => attachedFragmentSet.has(fragmentId)).length;
-  score += overlapCount * 8;
-
-  const haystack = `${card.title} ${card.summary || ""}`.toLowerCase();
-  for (const token of context.tokens) {
-    if (haystack.includes(token)) {
-      score += token.length >= 4 ? 2 : 1;
-    }
-  }
-
+function scoreKnowledgeCard(card: KnowledgeCardListItem, context: ReturnType<typeof buildRetrievalQueryContext>) {
+  const ranking = scoreUnifiedRetrievalCandidate(
+    context,
+    {
+      title: card.title,
+      summary: card.summary,
+      updatedAt: card.updated_at,
+      attachedFragmentIds: card.source_fragment_ids,
+    },
+    { recency: 0.35 },
+  );
+  let score = ranking.score;
   if (card.status === "active") score += 4;
   if (card.status === "stale") score -= 2;
   if (card.status === "conflicted") score -= 3;
@@ -711,13 +712,18 @@ export async function getRelevantKnowledgeCardsForArticle(
   },
 ) {
   const attachedFragmentIds = Array.from(new Set((input.attachedFragmentIds ?? []).filter(Boolean)));
-  const tokens = tokenizeSearchText([input.articleTitle, input.markdownContent, ...(input.nodeTitles ?? [])].join(" "));
+  const query = buildRetrievalQueryContext({
+    articleTitle: input.articleTitle,
+    markdownContent: input.markdownContent,
+    nodeTitles: input.nodeTitles,
+    attachedFragmentIds,
+  });
   const cards = await getKnowledgeCards(userId);
 
   const ranked = cards
     .map((card) => ({
       card,
-      relevanceScore: scoreKnowledgeCard(card, { attachedFragmentIds, tokens }),
+      relevanceScore: scoreKnowledgeCard(card, query),
     }))
     .filter((item) => item.relevanceScore > 0)
     .sort((left, right) => right.relevanceScore - left.relevanceScore || right.card.confidence_score - left.card.confidence_score || right.card.id - left.card.id)

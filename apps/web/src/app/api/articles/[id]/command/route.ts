@@ -67,6 +67,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
       humanSignals: writingContext.humanSignals,
       outlineNodes: writingContext.outlineNodes,
       knowledgeCards: writingContext.knowledgeCards,
+      authorOutcomeFeedbackLedger: writingContext.authorOutcomeFeedbackLedger,
       deepWritingPayload: deepWritingArtifact?.payload ?? null,
       layoutStrategy: layoutStrategy
         ? {
@@ -104,6 +105,8 @@ export async function POST(request: Request, { params }: { params: { id: string 
       status: saved?.status,
       command,
       promptVersionRefs: rewritten.promptVersionRefs,
+      personaAudit: rewritten.personaAudit ?? null,
+      informationGainAudit: rewritten.informationGainAudit ?? null,
     });
   } catch (error) {
     return fail(error instanceof Error ? error.message : "执行旧 command API 兼容改写失败", 400);

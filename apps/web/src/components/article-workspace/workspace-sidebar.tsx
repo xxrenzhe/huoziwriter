@@ -4,6 +4,7 @@ import { ExportActionsRail } from "./export-actions-rail";
 import { KnowledgeCardsRail } from "./knowledge-cards-rail";
 import { LanguageGuardRail } from "./language-guard-rail";
 import { MobileInspectorEntryCard } from "./mobile-inspector-entry-card";
+import { PersonalEffectiveWritingRail } from "./personal-effective-writing-rail";
 import { VisualEngineRail } from "./visual-engine-rail";
 import { WechatPublishRail } from "./wechat-publish-rail";
 import { WorkspaceStatusRail } from "./workspace-status-rail";
@@ -11,6 +12,7 @@ import { WorkspaceStatusRail } from "./workspace-status-rail";
 type WorkspaceSidebarProps = {
   isFocusMode: boolean;
   statusRailProps: ComponentProps<typeof WorkspaceStatusRail>;
+  personalEffectiveWritingRailProps: ComponentProps<typeof PersonalEffectiveWritingRail>;
   showKnowledgeCardsRail: boolean;
   knowledgeCardsRailProps: ComponentProps<typeof KnowledgeCardsRail>;
   showLanguageGuardRail: boolean;
@@ -29,6 +31,7 @@ type WorkspaceSidebarProps = {
 export function WorkspaceSidebar({
   isFocusMode,
   statusRailProps,
+  personalEffectiveWritingRailProps,
   showKnowledgeCardsRail,
   knowledgeCardsRailProps,
   showLanguageGuardRail,
@@ -48,6 +51,8 @@ export function WorkspaceSidebar({
       <div className="hidden md:block">
         <WorkspaceStatusRail {...statusRailProps} />
       </div>
+
+      <PersonalEffectiveWritingRail {...personalEffectiveWritingRailProps} />
 
       {showKnowledgeCardsRail ? (
         <div className="hidden md:block">

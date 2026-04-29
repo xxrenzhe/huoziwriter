@@ -193,6 +193,21 @@ export function useArticleWorkspaceClientState(input: UseArticleWorkspaceClientS
   const [outcomeHitStatus, setOutcomeHitStatus] = useState<"pending" | "hit" | "near_miss" | "miss">(
     input.initialOutcomeBundle.outcome?.hitStatus ?? "pending",
   );
+  const [outcomeExpressionFeedback, setOutcomeExpressionFeedback] = useState<{
+    likeMe: boolean;
+    unlikeMe: boolean;
+    tooHard: boolean;
+    tooSoft: boolean;
+    tooTutorial: boolean;
+    tooCommentary: boolean;
+  }>({
+    likeMe: input.initialOutcomeBundle.outcome?.expressionFeedback?.likeMe ?? false,
+    unlikeMe: input.initialOutcomeBundle.outcome?.expressionFeedback?.unlikeMe ?? false,
+    tooHard: input.initialOutcomeBundle.outcome?.expressionFeedback?.tooHard ?? false,
+    tooSoft: input.initialOutcomeBundle.outcome?.expressionFeedback?.tooSoft ?? false,
+    tooTutorial: input.initialOutcomeBundle.outcome?.expressionFeedback?.tooTutorial ?? false,
+    tooCommentary: input.initialOutcomeBundle.outcome?.expressionFeedback?.tooCommentary ?? false,
+  });
   const [outcomeReviewSummary, setOutcomeReviewSummary] = useState(
     input.initialOutcomeBundle.outcome?.reviewSummary ?? "",
   );
@@ -570,6 +585,8 @@ export function useArticleWorkspaceClientState(input: UseArticleWorkspaceClientS
     setOutcomeTargetPackage,
     outcomeHitStatus,
     setOutcomeHitStatus,
+    outcomeExpressionFeedback,
+    setOutcomeExpressionFeedback,
     outcomeReviewSummary,
     setOutcomeReviewSummary,
     outcomeNextAction,

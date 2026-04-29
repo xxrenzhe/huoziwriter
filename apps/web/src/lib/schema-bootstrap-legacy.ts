@@ -124,6 +124,7 @@ export async function applyLegacySchemaCompat({
   await ensureColumn("article_strategy_cards", "market_position_insight", "TEXT");
   await ensureColumn("article_strategy_cards", "historical_turning_point", "TEXT");
   await ensureColumn("article_outcomes", "attribution_json", getDatabase().type === "postgres" ? "JSONB" : "TEXT");
+  await ensureColumn("article_outcomes", "expression_feedback_json", getDatabase().type === "postgres" ? "JSONB" : "TEXT");
   await ensureColumn("article_strategy_cards", "archetype", "TEXT");
   await ensureColumn("article_strategy_cards", "mainstream_belief", "TEXT");
   await ensureColumn("article_strategy_cards", "four_point_audit_json", getDatabase().type === "postgres" ? "JSONB" : "TEXT");
@@ -154,6 +155,7 @@ export async function applyLegacySchemaCompat({
   await ensureColumn("topic_backlog_items", "archetype", "TEXT");
   await ensureColumn("topic_backlog_items", "evidence_refs_json", getDatabase().type === "postgres" ? "JSONB" : "TEXT");
   await ensureColumn("topic_backlog_items", "strategy_draft_json", getDatabase().type === "postgres" ? "JSONB" : "TEXT");
+  await ensureColumn("topic_backlog_items", "source_meta_json", getDatabase().type === "postgres" ? "JSONB" : "TEXT");
   await ensureColumn("topic_backlog_items", "target_audience", "TEXT");
   await ensureColumn("topic_backlog_items", "reader_snapshot_hint", "TEXT");
   await ensureColumn("topic_backlog_items", "status", "TEXT NOT NULL DEFAULT 'draft'");
@@ -236,6 +238,7 @@ export async function applyLegacySchemaCompat({
   await ensureColumn("source_connectors", "last_fetched_at", getDatabase().type === "postgres" ? "TIMESTAMPTZ" : "TEXT");
   await ensureColumn("topic_items", "owner_user_id", getDatabase().type === "postgres" ? "BIGINT" : "INTEGER");
   await ensureColumn("topic_items", "topic_verticals_json", "TEXT NOT NULL DEFAULT '[]'");
+  await ensureColumn("topic_items", "source_meta_json", getDatabase().type === "postgres" ? "JSONB" : "TEXT");
   await ensureColumn("topic_events", "topic_verticals_json", "TEXT NOT NULL DEFAULT '[]'");
   await ensureColumn("topic_recommendations", "source_owner_user_id", getDatabase().type === "postgres" ? "BIGINT" : "INTEGER");
   await ensureColumn("topic_recommendations", "emotion_labels_json", "TEXT NOT NULL DEFAULT '[]'");
@@ -245,6 +248,7 @@ export async function applyLegacySchemaCompat({
   await ensureColumn("topic_recommendations", "freshness_score", "REAL NOT NULL DEFAULT 0");
   await ensureColumn("topic_recommendations", "relevance_score", "REAL NOT NULL DEFAULT 0");
   await ensureColumn("topic_recommendations", "priority_score", "REAL NOT NULL DEFAULT 0");
+  await ensureColumn("topic_recommendations", "source_meta_json", getDatabase().type === "postgres" ? "JSONB" : "TEXT");
   await ensureColumn("hot_event_clusters", "owner_user_id", getDatabase().type === "postgres" ? "BIGINT" : "INTEGER");
   await ensureColumn("hot_event_clusters", "normalized_title", "TEXT NOT NULL DEFAULT ''");
   await ensureColumn("hot_event_clusters", "emotion_labels_json", "TEXT NOT NULL DEFAULT '[]'");
@@ -252,6 +256,7 @@ export async function applyLegacySchemaCompat({
   await ensureColumn("hot_event_clusters", "topic_verticals_json", "TEXT NOT NULL DEFAULT '[]'");
   await ensureColumn("hot_event_clusters", "source_names_json", "TEXT NOT NULL DEFAULT '[]'");
   await ensureColumn("hot_event_clusters", "source_urls_json", "TEXT NOT NULL DEFAULT '[]'");
+  await ensureColumn("hot_event_clusters", "source_meta_json", getDatabase().type === "postgres" ? "JSONB" : "TEXT");
   await ensureColumn("hot_event_clusters", "freshness_score", "REAL NOT NULL DEFAULT 0");
   await ensureColumn("hot_event_clusters", "authority_score", "REAL NOT NULL DEFAULT 0");
   await ensureColumn("hot_event_clusters", "priority_score", "REAL NOT NULL DEFAULT 0");
@@ -443,6 +448,7 @@ export function buildLegacySchemaCreateTableStatements(databaseType: SchemaBoots
       scorecard_json TEXT NOT NULL DEFAULT '{}',
       attribution_json ${dbType === "postgres" ? "JSONB" : "TEXT"},
       hit_status TEXT NOT NULL DEFAULT 'pending',
+      expression_feedback_json ${dbType === "postgres" ? "JSONB" : "TEXT"},
       review_summary TEXT,
       next_action TEXT,
       playbook_tags_json TEXT NOT NULL DEFAULT '[]',
@@ -538,6 +544,15 @@ export function buildLegacySchemaCreateTableStatements(databaseType: SchemaBoots
       created_at ${dbType === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${dbType === "postgres" ? "NOW()" : "(datetime('now'))"},
       updated_at ${dbType === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${dbType === "postgres" ? "NOW()" : "(datetime('now'))"},
       UNIQUE(article_id, window_code)
+    )`,
+    `CREATE TABLE IF NOT EXISTS author_outcome_feedback_ledgers (
+      id ${dbType === "postgres" ? "BIGSERIAL" : "INTEGER"} PRIMARY KEY ${dbType === "postgres" ? "" : "AUTOINCREMENT"},
+      user_id ${dbType === "postgres" ? "BIGINT" : "INTEGER"} NOT NULL UNIQUE,
+      sample_count INTEGER NOT NULL DEFAULT 0,
+      positive_sample_count INTEGER NOT NULL DEFAULT 0,
+      payload_json ${dbType === "postgres" ? "JSONB" : "TEXT"} NOT NULL DEFAULT ${dbType === "postgres" ? "'{}'::jsonb" : "'{}'"},
+      created_at ${dbType === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${dbType === "postgres" ? "NOW()" : "(datetime('now'))"},
+      updated_at ${dbType === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${dbType === "postgres" ? "NOW()" : "(datetime('now'))"}
     )`,
     `CREATE TABLE IF NOT EXISTS fragment_sources (
       id ${dbType === "postgres" ? "BIGSERIAL" : "INTEGER"} PRIMARY KEY ${dbType === "postgres" ? "" : "AUTOINCREMENT"},
@@ -639,6 +654,7 @@ export function buildLegacySchemaCreateTableStatements(databaseType: SchemaBoots
       archetype TEXT,
       evidence_refs_json ${dbType === "postgres" ? "JSONB" : "TEXT"} NOT NULL DEFAULT ${dbType === "postgres" ? "'[]'::jsonb" : "'[]'"},
       strategy_draft_json ${dbType === "postgres" ? "JSONB" : "TEXT"},
+      source_meta_json ${dbType === "postgres" ? "JSONB" : "TEXT"},
 	      target_audience TEXT,
 	      reader_snapshot_hint TEXT,
 	      status TEXT NOT NULL DEFAULT 'draft',
@@ -1444,6 +1460,7 @@ export function buildLegacySchemaCreateTableStatements(databaseType: SchemaBoots
       primary_source_url TEXT,
       source_names_json TEXT NOT NULL,
       source_urls_json TEXT NOT NULL,
+      source_meta_json ${dbType === "postgres" ? "JSONB" : "TEXT"},
       item_count INTEGER NOT NULL DEFAULT 1,
       freshness_score REAL NOT NULL DEFAULT 0,
       authority_score REAL NOT NULL DEFAULT 0,
@@ -1506,6 +1523,7 @@ export function buildLegacySchemaCreateTableStatements(databaseType: SchemaBoots
       source_url TEXT,
       related_source_names_json TEXT NOT NULL,
       related_source_urls_json TEXT NOT NULL,
+      source_meta_json ${dbType === "postgres" ? "JSONB" : "TEXT"},
       published_at ${dbType === "postgres" ? "TIMESTAMPTZ" : "TEXT"},
       recommendation_type TEXT NOT NULL,
       recommendation_reason TEXT NOT NULL,

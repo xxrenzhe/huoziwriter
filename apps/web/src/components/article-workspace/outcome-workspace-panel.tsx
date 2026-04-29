@@ -105,6 +105,15 @@ type OutcomeWorkspacePanelProps = {
   onChangeOutcomeTargetPackage: (value: string) => void;
   outcomeHitStatus: "pending" | "hit" | "near_miss" | "miss";
   onChangeOutcomeHitStatus: (value: "pending" | "hit" | "near_miss" | "miss") => void;
+  outcomeExpressionFeedback: {
+    likeMe: boolean;
+    unlikeMe: boolean;
+    tooHard: boolean;
+    tooSoft: boolean;
+    tooTutorial: boolean;
+    tooCommentary: boolean;
+  };
+  onToggleOutcomeExpressionFeedback: (key: "likeMe" | "unlikeMe" | "tooHard" | "tooSoft" | "tooTutorial" | "tooCommentary") => void;
   outcomeReviewSummary: string;
   onChangeOutcomeReviewSummary: (value: string) => void;
   outcomeNextAction: string;
@@ -145,6 +154,8 @@ export function OutcomeWorkspacePanel({
   onChangeOutcomeTargetPackage,
   outcomeHitStatus,
   onChangeOutcomeHitStatus,
+  outcomeExpressionFeedback,
+  onToggleOutcomeExpressionFeedback,
   outcomeReviewSummary,
   onChangeOutcomeReviewSummary,
   outcomeNextAction,
@@ -154,6 +165,15 @@ export function OutcomeWorkspacePanel({
   savingOutcomeSnapshot,
   onSaveOutcomeSnapshot,
 }: OutcomeWorkspacePanelProps) {
+  const activeExpressionFeedbackLabels = [
+    outcomeExpressionFeedback.likeMe ? "更像我" : null,
+    outcomeExpressionFeedback.unlikeMe ? "不像我" : null,
+    outcomeExpressionFeedback.tooHard ? "太硬" : null,
+    outcomeExpressionFeedback.tooSoft ? "太软" : null,
+    outcomeExpressionFeedback.tooTutorial ? "太像教程" : null,
+    outcomeExpressionFeedback.tooCommentary ? "太像评论" : null,
+  ].filter(Boolean);
+
   return (
     <div className="mt-4 space-y-4">
       <div className="border border-lineStrong bg-surfaceWarm p-4">
@@ -518,6 +538,40 @@ export function OutcomeWorkspacePanel({
                 <option value="miss">未命中</option>
               </Select>
             </label>
+            <div className="block text-sm text-inkSoft">
+              <div className="mb-2 text-xs uppercase tracking-[0.16em] text-inkMuted">表达反馈</div>
+              <div className="flex flex-wrap gap-2">
+                {[
+                  ["likeMe", "更像我"],
+                  ["unlikeMe", "不像我"],
+                  ["tooHard", "太硬"],
+                  ["tooSoft", "太软"],
+                  ["tooTutorial", "太像教程"],
+                  ["tooCommentary", "太像评论"],
+                ].map(([key, label]) => {
+                  const active = outcomeExpressionFeedback[key as keyof typeof outcomeExpressionFeedback];
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => onToggleOutcomeExpressionFeedback(key as Parameters<typeof onToggleOutcomeExpressionFeedback>[0])}
+                      className={`border px-3 py-2 text-xs transition ${
+                        active
+                          ? "border-cinnabar bg-surfaceWarm text-cinnabar"
+                          : "border-lineStrong bg-surface text-inkSoft hover:border-cinnabar hover:text-cinnabar"
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="mt-2 text-xs leading-6 text-inkMuted">
+                {activeExpressionFeedbackLabels.length > 0
+                  ? `当前已选：${activeExpressionFeedbackLabels.join(" / ")}。该反馈会回写到作者级个性化账本。`
+                  : "补这组轻反馈，系统才知道这篇稿子是“更像你”，还是只是数据好。"}
+              </div>
+            </div>
             <label className="block text-sm text-inkSoft">
               <div className="mb-2 text-xs uppercase tracking-[0.16em] text-inkMuted">复盘结论</div>
               <Textarea aria-label="复盘结论" value={outcomeReviewSummary} onChange={(event) => onChangeOutcomeReviewSummary(event.target.value)} className="min-h-[96px] px-3 py-2" />

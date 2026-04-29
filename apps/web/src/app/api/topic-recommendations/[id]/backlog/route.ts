@@ -2,7 +2,33 @@ import { ensureUserSession } from "@/lib/auth";
 import { fail, ok } from "@/lib/http";
 import { createTopicBacklogItem, getTopicBacklogById } from "@/lib/topic-backlogs";
 import { createTopicLead } from "@/lib/topic-leads";
-import { getVisibleTopicRecommendationsForUser } from "@/lib/topic-recommendations";
+import { getVisibleTopicRecommendationsForUser, type RankedTopicRecommendation } from "@/lib/topic-recommendations";
+
+function isHotspotRecommendation(topic: RankedTopicRecommendation) {
+  const sourceType = topic.sourceType.toLowerCase();
+  const sourceKind = String(topic.sourceMeta?.sourceKind || "").toLowerCase();
+  return sourceType.includes("hotspot") || sourceKind.includes("hotspot") || Boolean(topic.sourceMeta?.hotspotScore);
+}
+
+function buildBacklogSourceMeta(topic: RankedTopicRecommendation) {
+  return {
+    ...(topic.sourceMeta ?? {}),
+    recommendation: {
+      sourceName: topic.sourceName,
+      sourceType: topic.sourceType,
+      sourceUrl: topic.sourceUrl,
+      relatedSourceNames: topic.relatedSourceNames,
+      relatedSourceUrls: topic.relatedSourceUrls,
+      recommendationType: topic.recommendationType,
+      recommendationReason: topic.recommendationReason,
+      matchedPersonaId: topic.matchedPersonaId,
+      matchedPersonaName: topic.matchedPersonaName,
+      freshnessScore: topic.freshnessScore,
+      relevanceScore: topic.relevanceScore,
+      priorityScore: topic.priorityScore,
+    },
+  };
+}
 
 export async function POST(request: Request, { params }: { params: { id: string } }) {
   const session = await ensureUserSession();
@@ -39,9 +65,10 @@ export async function POST(request: Request, { params }: { params: { id: string 
       userId: session.userId,
       backlogId,
       topicLeadId: topicLead?.id ?? null,
-      sourceType: "from-radar",
+      sourceType: isHotspotRecommendation(topic) ? "hotspot" : "from-radar",
       theme: topic.title,
       readerSnapshotHint: topic.summary || topic.recommendationReason,
+      sourceMeta: buildBacklogSourceMeta(topic),
       status: body.status === "draft" ? "draft" : "ready",
     });
 

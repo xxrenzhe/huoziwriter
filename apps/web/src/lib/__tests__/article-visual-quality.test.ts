@@ -105,6 +105,24 @@ test("evaluateVisualAssetQuality warns when inline source facts are missing", ()
   assert.match(result.warnings.join("；"), /sourceFacts/);
 });
 
+test("evaluateVisualAssetQuality blocks internal structure labels in inline visuals", () => {
+  const result = evaluateVisualAssetQuality({
+    brief: brief({
+      visualScope: "inline",
+      baoyuSkill: "baoyu-article-illustrator",
+      visualType: "scene",
+      title: "痛点引入",
+      caption: "方法总结",
+      labels: ["痛点引入", "预算复盘"],
+    }),
+    asset: asset(),
+    requirePublishReady: true,
+  });
+
+  assert.equal(result.status, "blocked");
+  assert.match(result.blockers.join("；"), /内部结构标签/);
+});
+
 test("evaluateVisualAssetQuality blocks missing inline assets when preparing wechat draft", () => {
   const result = evaluateVisualAssetQuality({
     brief: brief({ visualScope: "inline", baoyuSkill: "baoyu-article-illustrator", visualType: "scene" }),

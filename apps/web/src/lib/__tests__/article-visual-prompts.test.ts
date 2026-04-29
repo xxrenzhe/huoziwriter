@@ -85,5 +85,7 @@ test("buildArticleVisualPromptManifest records infographic dimensions", () => {
 test("sanitizeUserVisibleVisualCaption suppresses internal outline labels", () => {
   assert.equal(sanitizeUserVisibleVisualCaption("痛点引入"), null);
   assert.equal(sanitizeUserVisibleVisualCaption(" 核心反转 "), null);
+  assert.equal(sanitizeUserVisibleVisualCaption("方法总结"), null);
+  assert.equal(sanitizeUserVisibleVisualCaption("读者收益"), null);
   assert.equal(sanitizeUserVisibleVisualCaption("搜索意图四象限"), "搜索意图四象限");
 });

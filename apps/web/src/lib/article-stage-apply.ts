@@ -142,6 +142,7 @@ export async function applyArticleStageArtifact(input: {
                   markdownContent: article.markdown_content,
                   payload: artifact.payload,
                   bannedWords,
+                  deepWritingPayload: deepWritingArtifact?.payload || null,
                 })
               : sanitizeBannedWordsLocal(article.markdown_content, bannedWords),
           promptVersionRefs: [],
@@ -234,6 +235,7 @@ export async function applyArticleStageArtifact(input: {
             : [],
           outlineNodes: writingContext.outlineNodes,
           knowledgeCards: writingContext.knowledgeCards,
+          authorOutcomeFeedbackLedger: writingContext.authorOutcomeFeedbackLedger,
           deepWritingPayload: deepWritingArtifact?.payload || null,
           layoutStrategy: layoutStrategyConfig,
         })
@@ -273,6 +275,7 @@ export async function applyArticleStageArtifact(input: {
             humanSignals: writingContext.humanSignals,
             outlineNodes: writingContext.outlineNodes,
             knowledgeCards: writingContext.knowledgeCards,
+            authorOutcomeFeedbackLedger: writingContext.authorOutcomeFeedbackLedger,
             deepWritingPayload: deepWritingArtifact?.payload || null,
             layoutStrategy: layoutStrategyConfig,
           })
@@ -295,6 +298,7 @@ export async function applyArticleStageArtifact(input: {
             humanSignals: writingContext.humanSignals,
             outlineNodes: writingContext.outlineNodes,
             knowledgeCards: writingContext.knowledgeCards,
+            authorOutcomeFeedbackLedger: writingContext.authorOutcomeFeedbackLedger,
             deepWritingPayload: (artifact.stageCode === "deepWriting" ? artifact.payload : deepWritingArtifact?.payload) || null,
             layoutStrategy: layoutStrategyConfig,
             skipAudit: input.skipLanguageGuardAudit,
@@ -433,7 +437,7 @@ export function polishMarkdownLocallyForReadability(markdown: string) {
         return line;
       }
       const leadingWhitespace = line.match(/^\s*/)?.[0] ?? "";
-      const reduced = reduceTemplateConnectors(trimmed);
+      const reduced = reduceDidacticTone(reduceTemplateConnectors(trimmed));
       const polished = reduced.replace(/([^。！？!?；;\n]{42,})([。！？!?；;])/g, (_match, sentence: string, punctuation: string) => {
         const split = splitLongChineseSentence(sentence);
         return `${split}${punctuation}`;
@@ -444,16 +448,67 @@ export function polishMarkdownLocallyForReadability(markdown: string) {
     .replace(/\n{3,}/g, "\n\n");
 }
 
+function reduceDidacticTone(line: string) {
+  return String(line || "")
+    .replace(/真正该看的/g, "更关键的")
+    .replace(/真正该问的是/g, "更先浮出来的问题是")
+    .replace(/最该先问的/g, "最先浮出来的")
+    .replace(/最该先问/g, "最先浮出来")
+    .replace(/应该先/g, "更早")
+    .replace(/需要先/g, "不妨先看")
+    .replace(/必须先/g, "离不开")
+    .replace(/不要先/g, "不必一上来")
+    .replace(/建议先/g, "更稳的入口是")
+    .replace(/先看到的是([^，。；;]+)，([^。；;]+?)反而会/g, "一旦看到的是$1，$2就会")
+    .replace(/先判断([^，。；;]+)，再决定([^。；;]+)/g, "$1，会反过来决定$2")
+    .replace(/先看([^，。；;]+)，再看([^。；;]+)/g, "$1和$2要放在一起看");
+}
+
 function buildLocalProsePolishMarkdown(input: {
   markdownContent: string;
   payload: Record<string, unknown>;
   bannedWords: string[];
+  deepWritingPayload?: Record<string, unknown> | null;
 }) {
   let next = String(input.markdownContent || "").trim();
-  const rewrittenLead = String(input.payload.rewrittenLead || "").trim();
+  const deepOpening = getLocalOpeningLead(input.deepWritingPayload);
+  const rewrittenLead = deepOpening || String(input.payload.rewrittenLead || "").trim();
   if (rewrittenLead) {
-    const firstLine = next.split("\n").find((line) => line.trim()) || "";
-    next = firstLine ? next.replace(firstLine, rewrittenLead) : rewrittenLead;
+    next = replaceLocalFirstReaderFacingBlock(next, rewrittenLead);
   }
   return polishMarkdownLocallyForReadability(sanitizeBannedWordsLocal(next, input.bannedWords));
+}
+
+function getLocalOpeningLead(payload?: Record<string, unknown> | null) {
+  const raw = String(payload?.openingStrategy || "").trim();
+  const normalized = raw.replace(/\r\n/g, "\n").split(/\n{2,}/)[0]?.replace(/\s+/g, " ").trim() || "";
+  if (!normalized || normalized.length < 16 || normalized.length > 220) {
+    return "";
+  }
+  if (/^(开头|策略|起手|要求|请|建议|采用|使用|沿用|已确认|围绕|第一段|首段|默认)/.test(normalized)) {
+    return "";
+  }
+  if (/(不要|不得|必须|需要|应该|候选|模式|策略|第一段|首段|前两句|再补|再给|先抛|先写|回写|正文生成器|匿名复盘现场起手|让读者看见|引出)/.test(normalized)) {
+    return "";
+  }
+  return normalized;
+}
+
+function replaceLocalFirstReaderFacingBlock(markdown: string, replacement: string) {
+  const normalized = String(markdown || "").replace(/\r\n/g, "\n").trim();
+  const nextReplacement = String(replacement || "").trim();
+  if (!normalized || !nextReplacement) {
+    return nextReplacement || normalized;
+  }
+  const lines = normalized.split("\n");
+  const titleBlock = lines[0]?.startsWith("# ") ? lines[0].trim() : "";
+  const body = titleBlock ? lines.slice(1).join("\n").trimStart() : normalized;
+  const blocks = body.split(/\n{2,}/).map((block) => block.trim()).filter(Boolean);
+  const firstContentIndex = blocks.findIndex((block) => !/^#/.test(block) && !/^\s*[-*]\s+/.test(block));
+  if (firstContentIndex >= 0) {
+    blocks[firstContentIndex] = nextReplacement;
+  } else {
+    blocks.unshift(nextReplacement);
+  }
+  return [titleBlock, blocks.join("\n\n")].filter(Boolean).join("\n\n").trim();
 }

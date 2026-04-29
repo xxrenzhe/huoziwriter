@@ -1,5 +1,6 @@
 import { buildFourPointAudit } from "./article-strategy";
 import { buildArticleViralBlueprint, buildArticleViralBlueprintPromptLines } from "./article-viral-blueprint";
+import { buildArticleViralGenomePack, buildArticleViralGenomePromptLines } from "./article-viral-genome";
 
 export type ArticlePromptQualityBriefStage =
   | "researchBrief"
@@ -131,6 +132,15 @@ function getFourPointWeakLabels(input: ArticlePromptQualityBriefInput) {
 function buildSharedLines(input: ArticlePromptQualityBriefInput) {
   const materialRealityMode = inferArticleMaterialRealityMode(input);
   const viralBlueprint = buildArticleViralBlueprint(input);
+  const viralGenome = buildArticleViralGenomePack({
+    title: input.articleTitle || input.outlineSelection?.selectedTitle || null,
+    centralThesis: input.strategyCard?.coreAssertion || input.strategyCard?.researchHypothesis || null,
+    targetReader: input.strategyCard?.targetReader || null,
+    authorLens: input.humanSignals?.nonDelegableTruth || input.humanSignals?.whyThisHitMe || null,
+    materialSpark: input.humanSignals?.realSceneOrDialogue || input.humanSignals?.firstHandObservation || null,
+    viralBlueprintLabel: viralBlueprint.label,
+    materialRealityMode,
+  });
   const researchBrief = getRecord(input.researchBrief);
   const sourceCoverage = getRecord(researchBrief?.sourceCoverage);
   const researchSufficiency = getString(sourceCoverage?.sufficiency) || "unknown";
@@ -165,6 +175,8 @@ function buildSharedLines(input: ArticlePromptQualityBriefInput) {
   return [
     "前置质量原则：缺研究、缺张力、缺读者收益的问题必须在上游阶段暴露或补齐，不能留到终稿润色或发布守门再补。",
     "文章生长原则：深写作阶段必须先生成 organicGrowthKernel，写清作者状态、读者冲突、素材火花、作者视角和自然展开路径；规则、清单、禁词、边界只负责护栏，不负责决定文章方向。",
+    `百篇样本基因：${viralGenome.sampleSummary}`,
+    `百篇样本上游方向：${viralGenome.upstreamDirections.join("；")}`,
     `爆文结构蓝图：${viralBlueprint.label}；标题、开头、大纲、正文执行卡必须围绕同一条蓝图生成，不允许各阶段各写各的。`,
     "可写性门槛必须内化到生成结果：研究层至少输出时间脉络、横向比较、交汇洞察各 1 条；标题必须 6 个候选且推荐项打开率分不低于 35；开头必须 3 个候选且推荐项钩子分不低于 65、质量上限不低于 B、无 danger 诊断。",
     materialRealityMode === "fiction"
@@ -248,6 +260,15 @@ export function buildArticlePromptQualityBrief(
 ) {
   return [
     ...buildSharedLines(input),
+    ...buildArticleViralGenomePromptLines(stage, {
+      title: input.articleTitle || input.outlineSelection?.selectedTitle || null,
+      centralThesis: input.strategyCard?.coreAssertion || input.strategyCard?.researchHypothesis || null,
+      targetReader: input.strategyCard?.targetReader || null,
+      authorLens: input.humanSignals?.nonDelegableTruth || input.humanSignals?.whyThisHitMe || null,
+      materialSpark: input.humanSignals?.realSceneOrDialogue || input.humanSignals?.firstHandObservation || null,
+      viralBlueprintLabel: buildArticleViralBlueprint(input).label,
+      materialRealityMode: inferArticleMaterialRealityMode(input),
+    }),
     ...buildArticleViralBlueprintPromptLines(stage, input),
     buildStageLine(stage, input),
   ];
@@ -257,6 +278,7 @@ export const ARTICLE_ARTIFACT_QUALITY_SYSTEM_CONTRACT = [
   "你在全自动文章生产线里工作，必须把高质量条件前置解决，而不是把问题留给终稿补救。",
   "任何缺证据、缺读者处境、缺核心张力、缺历史脉络、缺横向比较的问题，都必须在当前阶段暴露、补齐或明确降级表达。",
   ARTICLE_VIRAL_NARRATIVE_SYSTEM_CONTRACT,
+  "百篇爆文样本只作为上游写作基因：提供处境变化、冲突密度、素材类型、开头机制和配图节奏；不得把它翻译成僵硬模板或末端打分规则。",
   "深写作必须输出 organicGrowthKernel，并把它放在正文执行卡的最前面；规则、事实边界、反说教约束和禁词只作为护栏，不得替代文章的生长方向。",
   "非虚构、观点、分析、商业和事实型文章：禁止伪造第一人称经历、客户案例、聊天记录、现场细节、数字来源或收益结果。",
   "非虚构文章允许作者视角的匿名复合观察、假设场景和推演句，但必须标清边界；它们只能服务读者识别感和段落呼吸，不能被写成真实采访、真实案例或作者亲历。",

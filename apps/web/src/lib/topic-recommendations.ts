@@ -20,6 +20,7 @@ type RawTopicItem = {
   source_url: string | null;
   source_names_json?: string | string[] | null;
   source_urls_json?: string | string[] | null;
+  source_meta_json?: string | Record<string, unknown> | null;
   published_at: string | null;
   item_count?: number | null;
 };
@@ -50,6 +51,7 @@ type TopicRecommendationRow = {
   source_url: string | null;
   related_source_names_json: string | string[] | null;
   related_source_urls_json: string | string[] | null;
+  source_meta_json: string | Record<string, unknown> | null;
   published_at: string | null;
   recommendation_type: TopicRecommendationType;
   recommendation_reason: string;
@@ -75,6 +77,7 @@ export type RankedTopicRecommendation = {
   sourceUrl: string | null;
   relatedSourceNames: string[];
   relatedSourceUrls: string[];
+  sourceMeta?: Record<string, unknown> | null;
   publishedAt: string | null;
   recommendationType: TopicRecommendationType;
   recommendationReason: string;
@@ -94,6 +97,8 @@ const SOURCE_TYPE_PRIORITY_BOOST: Record<string, number> = {
   x: 20,
   podcast: 18,
   spotify: 16,
+  "chinese-hotspot": 26,
+  hotspot: 26,
   news: 12,
   rss: 10,
   blog: 8,
@@ -163,6 +168,19 @@ function parseJsonArray(value: string | string[] | null | undefined) {
   } catch {
     return [];
   }
+}
+
+function parseJsonRecord(value: unknown) {
+  if (!value) return null;
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value) as Record<string, unknown>;
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null;
+    } catch {
+      return null;
+    }
+  }
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
 }
 
 function tokenize(value: string) {
@@ -396,6 +414,9 @@ export function rankTopicsByPersona(input: {
       const hasPersonaMatch = bestPersonaMatch.score > 0;
       const sourceType = normalizeSourceType(topic.source_type);
       const sourcePriority = normalizeSourcePriority(topic.source_priority);
+      const sourceMeta = parseJsonRecord(topic.source_meta_json);
+      const hotspotScore = parseJsonRecord(sourceMeta?.hotspotScore);
+      const hotspotReasons = parseJsonArray((hotspotScore?.reasons as string[] | string | null | undefined) ?? null);
       const recommendationType: TopicRecommendationType =
         hasPersonaMatch && topic.owner_user_id == null ? "hybrid" : hasPersonaMatch ? "persona" : "hot";
       const sourceTypeBoost = SOURCE_TYPE_PRIORITY_BOOST[sourceType] ?? SOURCE_TYPE_PRIORITY_BOOST.news;
@@ -411,6 +432,7 @@ export function rankTopicsByPersona(input: {
             ? `属于高权重信源类型 ${sourceType}`
             : null;
       const eventDensityReason = topic.item_count && topic.item_count > 1 ? `该事件已被 ${topic.item_count} 个信源同时捕捉；` : "";
+      const hotspotReason = hotspotReasons.length > 0 ? `热点信号：${hotspotReasons.slice(0, 2).join("，")}；` : "";
       const baseRecommendationReason =
         recommendationType === "hybrid"
           ? `热点新鲜度高，且和「${matchedPersonaName}」高度相关：${bestPersonaMatch.reason || "适合作为你当前默认写作身份的切入点"}${sourceReason ? `；${sourceReason}` : ""}。`
@@ -419,7 +441,7 @@ export function rankTopicsByPersona(input: {
             : matchedPersonaName
               ? `热点价值优先，建议先用「${matchedPersonaName}」的表达方式切入，避免只复述新闻${sourceReason ? `；${sourceReason}` : ""}。`
               : `热点价值优先，建议从利益变化、判断失效和读者处境三个层面切入${sourceReason ? `；${sourceReason}` : ""}。`;
-      const recommendationReason = `${eventDensityReason}${baseRecommendationReason}`;
+      const recommendationReason = `${eventDensityReason}${hotspotReason}${baseRecommendationReason}`;
 
       return {
         id: topic.id,
@@ -434,6 +456,7 @@ export function rankTopicsByPersona(input: {
         sourceUrl: topic.source_url,
         relatedSourceNames: parseJsonArray(topic.source_names_json).length > 0 ? parseJsonArray(topic.source_names_json) : [topic.source_name || "聚合信源"],
         relatedSourceUrls: parseJsonArray(topic.source_urls_json),
+        sourceMeta,
         publishedAt: topic.published_at,
         recommendationType,
         recommendationReason,
@@ -479,6 +502,7 @@ function mapStoredTopicRecommendation(row: TopicRecommendationRow) {
     sourceUrl: row.source_url,
     relatedSourceNames: parseJsonArray(row.related_source_names_json),
     relatedSourceUrls: parseJsonArray(row.related_source_urls_json),
+    sourceMeta: parseJsonRecord(row.source_meta_json),
     publishedAt: row.published_at,
     recommendationType: row.recommendation_type,
     recommendationReason: row.recommendation_reason,
@@ -497,7 +521,8 @@ async function listStoredTopicRecommendations(userId: number, recommendationDate
        id, user_id, recommendation_date, rank_index, topic_dedup_key, source_topic_id, source_owner_user_id,
        source_name, source_type, source_priority, title, summary, emotion_labels_json, angle_options_json,
        source_url, related_source_names_json, related_source_urls_json, published_at, recommendation_type,
-       recommendation_reason, matched_persona_id, matched_persona_name, freshness_score, relevance_score, priority_score
+       recommendation_reason, matched_persona_id, matched_persona_name, freshness_score, relevance_score, priority_score,
+       source_meta_json
      FROM topic_recommendations
      WHERE user_id = ? AND recommendation_date = ?
      ORDER BY rank_index ASC, id ASC`,
@@ -533,8 +558,8 @@ async function persistTopicRecommendations(input: {
         source_name, source_type, source_priority, title, summary, emotion_labels_json, angle_options_json,
         source_url, related_source_names_json, related_source_urls_json, published_at, recommendation_type,
         recommendation_reason, matched_persona_id, matched_persona_name, freshness_score, relevance_score,
-        priority_score, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        priority_score, source_meta_json, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         input.userId,
         input.recommendationDate,
@@ -560,6 +585,7 @@ async function persistTopicRecommendations(input: {
         recommendation.freshnessScore,
         recommendation.relevanceScore,
         recommendation.priorityScore,
+        JSON.stringify(parseJsonRecord(recommendation.sourceMeta) ?? null),
         now,
         now,
       ],

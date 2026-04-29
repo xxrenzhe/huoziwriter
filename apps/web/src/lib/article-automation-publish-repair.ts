@@ -6,6 +6,7 @@ import {
   getArticleEvidenceStats,
   inferEvidenceResearchTag,
   inferEvidenceRole,
+  tagEvidenceItemHooks,
 } from "./article-evidence";
 import { getArticleAuthoringStyleContext } from "./article-authoring-style-context";
 import { saveArticleDraft } from "./article-draft";
@@ -68,15 +69,59 @@ function getStringArray(value: unknown, limit = 8) {
 
 const PUBLISH_REPAIR_AI_TIMEOUT_MS = 120_000;
 
-function buildHumanSignalSeed(title: string) {
+type PublishAutoRepairGuardSnapshot = {
+  blockers?: string[];
+  warnings?: string[];
+  checks?: Array<{
+    key?: string;
+    status?: string;
+    severity?: string;
+    targetStageCode?: string;
+  }>;
+};
+
+function hasGuardIssue(input: PublishAutoRepairGuardSnapshot | null | undefined, keys: string[], targetStages: string[] = []) {
+  if (!input) {
+    return true;
+  }
+  const keySet = new Set(keys);
+  const targetSet = new Set(targetStages);
+  return (input.checks ?? []).some((check) => {
+    const isIssue = check.status === "blocked" || check.status === "warning" || check.severity === "blocking" || check.severity === "warning";
+    if (!isIssue) {
+      return false;
+    }
+    return keySet.has(getString(check.key)) || targetSet.has(getString(check.targetStageCode));
+  });
+}
+
+function detectStrategySeedTopic(title: string) {
+  const seed = String(title || "").toLowerCase();
+  if (/(搜索广告|搜索意图|关键词|谷歌广告|google ads|ppc|sem|投放|线索|转化|质量得分|quality score|match type|广告相关性)/i.test(seed)) {
+    return "search_marketing";
+  }
+  return "generic";
+}
+
+export function buildHumanSignalSeed(title: string) {
   const topic = title.replace(/\s+/g, " ").trim() || "这篇文章";
+  if (detectStrategySeedTopic(topic) === "search_marketing") {
+    return {
+      firstHandObservation: "最近看搜索投放复盘时，一个反复出现的场景很刺眼：词表越修越细，账户里的有效线索反而没有同步变扎实。",
+      feltMoment: "最让人不舒服的不是花了钱没结果，而是团队明明把出价、匹配、创意都查了一遍，最后还是解释不了为什么“更精准”的词没有更值钱。",
+      whyThisHitMe: "这件事打到我，是因为它暴露的不是一个投放技巧问题，而是很多团队还在用词面相关性替代需求阶段判断。",
+      realSceneOrDialogue: "一次匿名复盘里，最关键的问题不是“这个词还要不要加价”，而是“搜这个词的人，到底是在了解、比较，还是已经准备行动”。",
+      wantToComplain: "我最想吐槽的是，太多复盘把所有问题都归到执行层，反而绕开了最该先问的那件事：这个搜索背后的人到了哪一步。",
+      nonDelegableTruth: "关键词只能告诉你用户说了什么，需求阶段才更接近他现在愿不愿意行动。",
+    };
+  }
   return {
-    firstHandObservation: `最近我连续看到内容团队把「${topic}」这类稿件拆成很多手动环节，研究、核查、排版和发布各跑各的，最后总在终稿前卡住。`,
-    feltMoment: "最明显的体感是，明明正文已经写完，临门一脚还要靠人补洞，那种反复返工会让人一下子泄气。",
-    whyThisHitMe: "这事打到我，是因为流程表面上看起来齐全，真正失控的却总是最后 20% 的连接处。",
-    realSceneOrDialogue: "上周我盯着一篇已经润色完的稿子，群里有人问“正文都齐了，为什么还不能一键发？”，问题就在那一刻彻底暴露了。",
-    wantToComplain: "我最想吐槽的是，很多系统把 AI 用在写一段话上，却把最耗人的收尾环节继续甩给人。",
-    nonDelegableTruth: "如果终稿前还要人工逐项补策略、证据和封面，这条生产线就不算真正自动化。",
+    firstHandObservation: `最近复盘「${topic}」时，最值得写的不是概念本身，而是它在真实业务现场里反复制造的判断错位。`,
+    feltMoment: "真正卡人的瞬间，往往不是不知道该做什么，而是旧判断看起来还对，结果却已经开始失灵。",
+    whyThisHitMe: "这件事打到我，是因为它把一个表层问题翻成了更深的判断问题。",
+    realSceneOrDialogue: "复盘现场里最该停顿的一句通常是：我们一直在修的，到底是不是那个真正影响结果的变量？",
+    wantToComplain: "我最想吐槽的是，很多讨论急着给方法，却没有先把误判的代价说清楚。",
+    nonDelegableTruth: "一篇文章真正不能外包的部分，是作者把现场、冲突和边界放在同一张桌上重新判断。",
   };
 }
 
@@ -99,11 +144,104 @@ function buildPublishWindowFallback(now = new Date()) {
 
 function buildEndingActionFallback(title: string) {
   const topic = title.replace(/\s+/g, " ").trim() || "当前主题";
-  return `结尾停在一个动作上：把「${topic}」代回你的内容生产流程，确认哪些环节已经能自动闭环，哪些环节还在靠人工兜底。`;
+  if (detectStrategySeedTopic(topic) === "search_marketing") {
+    return "结尾停在一个复盘动作上：把最近赚钱和不赚钱的搜索词按需求阶段重新分层，而不是继续只看词面准不准。";
+  }
+  return `结尾停在一个复盘动作上：把「${topic}」代回真实业务现场，重新确认最影响结果的变量是什么。`;
 }
 
 function buildTargetPackageFallback() {
-  return "公众号终稿包：判断、证据、排版、封面、发布动作一次闭环";
+  return "公众号终稿包：核心判断、事实边界、读者现场、标题开头、排版发布";
+}
+
+function splitMarkdownTitle(markdown: string) {
+  const lines = String(markdown || "").split(/\r?\n/);
+  if (lines[0]?.startsWith("# ")) {
+    const title = lines[0];
+    let cursor = 1;
+    while (cursor < lines.length && !lines[cursor]?.trim()) cursor += 1;
+    return {
+      title,
+      body: lines.slice(cursor).join("\n").trimStart(),
+    };
+  }
+  return { title: "", body: String(markdown || "").trimStart() };
+}
+
+export function formatOpeningForPublish(opening: string) {
+  const normalized = String(opening || "").replace(/\s+/g, " ").trim();
+  if (!normalized) return "";
+  if (/^(开头|策略|起手|要求|请|建议|采用|使用|沿用|已确认|围绕|第一段|首段|默认)/.test(normalized)) return "";
+  if (/(不要|不得|必须|需要|应该|候选|模式|策略|第一段|首段|前两句|再补|再给|先抛|先写|回写|正文生成器|匿名复盘现场起手|让读者看见|引出)/.test(normalized)) return "";
+  return normalized;
+}
+
+export function stripReaderInvisibleAutomationBlocks(markdown: string) {
+  const internalPattern = /作者可以|作者以人设视角|人设视角|匿名复盘场景|研究问题|信源覆盖|补官方源|补时间脉络|补横向对比|补用户反馈|补反例|来源材料|不把无关|先围绕「[^」]+」把研究问题|真正需要研究清楚的不是发生了什么/;
+  return String(markdown || "")
+    .replace(/\r\n/g, "\n")
+    .split(/\n{2,}/)
+    .map((block) => block.trim())
+    .filter(Boolean)
+    .filter((block) => !internalPattern.test(block.replace(/\s+/g, " ")))
+    .join("\n\n")
+    .trim();
+}
+
+function syncMarkdownOpening(markdown: string, opening: string) {
+  const normalizedOpening = formatOpeningForPublish(opening);
+  if (!normalizedOpening) return markdown;
+  const { title, body } = splitMarkdownTitle(markdown);
+  const currentLead = body.split(/\n{2,}/)[0]?.replace(/\s+/g, " ").trim() || "";
+  if (currentLead.startsWith(normalizedOpening.replace(/\s+/g, " ").slice(0, 36))) {
+    return markdown;
+  }
+  const firstSectionIndex = body.search(/\n##\s+/);
+  const rest = firstSectionIndex >= 0
+    ? body.slice(firstSectionIndex).trimStart()
+    : body.split(/\n{2,}/).slice(1).join("\n\n").trimStart();
+  const nextBody = firstSectionIndex >= 0
+    ? `${normalizedOpening}\n\n${rest}`
+    : `${normalizedOpening}\n\n${body}`;
+  const finalBody = firstSectionIndex >= 0 ? nextBody : `${normalizedOpening}\n\n${rest}`.trim();
+  return [title, finalBody].filter(Boolean).join("\n\n").trim();
+}
+
+export async function syncArticleOpeningFromDeepWritingArtifact(input: {
+  articleId: number;
+  userId: number;
+}) {
+  const [article, deepWritingArtifact, outlineArtifact] = await Promise.all([
+    getArticleById(input.articleId, input.userId),
+    getArticleStageArtifact(input.articleId, input.userId, "deepWriting"),
+    getArticleStageArtifact(input.articleId, input.userId, "outlinePlanning"),
+  ]);
+  if (!article) {
+    return { changed: false, markdown: "" };
+  }
+  const outlineSelection = getRecord(outlineArtifact?.payload?.selection);
+  const openingCandidates = [
+    getString(deepWritingArtifact?.payload?.openingStrategy),
+    getString(outlineSelection?.selectedOpeningHook),
+    getString(outlineArtifact?.payload?.openingHook),
+  ];
+  const opening = openingCandidates.find((item) => formatOpeningForPublish(item)) || "";
+  const nextMarkdown = syncMarkdownOpening(article.markdown_content || "", opening);
+  if (!opening || nextMarkdown === (article.markdown_content || "")) {
+    return { changed: false, markdown: article.markdown_content || "" };
+  }
+  await saveArticleDraft({
+    articleId: article.id,
+    userId: input.userId,
+    body: {
+      title: article.title,
+      markdownContent: nextMarkdown,
+      status: article.status,
+      seriesId: article.series_id,
+      wechatTemplateId: article.wechat_template_id,
+    },
+  });
+  return { changed: true, markdown: nextMarkdown };
 }
 
 function mergeTextField(current: unknown, preferred: unknown, fallback?: unknown) {
@@ -145,6 +283,59 @@ function buildEvidenceSignature(item: {
   });
 }
 
+const RESEARCH_SOURCE_COVERAGE_TYPES = [
+  { key: "official", sourceType: "official" },
+  { key: "industry", sourceType: "industry" },
+  { key: "comparison", sourceType: "comparison" },
+  { key: "userVoice", sourceType: "userVoice" },
+  { key: "timeline", sourceType: "timeline" },
+] as const;
+
+function extractCoverageSourceLine(input: string) {
+  const text = getString(input).replace(/\s+/g, " ");
+  const match = text.match(/https?:\/\/[^\s；，,。)）]+/i);
+  if (!match) {
+    return null;
+  }
+  const sourceUrl = match[0].trim();
+  const matchIndex = match.index ?? 0;
+  const beforeUrl = text.slice(0, matchIndex).replace(/[：:：\s-]+$/g, "").trim();
+  const afterUrl = text.slice(matchIndex + sourceUrl.length).replace(/^[：:：\s-]+/g, "").trim();
+  return {
+    label: beforeUrl || safeSourceHost(sourceUrl) || "研究来源",
+    sourceUrl,
+    detail: afterUrl || text,
+  };
+}
+
+function safeSourceHost(sourceUrl: string | null) {
+  if (!sourceUrl) {
+    return "";
+  }
+  try {
+    return new URL(sourceUrl).hostname.replace(/^www\./i, "");
+  } catch {
+    return "";
+  }
+}
+
+function isUsableCoverageSource(input: { sourceUrl: string; researchSeed: string }) {
+  const host = safeSourceHost(input.sourceUrl).toLowerCase();
+  if (!host) {
+    return false;
+  }
+  if (host.includes("zhihu.com")) {
+    return false;
+  }
+  if (/baidu\.com$/i.test(host) || host.endsWith(".baidu.com")) {
+    return false;
+  }
+  if (host.includes("apple.com") && !/apple|苹果/i.test(input.researchSeed)) {
+    return false;
+  }
+  return true;
+}
+
 function buildResearchEvidenceCandidates(researchPayload: Record<string, unknown> | null | undefined) {
   const cards = [
     ...getRecordArray(researchPayload?.timelineCards).map((card) => ({ kind: "timeline", card })),
@@ -165,6 +356,51 @@ function buildResearchEvidenceCandidates(researchPayload: Record<string, unknown
     researchTag?: string | null;
     evidenceRole?: string | null;
   }> = [];
+  const researchSeed = [
+    getString(researchPayload?.researchObject),
+    getString(researchPayload?.coreQuestion),
+    getString(researchPayload?.authorHypothesis),
+  ].filter(Boolean).join(" ");
+
+  const sourceCoverage = getRecord(researchPayload?.sourceCoverage);
+  for (const coverageType of RESEARCH_SOURCE_COVERAGE_TYPES) {
+    for (const line of getStringArray(sourceCoverage?.[coverageType.key], 6)) {
+      const parsed = extractCoverageSourceLine(line);
+      if (!parsed || !isUsableCoverageSource({ sourceUrl: parsed.sourceUrl, researchSeed })) {
+        continue;
+      }
+      const researchTag = coverageType.key === "userVoice"
+        ? "userVoice"
+        : coverageType.key === "comparison"
+          ? "competitor"
+          : coverageType.key === "timeline"
+            ? "timeline"
+            : inferEvidenceResearchTag({
+                title: parsed.label,
+                excerpt: parsed.detail,
+                rationale: `sourceCoverage:${coverageType.key}`,
+                sourceUrl: parsed.sourceUrl,
+              }) || "turningPoint";
+      const evidenceRole = inferEvidenceRole({
+        researchTag,
+        title: parsed.label,
+        excerpt: parsed.detail,
+        rationale: `sourceCoverage:${coverageType.key}`,
+        sourceUrl: parsed.sourceUrl,
+      });
+      items.push({
+        title: `${parsed.label}｜${coverageType.key}`.slice(0, 80),
+        excerpt: [parsed.detail, `来自研究简报 ${coverageType.key} 覆盖项`].filter(Boolean).join("；").slice(0, 280),
+        sourceType: coverageType.sourceType,
+        sourceUrl: parsed.sourceUrl,
+        screenshotPath: null,
+        usageMode: "rewrite",
+        rationale: `来自研究简报的${coverageType.key}信源覆盖`,
+        researchTag,
+        evidenceRole,
+      });
+    }
+  }
 
   for (const { kind, card } of cards) {
     const cardTitle =
@@ -373,7 +609,11 @@ export async function ensureEvidencePackagePreparedForPublish(input: {
     factCheckPayload: factCheckArtifact?.payload ?? null,
   });
   const suggestedFromResearch = buildResearchEvidenceCandidates(researchArtifact?.payload ?? null);
-  const merged = [...currentEvidenceItems];
+  const merged = currentEvidenceItems.map((item) => (
+    Array.isArray(item.hookTags) && item.hookTags.length > 0
+      ? item
+      : tagEvidenceItemHooks(item)
+  ));
   const signatures = new Set(currentEvidenceItems.map((item) => buildEvidenceSignature(item)));
 
   for (const candidate of [...suggestedFromNodes, ...suggestedFromResearch]) {
@@ -382,7 +622,7 @@ export async function ensureEvidencePackagePreparedForPublish(input: {
       continue;
     }
     signatures.add(signature);
-    merged.push({
+    merged.push(tagEvidenceItemHooks({
       id: 0,
       articleId: input.articleId,
       userId: input.userId,
@@ -405,19 +645,22 @@ export async function ensureEvidencePackagePreparedForPublish(input: {
       sortOrder: merged.length + 1,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-    });
+    }));
   }
 
   const beforeStats = getArticleEvidenceStats(currentEvidenceItems);
   const afterStats = getArticleEvidenceStats(merged);
-  if (
-    merged.length === currentEvidenceItems.length
-    || (
-      beforeStats.ready === afterStats.ready
-      && beforeStats.itemCount === afterStats.itemCount
-      && beforeStats.externalOrScreenshotCount === afterStats.externalOrScreenshotCount
-    )
-  ) {
+  const hookTagsChanged = currentEvidenceItems.some((item, index) => {
+    const beforeTags = Array.isArray(item.hookTags) ? item.hookTags : [];
+    const afterTags = Array.isArray(merged[index]?.hookTags) ? merged[index]?.hookTags : [];
+    return JSON.stringify(beforeTags) !== JSON.stringify(afterTags);
+  });
+  const evidenceStatsChanged =
+    beforeStats.ready !== afterStats.ready
+    || beforeStats.itemCount !== afterStats.itemCount
+    || beforeStats.externalOrScreenshotCount !== afterStats.externalOrScreenshotCount
+    || beforeStats.hookTagCoverageCount !== afterStats.hookTagCoverageCount;
+  if (!hookTagsChanged && !evidenceStatsChanged) {
     return {
       changed: false,
     };
@@ -696,6 +939,7 @@ export async function ensureCoverImagePreparedForPublish(input: {
     batchToken: `auto-cover-${input.userId}-${Date.now()}`,
     variantLabel: "自动首选",
     source: generated.imageUrl,
+    aspectRatio: coverBrief?.aspectRatio || "16:9",
   });
   const assetManifest = {
     ...storedAsset.assetManifest,
@@ -797,13 +1041,60 @@ export async function runLanguageGuardAuditWithRetries(input: {
   }
 
   const rules = await getLanguageGuardRules(input.userId);
+  const cleanedMarkdown = stripReaderInvisibleAutomationBlocks(article.markdown_content || "");
+  if (cleanedMarkdown && cleanedMarkdown !== (article.markdown_content || "")) {
+    await saveArticleDraft({
+      articleId: article.id,
+      userId: input.userId,
+      body: {
+        title: article.title,
+        markdownContent: cleanedMarkdown,
+        status: article.status,
+        seriesId: article.series_id,
+        wechatTemplateId: article.wechat_template_id,
+      },
+    });
+    article = await getArticleById(input.articleId, input.userId);
+    if (!article) {
+      return {
+        changed: true,
+        provider: null as string | null,
+        model: null as string | null,
+        hitCount: 0,
+        error: null as string | null,
+        fixedMarkdown: cleanedMarkdown,
+        remainingHits: [],
+        aiNoiseScore: 0,
+      };
+    }
+  }
+  const initialOpeningSync = await syncArticleOpeningFromDeepWritingArtifact({
+    articleId: article.id,
+    userId: input.userId,
+  }).catch(() => ({ changed: false, markdown: article?.markdown_content || "" }));
+  if (initialOpeningSync.changed) {
+    article = await getArticleById(input.articleId, input.userId);
+    if (!article) {
+      return {
+        changed: true,
+        provider: null as string | null,
+        model: null as string | null,
+        hitCount: 0,
+        error: null as string | null,
+        fixedMarkdown: initialOpeningSync.markdown,
+        remainingHits: [],
+        aiNoiseScore: 0,
+      };
+    }
+  }
   let hits = collectLanguageGuardHits(article.markdown_content || "", rules);
   let aiNoise = analyzeAiNoise(article.markdown_content || "");
   const needsAiNoiseRepair =
     aiNoise.score >= 70
     || aiNoise.outlineRigidityRisk !== "low"
     || aiNoise.preannounceRisk !== "low"
-    || aiNoise.summaryEndingRisk !== "low";
+    || aiNoise.summaryEndingRisk !== "low"
+    || aiNoise.didacticToneRisk !== "low";
   if (hits.length === 0 && !needsAiNoiseRepair) {
     await updateArticleStageArtifactPayload({
       articleId: article.id,
@@ -815,7 +1106,7 @@ export async function runLanguageGuardAuditWithRetries(input: {
       },
     }).catch(() => undefined);
     return {
-      changed: false,
+      changed: initialOpeningSync.changed,
       provider: null as string | null,
       model: null as string | null,
       hitCount: 0,
@@ -845,6 +1136,9 @@ export async function runLanguageGuardAuditWithRetries(input: {
             : "命中的语言守卫规则：当前未命中显性词规则，但正文仍有明显模板感和工整推进。",
           `AI 噪声观察：得分 ${aiNoise.score}；段落工整风险 ${aiNoise.outlineRigidityRisk}；预告腔 ${aiNoise.preannounceRisk}；总结腔 ${aiNoise.summaryEndingRisk}。`,
           "审校要求：优先修复命中规则，同时打散施工图式推进，删除抽象空话和总结腔；允许短句、断句和一句话成段；不新增事实，不改核心判断。",
+          "段落要求：不要把每句话都拆成独立段落；相邻的现场、解释和判断可以合并成 2-4 句自然段。正文要像作者复盘，不像施工图或逐条讲义。",
+          "反说教要求：减少“先/再/最后/应该/必须/要/不要/真正该/这里要看清”这类指挥读者的句式；把它们改成复盘现场、读者代价、判断句或边界句。",
+          "开头要求：保留已选高钩子开头的冲突密度，不要把开头改成连续铺垫句。",
           "当前正文：",
           article.markdown_content || "",
         ].join("\n"),
@@ -896,6 +1190,7 @@ export async function runLanguageGuardAuditWithRetries(input: {
         hits.length === 0
         && aiNoise.score < 70
         && aiNoise.outlineRigidityRisk === "low"
+        && aiNoise.didacticToneRisk === "low"
         && aiNoise.summaryEndingRisk === "low"
       ) {
         break;
@@ -907,8 +1202,19 @@ export async function runLanguageGuardAuditWithRetries(input: {
   }
 
   if (article) {
-    await updateArticleStageArtifactPayload({
+    const openingSync = await syncArticleOpeningFromDeepWritingArtifact({
       articleId: article.id,
+      userId: input.userId,
+    }).catch(() => ({ changed: false, markdown: latestMarkdown }));
+    if (openingSync.changed) {
+      latestMarkdown = openingSync.markdown;
+      article = await getArticleById(input.articleId, input.userId);
+      aiNoise = analyzeAiNoise(latestMarkdown);
+      hits = collectLanguageGuardHits(latestMarkdown, rules);
+      changed = true;
+    }
+    await updateArticleStageArtifactPayload({
+      articleId: input.articleId,
       userId: input.userId,
       stageCode: "prosePolish",
       payloadPatch: {
@@ -945,6 +1251,8 @@ export async function runPublishAutoRepair(input: {
   articleId: number;
   userId: number;
   promptContext: PromptLoadContext;
+  publishGuard?: PublishAutoRepairGuardSnapshot;
+  skipLanguageGuardRepair?: boolean;
 }) {
   await ensureExtendedProductSchema();
   const article = await getArticleById(input.articleId, input.userId);
@@ -955,60 +1263,71 @@ export async function runPublishAutoRepair(input: {
   const appliedFixes: string[] = [];
   const errors: string[] = [];
 
-  try {
-    const strategy = await ensureStrategyCardPreparedForWriting({
-      articleId: input.articleId,
-      userId: input.userId,
-      title: article.title,
-      markdownContent: article.markdown_content || "",
-      promptContext: input.promptContext,
-    });
-    if (strategy.changed) {
-      appliedFixes.push("strategyCard");
+  if (hasGuardIssue(input.publishGuard, ["strategyCard", "fourPointAudit", "humanSignals"], ["audienceAnalysis"])) {
+    try {
+      const strategy = await ensureStrategyCardPreparedForWriting({
+        articleId: input.articleId,
+        userId: input.userId,
+        title: article.title,
+        markdownContent: article.markdown_content || "",
+        promptContext: input.promptContext,
+      });
+      if (strategy.changed) {
+        appliedFixes.push("strategyCard");
+      }
+    } catch (error) {
+      errors.push(`strategyCard:${error instanceof Error ? error.message : String(error)}`);
     }
-  } catch (error) {
-    errors.push(`strategyCard:${error instanceof Error ? error.message : String(error)}`);
   }
 
-  try {
-    const evidence = await ensureEvidencePackagePreparedForPublish({
-      articleId: input.articleId,
-      userId: input.userId,
-    });
-    if (evidence.changed) {
-      appliedFixes.push("evidencePackage");
+  if (hasGuardIssue(input.publishGuard, ["evidencePackage", "wechatEvidenceFloor", "hookCoverage", "researchHollowRisk"], ["evidence", "factCheck", "researchBrief", "outlinePlanning"])) {
+    try {
+      const evidence = await ensureEvidencePackagePreparedForPublish({
+        articleId: input.articleId,
+        userId: input.userId,
+      });
+      if (evidence.changed) {
+        appliedFixes.push("evidencePackage");
+      }
+    } catch (error) {
+      errors.push(`evidencePackage:${error instanceof Error ? error.message : String(error)}`);
     }
-  } catch (error) {
-    errors.push(`evidencePackage:${error instanceof Error ? error.message : String(error)}`);
   }
 
-  try {
-    const languageGuard = await runLanguageGuardAuditWithRetries({
-      articleId: input.articleId,
-      userId: input.userId,
-      promptContext: input.promptContext,
-    });
-    if (languageGuard.changed) {
-      appliedFixes.push("languageGuard");
+  if (
+    !input.skipLanguageGuardRepair
+    && hasGuardIssue(input.publishGuard, ["language_guard", "ai_noise", "wechatProseFloor", "writingQualityFocus"], ["prosePolish"])
+  ) {
+    try {
+      const languageGuard = await runLanguageGuardAuditWithRetries({
+        articleId: input.articleId,
+        userId: input.userId,
+        promptContext: input.promptContext,
+      });
+      if (languageGuard.changed) {
+        appliedFixes.push("languageGuard");
+      }
+      if (languageGuard.error) {
+        errors.push(`languageGuard:${languageGuard.error}`);
+      }
+    } catch (error) {
+      errors.push(`languageGuard:${error instanceof Error ? error.message : String(error)}`);
     }
-    if (languageGuard.error) {
-      errors.push(`languageGuard:${languageGuard.error}`);
-    }
-  } catch (error) {
-    errors.push(`languageGuard:${error instanceof Error ? error.message : String(error)}`);
   }
 
-  try {
-    const cover = await ensureCoverImagePreparedForPublish({
-      articleId: input.articleId,
-      userId: input.userId,
-      title: article.title,
-    });
-    if (cover.changed) {
-      appliedFixes.push("coverImage");
+  if (hasGuardIssue(input.publishGuard, ["coverImage", "articleVisualQuality"], ["coverImage", "inlineImageGenerate"])) {
+    try {
+      const cover = await ensureCoverImagePreparedForPublish({
+        articleId: input.articleId,
+        userId: input.userId,
+        title: article.title,
+      });
+      if (cover.changed) {
+        appliedFixes.push("coverImage");
+      }
+    } catch (error) {
+      errors.push(`coverImage:${error instanceof Error ? error.message : String(error)}`);
     }
-  } catch (error) {
-    errors.push(`coverImage:${error instanceof Error ? error.message : String(error)}`);
   }
 
   return {

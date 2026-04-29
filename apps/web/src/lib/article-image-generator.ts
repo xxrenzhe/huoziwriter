@@ -49,6 +49,7 @@ export async function generateArticleVisualAsset(brief: ArticleVisualBrief) {
       visualBriefId: brief.id,
       assetType,
       source: generated.imageUrl,
+      aspectRatio: brief.aspectRatio,
     });
     const manifest = {
       ...(persisted.assetManifest || {}),

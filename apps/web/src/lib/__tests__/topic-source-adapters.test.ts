@@ -190,3 +190,39 @@ test("fetchTopicsFromSourceAdapter parses Atom feeds into topic candidates", asy
     globalThis.fetch = originalFetch;
   }
 });
+
+test("fetchTopicsFromSourceAdapter maps chinese hotspot metadata into topic candidates", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () =>
+    new Response(
+      JSON.stringify({
+        data: [
+          {
+            title: "AI 搜索投放突然升温",
+            url: "https://top.baidu.com/item/1",
+            rank: 3,
+            heatValue: 260000,
+            heatLabel: "热",
+          },
+        ],
+      }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    )) as typeof fetch;
+
+  try {
+    const topics = await fetchTopicsFromSourceAdapter({
+      name: "百度热点",
+      homepageUrl: "https://top.baidu.com/board?tab=realtime",
+      sourceType: "chinese-hotspot",
+      limit: 2,
+    });
+
+    assert.equal(topics?.length, 1);
+    assert.equal(topics?.[0]?.title, "AI 搜索投放突然升温");
+    assert.equal(topics?.[0]?.sourceMeta?.provider, "baidu");
+    assert.equal(topics?.[0]?.sourceMeta?.rank, 3);
+    assert.equal(topics?.[0]?.sourceMeta?.heatValue, 260000);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

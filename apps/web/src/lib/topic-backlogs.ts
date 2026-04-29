@@ -9,7 +9,7 @@ import { getSeries, getSeriesById, resolveArticleSeriesId } from "./series";
 import { buildFallbackStrategyCardAutoDraft, generateStrategyCardAutoDraft, type StrategyCardAutoDraft } from "./strategy-card-auto-draft";
 import { adoptTopicLeadToBacklogItem, getTopicLeadById } from "./topic-leads";
 
-export type TopicBacklogSourceType = "manual" | "excel" | "ai-generated" | "from-radar" | "from-fission";
+export type TopicBacklogSourceType = "manual" | "excel" | "ai-generated" | "from-radar" | "from-fission" | "hotspot";
 export type TopicBacklogFissionMode = "regularity" | "contrast" | "cross-domain";
 export type TopicBacklogItemStatus = "draft" | "ready" | "queued" | "generated" | "discarded";
 export type TopicBacklogArchetype = "opinion" | "case" | "howto" | "hotTake" | "phenomenon";
@@ -36,6 +36,7 @@ type TopicBacklogItemRow = {
   archetype: string | null;
   evidence_refs_json: string | string[] | null;
   strategy_draft_json: string | Record<string, unknown> | null;
+  source_meta_json: string | Record<string, unknown> | null;
   target_audience: string | null;
   reader_snapshot_hint: string | null;
   status: string;
@@ -57,6 +58,7 @@ export type TopicBacklogItem = {
   archetype: TopicBacklogArchetype | null;
   evidenceRefs: string[];
   strategyDraft: Record<string, unknown> | null;
+  sourceMeta: Record<string, unknown> | null;
   targetAudience: string | null;
   readerSnapshotHint: string | null;
   status: TopicBacklogItemStatus;
@@ -81,6 +83,7 @@ type TopicBacklogBulkImportItemInput = {
   archetype?: unknown;
   evidenceRefs?: unknown;
   strategyDraft?: Record<string, unknown> | null;
+  sourceMeta?: Record<string, unknown> | null;
   targetAudience?: unknown;
   readerSnapshotHint?: unknown;
   status?: unknown;
@@ -248,7 +251,7 @@ function parseBulkTabularText(text: string) {
 }
 
 function normalizeSourceType(value: unknown): TopicBacklogSourceType {
-  if (value === "excel" || value === "ai-generated" || value === "from-radar" || value === "from-fission") {
+  if (value === "excel" || value === "ai-generated" || value === "from-radar" || value === "from-fission" || value === "hotspot") {
     return value;
   }
   return "manual";
@@ -287,6 +290,7 @@ function mapTopicBacklogItem(row: TopicBacklogItemRow): TopicBacklogItem {
     archetype: normalizeArchetype(row.archetype),
     evidenceRefs: parseJsonArray(row.evidence_refs_json),
     strategyDraft: parseJsonRecord(row.strategy_draft_json),
+    sourceMeta: parseJsonRecord(row.source_meta_json),
     targetAudience: row.target_audience,
     readerSnapshotHint: row.reader_snapshot_hint,
     status: normalizeItemStatus(row.status),
@@ -326,7 +330,7 @@ async function getTopicBacklogRow(userId: number, backlogId: number) {
 async function getTopicBacklogItemRow(userId: number, backlogId: number, itemId: number) {
   const db = getDatabase();
   return db.queryOne<TopicBacklogItemRow>(
-    `SELECT id, backlog_id, user_id, topic_lead_id, source_type, fission_mode, theme, archetype, evidence_refs_json, strategy_draft_json,
+    `SELECT id, backlog_id, user_id, topic_lead_id, source_type, fission_mode, theme, archetype, evidence_refs_json, strategy_draft_json, source_meta_json,
             target_audience, reader_snapshot_hint, status, generated_article_id, generated_batch_id, generated_at, created_at, updated_at
      FROM topic_backlog_items
      WHERE id = ? AND backlog_id = ? AND user_id = ?`,
@@ -346,7 +350,7 @@ export async function getTopicBacklogs(userId: number) {
       [userId],
     ),
     db.query<TopicBacklogItemRow>(
-      `SELECT id, backlog_id, user_id, topic_lead_id, source_type, fission_mode, theme, archetype, evidence_refs_json, strategy_draft_json,
+      `SELECT id, backlog_id, user_id, topic_lead_id, source_type, fission_mode, theme, archetype, evidence_refs_json, strategy_draft_json, source_meta_json,
               target_audience, reader_snapshot_hint, status, generated_article_id, generated_batch_id, generated_at, created_at, updated_at
        FROM topic_backlog_items
        WHERE user_id = ?
@@ -502,6 +506,7 @@ export async function createTopicBacklogItem(input: {
   archetype?: unknown;
   evidenceRefs?: unknown;
   strategyDraft?: Record<string, unknown> | null;
+  sourceMeta?: Record<string, unknown> | null;
   targetAudience?: unknown;
   readerSnapshotHint?: unknown;
   status?: unknown;
@@ -534,9 +539,9 @@ export async function createTopicBacklogItem(input: {
   const now = new Date().toISOString();
   const result = await db.exec(
     `INSERT INTO topic_backlog_items (
-      backlog_id, user_id, topic_lead_id, source_type, fission_mode, theme, archetype, evidence_refs_json, strategy_draft_json,
+      backlog_id, user_id, topic_lead_id, source_type, fission_mode, theme, archetype, evidence_refs_json, strategy_draft_json, source_meta_json,
       target_audience, reader_snapshot_hint, status, generated_article_id, generated_at, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       input.backlogId,
       input.userId,
@@ -547,6 +552,7 @@ export async function createTopicBacklogItem(input: {
       normalizeArchetype(input.archetype),
       JSON.stringify(parseJsonArray(input.evidenceRefs)),
       JSON.stringify(parseJsonRecord(input.strategyDraft) ?? null),
+      JSON.stringify(parseJsonRecord(input.sourceMeta) ?? null),
       String(input.targetAudience || "").trim() || null,
       String(input.readerSnapshotHint || "").trim() || null,
       normalizeItemStatus(input.status),
@@ -589,6 +595,7 @@ export async function updateTopicBacklogItem(input: {
   archetype?: unknown;
   evidenceRefs?: unknown;
   strategyDraft?: Record<string, unknown> | null;
+  sourceMeta?: Record<string, unknown> | null;
   targetAudience?: unknown;
   readerSnapshotHint?: unknown;
   status?: unknown;
@@ -624,6 +631,7 @@ export async function updateTopicBacklogItem(input: {
   const archetype = input.archetype === undefined ? normalizeArchetype(current.archetype) : normalizeArchetype(input.archetype);
   const evidenceRefs = input.evidenceRefs === undefined ? parseJsonArray(current.evidence_refs_json) : parseJsonArray(input.evidenceRefs);
   const strategyDraft = input.strategyDraft === undefined ? parseJsonRecord(current.strategy_draft_json) : parseJsonRecord(input.strategyDraft);
+  const sourceMeta = input.sourceMeta === undefined ? parseJsonRecord(current.source_meta_json) : parseJsonRecord(input.sourceMeta);
   const targetAudience = input.targetAudience === undefined ? current.target_audience : String(input.targetAudience || "").trim() || null;
   const readerSnapshotHint =
     input.readerSnapshotHint === undefined ? current.reader_snapshot_hint : String(input.readerSnapshotHint || "").trim() || null;
@@ -633,7 +641,7 @@ export async function updateTopicBacklogItem(input: {
   await db.exec(
     `UPDATE topic_backlog_items
      SET topic_lead_id = ?, source_type = ?, fission_mode = ?, theme = ?, archetype = ?, evidence_refs_json = ?, strategy_draft_json = ?,
-         target_audience = ?, reader_snapshot_hint = ?, status = ?, updated_at = ?
+         source_meta_json = ?, target_audience = ?, reader_snapshot_hint = ?, status = ?, updated_at = ?
      WHERE id = ? AND backlog_id = ? AND user_id = ?`,
     [
       topicLeadId,
@@ -643,6 +651,7 @@ export async function updateTopicBacklogItem(input: {
       archetype,
       JSON.stringify(evidenceRefs),
       JSON.stringify(strategyDraft ?? null),
+      JSON.stringify(sourceMeta ?? null),
       targetAudience,
       readerSnapshotHint,
       status,
@@ -732,6 +741,7 @@ export async function bulkCreateTopicBacklogItems(input: {
           : buildStrategyDraft({
               targetReader: item.targetAudience,
             }),
+        sourceMeta: item.sourceMeta,
         targetAudience: item.targetAudience,
         readerSnapshotHint: item.readerSnapshotHint,
         status: item.status ?? defaultStatus,
@@ -780,7 +790,7 @@ async function getValidatedTopicBacklogGenerationRows(input: {
   const placeholders = itemIds.map(() => "?").join(", ");
   const db = getDatabase();
   const rows = await db.query<TopicBacklogItemRow>(
-    `SELECT id, backlog_id, user_id, source_type, fission_mode, theme, archetype, evidence_refs_json, strategy_draft_json,
+    `SELECT id, backlog_id, user_id, topic_lead_id, source_type, fission_mode, theme, archetype, evidence_refs_json, strategy_draft_json, source_meta_json,
             target_audience, reader_snapshot_hint, status, generated_article_id, generated_batch_id, generated_at, created_at, updated_at
      FROM topic_backlog_items
      WHERE backlog_id = ? AND user_id = ? AND id IN (${placeholders})
