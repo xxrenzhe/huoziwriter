@@ -1,5 +1,6 @@
 import { buildArchetypeRhythmHintText, type ArchetypeRhythmHints } from "./archetype-rhythm";
 import { buildArticleViralBlueprint } from "./article-viral-blueprint";
+import { resolveCreativeLens, type CreativeLensCode, type CreativeLensOption } from "./creative-lenses";
 
 type HumanSignalsLike = {
   firstHandObservation?: string | null;
@@ -101,6 +102,10 @@ export type WritingStateKernel = {
   articlePrototypeLabel: string;
   articlePrototypeReason: string;
   archetypeRhythmHint: string;
+  creativeLensCode: CreativeLensCode;
+  creativeLensLabel: string;
+  creativeLensReason: string;
+  creativeLensInstruction: string;
   stateVariantCode: WritingStateVariantCode;
   stateVariantLabel: string;
   stateVariantReason: string;
@@ -131,6 +136,7 @@ export type WritingStateKernel = {
   stateChecklist: string[];
   prototypeOptions: ArticlePrototypeOption[];
   stateOptions: WritingStateOption[];
+  creativeLensOptions: CreativeLensOption[];
 };
 
 function mapStrategyArchetypeToPrototype(archetype: NonNullable<StrategyCardLike>["archetype"]): ArticlePrototypeCode | null {
@@ -143,6 +149,19 @@ function mapStrategyArchetypeToPrototype(archetype: NonNullable<StrategyCardLike
 
 function includesAny(text: string, patterns: RegExp[]) {
   return patterns.some((pattern) => pattern.test(text));
+}
+
+function uniqueStrings(values: string[], limit?: number) {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const value of values) {
+    const normalized = value.trim();
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    result.push(normalized);
+    if (limit && result.length >= limit) break;
+  }
+  return result;
 }
 
 function getPreferredResearchSignals(input: {
@@ -560,6 +579,7 @@ export function buildWritingStateKernel(input: {
   archetypeRhythmHints?: ArchetypeRhythmHints | null;
   preferredPrototypeCode?: ArticlePrototypeCode | null;
   preferredVariantCode?: WritingStateVariantCode | null;
+  preferredCreativeLensCode?: CreativeLensCode | null;
 }): WritingStateKernel {
   const strategyMappedPrototype = mapStrategyArchetypeToPrototype(input.strategyCard?.archetype);
   const prototypeOptions = buildPrototypeScoredOptions({
@@ -635,16 +655,36 @@ export function buildWritingStateKernel(input: {
     variantCode: selectedVariant.code,
     humanSignals: input.humanSignals,
   });
+  const creativeLensResult = resolveCreativeLens({
+    title: input.title,
+    markdownContent: input.markdownContent,
+    humanSignals: input.humanSignals,
+    researchBrief: input.researchBrief,
+    strategyCard: input.strategyCard,
+    articlePrototype: prototype,
+    preferredLensCode: input.preferredCreativeLensCode,
+  });
+  const creativeLens = creativeLensResult.selected;
+  const creativeLensInstruction = [
+    `创意镜头：${creativeLens.label}（${creativeLens.code}）`,
+    `推荐原因：${creativeLens.triggerReason}`,
+    `叙述姿态：${creativeLens.narrativePosture}`,
+    `读者距离：${creativeLens.readerDistance}`,
+    `判断强度：${creativeLens.judgementStrength}`,
+    `证据偏好：${creativeLens.evidenceMode}`,
+  ].join("；");
 
   const narrativePosture =
     humanScore >= 3
       ? `${input.archetypeRhythmHints ? `默认叙事姿态是「${input.archetypeRhythmHints.narrativeStance}」。` : ""}${selectedVariant.narrativePosture} 作者手里已经有足够体感和现场感，可以把“我为什么这么判断”说透。`
       : `${input.archetypeRhythmHints ? `默认叙事姿态是「${input.archetypeRhythmHints.narrativeStance}」。` : ""}${selectedVariant.narrativePosture} 当前人类信号还不算厚，句子要更节制，别装成全知全能。`;
-  const readerDistance = preferredResearchSignals.targetReader
+  const narrativePostureWithLens = `${narrativePosture} 镜头要求：${creativeLens.narrativePosture}`;
+  const readerDistanceBase = preferredResearchSignals.targetReader
     ? `默认把读者当成「${preferredResearchSignals.targetReader}」，先解决他们为什么现在必须关心这件事。`
     : String(researchWriteback?.targetReader || "").trim()
       ? `默认把读者当成「${String(researchWriteback?.targetReader).trim()}」，先解决他们为什么现在必须关心这件事。`
       : "默认把读者当成懂一点背景、但不想听套话的熟人。";
+  const readerDistance = `${readerDistanceBase} 镜头要求：${creativeLens.readerDistance}`;
   const energyCurve = input.archetypeRhythmHints
     ? `${input.archetypeRhythmHints.energyCurve} ${selectedVariant.energyCurve}`
     : `${prototypeBlueprint.sectionRhythm} ${selectedVariant.energyCurve}`;
@@ -662,8 +702,8 @@ export function buildWritingStateKernel(input: {
         ? "默认高跑题容忍度：允许短暂绕到侧面样本或更大背景，但每次偏出后都要回收成同一条判断。"
         : "默认中等跑题容忍度：允许短暂偏题补类比或吐槽，但每次偏出去后都要用一句判断拉回主线。";
   const breakPattern = input.writingStyleProfile?.paragraphBreathingPattern
-    ? `段落呼吸优先遵守：${input.writingStyleProfile.paragraphBreathingPattern}`
-    : "允许短段、断句和一句话独段，不要把每段写得一样长。";
+    ? `段落呼吸优先遵守：${input.writingStyleProfile.paragraphBreathingPattern} 镜头只做微调：${creativeLens.sectionRhythm}`
+    : `允许短段、断句和一句话独段，不要把每段写得一样长。镜头节奏：${creativeLens.sectionRhythm}`;
   const callbackMode = input.writingStyleProfile?.callbackPatterns?.length
     ? `如有条件，优先使用这些回环方式：${input.writingStyleProfile.callbackPatterns.slice(0, 2).join("；")}`
     : "如果开头抛了一个具象现象，结尾尽量回扣，但不要硬凑升华。";
@@ -676,12 +716,12 @@ export function buildWritingStateKernel(input: {
           ? "原型默认判断强度中等，判断清楚，但不要压过事实层。"
           : "";
   const judgementStrength = preferredResearchSignals.coreAssertion
-    ? `核心判断是「${preferredResearchSignals.coreAssertion}」。${rhythmJudgementStrength}${rhythmJudgementStrength ? " " : ""}${selectedVariant.judgementStrength}`
+    ? `核心判断是「${preferredResearchSignals.coreAssertion}」。${rhythmJudgementStrength}${rhythmJudgementStrength ? " " : ""}${selectedVariant.judgementStrength} 镜头要求：${creativeLens.judgementStrength}`
     : preferredResearchSignals.researchHypothesis
-      ? `这次正文至少要围绕这条研究假设推进：「${preferredResearchSignals.researchHypothesis}」。${rhythmJudgementStrength}${rhythmJudgementStrength ? " " : ""}${selectedVariant.judgementStrength}`
+      ? `这次正文至少要围绕这条研究假设推进：「${preferredResearchSignals.researchHypothesis}」。${rhythmJudgementStrength}${rhythmJudgementStrength ? " " : ""}${selectedVariant.judgementStrength} 镜头要求：${creativeLens.judgementStrength}`
       : String(researchWriteback?.coreAssertion || "").trim()
-        ? `研究层已经推到这条主判断：「${String(researchWriteback?.coreAssertion).trim()}」。${rhythmJudgementStrength}${rhythmJudgementStrength ? " " : ""}${selectedVariant.judgementStrength}`
-        : `${rhythmJudgementStrength}${rhythmJudgementStrength ? " " : ""}${selectedVariant.judgementStrength}`;
+        ? `研究层已经推到这条主判断：「${String(researchWriteback?.coreAssertion).trim()}」。${rhythmJudgementStrength}${rhythmJudgementStrength ? " " : ""}${selectedVariant.judgementStrength} 镜头要求：${creativeLens.judgementStrength}`
+        : `${rhythmJudgementStrength}${rhythmJudgementStrength ? " " : ""}${selectedVariant.judgementStrength} 镜头要求：${creativeLens.judgementStrength}`;
   const humilityMode = prototype === "methodology"
     ? "方法类文章先卸掉教人姿态，允许承认不确定、学习曲线和失败点。"
     : selectedVariant.humilityMode;
@@ -699,6 +739,7 @@ export function buildWritingStateKernel(input: {
       : input.seriesInsight?.reason
         ? `情绪温度围绕系列主轴展开：${input.seriesInsight.reason}`
         : "情绪可以有，但不要用空泛激情替代具体体感。";
+  const emotionalTemperatureWithLens = `${emotionalTemperature} 镜头温度：${creativeLens.emotionalTemperature}`;
   const researchFocus =
     researchCoreQuestion && strongestResearchInsight
       ? `研究主问题是「${researchCoreQuestion}」，正文要把它推进到这条研究锚点上：${strongestResearchInsight}`
@@ -726,10 +767,10 @@ export function buildWritingStateKernel(input: {
               ? `如果研究卡还不完整，正文至少先围绕这条研究假设推进：${preferredResearchSignals.researchHypothesis}`
             : "如果还没有研究卡片，正文判断要更克制，避免把猜测写成定论。";
   const openingMove = preferredResearchSignals.historicalTurningPoint
-    ? `${prototypeBlueprint.openingMove} 优先考虑从这条历史转折切入：${preferredResearchSignals.historicalTurningPoint}。 ${selectedVariant.openingBias}`
+    ? `${creativeLens.openingMove} ${prototypeBlueprint.openingMove} 优先考虑从这条历史转折切入：${preferredResearchSignals.historicalTurningPoint}。 ${selectedVariant.openingBias}`
     : strongestResearchInsight
-      ? `${prototypeBlueprint.openingMove} 如果要抓注意力，优先用这条研究洞察开场：${strongestResearchInsight}。 ${selectedVariant.openingBias}`
-      : `${prototypeBlueprint.openingMove} ${selectedVariant.openingBias}`;
+      ? `${creativeLens.openingMove} ${prototypeBlueprint.openingMove} 如果要抓注意力，优先用这条研究洞察开场：${strongestResearchInsight}。 ${selectedVariant.openingBias}`
+      : `${creativeLens.openingMove} ${prototypeBlueprint.openingMove} ${selectedVariant.openingBias}`;
   const sectionRhythmBase =
     researchTimelineCount > 0 && researchComparisonCount > 0
       ? "章节先铺关键历史节点，再接横向差异，最后收束成交汇判断。"
@@ -739,16 +780,16 @@ export function buildWritingStateKernel(input: {
           ? "章节按主要玩家或方案差异推进，不要把比较写成并排清单。"
           : prototypeBlueprint.sectionRhythm;
   const sectionRhythm = progressiveReveal.enabled
-    ? `${sectionRhythmBase} 当前额外启用「${progressiveReveal.label}」，节奏上要明显一层比一层更强。`
-    : sectionRhythmBase;
+    ? `${creativeLens.sectionRhythm} ${sectionRhythmBase} 当前额外启用「${progressiveReveal.label}」，节奏上要明显一层比一层更强。`
+    : `${creativeLens.sectionRhythm} ${sectionRhythmBase}`;
   const evidenceMode =
     researchTimelineCount > 0 || researchComparisonCount > 0 || researchInsightItems.length > 0
       ? `${prototypeBlueprint.evidenceMode} 同时优先调用研究卡片里的时间节点、横向比较、交汇洞察和反证，不要只平铺原始素材。`
       : prototypeBlueprint.evidenceMode;
   const evidenceModeWithStyle =
     String(input.writingStyleProfile?.factDensity || "").trim()
-      ? `${evidenceMode} 文风资产要求的事实密度是：${String(input.writingStyleProfile?.factDensity).trim()}。`
-      : evidenceMode;
+      ? `${evidenceMode} 文风资产要求的事实密度是：${String(input.writingStyleProfile?.factDensity).trim()}。镜头证据偏好只补方向、不覆盖事实密度：${creativeLens.evidenceMode}`
+      : `${evidenceMode} 镜头证据偏好：${creativeLens.evidenceMode}`;
   const stateChecklist = [
     `爆文蓝图：${viralBlueprint.label}；${viralBlueprint.titlePromise}`,
     `蓝图叙事弧：${viralBlueprint.narrativeArc.join(" -> ")}`,
@@ -757,6 +798,7 @@ export function buildWritingStateKernel(input: {
     `这次文章原型定为「${prototypeBlueprint.label}」，原因：${articlePrototypeReason}`,
     archetypeRhythmHint ? `当前原型节奏模板：${archetypeRhythmHint}` : null,
     `这次优先用「${selectedVariant.label}」，原因：${stateVariantReason}`,
+    `创意镜头定为「${creativeLens.label}」，原因：${creativeLens.triggerReason}`,
     progressiveReveal.enabled
       ? `当前启用「${progressiveReveal.label}」：${progressiveReveal.escalationRule}`
       : `当前不强制「逐一展示 / 升番」：${progressiveReveal.reason}`,
@@ -774,10 +816,14 @@ export function buildWritingStateKernel(input: {
     articlePrototypeLabel: prototypeBlueprint.label,
     articlePrototypeReason,
     archetypeRhythmHint,
+    creativeLensCode: creativeLens.code,
+    creativeLensLabel: creativeLens.label,
+    creativeLensReason: creativeLens.triggerReason,
+    creativeLensInstruction,
     stateVariantCode: selectedVariant.code,
     stateVariantLabel: selectedVariant.label,
     stateVariantReason,
-    narrativePosture,
+    narrativePosture: narrativePostureWithLens,
     readerDistance,
     energyCurve,
     discoveryMode,
@@ -787,7 +833,7 @@ export function buildWritingStateKernel(input: {
     judgementStrength,
     humilityMode,
     stopMode,
-    emotionalTemperature,
+    emotionalTemperature: emotionalTemperatureWithLens,
     researchFocus,
     researchLens,
     openingMove,
@@ -799,21 +845,28 @@ export function buildWritingStateKernel(input: {
     climaxPlacement: progressiveReveal.climaxPlacement,
     escalationRule: progressiveReveal.escalationRule,
     progressiveRevealSteps: progressiveReveal.steps,
-    antiOutlineRules: input.writingStyleProfile?.antiOutlineRules?.slice(0, 4) ?? [
+    antiOutlineRules: uniqueStrings([
+      ...(input.writingStyleProfile?.antiOutlineRules?.slice(0, 4) ?? [
       "不要按首先、其次、最后编号展开",
       "不要把背景介绍写在核心判断前面太久",
       "不要所有段落都用同样句法推进",
       "不要单独写一段总结式升华",
-    ],
-    tabooPatterns: input.writingStyleProfile?.tabooPatterns?.slice(0, 4) ?? [
+      ]),
+      ...creativeLens.antiOutlineRules,
+    ], 7),
+    tabooPatterns: uniqueStrings([
+      ...(input.writingStyleProfile?.tabooPatterns?.slice(0, 4) ?? [
       "预告式转场",
       "对称三段论",
       "教科书式科普",
       "总结腔收尾",
-    ],
+      ]),
+      ...creativeLens.tabooPatterns,
+    ], 7),
     stateChecklist,
     prototypeOptions,
     stateOptions,
+    creativeLensOptions: creativeLensResult.options,
   };
 }
 
@@ -841,6 +894,9 @@ export function buildWritingStateGuide(kernel: WritingStateKernel) {
     `文章原型：${kernel.articlePrototypeLabel}（${kernel.articlePrototype}）`,
     `原型原因：${kernel.articlePrototypeReason}`,
     kernel.archetypeRhythmHint ? `原型节奏模板：${kernel.archetypeRhythmHint}` : null,
+    `创意镜头：${kernel.creativeLensLabel}（${kernel.creativeLensCode}）`,
+    `镜头原因：${kernel.creativeLensReason}`,
+    `镜头指令：${kernel.creativeLensInstruction}`,
     `状态变体：${kernel.stateVariantLabel}`,
     `切换原因：${kernel.stateVariantReason}`,
     `叙述姿态：${kernel.narrativePosture}`,
