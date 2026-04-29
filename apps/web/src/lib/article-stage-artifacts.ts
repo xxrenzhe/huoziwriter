@@ -5481,6 +5481,7 @@ async function generateDeepWriting(
     "voiceChecklist 必须包含反说教执行约束：正文不是培训稿、方法清单或作者训导；避免把“你应该/先/再/最后/不要/必须”写成主节奏。",
     "sectionBlueprint 的每一节必须先从读者损失、矛盾、复盘现场或可转发冲突句进入，再承接判断；不得把章节目标写成连续教读者做事的步骤。",
     "articlePrototype / articlePrototypeLabel / articlePrototypeReason / stateVariantCode / stateVariantLabel / stateVariantReason 必须明确告诉后续正文生成器这次在用哪种原型和状态。",
+    "creativeLensCode / creativeLensLabel / creativeLensReason / creativeLensInstruction 必须保留上游写作状态核给出的创意镜头；不确定时照抄，不要删掉。",
     "prototypeOptions 返回 2-3 个候选原型，第一项放当前最推荐的；prototypeComparisons 返回 2-3 个原型预览卡，帮助用户比较这篇到底更适合哪种推进骨架。",
     "diversitySummary / diversityIssues / diversitySuggestions 要明确写清这次为了避免最近几篇撞车，执行卡主动换掉了哪些原型、开头、句法、结尾或状态套路。",
     "stateComparisons 返回 2-3 个候选状态预览卡，帮助用户比较当前推荐状态与备选状态的差异；第一项必须是当前推荐。",

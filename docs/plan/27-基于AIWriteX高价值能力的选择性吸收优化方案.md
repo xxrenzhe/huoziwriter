@@ -1,7 +1,7 @@
 # HuoziWriter · 基于 AIWriteX 高价值能力的选择性吸收优化方案
 
-> 状态：P0 热点基础设施、热点评分、同步持久化、推荐入库元信息链路已落地  
-> 版本：v0.3 · 2026-04-29  
+> 状态：P0 热点链路已落地；P1 创意镜头后端运行时已落地，UI 手动选择待接入  
+> 版本：v0.4 · 2026-04-29  
 > 调研对象：`https://github.com/iniwap/AIWriteX`  
 > 核心结论：不整体引入 AIWriteX，不复制其源码和模板；只吸收高价值产品机制，并在当前 TypeScript / Next.js / 现有自动化流水线内原生重写  
 > 适用范围：中文热点源、选题雷达、创意维度、微信模板、参考文章融合、发布可靠性、图片资产工作流  
@@ -372,6 +372,22 @@ type CreativeLensCode =
 - lens 不会覆盖作者高置信文风约束。
 - 默认推荐 lens 可解释。
 - 至少 6 个 lens 有测试覆盖。
+
+### 6.6 已落地范围
+
+截至 `2026-04-29`，创意镜头已完成后端主链路落地：
+
+- 新增 `apps/web/src/lib/creative-lenses.ts`，内置 8 个 lens：案例拆解、现场观察、锐评判断、温热个人、实测走查、反常识分析、工具操盘、创始人备忘录。
+- `buildWritingStateKernel` 已支持自动推荐和 `preferredCreativeLensCode` 手动指定；默认根据标题、正文、人类信号、研究简报、策略卡和文章原型推荐 lens。
+- lens 会进入 `WritingStateKernel` 的叙述姿态、读者距离、判断强度、情绪温度、开头动作、章节节奏、证据组织、反结构规则和禁忌写法。
+- lens 不替代作者文风资产：已有 `paragraphBreathingPattern / factDensity / emotionalIntensity / antiOutlineRules / tabooPatterns` 会优先保留，lens 只补方向和微调约束。
+- deep writing fallback payload 和 normalize 链路已保留 `creativeLensCode / creativeLensLabel / creativeLensReason / creativeLensInstruction / creativeLensOptions`，后续正文生成器可以稳定拿到镜头信息。
+- 新增 `apps/web/src/lib/__tests__/creative-lenses.test.ts`，覆盖自动推荐、同题材手动切换差异、6 个 lens 指令差异、文风资产优先级。
+
+尚未落地：
+
+- 稿件工作区 UI 手动选择 lens。
+- lens 与历史结果回流的长期胜率统计。
 
 ## 7. P1/P2：微信模板导入、预览与校验
 
