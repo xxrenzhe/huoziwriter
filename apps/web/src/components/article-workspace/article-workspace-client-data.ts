@@ -126,6 +126,7 @@ export type ArticleFragmentItem = {
   sourceType?: string;
   sourceUrl?: string | null;
   screenshotPath?: string | null;
+  sourceMeta?: Record<string, unknown> | null;
   usageMode?: string;
   shared?: boolean;
 };
@@ -555,6 +556,7 @@ export function normalizeOutlineMaterialNode(node: {
     sourceType?: string;
     sourceUrl?: string | null;
     screenshotPath?: string | null;
+    sourceMeta?: Record<string, unknown> | null;
     usageMode?: string;
     shared?: boolean;
   }>;
@@ -571,6 +573,7 @@ export function normalizeOutlineMaterialNode(node: {
       sourceType: fragment.sourceType,
       sourceUrl: fragment.sourceUrl,
       screenshotPath: fragment.screenshotPath,
+      sourceMeta: fragment.sourceMeta ?? null,
       usageMode: fragment.usageMode,
       shared: fragment.shared,
     })),

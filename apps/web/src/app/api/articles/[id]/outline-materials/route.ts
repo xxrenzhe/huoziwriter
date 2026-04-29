@@ -4,8 +4,20 @@ import { attachFragmentToArticleNode, getArticleNodes } from "@/lib/article-outl
 import { distillCaptureInput } from "@/lib/distill";
 import { fail, ok } from "@/lib/http";
 import { assertFragmentQuota } from "@/lib/plan-access";
-import { createFragment, getArticleById, queueJob } from "@/lib/repositories";
+import { createFragment, getArticleById, queueJob, updateFragmentReferenceFusion } from "@/lib/repositories";
+import { buildReferenceFusionProfile, normalizeReferenceFusionMode } from "@/lib/reference-fusion";
 import { persistScreenshot } from "@/lib/screenshot-upload";
+
+function buildMaterialReferenceFusionSourceMeta(modeValue: unknown, sourceUrl?: string | null) {
+  const mode = normalizeReferenceFusionMode(modeValue, sourceUrl ? "evidence" : "inspiration");
+  return {
+    referenceFusionMode: mode,
+    referenceFusion: buildReferenceFusionProfile({
+      mode,
+      sourceUrls: sourceUrl ? [sourceUrl] : [],
+    }),
+  };
+}
 
 async function ensureOutlineArtifact(articleId: number, userId: number) {
   const existing = await getArticleStageArtifact(articleId, userId, "outlinePlanning");
@@ -78,11 +90,22 @@ export async function POST(request: Request, { params }: { params: { id: string 
     const body = await request.json();
     const action = String(body.action || "attachExisting").trim();
     if (action === "attachExisting") {
+      await updateFragmentReferenceFusion({
+        userId: session.userId,
+        fragmentId: Number(body.fragmentId),
+        mode: body.referenceFusionMode,
+      });
       await attachFragmentToArticleNode({
         articleId: article.id,
         nodeId: Number(body.nodeId),
         fragmentId: Number(body.fragmentId),
         usageMode: body.usageMode === "image" ? "image" : "rewrite",
+      });
+    } else if (action === "updateReferenceFusion") {
+      await updateFragmentReferenceFusion({
+        userId: session.userId,
+        fragmentId: Number(body.fragmentId),
+        mode: body.referenceFusionMode,
       });
     } else if (action === "createManual" || action === "createUrl") {
       await assertFragmentQuota(session.userId);
@@ -99,6 +122,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
         rawContent: distilled.rawContent,
         distilledContent: distilled.distilledContent,
         sourceUrl: distilled.sourceUrl,
+        sourceMeta: buildMaterialReferenceFusionSourceMeta(body.referenceFusionMode, distilled.sourceUrl),
       });
       if (fragment && Number(body.nodeId) > 0) {
         await attachFragmentToArticleNode({
@@ -124,6 +148,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
         rawContent: placeholder,
         distilledContent: placeholder,
         screenshotPath,
+        sourceMeta: buildMaterialReferenceFusionSourceMeta(body.referenceFusionMode, null),
       });
       await queueJob("visionNote", {
         fragmentId: fragment?.id,

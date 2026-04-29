@@ -125,6 +125,21 @@ test("viral genome routes MCP production topics to tooling-focused verticals", (
   assert.match(pack.openingEngine, /工具实测结论先抛|账本\/结果先抛|误判代价先抛/);
 });
 
+test("viral genome recognizes power-shift AI capital battle topics", () => {
+  const pack = buildArticleViralGenomePack({
+    title: "刚刚，美国AI霸主换了！Anthropic年收300亿，碾压OpenAI",
+    centralThesis: "这不是普通融资新闻，而是一次赢家、输家和成本结构同时改写的权力更替。",
+    targetReader: "关注 AI 商业化和产业格局的从业者",
+  });
+
+  assert.match(pack.titleDirections.join("；"), /王座更替|胜负已分|刚刚|易主|反超/);
+  assert.match(pack.firstScreenPromise, /赢家名字|输家名字|硬数字|权力更替/);
+  assert.match(pack.openingEngine, /权力更替先抛/);
+  assert.match(pack.narrativeSkeleton, /胜负已分|数字看板|输家哪里失血/);
+  assert.match(pack.shareTrigger, /谁上位、谁失血、为什么是今天/);
+  assert.match(pack.evidencePriorities.join("；"), /营收|估值|融资|时间锚点|外部媒体/);
+});
+
 test("visual rhythm slots prefer evidence, pacing, and reinforcement positions", () => {
   const slots = buildViralVisualRhythmSlots(3);
 

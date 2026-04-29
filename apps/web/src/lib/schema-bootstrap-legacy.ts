@@ -198,6 +198,7 @@ export async function applyLegacySchemaCompat({
   await ensureColumn("knowledge_cards", "sample_paragraph", "TEXT");
   await ensureColumn("article_fragment_refs", "usage_mode", "TEXT NOT NULL DEFAULT 'rewrite'");
   await ensureColumn("article_workflows", "pending_publish_intent_json", getDatabase().type === "postgres" ? "JSONB" : "TEXT");
+  await ensureColumn("article_automation_runs", "generation_settings_json", `${getDatabase().type === "postgres" ? "JSONB" : "TEXT"} NOT NULL DEFAULT ${getDatabase().type === "postgres" ? "'{}'::jsonb" : "'{}'"}`);
   await ensureColumn("wechat_sync_logs", "article_id", getDatabase().type === "postgres" ? "BIGINT" : "INTEGER");
   await execAll([
     `UPDATE article_workflows
@@ -728,6 +729,7 @@ export function buildLegacySchemaCreateTableStatements(databaseType: SchemaBoots
       current_stage_code TEXT NOT NULL DEFAULT 'topicAnalysis',
       final_wechat_media_id TEXT,
       blocked_reason TEXT,
+      generation_settings_json ${dbType === "postgres" ? "JSONB" : "TEXT"} NOT NULL DEFAULT ${dbType === "postgres" ? "'{}'::jsonb" : "'{}'"},
       created_at ${dbType === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${dbType === "postgres" ? "NOW()" : "(datetime('now'))"},
       updated_at ${dbType === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${dbType === "postgres" ? "NOW()" : "(datetime('now'))"},
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
@@ -1421,6 +1423,16 @@ export function buildLegacySchemaCreateTableStatements(databaseType: SchemaBoots
       last_fetched_at ${dbType === "postgres" ? "TIMESTAMPTZ" : "TEXT"},
       created_at ${dbType === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${dbType === "postgres" ? "NOW()" : "(datetime('now'))"},
       updated_at ${dbType === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${dbType === "postgres" ? "NOW()" : "(datetime('now'))"}
+    )`,
+    `CREATE TABLE IF NOT EXISTS layout_template_import_audits (
+      id ${dbType === "postgres" ? "BIGSERIAL" : "INTEGER"} PRIMARY KEY ${dbType === "postgres" ? "" : "AUTOINCREMENT"},
+      template_id TEXT NOT NULL,
+      version TEXT NOT NULL,
+      user_id ${dbType === "postgres" ? "BIGINT" : "INTEGER"} NOT NULL,
+      status TEXT NOT NULL,
+      issues_json ${dbType === "postgres" ? "JSONB" : "TEXT"} NOT NULL,
+      summary_json ${dbType === "postgres" ? "JSONB" : "TEXT"} NOT NULL,
+      created_at ${dbType === "postgres" ? "TIMESTAMPTZ" : "TEXT"} NOT NULL DEFAULT ${dbType === "postgres" ? "NOW()" : "(datetime('now'))"}
     )`,
     `CREATE TABLE IF NOT EXISTS topic_events (
       id ${dbType === "postgres" ? "BIGSERIAL" : "INTEGER"} PRIMARY KEY ${dbType === "postgres" ? "" : "AUTOINCREMENT"},
@@ -2477,7 +2489,7 @@ export async function ensureTemplateLibrarySeeds() {
           source.sourceType,
           JSON.stringify(source.verticals),
           source.priority,
-          true,
+          source.isActive ?? true,
           new Date().toISOString(),
           new Date().toISOString(),
         ],
@@ -2492,7 +2504,7 @@ export async function ensureTemplateLibrarySeeds() {
           source.sourceType,
           JSON.stringify(source.verticals),
           source.priority,
-          true,
+          source.isActive ?? true,
           new Date().toISOString(),
           source.name,
         ],

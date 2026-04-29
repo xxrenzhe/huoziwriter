@@ -815,7 +815,11 @@ INSERT INTO topic_sources (name, homepage_url, source_type, topic_verticals_json
   ('n8n Releases', 'https://github.com/n8n-io/n8n/releases.atom', 'rss', '["ai_products"]'::jsonb, 83, TRUE),
   ('Flowise Releases', 'https://github.com/FlowiseAI/Flowise/releases.atom', 'rss', '["ai_products"]'::jsonb, 82, TRUE),
   ('Dify Releases', 'https://github.com/langgenius/dify/releases.atom', 'rss', '["ai_products"]'::jsonb, 81, TRUE),
-  ('GitHub Changelog Feed', 'https://github.blog/changelog/feed/', 'rss', '["ai_products"]'::jsonb, 80, TRUE)
+  ('GitHub Changelog Feed', 'https://github.blog/changelog/feed/', 'rss', '["ai_products"]'::jsonb, 80, TRUE),
+  ('百度热点', 'https://top.baidu.com/board?tab=realtime', 'chinese-hotspot', '["ai_products","affiliate_marketing","side_hustles","overseas_income","career"]'::jsonb, 98, TRUE),
+  ('知乎热榜', 'https://www.zhihu.com/hot', 'chinese-hotspot', '["ai_products","career","side_hustles"]'::jsonb, 97, TRUE),
+  ('微博热搜', 'https://weibo.com/ajax/side/hotSearch', 'chinese-hotspot', '["ai_products","career","side_hustles"]'::jsonb, 76, FALSE),
+  ('B站热门', 'https://api.bilibili.com/x/web-interface/popular', 'chinese-hotspot', '["ai_products","side_hustles"]'::jsonb, 75, FALSE)
 ON CONFLICT (name) DO NOTHING;
 
 CREATE TABLE IF NOT EXISTS article_research_cards (

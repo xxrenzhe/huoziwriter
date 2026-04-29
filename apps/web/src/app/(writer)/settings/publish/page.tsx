@@ -1,6 +1,7 @@
 import { buttonStyles, cn, surfaceCardStyles } from "@huoziwriter/ui";
 import Link from "next/link";
 import { AppBanner } from "@/components/app-feedback";
+import { TemplateHtmlImportPanel } from "@/components/template-html-import-panel";
 import { WechatConnectionsManager } from "@/components/wechat-connections-manager";
 import { formatPlanDisplayName } from "@/lib/plan-labels";
 import {
@@ -59,8 +60,10 @@ export default async function SettingsPublishPage() {
     return null;
   }
 
-  const { planContext, connections, syncLogs, articles } = data;
+  const { session, planContext, connections, syncLogs, articles, templates } = data;
   const { plan, planSnapshot, effectivePlanCode } = planContext;
+  const ownedTemplates = templates.filter((template) => template.ownerUserId === session.userId);
+  const officialTemplateCount = Math.max(templates.length - ownedTemplates.length, 0);
   const defaultConnection = connections.find((item) => item.is_default) ?? connections[0] ?? null;
   const recentSyncLogs = syncLogs.slice(0, 6);
   const recentPublishedArticles = articles.filter((article) => article.status === "published").slice(0, 3);
@@ -181,6 +184,34 @@ export default async function SettingsPublishPage() {
             planName={plan?.name || effectivePlanCode}
           />
         </div>
+      </section>
+
+      <section className={sectionCardClassName}>
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <div className="text-xs uppercase tracking-[0.24em] text-cinnabar">发布模板预检</div>
+            <div className="mt-3 font-serifCn text-3xl text-ink text-balance">
+              在发布设置里提前处理模板导入、移动端风险和私有模板额度。
+            </div>
+            <div className="mt-3 text-sm leading-7 text-inkSoft">
+              这里复用资产页同一套 HTML 导入审计。通过的模板会进入私有模板库，阻断项只记录审计，不会进入发布可选模板。
+            </div>
+          </div>
+          <div className={summaryCardClassName}>
+            <div className="text-xs uppercase tracking-[0.18em] text-inkMuted">模板库存</div>
+            <div className="mt-2 font-serifCn text-3xl text-ink text-balance">
+              {planSnapshot.customTemplateLimit > 0 ? `${ownedTemplates.length} / ${planSnapshot.customTemplateLimit}` : "未开放"}
+            </div>
+            <div className="mt-2 text-sm leading-6 text-inkSoft">
+              官方模板 {officialTemplateCount} 个，私有模板在稿件发布阶段可直接选择。
+            </div>
+          </div>
+        </div>
+        <TemplateHtmlImportPanel
+          canImport={planSnapshot.canExtractPrivateTemplate}
+          currentCount={ownedTemplates.length}
+          limit={planSnapshot.customTemplateLimit}
+        />
       </section>
 
       <section className={sectionCardClassName}>

@@ -226,3 +226,68 @@ test("fetchTopicsFromSourceAdapter maps chinese hotspot metadata into topic cand
     globalThis.fetch = originalFetch;
   }
 });
+
+test("fetchTopicsFromSourceAdapter parses X hotspot posts into topic candidates", async () => {
+  const previousToken = process.env.X_API_BEARER_TOKEN;
+  const previousBaseUrl = process.env.X_API_BASE_URL;
+  process.env.X_API_BEARER_TOKEN = "test-token";
+  process.env.X_API_BASE_URL = "https://api.x.com/2";
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.startsWith("https://api.x.com/2/tweets/search/recent?")) {
+      return new Response(JSON.stringify({
+        data: [
+          {
+            id: "19001",
+            text: "Anthropic just crossed a new ARR milestone and enterprise AI buyers are paying attention.",
+            author_id: "42",
+            conversation_id: "19001",
+            created_at: "2026-04-29T09:00:00Z",
+            public_metrics: {
+              like_count: 320,
+              retweet_count: 88,
+              reply_count: 17,
+              quote_count: 11,
+              impression_count: 12000,
+            },
+            attachments: {
+              media_keys: ["3_1"],
+            },
+            entities: {
+              urls: [{ expanded_url: "https://www.wsj.com/test" }],
+            },
+          },
+        ],
+        includes: {
+          users: [{ id: "42", name: "Aakash Gupta", username: "aakashg0" }],
+          media: [{ media_key: "3_1", type: "photo", url: "https://pbs.twimg.com/media/test.jpg", width: 1600, height: 900 }],
+        },
+        meta: { result_count: 1 },
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    }
+    return new Response("not found", { status: 404 });
+  }) as typeof fetch;
+
+  try {
+    const topics = await fetchTopicsFromSourceAdapter({
+      name: "X.com AI Founders Watch",
+      homepageUrl: "https://x.com/search?q=Anthropic&src=typed_query&f=live",
+      sourceType: "x-hotspot",
+      limit: 2,
+    });
+
+    assert.equal(topics?.length, 1);
+    assert.match(topics?.[0]?.title || "", /Anthropic just crossed/);
+    assert.equal(topics?.[0]?.sourceUrl, "https://x.com/aakashg0/status/19001");
+    assert.equal(topics?.[0]?.sourceMeta?.sourceKind, "x_hotspot");
+    assert.equal(topics?.[0]?.sourceMeta?.authorHandle, "aakashg0");
+    assert.equal(Array.isArray(topics?.[0]?.sourceMeta?.media), true);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (previousToken == null) delete process.env.X_API_BEARER_TOKEN;
+    else process.env.X_API_BEARER_TOKEN = previousToken;
+    if (previousBaseUrl == null) delete process.env.X_API_BASE_URL;
+    else process.env.X_API_BASE_URL = previousBaseUrl;
+  }
+});

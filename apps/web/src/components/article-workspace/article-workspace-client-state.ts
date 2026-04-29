@@ -143,6 +143,7 @@ export function useArticleWorkspaceClientState(input: UseArticleWorkspaceClientS
   const [refreshingPublishPreview, setRefreshingPublishPreview] = useState(false);
   const [deepWritingPrototypeOverride, setDeepWritingPrototypeOverride] = useState<string | null>(null);
   const [deepWritingStateVariantOverride, setDeepWritingStateVariantOverride] = useState<string | null>(null);
+  const [deepWritingCreativeLensOverride, setDeepWritingCreativeLensOverride] = useState<string | null>(null);
   const [deepWritingOpeningPreviewLoadingKey, setDeepWritingOpeningPreviewLoadingKey] = useState<string | null>(
     null,
   );
@@ -396,6 +397,7 @@ export function useArticleWorkspaceClientState(input: UseArticleWorkspaceClientS
   const [outlineMaterialUsageMode, setOutlineMaterialUsageMode] = useState<"rewrite" | "image">(
     "rewrite",
   );
+  const [outlineMaterialReferenceFusionMode, setOutlineMaterialReferenceFusionMode] = useState("evidence");
   const [outlineMaterialCreateMode, setOutlineMaterialCreateMode] = useState<
     "manual" | "url" | "screenshot"
   >("manual");
@@ -531,6 +533,8 @@ export function useArticleWorkspaceClientState(input: UseArticleWorkspaceClientS
     setDeepWritingPrototypeOverride,
     deepWritingStateVariantOverride,
     setDeepWritingStateVariantOverride,
+    deepWritingCreativeLensOverride,
+    setDeepWritingCreativeLensOverride,
     deepWritingOpeningPreviewLoadingKey,
     setDeepWritingOpeningPreviewLoadingKey,
     deepWritingOpeningPreviews,
@@ -675,6 +679,8 @@ export function useArticleWorkspaceClientState(input: UseArticleWorkspaceClientS
     setOutlineMaterialFragmentId,
     outlineMaterialUsageMode,
     setOutlineMaterialUsageMode,
+    outlineMaterialReferenceFusionMode,
+    setOutlineMaterialReferenceFusionMode,
     outlineMaterialCreateMode,
     setOutlineMaterialCreateMode,
     outlineMaterialTitle,

@@ -4,6 +4,7 @@ import { DeepWritingChecklistPanel } from "./deep-writing-checklist-panel";
 import { DeepWritingDiversityPanel } from "./deep-writing-diversity-panel";
 import { DeepWritingExecutionCardPanel } from "./deep-writing-execution-card-panel";
 import { DeepWritingHistoryReferencePanel } from "./deep-writing-history-reference-panel";
+import { DeepWritingCreativeLensPanel } from "./deep-writing-creative-lens-panel";
 import { DeepWritingPrototypePanel } from "./deep-writing-prototype-panel";
 import { DeepWritingSeriesInsightPanel } from "./deep-writing-series-insight-panel";
 import { DeepWritingStatePanel } from "./deep-writing-state-panel";
@@ -29,6 +30,7 @@ type DeepWritingArtifactPanelProps = {
   introHelper: string;
   prototypePanel: ComponentProps<typeof DeepWritingPrototypePanel>;
   statePanel: ComponentProps<typeof DeepWritingStatePanel>;
+  creativeLensPanel: ComponentProps<typeof DeepWritingCreativeLensPanel> | null;
   longTermDiversityPanel: ComponentProps<typeof DeepWritingDiversityPanel>;
   executionCardRefreshLabel: string;
   executionCardRefreshDisabled: boolean;
@@ -56,6 +58,7 @@ export function DeepWritingArtifactPanel({
   introHelper,
   prototypePanel,
   statePanel,
+  creativeLensPanel,
   longTermDiversityPanel,
   executionCardRefreshLabel,
   executionCardRefreshDisabled,
@@ -85,6 +88,7 @@ export function DeepWritingArtifactPanel({
       </div>
       <DeepWritingPrototypePanel {...prototypePanel} />
       <DeepWritingStatePanel {...statePanel} />
+      {creativeLensPanel ? <DeepWritingCreativeLensPanel {...creativeLensPanel} /> : null}
       <DeepWritingDiversityPanel {...longTermDiversityPanel} />
       <Button
         onClick={onRefreshExecutionCard}

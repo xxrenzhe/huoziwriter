@@ -234,6 +234,7 @@ export function parseStringList(value: unknown) {
 }
 
 export function formatSourceTypeLabel(value: string | null | undefined) {
+  if (value === "x-hotspot") return "X.com";
   if (value === "youtube") return "YouTube";
   if (value === "reddit") return "Reddit";
   if (value === "community") return "社区";
@@ -373,18 +374,21 @@ export async function getPublishSettingsData() {
   const auth = await requireSettingsAccess();
   if (!auth) return null;
   const { session } = auth;
-  const [planContext, connections, syncLogs, articles] = await Promise.all([
+  const [planContext, connections, syncLogs, articles, templates] = await Promise.all([
     getUserPlanContext(session.userId),
     getWechatConnections(session.userId),
     getWechatSyncLogs(session.userId),
     getArticlesByUser(session.userId),
+    getActiveTemplates(session.userId),
   ]);
 
   return {
+    session,
     planContext,
     connections,
     syncLogs,
     articles,
+    templates,
   };
 }
 

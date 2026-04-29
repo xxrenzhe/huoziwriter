@@ -1,6 +1,8 @@
 import { analyzeAiNoise } from "./ai-noise-scan";
 import { evaluateArchetypeRhythmConsistency } from "./archetype-rhythm";
 import { EVIDENCE_HOOK_TAG_OPTIONS, getArticleEvidenceStats } from "./article-evidence";
+import { evaluateFinalBodyViralContract, type FinalBodyViralContractResult } from "./article-viral-contract";
+import { evaluateArticleViralScore, type ArticleViralScoreResult, WECHAT_VIRAL_SCORE_THRESHOLD } from "./article-viral-score";
 import { getStrategyCardMissingFields, isStrategyCardComplete, STRATEGY_ARCHETYPE_OPTIONS } from "./article-strategy";
 import { getArticleNodes } from "./article-outline";
 import { getArticleStageArtifact, getArticleStageArtifactsByDocumentIds } from "./article-stage-artifacts";
@@ -8,7 +10,9 @@ import { evaluateArticleVisualQuality } from "./article-visual-quality";
 import { getActiveTemplateById } from "./layout-templates";
 import { evaluateOpeningGuardChecks as evaluateOpeningPatternGuardChecks } from "./opening-patterns";
 import { buildPublishMethodologyGates } from "./publish-methodology-gates";
+import { evaluateReferenceFusionGuard } from "./reference-fusion";
 import { getArticleById, getArticleEvidenceItems, getArticlesByUser, getArticleStrategyCard, getLatestArticleCoverImage, getLatestWechatSyncLogForArticle, getWechatConnectionRaw } from "./repositories";
+import { getLatestTemplateImportAudit } from "./template-import";
 import { evaluateTitleGuardChecks } from "./title-patterns";
 import { buildWritingDiversityReport } from "./writing-diversity";
 import { buildWritingQualityPanel } from "./writing-quality";
@@ -48,6 +52,8 @@ export type PublishGuardResult = {
     suggestions: string[];
   };
   qualityPanel: ReturnType<typeof buildWritingQualityPanel>;
+  viralScore: ArticleViralScoreResult;
+  finalBodyContract: FinalBodyViralContractResult;
   materialReadiness: {
     attachedFragmentCount: number;
     uniqueSourceTypeCount: number;
@@ -239,7 +245,7 @@ export async function evaluatePublishGuard(input: {
   templateId?: string | null;
   wechatConnectionId?: number | null;
 }): Promise<PublishGuardResult> {
-  const [article, recentArticles, strategyCard, evidenceItems, researchArtifact, outlineArtifact, deepWritingArtifact, factCheckArtifact, prosePolishArtifact, nodes, coverImage, connection, template, latestAttempt] = await Promise.all([
+  const [article, recentArticles, strategyCard, evidenceItems, researchArtifact, outlineArtifact, deepWritingArtifact, factCheckArtifact, prosePolishArtifact, nodes, coverImage, connection, template, latestAttempt, templateImportAudit] = await Promise.all([
     getArticleById(input.articleId, input.userId),
     getArticlesByUser(input.userId),
     getArticleStrategyCard(input.articleId, input.userId),
@@ -258,6 +264,7 @@ export async function evaluatePublishGuard(input: {
       articleId: input.articleId,
       wechatConnectionId: input.wechatConnectionId ?? null,
     }),
+    input.templateId ? getLatestTemplateImportAudit({ userId: input.userId, templateId: input.templateId }) : Promise.resolve(null),
   ]);
   const visualQuality = await evaluateArticleVisualQuality({
     articleId: input.articleId,
@@ -391,6 +398,11 @@ export async function evaluatePublishGuard(input: {
   });
   const rhythmConsistencyReady = rhythmConsistency.status === "aligned";
   const rhythmConsistencyNeedsAttention = Boolean(strategyCard?.archetype) && rhythmConsistency.status !== "aligned";
+  const referenceFusionGuard = evaluateReferenceFusionGuard({
+    researchBriefPayload: researchArtifact?.payload || null,
+    outlinePayload: outlineArtifact?.payload || null,
+    deepWritingPayload: deepWritingArtifact?.payload || null,
+  });
   const proseQualityBlocksWechat = aiNoiseScore >= 70 || aiNoiseHasRigidOutline || aiNoiseHasSummaryEnding || aiNoiseHasDidacticTone || aiNoiseHasDistantTone;
   const hasCounterEvidence = evidenceStats.counterEvidenceCount > 0 || factCheckCounterEvidenceCount > 0;
   const researchHollowRiskItems = [
@@ -467,6 +479,26 @@ export async function evaluatePublishGuard(input: {
     deepWritingPayload: deepWritingArtifact?.payload || null,
     researchBriefPayload: researchArtifact?.payload || null,
     diversityReport,
+  });
+  const viralScore = evaluateArticleViralScore({
+    title: article?.title || "",
+    markdownContent: article?.markdown_content || "",
+    threshold: WECHAT_VIRAL_SCORE_THRESHOLD,
+  });
+  const deepWritingPayload = getRecord(deepWritingArtifact?.payload);
+  const deepWritingViralGenomePack = getRecord(deepWritingPayload?.viralGenomePack);
+  const researchPayload = getRecord(researchArtifact?.payload);
+  const finalBodyContract = evaluateFinalBodyViralContract({
+    title: article?.title || "",
+    markdownContent: article?.markdown_content || "",
+    authorPostureMode: getString(deepWritingViralGenomePack?.authorPostureMode),
+    businessQuestions: getStringArray(researchPayload?.businessQuestions, 7),
+    businessQuestionAnswers: getRecordArray(researchPayload?.businessQuestionAnswers).slice(0, 7).map((item) => ({
+      question: getString(item.question),
+      answer: getString(item.answer),
+    })),
+    firstScreenPromise: getString(deepWritingViralGenomePack?.firstScreenPromise),
+    shareTrigger: getString(deepWritingViralGenomePack?.shareTrigger),
   });
 
   pushCheck(checks, blockers, warnings, suggestions, {
@@ -565,6 +597,29 @@ export async function evaluatePublishGuard(input: {
   });
 
   if (requiresWechatQualityFloor) {
+    pushCheck(checks, blockers, warnings, suggestions, {
+      key: "viralScore90",
+      label: "爆款评分",
+      status: viralScore.passed ? "passed" : "blocked",
+      severity: viralScore.passed ? "suggestion" : "blocking",
+      detail: viralScore.passed
+        ? viralScore.summary
+        : `${viralScore.summary} 主要短板：${viralScore.blockers.slice(0, 3).join("；")}`,
+      targetStageCode: viralScore.passed ? undefined : "deepWriting",
+      actionLabel: viralScore.passed ? undefined : `去冲 ${WECHAT_VIRAL_SCORE_THRESHOLD} 分`,
+    });
+    pushCheck(checks, blockers, warnings, suggestions, {
+      key: "finalBodyContract",
+      label: "终稿兑现契约",
+      status: finalBodyContract.passed ? "passed" : "blocked",
+      severity: finalBodyContract.passed ? "suggestion" : "blocking",
+      detail: finalBodyContract.passed
+        ? finalBodyContract.summary
+        : `${finalBodyContract.summary} 主要缺口：${finalBodyContract.blockers.slice(0, 3).join("；")}`,
+      targetStageCode: finalBodyContract.passed ? undefined : "deepWriting",
+      actionLabel: finalBodyContract.passed ? undefined : "去补正文兑现",
+    });
+
     pushCheck(checks, blockers, warnings, suggestions, {
       key: "wechatEvidenceFloor",
       label: "公众号证据底线",
@@ -691,6 +746,19 @@ export async function evaluatePublishGuard(input: {
           : "纵向脉络、横向比较、交汇洞察与反证都已覆盖，内容空洞风险可控。",
     targetStageCode: researchHollowRiskTargetStage,
     actionLabel: researchHollowRiskActionLabel,
+  });
+
+  pushCheck(checks, blockers, warnings, suggestions, {
+    key: "referenceFusion",
+    label: "参考融合边界",
+    status: referenceFusionGuard.status === "blocked" ? "blocked" : "passed",
+    severity: referenceFusionGuard.status === "blocked" ? "blocking" : "suggestion",
+    detail:
+      referenceFusionGuard.status === "blocked"
+        ? `当前参考融合模式为「${referenceFusionGuard.profile.modeLabel}」，但边界不足：${referenceFusionGuard.issues.join("；")}`
+        : `当前参考融合模式为「${referenceFusionGuard.profile.modeLabel}」，差异化策略和规避清单已进入生成链路。`,
+    targetStageCode: referenceFusionGuard.status === "blocked" ? "researchBrief" : undefined,
+    actionLabel: referenceFusionGuard.status === "blocked" ? "去补参考边界" : undefined,
   });
 
   if (researchReady) {
@@ -995,9 +1063,29 @@ export async function evaluatePublishGuard(input: {
   pushCheck(checks, blockers, warnings, suggestions, {
     key: "template",
     label: "排版模板",
-    status: input.templateId ? (template ? "passed" : "warning") : "warning",
-    severity: input.templateId ? (template ? "suggestion" : "warning") : "suggestion",
-    detail: input.templateId ? (template ? "排版模板可用。" : "当前模板不可用，将回退到默认渲染。") : "未显式选择模板，将使用默认微信渲染样式。",
+    status: input.templateId
+      ? templateImportAudit?.status === "blocked"
+        ? "blocked"
+        : template
+          ? templateImportAudit?.status === "warning" ? "warning" : "passed"
+          : "warning"
+      : "warning",
+    severity: input.templateId
+      ? templateImportAudit?.status === "blocked"
+        ? "blocking"
+        : templateImportAudit?.status === "warning" || !template
+          ? "warning"
+          : "suggestion"
+      : "suggestion",
+    detail: input.templateId
+      ? templateImportAudit?.status === "blocked"
+        ? `导入模板审计未通过：${templateImportAudit.issues.map((issue) => issue.message).join("；")}`
+        : templateImportAudit?.status === "warning"
+          ? `导入模板存在发布风险：${templateImportAudit.issues.map((issue) => issue.message).join("；")}`
+          : template
+            ? "排版模板可用。"
+            : "当前模板不可用，将回退到默认渲染。"
+      : "未显式选择模板，将使用默认微信渲染样式。",
     targetStageCode: "layout",
     actionLabel: template ? undefined : "去检查模板",
   });
@@ -1290,6 +1378,8 @@ export async function evaluatePublishGuard(input: {
       suggestions: aiNoiseSuggestions,
     },
     qualityPanel,
+    viralScore,
+    finalBodyContract,
     materialReadiness,
     connectionHealth,
     latestAttempt: latestAttempt

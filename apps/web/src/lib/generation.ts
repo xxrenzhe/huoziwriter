@@ -2,6 +2,9 @@ import { generateSceneText } from "./ai-gateway";
 import { buildGatewaySystemSegments } from "./ai-gateway-system-segments";
 import { getMergedActiveArchetypeRhythmHints, normalizeStrategyArchetypeKey } from "./archetype-rhythm";
 import type { AuthorOutcomeFeedbackLedger } from "./author-outcome-feedback-ledger";
+import { buildHumanPracticalVoiceGuide } from "./article-human-voice";
+import { detectArticleViralMode, type ArticleViralMode } from "./article-viral-modes";
+import { WECHAT_VIRAL_SCORE_THRESHOLD } from "./article-viral-score";
 import { auditInformationGain, type InformationGainAuditResult } from "./information-gain-audit";
 import { auditPersonaConsistency, type PersonaConsistencyAuditResult } from "./persona-consistency-audit";
 import { loadPromptWithMeta } from "./prompt-loader";
@@ -590,6 +593,10 @@ function buildLocalDeepWritingFallback(input: {
   const materialJobs = getStringArray(viralGenomePack?.materialJobs, 4).map(cleanReaderSeed).filter(Boolean);
   const readerSceneAnchors = getStringArray(viralGenomePack?.readerSceneAnchors, 4).map(cleanReaderSeed).filter(Boolean);
   const openingMicroScenes = getStringArray(viralGenomePack?.openingMicroScenes, 3).map(cleanReaderSeed).filter(Boolean);
+  const mode = resolveDeepWritingViralMode({
+    title,
+    deepWritingPayload: input.payload,
+  });
   const translationPairs = getRecordArray(viralGenomePack?.abstractToConcretePairs, 3)
     .map((item) => [cleanReaderSeed(getString(item.abstract)), cleanReaderSeed(getString(item.concrete))].filter(Boolean).join("=>"))
     .filter(Boolean);
@@ -604,21 +611,37 @@ function buildLocalDeepWritingFallback(input: {
     return "";
   }
 
-  const introParagraphs = [
-    openingLead || ensureSentence(readerConflict || firstScreenPromise, centralThesis || "变化先落在读者已经付出的代价上"),
-    ensureSentence(
-      materialSpark || evidencePool[0] || openingMicroScenes[0] || readerShareReasons[0] || authorLens,
-      materialJobs.length
-        ? "真正把问题抬高的，是这里已经出现了" + materialJobs.slice(0, 3).join("、") + "，读者不再只是看一个观点"
-        : "真正把问题抬高的，不是表面现象，而是它已经开始改写原来的判断顺序",
-    ),
-    ensureSentence(
-      translationPairs[0] || readerSceneAnchors[0],
-      "",
-    ),
-  ].filter(Boolean);
+  const introParagraphs = mode === "power_shift_breaking"
+    ? [
+        openingLead || ensureSentence(firstScreenPromise || readerConflict, centralThesis || "今天真正变的，不是热度，而是胜负、数字和位置。"),
+        ensureSentence(
+          materialSpark || evidencePool[0] || openingMicroScenes[0] || authorLens,
+          "先别急着讲大道理，先把赢家、输家、账本和时间差摆到台面上。",
+        ),
+        ensureSentence(
+          translationPairs[0] || readerSceneAnchors[0] || readerShareReasons[0],
+          "这类题材最怕写成产业综述，真正该写的是谁开始拿走筹码、谁开始扛不住账单。",
+        ),
+      ].filter(Boolean)
+    : [
+        openingLead || ensureSentence(readerConflict || firstScreenPromise, centralThesis || "变化先落在读者已经付出的代价上"),
+        ensureSentence(
+          materialSpark || evidencePool[0] || openingMicroScenes[0] || readerShareReasons[0] || authorLens,
+          materialJobs.length
+            ? "真正把问题抬高的，是这里已经出现了" + materialJobs.slice(0, 3).join("、") + "，读者不再只是看一个观点"
+            : "真正把问题抬高的，不是表面现象，而是它已经开始改写原来的判断顺序",
+        ),
+        ensureSentence(
+          translationPairs[0] || readerSceneAnchors[0],
+          "",
+        ),
+      ].filter(Boolean);
 
-  const sections = (sectionBlueprint.length ? sectionBlueprint : [{ heading: "核心判断" }, { heading: "错位现场" }, { heading: "最后收束" }])
+  const fallbackSections = mode === "power_shift_breaking"
+    ? [{ heading: "胜负先看数字" }, { heading: "赢者为什么赢" }, { heading: "输家哪里失血" }, { heading: "下半场更危险" }]
+    : [{ heading: "核心判断" }, { heading: "错位现场" }, { heading: "最后收束" }];
+
+  const sections = (sectionBlueprint.length ? sectionBlueprint : fallbackSections)
     .map((section: Record<string, unknown>, index: number, allSections: Array<Record<string, unknown>>) => {
       const heading = readerFacingHeading({
         heading: getString(section.heading) || `章节 ${index + 1}`,
@@ -629,7 +652,15 @@ function buildLocalDeepWritingFallback(input: {
       const mission = getString(section.paragraphMission) || getString(section.goal);
       const evidence = getStringArray(section.evidenceHints, 2)[0] || evidencePool[index] || "";
       const fallbackLine =
-        isSearchMarketingTopic(topicSeed)
+        mode === "power_shift_breaking"
+          ? index === 0
+            ? "先把数字摊开看，很多所谓趋势讨论其实到这里就已经分出胜负了。"
+            : index === allSections.length - 1
+              ? "写到最后，真正值得留下来的不是热闹，而是哪一边正在继续拿走时间、利润和解释权。"
+              : index === 1
+                ? "赢家通常不是靠一句口号赢的，而是靠更稳的收入结构、更短的回款链和更少的错误支出。"
+                : "输家最危险的信号，往往不是表面掉队，而是内部已经开始为了账单、路线和时间表互相怀疑。"
+          : isSearchMarketingTopic(topicSeed)
           ? index === 0
             ? "很多投放复盘最别扭的地方，是账户看起来更精细了，结果却没有更扎实。"
             : index === allSections.length - 1
@@ -652,7 +683,9 @@ function buildLocalDeepWritingFallback(input: {
 
   const closing = ensureSentence(
     shareTrigger || centralThesis || growthPath[growthPath.length - 1] || authorLens,
-    "当读者终于看清问题的真实落点，文章也就不需要再把自己写成一份操作手册",
+    mode === "power_shift_breaking"
+      ? "这种题最后别收成温和总结，最好留下一句能被转发的判断：谁在上牌桌，谁在被账单追着跑。"
+      : "当读者终于看清问题的真实落点，文章也就不需要再把自己写成一份操作手册",
   );
 
   return [
@@ -1061,6 +1094,10 @@ function pickExpressionExemplars(
 function buildReaderProximityGuide(deepWritingPayload?: Record<string, unknown> | null) {
   const payload = getRecord(deepWritingPayload);
   const viralGenomePack = getRecord(payload?.viralGenomePack);
+  const mode = resolveDeepWritingViralMode({
+    title: getString(payload?.selectedTitle),
+    deepWritingPayload,
+  });
   const sceneAnchors = getStringArray(viralGenomePack?.readerSceneAnchors, 6);
   const openingMicroScenes = getStringArray(viralGenomePack?.openingMicroScenes, 3);
   const materialJobs = getStringArray(viralGenomePack?.materialJobs, 5);
@@ -1070,6 +1107,24 @@ function buildReaderProximityGuide(deepWritingPayload?: Record<string, unknown> 
       concrete: getString(item.concrete),
     }))
     .filter((item) => item.abstract && item.concrete);
+
+  if (mode === "power_shift_breaking") {
+    return [
+      "读者亲近感约束：",
+      "1. 把产业判断先落成赢家、输家、数字看板、时间差和裂痕，不要一上来写行业背景综述。",
+      materialJobs.length
+        ? `2. 第一屏和前两节正文优先覆盖这些素材任务：${materialJobs.join("、")}。至少让其中两类出现在前 200 字。`
+        : "2. 第一屏必须同时出现实体名、硬数字和今天发生了什么变化。",
+      translationPairs.length
+        ? `3. 抽象词必须先翻译再下笔：${translationPairs.map((item) => `${item.abstract}=>${item.concrete}`).join("；")}。`
+        : "3. 把“竞争加剧、格局变化、商业化路径”翻成账单、客户、估值、合同、董事会和路线分歧。",
+      openingMicroScenes.length
+        ? `4. 开头优先从这些微场景起手：${openingMicroScenes.join("；")}。`
+        : "4. 开头优先从数字砸脸、内部担忧、资本市场反应这种微场景起手。",
+      "5. 每 3-5 段至少落回一次数字、账单、组织裂痕或市场投票，不要连续飘在评论层。",
+      "6. 情绪不是喊震惊，而是让读者看见谁开始慌、哪条路线开始被怀疑、哪笔成本已经压到桌面上。",
+    ].join("\n");
+  }
 
   return [
     "读者亲近感约束：",
@@ -1088,6 +1143,20 @@ function buildReaderProximityGuide(deepWritingPayload?: Record<string, unknown> 
     "5. 每 3-5 段至少落回一次读者熟悉的动作或情绪，不要连续用概念名词推进。",
     "6. 情绪不是喊口号，而是让读者看到自己已经付出的成本、误判和难受的反差。",
   ].join("\n");
+}
+
+function buildGenerationHumanPracticalVoiceGuide(input: {
+  title: string;
+  strategyCard?: StrategyCardContext | null;
+  humanSignals?: HumanSignalsContext | null;
+  persona?: PersonaContext | null;
+}) {
+  return buildHumanPracticalVoiceGuide({
+    title: input.title,
+    targetReader: input.strategyCard?.targetReader || input.persona?.audienceHints?.[0] || null,
+    personaSummary: input.persona?.summary || null,
+    humanSignals: input.humanSignals || null,
+  });
 }
 
 export function buildExpressionExemplarGuide(input: {
@@ -1304,6 +1373,9 @@ export function buildAuthorOutcomeFeedbackGuide(ledger?: AuthorOutcomeFeedbackLe
       : null,
     ledger.recommendations.stateVariant
       ? `状态优先：${ledger.recommendations.stateVariant.label}（历史 ${ledger.recommendations.stateVariant.sampleCount} 篇）`
+      : null,
+    ledger.recommendations.creativeLens
+      ? `镜头优先：${ledger.recommendations.creativeLens.label}（历史 ${ledger.recommendations.creativeLens.sampleCount} 篇）`
       : null,
     ledger.recommendations.openingPattern
       ? `开头优先：${ledger.recommendations.openingPattern.label}（历史 ${ledger.recommendations.openingPattern.sampleCount} 篇）`
@@ -1575,13 +1647,109 @@ function buildSeriesRuntimeGuide(seriesInsight?: SeriesInsightContext | null) {
   return lines.length ? ["如果不与当前正文冲突，请优先沿用以下系列运行时默认值：", ...lines].join("\n") : "";
 }
 
+function pickBusinessQuestionContractLines(
+  questions: string[],
+  answers: Array<{ question: string; answer: string }>,
+) {
+  const corpus = [
+    ...questions,
+    ...answers.flatMap((item) => [item.question, item.answer]),
+  ].join("\n");
+  const rules = [
+    {
+      ask: /(钱从哪里来|谁在赚钱|谁在亏钱|降本|成本|预算|效率|佣金|收入|回本|roi|arr|mrr|留存|续费|线索|成交)/i,
+      line: "正文必须把钱从哪里来、成本卡在哪里或预算漏在哪里写实，不能只说商业价值。",
+    },
+    {
+      ask: /(为什么.*现在|why now|为什么是现在|这次为什么|今年|窗口)/i,
+      line: "正文必须把 why now 写进正文，不要只说趋势，要说这次为什么偏偏是现在更疼或更值钱。",
+    },
+    {
+      ask: /(影响.*哪类人|哪一类人|谁会受影响|适合.*谁|谁该看)/i,
+      line: "正文必须点名这件事具体压到哪类人身上，让读者立刻知道这事和谁有关。",
+    },
+    {
+      ask: /(谁不适合|哪些人不适合|不该做|别做|边界|反例|不适用)/i,
+      line: "正文必须写出不适合照搬的人、前提或边界，别把方法写成人人可抄的万能解。",
+    },
+    {
+      ask: /(最可信|案例|账本|证据|数字|原话|截图|平台|数据)/i,
+      line: "正文必须至少给出一条最可信的证据锚点，优先是数字、原话、截图、后台、账本或具体平台。",
+    },
+    {
+      ask: /(转发|转给|会转给谁|替谁解释|谁应该看)/i,
+      line: "正文结尾或关键转折里，最好点明这篇最适合转给谁看，别把传播理由留在作者脑子里。",
+    },
+  ] as const;
+  return rules.filter((rule) => rule.ask.test(corpus)).map((rule) => rule.line).slice(0, 4);
+}
+
+export function buildFinalBodyContractGuide(input: {
+  deepWritingPayload?: Record<string, unknown> | null;
+  researchBrief?: Record<string, unknown> | null;
+}) {
+  const payload = getRecord(input.deepWritingPayload);
+  const viralGenomePack = getRecord(payload?.viralGenomePack);
+  const researchBrief = getRecord(input.researchBrief);
+  if (!payload && !researchBrief) {
+    return "";
+  }
+
+  const authorPostureMode = getString(viralGenomePack?.authorPostureMode);
+  const businessQuestions = getStringArray(viralGenomePack?.businessQuestions, 7).length
+    ? getStringArray(viralGenomePack?.businessQuestions, 7)
+    : getStringArray(researchBrief?.businessQuestions, 7);
+  const businessQuestionAnswers = getRecordArray(researchBrief?.businessQuestionAnswers)
+    .slice(0, 7)
+    .map((item) => ({
+      question: getString(item.question),
+      answer: getString(item.answer),
+    }))
+    .filter((item) => item.question || item.answer);
+  const mode = resolveDeepWritingViralMode({
+    title: getString(payload?.selectedTitle),
+    deepWritingPayload: payload,
+    businessQuestions,
+  });
+  const lines = [
+    getString(viralGenomePack?.firstScreenPromise)
+      ? `第一屏契约：${getString(viralGenomePack?.firstScreenPromise)}`
+      : mode === "power_shift_breaking"
+        ? "第一屏契约：前 120-200 字必须同时出现赢家名字、输家名字、硬数字和今天到底变了什么，不能先铺产业背景。"
+        : "第一屏契约：前 200 字必须同时出现具体对象、正在发生的变化和读者代价，不能先铺背景或先教方法。",
+    mode === "power_shift_breaking"
+      ? "姿态契约：正文必须像在拆一场王座更替或资本战，先抛胜负，再拆数字、裂痕、成本差和下半场，不要滑回中性新闻综述。"
+      : authorPostureMode === "case_breakdown"
+      ? "姿态契约：正文必须像在拆一个具体现场，至少让角色、动作、结果和误判在同一个场景里撞上。"
+      : authorPostureMode === "operator_test"
+        ? "姿态契约：正文必须像一个做过测试或操过盘的人在复盘，写清自己试了什么、看了什么、结果怎样。"
+        : authorPostureMode === "analysis_interpreter"
+          ? "姿态契约：正文可以解释，但必须贴着具体对象、变化和证据讲，不能滑回泛分析或培训稿。"
+          : "姿态契约：不要站在上面讲课，要像刚复盘完的人在桌边提醒同业。",
+    mode === "power_shift_breaking"
+      ? "看板契约：正文至少要有一个胜负看板段落，写清赢家、输家、硬数字、时间差和来源锚点。"
+      : "案例契约：正文至少要有一个 mini case，写清谁说了什么、盯着哪张表、结果卡在了哪里。",
+    mode === "power_shift_breaking"
+      ? "情绪契约：正文至少要让读者看到一次谁在担忧、谁在掉队、哪张账单或哪道裂痕开始压人，而不是只看到客观结论。"
+      : "情绪契约：正文至少要让读者看到一次谁在亏、谁在急、谁在解释不动的压力，而不是只看到正确结论。",
+    ...pickBusinessQuestionContractLines(businessQuestions, businessQuestionAnswers),
+    getString(viralGenomePack?.shareTrigger)
+      ? `传播契约：${getString(viralGenomePack?.shareTrigger)}`
+      : null,
+  ].filter(Boolean);
+
+  return lines.length ? ["请优先兑现以下最终正文契约：", ...lines].join("\n") : "";
+}
+
 function buildDeepWritingBehaviorGuide(deepWritingPayload?: Record<string, unknown> | null) {
   const payload = getRecord(deepWritingPayload);
   if (!payload) {
     return "";
   }
+  const finalBodyContractGuide = buildFinalBodyContractGuide({ deepWritingPayload });
   const requiredOpeningLead = getRequiredOpeningLead(payload);
   const lines = [
+    finalBodyContractGuide,
     requiredOpeningLead
       ? [
           "开头硬约束：正文标题后的第一段必须直接采用或高度贴近以下开头，不得先铺背景、不得先解释主题、不得在审校阶段改弱。",
@@ -1636,6 +1804,30 @@ function getRequiredOpeningLead(deepWritingPayload?: Record<string, unknown> | n
   return normalized;
 }
 
+function resolveDeepWritingViralMode(input: {
+  title?: string | null;
+  deepWritingPayload?: Record<string, unknown> | null;
+  businessQuestions?: string[];
+}) {
+  const payload = getRecord(input.deepWritingPayload);
+  const viralGenomePack = getRecord(payload?.viralGenomePack);
+  const explicitMode = getString(viralGenomePack?.mode);
+  if (explicitMode === "power_shift_breaking" || explicitMode === "default") {
+    return explicitMode as ArticleViralMode;
+  }
+  return detectArticleViralMode({
+    title: input.title,
+    markdownContent: [
+      getString(payload?.selectedTitle),
+      getString(payload?.centralThesis),
+      getString(payload?.openingStrategy),
+      getString(viralGenomePack?.firstScreenPromise),
+      getString(viralGenomePack?.shareTrigger),
+    ].filter(Boolean).join("\n"),
+    businessQuestions: input.businessQuestions?.length ? input.businessQuestions : getStringArray(viralGenomePack?.businessQuestions, 7),
+  });
+}
+
 function splitMarkdownTitleBlock(markdown: string) {
   const normalized = String(markdown || "").replace(/\r\n/g, "\n").trim();
   if (!normalized) {
@@ -1677,6 +1869,144 @@ function applyRequiredOpeningLead(markdown: string, openingLead: string) {
     blocks.unshift(requiredLead);
   }
   return [titleBlock, blocks.join("\n\n")].filter(Boolean).join("\n\n").trim();
+}
+
+function isReaderFacingParagraphBlock(block: string) {
+  const trimmed = String(block || "").trim();
+  if (!trimmed) return false;
+  if (/^#{1,6}\s/.test(trimmed)) return false;
+  if (/^\s*[-*]\s+/.test(trimmed)) return false;
+  if (/^\s*\d+[.)]\s+/.test(trimmed)) return false;
+  if (/^\s*```/.test(trimmed)) return false;
+  if (/^\s*!\[/.test(trimmed)) return false;
+  if (/^\s*</.test(trimmed)) return false;
+  if (/^\s*\|/.test(trimmed)) return false;
+  return true;
+}
+
+function getFirstReaderFacingBlock(markdown: string) {
+  const { body } = splitMarkdownTitleBlock(markdown);
+  const blocks = body
+    .split(/\n{2,}/)
+    .map((block) => block.trim())
+    .filter(Boolean);
+  return blocks.find((block) => isReaderFacingParagraphBlock(block)) || "";
+}
+
+function normalizeLeadForCompare(text: string) {
+  return String(text || "").replace(/\s+/g, "").trim();
+}
+
+function countRegexMatches(text: string, regex: RegExp) {
+  return new Set(Array.from(String(text || "").matchAll(regex)).map((match) => match[0])).size;
+}
+
+function scoreHumanPracticalLead(lead: string) {
+  const normalized = normalizeLeadForCompare(lead);
+  if (!normalized) return 0;
+  let score = 0;
+  if (normalized.length >= 70 && normalized.length <= 260) score += 2;
+  else if (normalized.length >= 45 && normalized.length <= 320) score += 1;
+  const sceneCount = countRegexMatches(
+    normalized,
+    /(复盘|后台|预算|销售|老板|投放|线索表|账户|搜索词报告|质量得分|点击|花费|表单|出价|创意|关键词|匹配|转化)/g,
+  );
+  if (sceneCount >= 5) score += 3;
+  else if (sceneCount >= 3) score += 2;
+  else if (sceneCount >= 1) score += 1;
+  if (/(不是.+而是|真正|最难受|发冷|刺耳|卡住|绕开|误判|骗自己|解释不通|难看)/.test(normalized)) score += 2;
+  if (/(我会|我更怕|先看|先问|盯着|摊着|拉出来|单独看|停手|继续投|跟进)/.test(normalized)) score += 2;
+  if (/(因此可以看出|对于|在此过程中|具有重要意义|提供了新的视角|从.+角度来看)/.test(normalized)) score -= 4;
+  if (/^(本文|这篇文章|从.+角度|对于.+而言|在.+背景下)/.test(normalized)) score -= 2;
+  return score;
+}
+
+function isSimilarLead(left: string, right: string) {
+  const normalizedLeft = normalizeLeadForCompare(left);
+  const normalizedRight = normalizeLeadForCompare(right);
+  if (!normalizedLeft || !normalizedRight) return false;
+  const prefixLength = Math.min(36, normalizedLeft.length, normalizedRight.length);
+  if (prefixLength >= 16 && normalizedLeft.slice(0, prefixLength) === normalizedRight.slice(0, prefixLength)) {
+    return true;
+  }
+  return normalizedLeft.includes(normalizedRight.slice(0, 32)) || normalizedRight.includes(normalizedLeft.slice(0, 32));
+}
+
+function shouldPreserveOriginalProseOpening(input: {
+  originalMarkdown: string;
+  candidateMarkdown: string;
+  rewrittenLead?: string | null;
+}) {
+  const originalLead = getFirstReaderFacingBlock(input.originalMarkdown);
+  const candidateLead = getFirstReaderFacingBlock(input.candidateMarkdown);
+  if (!originalLead || !candidateLead || isSimilarLead(originalLead, candidateLead)) {
+    return false;
+  }
+  const originalScore = scoreHumanPracticalLead(originalLead);
+  const candidateScore = scoreHumanPracticalLead(candidateLead);
+  const suggestedLead = String(input.rewrittenLead || "").trim();
+  if (suggestedLead && isSimilarLead(candidateLead, suggestedLead) && scoreHumanPracticalLead(suggestedLead) >= originalScore + 1) {
+    return false;
+  }
+  const originalHasRoleScene = /(老板|销售|投放|客户|读者|团队).{0,24}(盯着|问|说|解释|复盘|跟进)/.test(normalizeLeadForCompare(originalLead));
+  const candidateHasRoleScene = /(老板|销售|投放|客户|读者|团队).{0,24}(盯着|问|说|解释|复盘|跟进)/.test(normalizeLeadForCompare(candidateLead));
+  const candidateFormal = /(因此可以看出|对于|在此过程中|具有重要意义|提供了新的视角|从.+角度来看)/.test(candidateLead);
+  if (candidateFormal) return true;
+  if (originalScore >= candidateScore + 2) return true;
+  if (originalHasRoleScene && !candidateHasRoleScene && originalScore >= candidateScore) return true;
+  if (candidateLead.length < 90 && originalLead.length >= 120 && originalScore >= candidateScore) return true;
+  return false;
+}
+
+function joinSoftWrappedParagraphLines(lines: string[]) {
+  return lines
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .reduce((paragraph, line) => {
+      if (!paragraph) return line;
+      const needsSpace = /[A-Za-z0-9`)）\]}]$/.test(paragraph) && /^[A-Za-z0-9`([{（]/.test(line);
+      return paragraph + (needsSpace ? " " : "") + line;
+    }, "");
+}
+
+export function repairProsePolishSoftLineBreaks(markdown: string) {
+  return String(markdown || "")
+    .replace(/\r\n/g, "\n")
+    .trim()
+    .split(/\n{2,}/)
+    .map((block) => {
+      const lines = block.split("\n");
+      if (lines.length <= 1 || !isReaderFacingParagraphBlock(block)) {
+        return block.trim();
+      }
+      return joinSoftWrappedParagraphLines(lines);
+    })
+    .join("\n\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+export function finalizeProsePolishMarkdownForReader(input: {
+  originalMarkdown: string;
+  candidateMarkdown: string;
+  bannedWords: string[];
+  deepWritingPayload?: Record<string, unknown> | null;
+  rewrittenLead?: string | null;
+}) {
+  const requiredLead = getRequiredOpeningLead(input.deepWritingPayload);
+  let candidate = repairProsePolishSoftLineBreaks(sanitizeBannedWords(input.candidateMarkdown, input.bannedWords));
+  if (requiredLead) {
+    candidate = applyRequiredOpeningLead(candidate, requiredLead);
+  }
+  if (shouldPreserveOriginalProseOpening({
+    originalMarkdown: input.originalMarkdown,
+    candidateMarkdown: candidate,
+    rewrittenLead: input.rewrittenLead || requiredLead,
+  })) {
+    const originalLead = getFirstReaderFacingBlock(input.originalMarkdown);
+    candidate = replaceFirstReaderFacingBlock(candidate, originalLead);
+  }
+  return candidate;
 }
 
 function replaceFirstReaderFacingBlock(markdown: string, replacement: string) {
@@ -1764,8 +2094,13 @@ export async function buildGeneratedArticleDraft(input: {
     preferredVariantCode: preferredStateVariantCode,
   });
   const humanSignalGuide = buildHumanSignalGuide(input.humanSignals ?? null);
+  const humanPracticalVoiceGuide = buildGenerationHumanPracticalVoiceGuide(input);
   const writingStateGuide = buildWritingStateGuide(writingState);
   const deepWritingBehaviorGuide = buildDeepWritingBehaviorGuide(input.deepWritingPayload);
+  const finalBodyContractGuide = buildFinalBodyContractGuide({
+    deepWritingPayload: input.deepWritingPayload,
+    researchBrief: input.researchBrief,
+  });
   const readerProximityGuide = buildReaderProximityGuide(input.deepWritingPayload);
   const styleGuide = buildStyleGuide(input.layoutStrategy);
   const outlineGuide = buildOutlineGuide(input.outlineNodes);
@@ -1788,12 +2123,12 @@ export async function buildGeneratedArticleDraft(input: {
   const writerSystemSegments = buildGenerationSystemSegments({
     basePrompt: writePrompt.content,
     cacheableBlocks: [personaGuide, writingStyleGuide, styleGuide],
-    contextualBlocks: [humanSignalGuide, writingStateGuide, authorOutcomeFeedbackGuide, deepWritingBehaviorGuide, readerProximityGuide, researchGuide, expressionExemplarGuide, informationGainGuide, seriesRuntimeGuide, deepWritingGuide],
+    contextualBlocks: [humanSignalGuide, humanPracticalVoiceGuide, writingStateGuide, authorOutcomeFeedbackGuide, deepWritingBehaviorGuide, finalBodyContractGuide, readerProximityGuide, researchGuide, expressionExemplarGuide, informationGainGuide, seriesRuntimeGuide, deepWritingGuide],
   });
   const auditSystemSegments = buildGenerationSystemSegments({
     basePrompt: auditPrompt.content,
     cacheableBlocks: [personaGuide, writingStyleGuide, styleGuide],
-    contextualBlocks: [humanSignalGuide, writingStateGuide, authorOutcomeFeedbackGuide, deepWritingBehaviorGuide, readerProximityGuide, researchGuide, expressionExemplarGuide, informationGainGuide],
+    contextualBlocks: [humanSignalGuide, humanPracticalVoiceGuide, writingStateGuide, authorOutcomeFeedbackGuide, deepWritingBehaviorGuide, finalBodyContractGuide, readerProximityGuide, researchGuide, expressionExemplarGuide, informationGainGuide],
   });
 
   const writerUserPrompt = [
@@ -1805,10 +2140,15 @@ export async function buildGeneratedArticleDraft(input: {
     historyGuide,
     "请基于以下事实素材输出一篇中文 Markdown 正文。",
     "正文优先调用研究卡片里的时间节点、对比关系和交汇洞察，再决定怎么组织普通素材。",
+    "语言必须像有经验的人在迫切分享复盘经验：少解释概念，多写我会怎么查、怎么判断、怎么避坑。",
     "优先遵守人类信号、写作状态和 deepWriting 行为约束，再参考大纲与执行卡主线。",
+    "先兑现最终正文契约，再追求顺滑：第一屏先给对象、变化、代价；中段必须有角色冲突和 mini case；正文里要把研究卡里的关键商业问题真正写出来。",
     "必须把抽象判断翻译成读者熟悉的账户现场、预算动作、复盘困惑和具体反差；不要连续用概念名词推进。",
+    "情绪与共情底线：正文至少写出一次“谁在亏、谁在急、谁在解释不动”的具体时刻；不要只写正确判断，不写人的压力和代价。",
+    "案例具体度底线：至少有一个 mini case，写清谁说了什么、盯着哪张表、结果卡在了哪里；不能只写“某次复盘”“很多团队”。",
+    `爆款成稿底线：正文要天然接近 ${WECHAT_VIRAL_SCORE_THRESHOLD}/100 分。必须有 3-5 个 ## 小标题、一个贯穿的具体复盘冲突、一组可收藏的检查表或三列判断法，并把图片插在相关段落附近，不要全部堆到文末。`,
     "如果需要引用历史已发布文章，只能自然写进相关段落，不要生成“相关文章”或“延伸阅读”区块。",
-    "要求：先像作者本人在写，再像编辑在收束。不要写成结构模板、讲义或总结稿；不要解释你的过程；只返回正文 Markdown。",
+    "要求：先像作者本人在写，再像编辑在收束。不要写成结构模板、讲义或总结稿；不要解释你的过程；不要站在上面教读者做事；只返回正文 Markdown。",
     "",
     promptBlock("素材：", formatPromptTemplate("- {{fragmentText}}", { fragmentText })),
   ].join("\n");
@@ -1833,7 +2173,7 @@ export async function buildGeneratedArticleDraft(input: {
       promptBlock("待审校正文：", drafted.text),
       "",
       promptLine("禁用词：", bannedWordsText),
-      "请输出净化后的最终 Markdown 正文，不要解释。除了禁用词，还要把研究腔、抽象腔和读者距离感改成更贴近公众号读者的现场表达。",
+      "请输出净化后的最终 Markdown 正文，不要解释。除了禁用词，还要把研究腔、抽象腔和读者距离感改成更像有经验的人在复盘现场提醒同业：具体、急切、可操作。",
     ].join("\n");
 
     const audited = await withGenerationTimeout(
@@ -1977,8 +2317,13 @@ export async function buildGeneratedOpeningPreview(input: {
     preferredVariantCode: preferredStateVariantCode,
   });
   const humanSignalGuide = buildHumanSignalGuide(input.humanSignals ?? null);
+  const humanPracticalVoiceGuide = buildGenerationHumanPracticalVoiceGuide(input);
   const writingStateGuide = buildWritingStateGuide(writingState);
   const deepWritingBehaviorGuide = buildDeepWritingBehaviorGuide(input.deepWritingPayload);
+  const finalBodyContractGuide = buildFinalBodyContractGuide({
+    deepWritingPayload: input.deepWritingPayload,
+    researchBrief: input.researchBrief,
+  });
   const styleGuide = buildStyleGuide(input.layoutStrategy);
   const outlineGuide = buildOutlineGuide(input.outlineNodes);
   const knowledgeGuide = buildKnowledgeGuide(input.knowledgeCards);
@@ -2000,12 +2345,12 @@ export async function buildGeneratedOpeningPreview(input: {
   const writerSystemSegments = buildGenerationSystemSegments({
     basePrompt: writePrompt.content,
     cacheableBlocks: [personaGuide, writingStyleGuide, styleGuide],
-    contextualBlocks: [humanSignalGuide, writingStateGuide, authorOutcomeFeedbackGuide, deepWritingBehaviorGuide, researchGuide, expressionExemplarGuide, informationGainGuide, seriesRuntimeGuide, deepWritingGuide],
+    contextualBlocks: [humanSignalGuide, humanPracticalVoiceGuide, writingStateGuide, authorOutcomeFeedbackGuide, deepWritingBehaviorGuide, finalBodyContractGuide, researchGuide, expressionExemplarGuide, informationGainGuide, seriesRuntimeGuide, deepWritingGuide],
   });
   const auditSystemSegments = buildGenerationSystemSegments({
     basePrompt: auditPrompt.content,
     cacheableBlocks: [personaGuide, writingStyleGuide, styleGuide],
-    contextualBlocks: [humanSignalGuide, writingStateGuide, authorOutcomeFeedbackGuide, deepWritingBehaviorGuide, researchGuide, expressionExemplarGuide, informationGainGuide],
+    contextualBlocks: [humanSignalGuide, humanPracticalVoiceGuide, writingStateGuide, authorOutcomeFeedbackGuide, deepWritingBehaviorGuide, finalBodyContractGuide, researchGuide, expressionExemplarGuide, informationGainGuide],
   });
 
   const writerUserPrompt = [
@@ -2018,6 +2363,8 @@ export async function buildGeneratedOpeningPreview(input: {
     "请只输出这篇文章的开头预览，不要写完整正文。",
     "长度控制在 1-2 段、120-220 字。",
     "要求：第一句就进入具体现象、冲突、判断或场景；能明显看出当前原型 / 状态的差异；不要编号、不要总结、不要解释你的过程。",
+    "开头预览先兑现最终正文契约的第一步：具体对象、变化、代价必须一起出现。",
+    "开头像有经验的人在桌边提醒读者，不要像正式报告摘要；必须出现一个具体动作、代价或复盘困惑。",
     "",
     promptBlock("可用素材：", formatPromptTemplate("- {{fragmentText}}", { fragmentText })),
   ].join("\n");
@@ -2042,7 +2389,7 @@ export async function buildGeneratedOpeningPreview(input: {
       promptBlock("待审校开头预览：", drafted.text),
       "",
       promptLine("禁用词：", bannedWordsText),
-      "请输出净化后的最终开头预览，不要解释，不要补完整文。",
+      "请输出净化后的最终开头预览，不要解释，不要补完整文。把正式摘要腔改成现场提醒和实操判断。",
     ].join("\n");
 
     const audited = await withGenerationTimeout(
@@ -2232,8 +2579,13 @@ export async function buildCommandRewrite(input: {
     preferredVariantCode: preferredStateVariantCode,
   });
   const humanSignalGuide = buildHumanSignalGuide(input.humanSignals ?? null);
+  const humanPracticalVoiceGuide = buildGenerationHumanPracticalVoiceGuide(input);
   const writingStateGuide = buildWritingStateGuide(writingState);
   const deepWritingBehaviorGuide = buildDeepWritingBehaviorGuide(input.deepWritingPayload);
+  const finalBodyContractGuide = buildFinalBodyContractGuide({
+    deepWritingPayload: input.deepWritingPayload,
+    researchBrief: input.researchBrief,
+  });
   const styleGuide = buildStyleGuide(input.layoutStrategy);
   const outlineGuide = buildOutlineGuide(input.outlineNodes);
   const knowledgeGuide = buildKnowledgeGuide(input.knowledgeCards);
@@ -2252,13 +2604,13 @@ export async function buildCommandRewrite(input: {
   const writerSystemSegments = buildGenerationSystemSegments({
     basePrompt: writePrompt.content,
     cacheableBlocks: [personaGuide, writingStyleGuide, styleGuide],
-    contextualBlocks: [humanSignalGuide, writingStateGuide, authorOutcomeFeedbackGuide, deepWritingBehaviorGuide, researchGuide, expressionExemplarGuide, informationGainGuide, seriesRuntimeGuide],
+    contextualBlocks: [humanSignalGuide, humanPracticalVoiceGuide, writingStateGuide, authorOutcomeFeedbackGuide, deepWritingBehaviorGuide, finalBodyContractGuide, researchGuide, expressionExemplarGuide, informationGainGuide, seriesRuntimeGuide],
   });
   const auditSystemSegments = auditPrompt
     ? buildGenerationSystemSegments({
         basePrompt: auditPrompt.content,
         cacheableBlocks: [personaGuide, writingStyleGuide, styleGuide],
-        contextualBlocks: [humanSignalGuide, writingStateGuide, authorOutcomeFeedbackGuide, deepWritingBehaviorGuide, researchGuide, expressionExemplarGuide, informationGainGuide],
+        contextualBlocks: [humanSignalGuide, humanPracticalVoiceGuide, writingStateGuide, authorOutcomeFeedbackGuide, deepWritingBehaviorGuide, finalBodyContractGuide, researchGuide, expressionExemplarGuide, informationGainGuide],
       })
     : null;
 
@@ -2271,7 +2623,11 @@ export async function buildCommandRewrite(input: {
     "",
     "请基于当前正文执行改写命令，输出完整 Markdown 正文。",
     "优先遵守人类信号、写作状态和 deepWriting 行为约束，再参考大纲与知识卡。",
-    "要求：不要解释，不要列步骤，直接返回改写后的整篇正文。不要把文章改写回模板腔、总结腔或施工图腔。",
+    "改写后的语言要像有经验的人在分享刚复盘出的教训：具体、急切、有操作抓手。",
+    "改写时先补最终正文契约：第一屏先给对象、变化、代价；中段保留角色冲突和 mini case；关键商业问题必须真正写在正文里。",
+    "改写时必须把“情绪、共情、冲突、案例具体度”当成硬约束：至少保留一次会场压力、一次角色冲突、一个具体 mini case。",
+    `爆款成稿底线：如果当前正文缺少小标题、贯穿案例、可收藏检查表或图片分布不合理，改写时必须补齐；目标是 ${WECHAT_VIRAL_SCORE_THRESHOLD}/100 分以上，而不是只做到可发布。`,
+    "要求：不要解释，不要列步骤，直接返回改写后的整篇正文。不要把文章改写回模板腔、总结腔、施工图腔或站着上课的口气。",
     "",
     promptBlock("当前正文：", input.markdownContent || "(当前为空，请先生成骨架正文)"),
     "",
@@ -2322,7 +2678,7 @@ export async function buildCommandRewrite(input: {
       promptBlock("待审校正文：", drafted.text),
       "",
       promptLine("禁用词：", bannedWordsText),
-      "请输出净化后的最终 Markdown 正文，不要解释。",
+      "请输出净化后的最终 Markdown 正文，不要解释。把正式总结腔改成像作者在复盘后提醒读者：具体、直接、带实操判断。",
     ].join("\n");
 
     const audited = await withGenerationTimeout(
@@ -2492,7 +2848,13 @@ function buildLocalProsePolishRewrite(input: {
     }
   }
 
-  return sanitizeBannedWords(requiredLead ? applyRequiredOpeningLead(next, requiredLead) : next, input.bannedWords);
+  return finalizeProsePolishMarkdownForReader({
+    originalMarkdown: input.markdownContent,
+    candidateMarkdown: requiredLead ? applyRequiredOpeningLead(next, requiredLead) : next,
+    bannedWords: input.bannedWords,
+    deepWritingPayload: input.deepWritingPayload,
+    rewrittenLead: input.rewrittenLead,
+  });
 }
 
 export async function buildFactCheckTargetedRewrite(input: {
@@ -2591,8 +2953,13 @@ export async function buildFactCheckTargetedRewrite(input: {
     preferredVariantCode: preferredStateVariantCode,
   });
   const humanSignalGuide = buildHumanSignalGuide(input.humanSignals ?? null);
+  const humanPracticalVoiceGuide = buildGenerationHumanPracticalVoiceGuide(input);
   const writingStateGuide = buildWritingStateGuide(writingState);
   const deepWritingBehaviorGuide = buildDeepWritingBehaviorGuide(input.deepWritingPayload);
+  const finalBodyContractGuide = buildFinalBodyContractGuide({
+    deepWritingPayload: input.deepWritingPayload,
+    researchBrief: input.researchBrief,
+  });
   const styleGuide = buildStyleGuide(input.layoutStrategy);
   const outlineGuide = buildOutlineGuide(input.outlineNodes);
   const knowledgeGuide = buildKnowledgeGuide(input.knowledgeCards);
@@ -2604,12 +2971,12 @@ export async function buildFactCheckTargetedRewrite(input: {
   const writerSystemSegments = buildGenerationSystemSegments({
     basePrompt: writePrompt.content,
     cacheableBlocks: [personaGuide, writingStyleGuide, styleGuide],
-    contextualBlocks: [humanSignalGuide, writingStateGuide, authorOutcomeFeedbackGuide, deepWritingBehaviorGuide, researchGuide, seriesRuntimeGuide],
+    contextualBlocks: [humanSignalGuide, humanPracticalVoiceGuide, writingStateGuide, authorOutcomeFeedbackGuide, deepWritingBehaviorGuide, finalBodyContractGuide, researchGuide, seriesRuntimeGuide],
   });
   const auditSystemSegments = buildGenerationSystemSegments({
     basePrompt: auditPrompt.content,
     cacheableBlocks: [personaGuide, writingStyleGuide, styleGuide],
-    contextualBlocks: [humanSignalGuide, writingStateGuide, authorOutcomeFeedbackGuide, deepWritingBehaviorGuide, researchGuide],
+    contextualBlocks: [humanSignalGuide, humanPracticalVoiceGuide, writingStateGuide, authorOutcomeFeedbackGuide, deepWritingBehaviorGuide, finalBodyContractGuide, researchGuide],
   });
   const evidenceGuide = riskyChecks
     .map((check, index) => {
@@ -2661,6 +3028,8 @@ export async function buildFactCheckTargetedRewrite(input: {
     "3. revised 必须是可以直接替换 original 的完整句子或完整表述。",
     "4. 如果已有命中证据，优先吸收证据摘要里的来源锚点；如果证据不足，只做保守弱化，不要编造来源。",
     "5. 改写时保持当前作者状态、语气温度和段落呼吸，不要为了求稳改回模板腔。",
+    "6. 即使在保守弱化时，也要保留人会说话的判断动作，比如“我会先查…”“这里别急着下结论…”。",
+    "7. 不要把句子修稳的同时修平；如果原句承担第一屏、冲突、案例或商业问题兑现功能，改写后也必须保留这层作用。",
     "",
     promptBlock("当前正文：", input.markdownContent || "(当前为空)"),
     "",
@@ -2725,7 +3094,7 @@ export async function buildFactCheckTargetedRewrite(input: {
       promptBlock("待审校正文：", patched),
       "",
       promptLine("禁用词：", bannedWordsText),
-      "请输出净化后的最终 Markdown 正文，不要解释。",
+      "请输出净化后的最终 Markdown 正文，不要解释。不要把风险修订磨成正式报告腔，保留具体动作和人的判断。",
     ].join("\n");
 
     const audited = await generateSceneText({
@@ -2822,8 +3191,17 @@ export async function buildProsePolishTargetedRewrite(input: {
     preferredVariantCode: preferredStateVariantCode,
   });
   const humanSignalGuide = buildHumanSignalGuide(input.humanSignals ?? null);
+  const humanPracticalVoiceGuide = buildGenerationHumanPracticalVoiceGuide(input);
   const writingStateGuide = buildWritingStateGuide(writingState);
   const deepWritingBehaviorGuide = buildDeepWritingBehaviorGuide(input.deepWritingPayload);
+  const finalBodyContractGuide = buildFinalBodyContractGuide({
+    deepWritingPayload: input.deepWritingPayload,
+    researchBrief: input.researchBrief,
+  });
+  const mode = resolveDeepWritingViralMode({
+    title: input.title,
+    deepWritingPayload: input.deepWritingPayload,
+  });
   const styleGuide = buildStyleGuide(input.layoutStrategy);
   const outlineGuide = buildOutlineGuide(input.outlineNodes);
   const knowledgeGuide = buildKnowledgeGuide(input.knowledgeCards);
@@ -2835,12 +3213,12 @@ export async function buildProsePolishTargetedRewrite(input: {
   const writerSystemSegments = buildGenerationSystemSegments({
     basePrompt: writePrompt.content,
     cacheableBlocks: [personaGuide, writingStyleGuide, styleGuide],
-    contextualBlocks: [humanSignalGuide, writingStateGuide, authorOutcomeFeedbackGuide, deepWritingBehaviorGuide, researchGuide, seriesRuntimeGuide],
+    contextualBlocks: [humanSignalGuide, humanPracticalVoiceGuide, writingStateGuide, authorOutcomeFeedbackGuide, deepWritingBehaviorGuide, finalBodyContractGuide, researchGuide, seriesRuntimeGuide],
   });
   const auditSystemSegments = buildGenerationSystemSegments({
     basePrompt: auditPrompt.content,
     cacheableBlocks: [personaGuide, writingStyleGuide, styleGuide],
-    contextualBlocks: [humanSignalGuide, writingStateGuide, authorOutcomeFeedbackGuide, deepWritingBehaviorGuide, researchGuide],
+    contextualBlocks: [humanSignalGuide, humanPracticalVoiceGuide, writingStateGuide, authorOutcomeFeedbackGuide, deepWritingBehaviorGuide, finalBodyContractGuide, researchGuide],
   });
   const punchlineText = (input.punchlines || []).map((item) => String(item || "").trim()).filter(Boolean).slice(0, 4);
   const rhythmAdviceText = (input.rhythmAdvice || []).map((item) => String(item || "").trim()).filter(Boolean).slice(0, 4);
@@ -2858,6 +3236,12 @@ export async function buildProsePolishTargetedRewrite(input: {
     "3. 保留原文事实，不要新增不存在的数据、案例或判断。",
     "4. revised 必须能直接替换 original。",
     "5. 润色时保留当前原型、状态和情绪温度，不要把文章磨平到通用 AI 口吻。",
+    mode === "power_shift_breaking"
+      ? "6. 优先把正式、端着的句子改成战报式拆解口吻：少空泛评论，多胜负句、账本句、裂痕句和后果句。"
+      : "6. 优先把正式、端着的句子改成复盘口吻和实操口吻：少名词，多动作；少结论标签，多现场判断。",
+    mode === "power_shift_breaking"
+      ? "7. 润色不能牺牲正文契约：第一屏、胜负看板、组织裂痕、商业问题兑现这些句子即使改，也只能改强，不能改没。"
+      : "7. 润色不能牺牲正文契约：第一屏、角色冲突、mini case、商业问题兑现这些句子即使改，也只能改强，不能改没。",
     "",
     promptBlock("当前正文：", input.markdownContent || "(当前为空)"),
     "",
@@ -2925,7 +3309,9 @@ export async function buildProsePolishTargetedRewrite(input: {
       promptBlock("待审校正文：", patched),
       "",
       promptLine("禁用词：", bannedWordsText),
-      "请输出净化后的最终 Markdown 正文，不要解释。",
+      mode === "power_shift_breaking"
+        ? "请输出净化后的最终 Markdown 正文，不要解释。把端着的表达改成战报式拆解口吻，保留人的判断力、压迫感和胜负感。"
+        : "请输出净化后的最终 Markdown 正文，不要解释。把端着的表达改成复盘口吻和实操口吻，保留人的急切感。",
     ].join("\n");
 
     const audited = await generateSceneText({
@@ -2938,7 +3324,13 @@ export async function buildProsePolishTargetedRewrite(input: {
     });
 
     return {
-      markdown: applyRequiredOpeningLead(sanitizeBannedWords(audited.text.trim(), input.bannedWords), getRequiredOpeningLead(input.deepWritingPayload)),
+      markdown: finalizeProsePolishMarkdownForReader({
+        originalMarkdown: input.markdownContent,
+        candidateMarkdown: audited.text.trim(),
+        bannedWords: input.bannedWords,
+        deepWritingPayload: input.deepWritingPayload,
+        rewrittenLead: input.rewrittenLead,
+      }),
       promptVersionRefs,
     };
   } catch {

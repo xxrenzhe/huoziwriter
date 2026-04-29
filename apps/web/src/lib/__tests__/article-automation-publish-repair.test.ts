@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { buildHumanSignalSeed, formatOpeningForPublish, stripReaderInvisibleAutomationBlocks } from "../article-automation-publish-repair";
+import {
+  buildViralScoreRepairPromptLines,
+  buildHumanSignalSeed,
+  collapseNearDuplicateIntroParagraphs,
+  formatOpeningForPublish,
+  stripReaderInvisibleAutomationBlocks,
+} from "../article-automation-publish-repair";
 import { buildFourPointAudit } from "../article-strategy";
 
 test("buildHumanSignalSeed uses source-topic signals for search advertising", () => {
@@ -61,4 +67,57 @@ test("stripReaderInvisibleAutomationBlocks removes research brief instructions b
   assert.match(cleaned, /很多账户最贵的浪费/);
   assert.match(cleaned, /## 真正的变量不是词面/);
   assert.doesNotMatch(cleaned, /研究问题|信源覆盖|补官方源/);
+});
+
+test("collapseNearDuplicateIntroParagraphs removes repeated opening scene block", () => {
+  const markdown = [
+    "# Google 搜索广告里，最费预算的往往不是错词，而是“看起来很准”的词",
+    "",
+    "一个账户最难受的时刻，不是买错了词，而是那个看起来最准的词一边吃预算、一边把线索表拖难看。复盘会里，老板盯回收，销售说这批人不像买家，投放还在解释相关性。问题必须先问清楚：搜这个词的人，到底是在了解、比较，还是已经准备行动？",
+    "",
+    "复盘会开到一半，老板盯预算，销售盯线索质量，投放盯搜索词报告。桌上摊着关键词列表、搜索词报告和线索表，三个人都觉得自己没说错，但会就是越开越冷。",
+    "",
+    "## 最容易烧钱的，恰恰是“像答案”的词",
+  ].join("\n");
+
+  const collapsed = collapseNearDuplicateIntroParagraphs(markdown);
+
+  assert.match(collapsed, /一个账户最难受的时刻/);
+  assert.doesNotMatch(collapsed, /复盘会开到一半，老板盯预算/);
+});
+
+test("collapseNearDuplicateIntroParagraphs keeps distinct second intro paragraph", () => {
+  const markdown = [
+    "# 标题",
+    "",
+    "一个判断最容易出问题的时候，不是数据掉了，而是团队以为自己已经知道原因。",
+    "",
+    "真正难的是，第二天回到后台以后，你得先拆清楚到底是词、承接页，还是销售跟进在漏水。",
+    "",
+    "## 后面展开",
+  ].join("\n");
+
+  const collapsed = collapseNearDuplicateIntroParagraphs(markdown);
+
+  assert.match(collapsed, /一个判断最容易出问题的时候/);
+  assert.match(collapsed, /真正难的是，第二天回到后台以后/);
+});
+
+test("buildViralScoreRepairPromptLines switches to power-shift repair contract", () => {
+  const lines = buildViralScoreRepairPromptLines({
+    title: "刚刚，美国AI霸主换了！Anthropic年收300亿，碾压OpenAI",
+    markdownContent: "Anthropic 年化营收冲到 300 亿美元，正式压过 OpenAI 的 240 亿。",
+    deepWritingPayload: {
+      viralGenomePack: {
+        mode: "power_shift_breaking",
+        firstScreenPromise: "前 120 字必须同时出现赢家名字、输家名字、硬数字和今天到底变了什么。",
+      },
+    },
+    researchPayload: {},
+  }).join("\n");
+
+  assert.match(lines, /王座更替|资本战|路线之争/);
+  assert.match(lines, /胜负看板|赢者为什么赢|输家哪里失血/);
+  assert.match(lines, /结尾不要落成“今天就去后台做什么”/);
+  assert.doesNotMatch(lines, /搜索广告|老板、销售、投放|搜索意图\/判断表|质量得分/);
 });

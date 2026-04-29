@@ -24,6 +24,14 @@ type DerivedAssetSet = {
   original: DerivedAssetBinary;
   compressed: DerivedAssetBinary;
   thumbnail: DerivedAssetBinary;
+  strategy: {
+    compressedQuality: number;
+    thumbnailQuality: number;
+    resizeKernel: string;
+    sharpen: boolean;
+    targetMaxWidth: number;
+    targetMaxHeight: number;
+  };
 };
 
 function detectExtension(contentType: string) {
@@ -41,20 +49,49 @@ function normalizeContentType(contentType: string) {
   return trimmed || "application/octet-stream";
 }
 
-function pickDerivedFormat(metadata: sharp.Metadata) {
+export function resolveBaoyuCompressionStrategy(input: {
+  width: number;
+  height: number;
+  hasAlpha?: boolean | null;
+  sourceByteLength: number;
+  sourceIsSvg: boolean;
+}) {
+  const width = input.width || 0;
+  const height = input.height || 0;
+  const megapixels = width > 0 && height > 0 ? width * height / 1_000_000 : 0;
+  const compressedQuality = input.sourceIsSvg
+    ? 88
+    : input.sourceByteLength > 6_000_000 || megapixels >= 6
+      ? 78
+      : input.sourceByteLength > 3_000_000 || megapixels >= 3
+        ? 80
+        : input.hasAlpha
+          ? 86
+          : 84;
+  return {
+    compressedQuality,
+    thumbnailQuality: Math.max(input.sourceIsSvg ? 76 : 70, compressedQuality - (input.sourceIsSvg ? 10 : input.hasAlpha ? 8 : 10)),
+    resizeKernel: "lanczos3",
+    sharpen: true,
+    targetMaxWidth: 1280,
+    targetMaxHeight: 1600,
+  };
+}
+
+function pickDerivedFormat(metadata: sharp.Metadata, quality: number) {
   if (metadata.hasAlpha) {
     return {
       extension: "webp",
       contentType: "image/webp",
-      encode: (instance: sharp.Sharp) => instance.webp({ quality: 82, effort: 4 }),
-      thumbnailEncode: (instance: sharp.Sharp) => instance.webp({ quality: 74, effort: 4 }),
+      encode: (instance: sharp.Sharp) => instance.webp({ quality, effort: 5, smartSubsample: true }),
+      thumbnailEncode: (instance: sharp.Sharp) => instance.webp({ quality: Math.max(70, quality - 8), effort: 5, smartSubsample: true }),
     };
   }
   return {
     extension: "jpg",
     contentType: "image/jpeg",
-    encode: (instance: sharp.Sharp) => instance.jpeg({ quality: 82, mozjpeg: true }),
-    thumbnailEncode: (instance: sharp.Sharp) => instance.jpeg({ quality: 74, mozjpeg: true }),
+    encode: (instance: sharp.Sharp) => instance.jpeg({ quality, mozjpeg: true, progressive: true, chromaSubsampling: "4:4:4" }),
+    thumbnailEncode: (instance: sharp.Sharp) => instance.jpeg({ quality: Math.max(70, quality - 10), mozjpeg: true, progressive: true }),
   };
 }
 
@@ -98,19 +135,27 @@ async function createImageDerivatives(downloaded: DownloadedBinaryAsset, aspectR
   }
 
   const sourceIsSvg = normalizeContentType(downloaded.contentType).includes("svg");
+  const strategy = resolveBaoyuCompressionStrategy({
+    width: metadata.width,
+    height: metadata.height,
+    hasAlpha: metadata.hasAlpha,
+    sourceByteLength: downloaded.buffer.byteLength,
+    sourceIsSvg,
+  });
+  const compressedQuality = strategy.compressedQuality;
   const derivedFormat = sourceIsSvg
     ? {
         extension: "webp",
         contentType: "image/webp",
-        encode: (instance: sharp.Sharp) => instance.webp({ quality: 88, effort: 4 }),
-        thumbnailEncode: (instance: sharp.Sharp) => instance.webp({ quality: 78, effort: 4 }),
+        encode: (instance: sharp.Sharp) => instance.webp({ quality: compressedQuality, effort: 5, smartSubsample: true }),
+        thumbnailEncode: (instance: sharp.Sharp) => instance.webp({ quality: strategy.thumbnailQuality, effort: 5, smartSubsample: true }),
       }
-    : pickDerivedFormat(metadata);
+    : pickDerivedFormat(metadata, compressedQuality);
   const compressedResize = resolveResizeBox({
     sourceWidth: metadata.width,
     sourceHeight: metadata.height,
-    maxWidth: 1600,
-    maxHeight: 1600,
+    maxWidth: strategy.targetMaxWidth,
+    maxHeight: strategy.targetMaxHeight,
     aspectRatio,
   });
   const thumbnailResize = resolveResizeBox({
@@ -124,13 +169,15 @@ async function createImageDerivatives(downloaded: DownloadedBinaryAsset, aspectR
     .encode(
       sharp(downloaded.buffer, { failOn: "none", animated: false })
         .rotate()
-        .resize({ ...compressedResize, withoutEnlargement: true }),
+        .resize({ ...compressedResize, kernel: sharp.kernel.lanczos3, withoutEnlargement: true })
+        .sharpen({ sigma: 0.35, m1: 0.45, m2: 0.25 }),
     );
   const thumbnailPipeline = derivedFormat
     .thumbnailEncode(
       sharp(downloaded.buffer, { failOn: "none", animated: false })
         .rotate()
-        .resize({ ...thumbnailResize, withoutEnlargement: true }),
+        .resize({ ...thumbnailResize, kernel: sharp.kernel.lanczos3, withoutEnlargement: true })
+        .sharpen({ sigma: 0.3, m1: 0.35, m2: 0.2 }),
     );
   const [compressedResult, thumbnailResult] = await Promise.all([
     compressedPipeline.toBuffer({ resolveWithObject: true }),
@@ -161,6 +208,14 @@ async function createImageDerivatives(downloaded: DownloadedBinaryAsset, aspectR
       width: thumbnailResult.info.width,
       height: thumbnailResult.info.height,
       byteLength: thumbnailResult.info.size,
+    },
+    strategy: {
+      compressedQuality: strategy.compressedQuality,
+      thumbnailQuality: strategy.thumbnailQuality,
+      resizeKernel: strategy.resizeKernel,
+      sharpen: strategy.sharpen,
+      targetMaxWidth: strategy.targetMaxWidth,
+      targetMaxHeight: strategy.targetMaxHeight,
     },
   };
 }
@@ -268,6 +323,14 @@ export async function persistCoverImageAssetSet(input: {
         height: null,
         byteLength: downloaded.buffer.byteLength,
       },
+      strategy: {
+        compressedQuality: 100,
+        thumbnailQuality: 100,
+        resizeKernel: "passthrough",
+        sharpen: false,
+        targetMaxWidth: 0,
+        targetMaxHeight: 0,
+      },
     };
   }
 
@@ -290,6 +353,13 @@ export async function persistCoverImageAssetSet(input: {
   ]);
 
   const assetManifest = {
+    baoyuCompression: {
+      skill: "baoyu-compress-image",
+      version: "sharp-derivatives-2026-04-29",
+      mode: derivativeMode,
+      publishDerivative: "compressed",
+      strategy: derivatives.strategy,
+    },
     derivativeMode,
     derivativeWarning,
     sourceKind: downloaded.sourceKind,
@@ -334,6 +404,17 @@ export async function persistCoverImageAssetSet(input: {
       contentType: derivatives.compressed.contentType,
       width: derivatives.compressed.width,
       height: derivatives.compressed.height,
+      byteLength: derivatives.compressed.byteLength,
+    },
+    compression: {
+      savedBytes:
+        derivatives.original.byteLength != null && derivatives.compressed.byteLength != null
+          ? Math.max(0, derivatives.original.byteLength - derivatives.compressed.byteLength)
+          : null,
+      ratio:
+        derivatives.original.byteLength > 0 && derivatives.compressed.byteLength > 0
+          ? Number((derivatives.compressed.byteLength / derivatives.original.byteLength).toFixed(4))
+          : null,
     },
   };
 

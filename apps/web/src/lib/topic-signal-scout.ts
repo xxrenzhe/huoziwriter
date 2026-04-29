@@ -29,13 +29,14 @@ function uniqueTrimmed(values: unknown, limit = 5) {
 
 function normalizeSourceType(value: unknown) {
   const normalized = String(value || "news").trim().toLowerCase();
-  if (["youtube", "reddit", "community", "podcast", "spotify", "news", "blog", "rss"].includes(normalized)) {
+  if (["youtube", "reddit", "community", "podcast", "spotify", "news", "blog", "rss", "x-hotspot"].includes(normalized)) {
     return normalized;
   }
   return "news";
 }
 
 function normalizePlatform(type: string) {
+  if (type === "x-hotspot") return "X.com";
   if (type === "youtube") return "YouTube";
   if (type === "reddit") return "Reddit";
   if (type === "community") return "Community";

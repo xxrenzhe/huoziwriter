@@ -18,8 +18,39 @@ test("verified system topic sources only keep structured sources aligned to targ
   assert.ok(names.includes("Social Media Examiner Feed"));
   assert.ok(names.includes("HubSpot Marketing Feed"));
   assert.ok(names.includes("Lenny's Newsletter Feed"));
+  assert.ok(names.includes("百度热点"));
+  assert.ok(names.includes("知乎热榜"));
   assert.equal(names.includes("36Kr"), false);
   assert.equal(names.includes("晚点 LatePost"), false);
+});
+
+test("verified system topic sources include active and optional chinese hotspot sources", () => {
+  const sources = getVerifiedSystemTopicSources();
+  const baidu = sources.find((item) => item.name === "百度热点");
+  const zhihu = sources.find((item) => item.name === "知乎热榜");
+  const weibo = sources.find((item) => item.name === "微博热搜");
+  const bilibili = sources.find((item) => item.name === "B站热门");
+
+  assert.equal(baidu?.sourceType, "chinese-hotspot");
+  assert.equal(zhihu?.sourceType, "chinese-hotspot");
+  assert.equal(baidu?.isActive ?? true, true);
+  assert.equal(zhihu?.isActive ?? true, true);
+  assert.equal(weibo?.isActive, false);
+  assert.equal(bilibili?.isActive, false);
+});
+
+test("verified system topic sources include x hotspot watch sources", () => {
+  const sources = getVerifiedSystemTopicSources();
+  const xAiFounders = sources.find((item) => item.name === "X.com AI Founders Watch");
+  const xReporters = sources.find((item) => item.name === "X.com AI Reporters Watch");
+  const xSideHustles = sources.find((item) => item.name === "X.com Side Hustles Watch");
+  const xAffiliate = sources.find((item) => item.name === "X.com Affiliate Marketing Watch");
+
+  assert.equal(xAiFounders?.sourceType, "x-hotspot");
+  assert.equal(xReporters?.sourceType, "x-hotspot");
+  assert.equal(xAiFounders?.isActive ?? true, true);
+  assert.equal(xSideHustles?.sourceType, "x-hotspot");
+  assert.equal(xAffiliate?.sourceType, "x-hotspot");
 });
 
 test("resolveTopicVerticalsForTopicItem reuses registered source verticals", () => {

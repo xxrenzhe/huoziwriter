@@ -131,6 +131,8 @@ test("refreshAuthorOutcomeFeedbackLedger aggregates and persists author-level ou
         articlePrototypeLabel: "观点判断",
         stateVariantCode: "sharp_judgement",
         stateVariantLabel: "尖锐判断",
+        creativeLensCode: "sharp_opinion",
+        creativeLensLabel: "锐评判断镜头",
         openingPatternLabel: "冲突起手",
         sectionRhythm: "短段推进",
       },
@@ -144,6 +146,9 @@ test("refreshAuthorOutcomeFeedbackLedger aggregates and persists author-level ou
           followedPrototypeRecommendation: true,
           adoptedVariantCode: "sharp_judgement",
           followedRecommendation: true,
+          adoptedCreativeLensCode: "sharp_opinion",
+          adoptedCreativeLensLabel: "锐评判断镜头",
+          followedCreativeLensRecommendation: true,
           adoptedOpeningPatternLabel: "冲突起手",
           recommendedOpeningPatternLabel: "冲突起手",
         },
@@ -161,6 +166,8 @@ test("refreshAuthorOutcomeFeedbackLedger aggregates and persists author-level ou
         articlePrototypeLabel: "教程拆解",
         stateVariantCode: "calm_explainer",
         stateVariantLabel: "平稳解释",
+        creativeLensCode: "tool_operator",
+        creativeLensLabel: "工具操盘镜头",
         openingPatternLabel: "背景铺垫",
         sectionRhythm: "平铺直叙",
       },
@@ -174,6 +181,9 @@ test("refreshAuthorOutcomeFeedbackLedger aggregates and persists author-level ou
           followedPrototypeRecommendation: false,
           adoptedVariantCode: "calm_explainer",
           followedRecommendation: false,
+          adoptedCreativeLensCode: "tool_operator",
+          adoptedCreativeLensLabel: "工具操盘镜头",
+          followedCreativeLensRecommendation: false,
           adoptedOpeningPatternLabel: "背景铺垫",
           recommendedOpeningPatternLabel: "冲突起手",
         },
@@ -186,6 +196,7 @@ test("refreshAuthorOutcomeFeedbackLedger aggregates and persists author-level ou
     assert.equal(computed?.positiveSampleCount, 1);
     assert.equal(computed?.recommendations.prototype?.key, "opinion");
     assert.equal(computed?.recommendations.stateVariant?.key, "sharp_judgement");
+    assert.equal(computed?.recommendations.creativeLens?.key, "sharp_opinion");
     assert.equal(computed?.recommendations.openingPattern?.key, "冲突起手");
     assert.equal(computed?.recommendations.sectionRhythm?.key, "短段推进");
     assert.equal(computed?.expressionFeedbackSummary, null);
@@ -195,7 +206,9 @@ test("refreshAuthorOutcomeFeedbackLedger aggregates and persists author-level ou
 
     const loaded = await getAuthorOutcomeFeedbackLedger({ userId: 1 });
     assert.equal(loaded?.recommendations.prototype?.key, "opinion");
+    assert.equal(loaded?.recommendations.creativeLens?.key, "sharp_opinion");
     assert.equal(loaded?.prototypeSignals[0]?.key, "opinion");
+    assert.equal(loaded?.creativeLensSignals[0]?.key, "sharp_opinion");
     assert.equal(loaded?.expressionFeedbackSummary, null);
   });
 });
@@ -225,6 +238,8 @@ test("computeAuthorOutcomeFeedbackLedger absorbs light expression feedback into 
         articlePrototypeLabel: "教程拆解",
         stateVariantCode: "soft_explainer",
         stateVariantLabel: "温和讲解",
+        creativeLensCode: "tool_operator",
+        creativeLensLabel: "工具操盘镜头",
         openingPatternLabel: "背景铺垫",
         openingStrategy: "先定义 AI 写作是什么，再拆三步方法。",
         sectionRhythm: "平铺展开",
@@ -257,6 +272,8 @@ test("computeAuthorOutcomeFeedbackLedger absorbs light expression feedback into 
         articlePrototypeLabel: "观点判断",
         stateVariantCode: "sharp_judgement",
         stateVariantLabel: "尖锐判断",
+        creativeLensCode: "field_observation",
+        creativeLensLabel: "现场观察镜头",
         openingPatternLabel: "冲突起手",
         openingStrategy: "先抛出第七版标题还没拍板的现场，再落到判断成本。",
         sectionRhythm: "短段推进",
@@ -281,6 +298,7 @@ test("computeAuthorOutcomeFeedbackLedger absorbs light expression feedback into 
     assert.ok(ledger);
     assert.equal(ledger?.recommendations.prototype?.label, "观点判断");
     assert.equal(ledger?.recommendations.stateVariant?.label, "尖锐判断");
+    assert.equal(ledger?.recommendations.creativeLens?.label, "现场观察镜头");
     assert.equal(ledger?.recommendations.openingPattern?.label, "冲突起手");
     assert.equal(ledger?.recommendations.sectionRhythm?.label, "短段推进");
     assert.equal(ledger?.expressionFeedbackSummary?.feedbackSampleCount, 2);
@@ -316,6 +334,8 @@ test("getArticleWritingContext exposes ledger while excluding the current articl
         articlePrototypeLabel: "案例推进",
         stateVariantCode: "steady_case",
         stateVariantLabel: "案例平推",
+        creativeLensCode: "case_dissection",
+        creativeLensLabel: "案例拆解镜头",
         openingPatternLabel: "案例起手",
         sectionRhythm: "双段推进",
       },
@@ -333,6 +353,8 @@ test("getArticleWritingContext exposes ledger while excluding the current articl
         articlePrototypeLabel: "观点判断",
         stateVariantCode: "sharp_judgement",
         stateVariantLabel: "尖锐判断",
+        creativeLensCode: "sharp_opinion",
+        creativeLensLabel: "锐评判断镜头",
         openingPatternLabel: "冲突起手",
         sectionRhythm: "短段推进",
       },
@@ -346,6 +368,9 @@ test("getArticleWritingContext exposes ledger while excluding the current articl
           followedPrototypeRecommendation: true,
           adoptedVariantCode: "sharp_judgement",
           followedRecommendation: true,
+          adoptedCreativeLensCode: "sharp_opinion",
+          adoptedCreativeLensLabel: "锐评判断镜头",
+          followedCreativeLensRecommendation: true,
           adoptedOpeningPatternLabel: "冲突起手",
           recommendedOpeningPatternLabel: "冲突起手",
         },
@@ -384,6 +409,14 @@ test("buildPersonalEffectiveWritingProfile converts recommendations into explici
         positiveSampleCount: 2,
         rankingAdjustment: -5,
         reason: "判断更稳。",
+      },
+      creativeLens: {
+        key: "sharp_opinion",
+        label: "锐评判断镜头",
+        sampleCount: 2,
+        positiveSampleCount: 2,
+        rankingAdjustment: -5,
+        reason: "镜头更稳。",
       },
       openingPattern: {
         key: "冲突起手",

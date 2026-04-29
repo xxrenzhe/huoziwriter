@@ -7,6 +7,7 @@ import {
   updateArticleStageArtifactPayload,
 } from "@/lib/article-stage-artifacts";
 import { fail, ok } from "@/lib/http";
+import { CREATIVE_LENS_CODES, type CreativeLensCode } from "@/lib/creative-lenses";
 import { ARTICLE_PROTOTYPE_CODES, WRITING_STATE_VARIANT_CODES, type ArticlePrototypeCode, type WritingStateVariantCode } from "@/lib/writing-state";
 
 export async function GET(_: Request, { params }: { params: { id: string; stageCode: string } }) {
@@ -45,10 +46,11 @@ export async function POST(request: Request, { params }: { params: { id: string;
     }
     const requestedPrototypeCode = typeof body?.articlePrototypeCode === "string" ? body.articlePrototypeCode.trim() : "";
     const requestedStateVariantCode = typeof body?.stateVariantCode === "string" ? body.stateVariantCode.trim() : "";
+    const requestedCreativeLensCode = typeof body?.creativeLensCode === "string" ? body.creativeLensCode.trim() : "";
     const titleOptionsOnly = body?.titleOptionsOnly === true;
     const openingOptionsOnly = body?.openingOptionsOnly === true;
-    if ((requestedPrototypeCode || requestedStateVariantCode) && params.stageCode !== "deepWriting") {
-      return fail("只有深度写作阶段支持手动切换文章原型或写作状态", 400);
+    if ((requestedPrototypeCode || requestedStateVariantCode || requestedCreativeLensCode) && params.stageCode !== "deepWriting") {
+      return fail("只有深度写作阶段支持手动切换文章原型、写作状态或创意镜头", 400);
     }
     if ((titleOptionsOnly || openingOptionsOnly) && params.stageCode !== "outlinePlanning") {
       return fail("只有大纲规划阶段支持单独重优化标题或开头候选", 400);
@@ -59,6 +61,9 @@ export async function POST(request: Request, { params }: { params: { id: string;
     if (requestedStateVariantCode && !WRITING_STATE_VARIANT_CODES.includes(requestedStateVariantCode as WritingStateVariantCode)) {
       return fail("不支持的写作状态", 400);
     }
+    if (requestedCreativeLensCode && !CREATIVE_LENS_CODES.includes(requestedCreativeLensCode as CreativeLensCode)) {
+      return fail("不支持的创意镜头", 400);
+    }
     const artifact = await generateArticleStageArtifact({
       articleId: Number(params.id),
       userId: session.userId,
@@ -68,6 +73,9 @@ export async function POST(request: Request, { params }: { params: { id: string;
         : null,
       deepWritingStateVariantCode: requestedStateVariantCode
         ? requestedStateVariantCode as WritingStateVariantCode
+        : null,
+      preferredCreativeLensCode: requestedCreativeLensCode
+        ? requestedCreativeLensCode as CreativeLensCode
         : null,
       outlineTitleOptionsOnly: titleOptionsOnly,
       outlineOpeningOptionsOnly: openingOptionsOnly,

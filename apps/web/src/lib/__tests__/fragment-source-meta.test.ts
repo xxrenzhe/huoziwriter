@@ -5,7 +5,7 @@ import path from "node:path";
 import test from "node:test";
 
 import { closeDatabase, getDatabase } from "../db";
-import { createFragment } from "../repositories";
+import { createFragment, updateFragmentReferenceFusion } from "../repositories";
 import { runPendingMigrations } from "../../../../../scripts/db-flow";
 
 async function withTempDatabase<T>(name: string, run: () => Promise<T>) {
@@ -61,5 +61,42 @@ test("createFragment stores source localization metadata in fragment_sources raw
       (((payload.sourceMeta as Record<string, unknown>).localization as Record<string, unknown>).originalTitle),
       "How to build a location-independent career",
     );
+  });
+});
+
+test("updateFragmentReferenceFusion persists material-level reference mode", async () => {
+  await withTempDatabase("reference-fusion", async () => {
+    const db = getDatabase();
+    await db.exec(
+      "INSERT INTO users (id, email, password_hash, role, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+      [1, "reference-fusion@example.com", "test-hash", "admin", new Date().toISOString(), new Date().toISOString()],
+    );
+    const fragment = await createFragment({
+      userId: 1,
+      sourceType: "url",
+      title: "一篇增长案例拆解",
+      rawContent: "原文按问题、动作、结果推进。",
+      distilledContent: "这条素材适合提炼结构张力，但正文不能复刻原文路径。",
+      sourceUrl: "https://example.com/growth-case",
+    });
+
+    await updateFragmentReferenceFusion({
+      userId: 1,
+      fragmentId: Number(fragment?.id),
+      mode: "structure",
+    });
+
+    const row = await db.queryOne<{ raw_payload_json: string }>(
+      "SELECT raw_payload_json FROM fragment_sources WHERE fragment_id = ? ORDER BY id DESC LIMIT 1",
+      [fragment?.id],
+    );
+    assert.ok(row?.raw_payload_json);
+    const payload = JSON.parse(row!.raw_payload_json) as Record<string, unknown>;
+    const sourceMeta = payload.sourceMeta as Record<string, unknown>;
+    const referenceFusion = sourceMeta.referenceFusion as Record<string, unknown>;
+    assert.equal(sourceMeta.referenceFusionMode, "structure");
+    assert.equal(referenceFusion.mode, "structure");
+    assert.deepEqual(referenceFusion.sourceUrls, ["https://example.com/growth-case"]);
+    assert.ok(Array.isArray(referenceFusion.avoidanceList));
   });
 });

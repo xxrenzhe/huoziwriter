@@ -73,10 +73,10 @@ function resolveTemplateStyles(template?: TemplateConfig | null) {
 
   const bodyStyle =
     paragraphLength === "long"
-      ? "font-size:18px;line-height:1.72;"
+      ? "font-size:18px;line-height:1.72;word-break:break-word;overflow-wrap:anywhere;"
       : paragraphLength === "medium"
-        ? "font-size:17px;line-height:1.84;"
-        : "font-size:16px;line-height:1.96;";
+        ? "font-size:17px;line-height:1.84;word-break:break-word;overflow-wrap:anywhere;"
+        : "font-size:16px;line-height:1.96;word-break:break-word;overflow-wrap:anywhere;";
 
   const frameStyle =
     backgroundStyle === "scroll"
@@ -154,7 +154,13 @@ function resolveTemplateStyles(template?: TemplateConfig | null) {
       ? "margin-top:30px;padding:20px 22px;border:1px solid #dccbb2;background:#fff8ef;border-radius:18px;"
       : recommendationStyle === "checklist"
         ? "margin-top:30px;padding:18px 20px;border:1px dashed #86efac;background:#f0fdf4;border-radius:16px;"
-        : "margin-top:28px;padding-top:20px;border-top:1px solid rgba(146,64,14,0.16);";
+      : "margin-top:28px;padding-top:20px;border-top:1px solid rgba(146,64,14,0.16);";
+
+  const imageStyle = "display:block;width:100%;max-width:100%;height:auto;margin:22px auto 10px;border-radius:8px;";
+  const linkStyle = `color:${accentColor};text-decoration:none;border-bottom:1px solid rgba(146,64,14,0.32);word-break:break-word;`;
+  const tableStyle = "width:100%;border-collapse:collapse;margin:22px 0;font-size:14px;line-height:1.7;word-break:break-word;";
+  const tableHeadCellStyle = `padding:10px 8px;border:1px solid #e5ded2;background:#f7efe2;color:#1b1c1a;font-weight:700;text-align:left;`;
+  const tableCellStyle = "padding:10px 8px;border:1px solid #e5ded2;color:#1b1c1a;vertical-align:top;";
 
   return {
     accentColor,
@@ -172,7 +178,48 @@ function resolveTemplateStyles(template?: TemplateConfig | null) {
     dividerMarkup,
     strongStyle,
     recommendationSectionStyle,
+    imageStyle,
+    linkStyle,
+    tableStyle,
+    tableHeadCellStyle,
+    tableCellStyle,
   };
+}
+
+function mergeInlineStyle(attrs: string, style: string) {
+  const cleanAttrs = attrs.replace(/\s*\/\s*$/, "");
+  if (/style\s*=/i.test(cleanAttrs)) {
+    return cleanAttrs.replace(/style="([^"]*)"/i, (_match, existing: string) => `style="${existing}${existing.trim().endsWith(";") ? "" : ";"}${style}"`);
+  }
+  return `${cleanAttrs} style="${style}"`;
+}
+
+function applyOpeningTagStyle(html: string, tagName: string, style: string) {
+  return html.replace(new RegExp(`<${tagName}([^>]*)>`, "gi"), (_match, attrs: string) => `<${tagName}${mergeInlineStyle(attrs, style)}>`);
+}
+
+function applyWechatStructuralStyles(html: string, styles: ReturnType<typeof resolveTemplateStyles>) {
+  return applyOpeningTagStyle(
+    applyOpeningTagStyle(
+      applyOpeningTagStyle(
+        applyOpeningTagStyle(
+          applyOpeningTagStyle(
+            html.replace(/<img([^>]*)>/gi, (_match, attrs: string) => `<img${mergeInlineStyle(attrs, styles.imageStyle)} />`),
+            "a",
+            styles.linkStyle,
+          ),
+          "table",
+          styles.tableStyle,
+        ),
+        "th",
+        styles.tableHeadCellStyle,
+      ),
+      "td",
+      styles.tableCellStyle,
+    ),
+    "figcaption",
+    `margin:6px 0 18px;color:#78716c;font-size:13px;line-height:1.7;text-align:center;`,
+  );
 }
 
 function renderCommandBlocks(html: string, styles: ReturnType<typeof resolveTemplateStyles>) {
@@ -208,7 +255,32 @@ function applyContentTheme(html: string, styles: ReturnType<typeof resolveTempla
     .replace(/<strong>/g, `<strong style="${styles.strongStyle}">`)
     .replace(/<em>/g, `<em style="font-style:italic;color:${styles.accentColor};">`);
 
-  return wrapRecommendationSection(themedHtml, styles);
+  return applyWechatStructuralStyles(wrapRecommendationSection(themedHtml, styles), styles);
+}
+
+function normalizeTitleForCompare(value: string) {
+  return String(value || "")
+    .replace(/\s+/g, "")
+    .replace(/[“”]/g, "\"")
+    .replace(/[‘’]/g, "'")
+    .trim();
+}
+
+export function stripLeadingDuplicateMarkdownTitle(markdown: string, title?: string | null) {
+  const normalizedTitle = normalizeTitleForCompare(String(title || ""));
+  if (!normalizedTitle) {
+    return String(markdown || "");
+  }
+  const normalizedMarkdown = String(markdown || "").replace(/\r\n/g, "\n");
+  const match = normalizedMarkdown.match(/^\s*#\s+(.+?)(?:\n+|$)/);
+  if (!match) {
+    return normalizedMarkdown;
+  }
+  const heading = String(match[1] || "").replace(/\s+#+\s*$/g, "").trim();
+  if (normalizeTitleForCompare(heading) !== normalizedTitle) {
+    return normalizedMarkdown;
+  }
+  return normalizedMarkdown.slice(match[0].length).trimStart();
 }
 
 export async function renderMarkdownToHtml(
@@ -216,12 +288,14 @@ export async function renderMarkdownToHtml(
   options?: {
     title?: string | null;
     template?: TemplateConfig | null;
+    includeTitle?: boolean;
   },
 ) {
-  const html = await marked.parse(markdown);
+  const html = await marked.parse(stripLeadingDuplicateMarkdownTitle(markdown, options?.title));
   const styles = resolveTemplateStyles(options?.template);
   const themedContent = applyContentTheme(html, styles);
-  const title = String(options?.title || "").trim();
+  const includeTitle = options?.includeTitle !== false;
+  const title = includeTitle ? String(options?.title || "").trim() : "";
   return `
     <section style="max-width:760px;margin:0 auto;padding:24px 0;">
       <article style="${styles.frameStyle}font-family:'PingFang SC','Noto Serif SC',serif;color:#1b1c1a;">
@@ -232,10 +306,18 @@ export async function renderMarkdownToHtml(
   `;
 }
 
-export async function renderMarkdownToWechatHtml(markdown: string, title: string, template?: TemplateConfig | null) {
+export async function renderMarkdownToWechatHtml(
+  markdown: string,
+  title: string,
+  template?: TemplateConfig | null,
+  options?: {
+    includeTitle?: boolean;
+  },
+) {
   return renderMarkdownToHtml(markdown, {
     title,
     template,
+    includeTitle: options?.includeTitle,
   });
 }
 

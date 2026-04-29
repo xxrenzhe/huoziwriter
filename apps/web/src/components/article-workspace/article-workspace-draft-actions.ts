@@ -22,6 +22,8 @@ type GenerateStageArtifactOptions = {
   articlePrototypeLabel?: string | null;
   stateVariantCode?: string | null;
   stateVariantLabel?: string | null;
+  creativeLensCode?: string | null;
+  creativeLensLabel?: string | null;
   titleOptionsOnly?: boolean;
   openingOptionsOnly?: boolean;
 };
@@ -46,6 +48,7 @@ type ArticleWorkspaceDraftActionsDeps = {
   generateBlockedMessage: string;
   deepWritingPrototypeOverride: string | null;
   deepWritingStateVariantOverride: string | null;
+  deepWritingCreativeLensOverride: string | null;
   deepWritingArtifact: StageArtifactItem | null;
   workflowCurrentStageCode: string;
   lastSavedRef: MutableRefObject<LastSavedDraftState>;
@@ -77,6 +80,7 @@ export function createArticleWorkspaceDraftActions({
   generateBlockedMessage,
   deepWritingPrototypeOverride,
   deepWritingStateVariantOverride,
+  deepWritingCreativeLensOverride,
   deepWritingArtifact,
   workflowCurrentStageCode,
   lastSavedRef,
@@ -179,11 +183,13 @@ export function createArticleWorkspaceDraftActions({
       const requestBody =
         options?.articlePrototypeCode ||
         options?.stateVariantCode ||
+        options?.creativeLensCode ||
         options?.titleOptionsOnly ||
         options?.openingOptionsOnly
           ? {
               ...(options?.articlePrototypeCode ? { articlePrototypeCode: options.articlePrototypeCode } : {}),
               ...(options?.stateVariantCode ? { stateVariantCode: options.stateVariantCode } : {}),
+              ...(options?.creativeLensCode ? { creativeLensCode: options.creativeLensCode } : {}),
               ...(options?.titleOptionsOnly ? { titleOptionsOnly: true } : {}),
               ...(options?.openingOptionsOnly ? { openingOptionsOnly: true } : {}),
             }
@@ -206,10 +212,11 @@ export function createArticleWorkspaceDraftActions({
           ? "标题候选已重新优化，当前只刷新标题体检结果，不会改动大纲结构。"
           : stageCode === "outlinePlanning" && options?.openingOptionsOnly
             ? "开头候选已重新优化，当前只刷新开头三选一，不会改动大纲结构。"
-          : stageCode === "deepWriting" && (options?.articlePrototypeCode || options?.stateVariantCode)
+          : stageCode === "deepWriting" && (options?.articlePrototypeCode || options?.stateVariantCode || options?.creativeLensCode)
             ? `${GENERATABLE_STAGE_ACTIONS[stageCode].label}已完成，当前按「${[
                 options.articlePrototypeLabel || options.articlePrototypeCode || "",
                 options.stateVariantLabel || options.stateVariantCode || "",
+                options.creativeLensLabel || options.creativeLensCode || "",
               ].filter(Boolean).join(" / ")}」生成。`
             : `${GENERATABLE_STAGE_ACTIONS[stageCode].label}已完成`,
       );
@@ -229,11 +236,14 @@ export function createArticleWorkspaceDraftActions({
     }
     const requestedPrototypeCode = String(deepWritingPrototypeOverride || "").trim() || null;
     const requestedStateVariantCode = String(deepWritingStateVariantOverride || "").trim() || null;
+    const requestedCreativeLensCode = String(deepWritingCreativeLensOverride || "").trim() || null;
     const currentPrototypeCode = String(deepWritingArtifact?.payload?.articlePrototype || "").trim() || null;
     const currentStateVariantCode = String(deepWritingArtifact?.payload?.stateVariantCode || "").trim() || null;
+    const currentCreativeLensCode = String(deepWritingArtifact?.payload?.creativeLensCode || "").trim() || null;
     const pendingPrototypeOverride = Boolean(requestedPrototypeCode && requestedPrototypeCode !== currentPrototypeCode);
     const pendingStateVariantOverride = Boolean(requestedStateVariantCode && requestedStateVariantCode !== currentStateVariantCode);
-    if (pendingPrototypeOverride || pendingStateVariantOverride) {
+    const pendingCreativeLensOverride = Boolean(requestedCreativeLensCode && requestedCreativeLensCode !== currentCreativeLensCode);
+    if (pendingPrototypeOverride || pendingStateVariantOverride || pendingCreativeLensOverride) {
       const prototypeLabel =
         pendingPrototypeOverride
           ? String(
@@ -250,12 +260,22 @@ export function createArticleWorkspaceDraftActions({
               )?.label || requestedStateVariantCode,
             ).trim()
           : null;
-      setMessage("检测到当前已切换文章原型或写作状态，但执行卡还没刷新。系统先重生写作执行卡，再开始正文生成。");
+      const creativeLensLabel =
+        pendingCreativeLensOverride
+          ? String(
+              getPayloadRecordArray(deepWritingArtifact?.payload, "creativeLensOptions").find(
+                (item) => String(item.code || "").trim() === requestedCreativeLensCode,
+              )?.label || requestedCreativeLensCode,
+            ).trim()
+          : null;
+      setMessage("检测到当前已切换文章原型、写作状态或创意镜头，但执行卡还没刷新。系统先重生写作执行卡，再开始正文生成。");
       const refreshed = await generateStageArtifact("deepWriting", {
         articlePrototypeCode: pendingPrototypeOverride ? requestedPrototypeCode : null,
         articlePrototypeLabel: prototypeLabel,
         stateVariantCode: pendingStateVariantOverride ? requestedStateVariantCode : null,
         stateVariantLabel,
+        creativeLensCode: pendingCreativeLensOverride ? requestedCreativeLensCode : null,
+        creativeLensLabel,
       });
       if (!refreshed) {
         return;

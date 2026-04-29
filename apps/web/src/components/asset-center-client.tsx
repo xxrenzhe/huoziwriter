@@ -42,6 +42,14 @@ type ImageAssetItem = {
   mimeType: string | null;
   byteLength: number | null;
   status: string;
+  reusablePrompt?: {
+    prompt: string;
+    negativePrompt: string | null;
+    promptHash: string | null;
+    provider: string | null;
+    model: string | null;
+    aspectRatio: string | null;
+  } | null;
   updatedAt: string;
 };
 
@@ -69,7 +77,10 @@ function formatImageAssetScope(value: string | null | undefined) {
 
 function formatImageAssetType(value: string | null | undefined) {
   if (value === "cover_image") return "封面图";
-  if (value === "inline") return "文中配图";
+  if (value === "inline" || value === "inline_image") return "文中配图";
+  if (value === "infographic") return "信息图";
+  if (value === "diagram_svg" || value === "diagram_png") return "图解";
+  if (value === "comic") return "漫画图";
   return value || "图片类型";
 }
 
@@ -176,6 +187,7 @@ export function WriterAssetCenterClient({
   const router = useRouter();
   const [knowledgeCards, setKnowledgeCards] = useState(initialKnowledgeCards);
   const [refreshingKnowledgeId, setRefreshingKnowledgeId] = useState<number | null>(null);
+  const [copiedPromptId, setCopiedPromptId] = useState<number | null>(null);
   const [message, setMessage] = useState("");
   const recentFragments = fragments.slice(0, 6);
   const recentKnowledgeCards = knowledgeCards.slice(0, 6);
@@ -216,6 +228,17 @@ export function WriterAssetCenterClient({
     } finally {
       setRefreshingKnowledgeId(null);
     }
+  }
+
+  async function copyImagePrompt(asset: ImageAssetItem) {
+    const prompt = asset.reusablePrompt?.prompt?.trim();
+    if (!prompt) return;
+    await navigator.clipboard.writeText(prompt);
+    setCopiedPromptId(asset.id);
+    setMessage("图片 prompt 已复制。");
+    window.setTimeout(() => {
+      setCopiedPromptId((current) => (current === asset.id ? null : current));
+    }, 1800);
   }
 
   return (
@@ -542,7 +565,20 @@ export function WriterAssetCenterClient({
                     <p className="text-sm leading-7 text-inkSoft">
                       {formatImageMimeType(asset.mimeType)} · {formatBytes(asset.byteLength)}
                     </p>
+                    {asset.reusablePrompt ? (
+                      <p className="border border-lineStrong bg-paperStrong px-3 py-2 text-xs leading-6 text-inkSoft">
+                        Prompt：{summarizeText(asset.reusablePrompt.prompt, 92)}
+                      </p>
+                    ) : null}
                   </div>
+                  {asset.reusablePrompt ? (
+                    <div className="flex flex-wrap gap-2">
+                      {asset.reusablePrompt.model ? <span className={mutedChipClassName}>模型 {asset.reusablePrompt.model}</span> : null}
+                      {asset.reusablePrompt.provider ? <span className={mutedChipClassName}>服务 {asset.reusablePrompt.provider}</span> : null}
+                      {asset.reusablePrompt.aspectRatio ? <span className={mutedChipClassName}>比例 {asset.reusablePrompt.aspectRatio}</span> : null}
+                      {asset.reusablePrompt.promptHash ? <span className={mutedChipClassName}>Hash {asset.reusablePrompt.promptHash}</span> : null}
+                    </div>
+                  ) : null}
                   <div className="flex flex-wrap gap-2">
                     {asset.articleId ? (
                       <Link href={`/articles/${asset.articleId}?step=publish`} className={actionClassName}>
@@ -553,6 +589,11 @@ export function WriterAssetCenterClient({
                       <a href={asset.publicUrl} target="_blank" rel="noreferrer" className={actionClassName}>
                         查看原图
                       </a>
+                    ) : null}
+                    {asset.reusablePrompt ? (
+                      <button type="button" onClick={() => void copyImagePrompt(asset)} className={actionClassName}>
+                        {copiedPromptId === asset.id ? "已复制" : "复用 Prompt"}
+                      </button>
                     ) : null}
                   </div>
                 </article>

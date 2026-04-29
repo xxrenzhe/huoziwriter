@@ -1,4 +1,6 @@
-export type ArticleVisualScope = "cover" | "inline" | "infographic" | "diagram";
+import type { ArticleViralMode } from "./article-viral-modes";
+
+export type ArticleVisualScope = "cover" | "inline" | "infographic" | "diagram" | "comic";
 
 export type BaoyuCoverType = "hero" | "conceptual" | "typography" | "metaphor" | "scene" | "minimal";
 export type BaoyuCoverPalette = "warm" | "elegant" | "cool" | "dark" | "earth" | "vivid" | "pastel" | "mono" | "retro" | "duotone" | "macaron";
@@ -7,7 +9,7 @@ export type BaoyuTextLevel = "none" | "title-only" | "title-subtitle" | "text-ri
 export type BaoyuMood = "subtle" | "balanced" | "bold";
 export type BaoyuFont = "clean" | "handwritten" | "serif" | "display";
 
-export type BaoyuInlineType = "infographic" | "scene" | "flowchart" | "comparison" | "framework" | "timeline" | "diagram";
+export type BaoyuInlineType = "infographic" | "scene" | "flowchart" | "comparison" | "framework" | "timeline" | "diagram" | "comic";
 export type BaoyuInlineStyle = "editorial" | "notion" | "warm" | "minimal" | "blueprint" | "technical-schematic" | "morandi-journal";
 export type BaoyuInlinePalette = "warm" | "cool" | "macaron" | "mono" | "retro" | "earth" | "duotone";
 
@@ -20,7 +22,7 @@ export type ArticleVisualBrief = {
   articleNodeId?: number | null;
   visualScope: ArticleVisualScope;
   targetAnchor: string;
-  baoyuSkill: "baoyu-cover-image" | "baoyu-article-illustrator" | "baoyu-infographic" | "baoyu-diagram";
+  baoyuSkill: "baoyu-cover-image" | "baoyu-article-illustrator" | "baoyu-infographic" | "baoyu-diagram" | "baoyu-comic";
   visualType: BaoyuCoverType | BaoyuInlineType;
   layoutCode?: string | null;
   styleCode?: BaoyuInlineStyle | string | null;
@@ -33,7 +35,11 @@ export type ArticleVisualBrief = {
   outputResolution: string;
   title: string;
   purpose: string;
+  viralMode?: ArticleViralMode | null;
   altText: string;
+  coverHook?: string | null;
+  visualAngle?: string | null;
+  targetEmotionHint?: string | null;
   caption?: string | null;
   labels: string[];
   sourceFacts: string[];

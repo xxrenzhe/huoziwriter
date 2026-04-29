@@ -115,6 +115,7 @@ export function analyzeAiNoise(content: string) {
   const frameworkNounCount = countPattern(text, /方法论|框架|流程|步骤|动作|清单|矩阵|路径|评估方式|执行|排产|重构/g);
   const readerLossCueCount = countPattern(text, /代价|亏|错|疼|刺眼|难受|焦虑|失望|冲突|误判|复盘|看完就走|没有下一步|消耗|不出结果/g);
   const readerClosenessCueCount = countPattern(text, /你|你的|账户|钱|预算|单|出单|客户|老板|同事|复盘会|广告后台|词表|出价|文案|落地页|点进来/g);
+  const practicalToolCueCount = countPattern(text, /检查表|复盘表|三列|花费前|搜索词报告|销售反馈|广告组|落地页|表单|跟进|阶段|行动|比较|了解/g);
   const abstractNounCount = countPattern(text, /解释|变量|价值|阶段|边界|体系|机制|结构|判断|分化|变化|现象|层面|本质|逻辑/g);
   const distantExpressionCount = distantExpressionHits.reduce((total, item) => total + item.count, 0);
   const distantToneScore = Math.min(
@@ -125,10 +126,15 @@ export function analyzeAiNoise(content: string) {
       + (readerLossCueCount <= 2 && distantExpressionCount >= 2 ? 12 : 0),
   );
   const distantToneRisk = riskFromScore(distantToneScore);
-  const didacticCueCount =
+  const rawDidacticCueCount =
     didacticHits.reduce((total, item) => total + item.count, 0)
     + imperativeSentenceCount
     + Math.max(0, frameworkNounCount - 5);
+  const practicalToolDiscount =
+    practicalToolCueCount >= 8 && readerClosenessCueCount >= 12 && readerLossCueCount >= 4
+      ? Math.min(7, Math.floor(practicalToolCueCount / 2))
+      : 0;
+  const didacticCueCount = Math.max(0, rawDidacticCueCount - practicalToolDiscount);
   const didacticToneScore = Math.min(
     100,
     didacticCueCount * 8

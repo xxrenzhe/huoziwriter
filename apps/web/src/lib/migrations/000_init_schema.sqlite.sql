@@ -855,7 +855,11 @@ INSERT OR IGNORE INTO topic_sources (name, homepage_url, source_type, topic_vert
   ('n8n Releases', 'https://github.com/n8n-io/n8n/releases.atom', 'rss', '["ai_products"]', 83, 1),
   ('Flowise Releases', 'https://github.com/FlowiseAI/Flowise/releases.atom', 'rss', '["ai_products"]', 82, 1),
   ('Dify Releases', 'https://github.com/langgenius/dify/releases.atom', 'rss', '["ai_products"]', 81, 1),
-  ('GitHub Changelog Feed', 'https://github.blog/changelog/feed/', 'rss', '["ai_products"]', 80, 1);
+  ('GitHub Changelog Feed', 'https://github.blog/changelog/feed/', 'rss', '["ai_products"]', 80, 1),
+  ('百度热点', 'https://top.baidu.com/board?tab=realtime', 'chinese-hotspot', '["ai_products","affiliate_marketing","side_hustles","overseas_income","career"]', 98, 1),
+  ('知乎热榜', 'https://www.zhihu.com/hot', 'chinese-hotspot', '["ai_products","career","side_hustles"]', 97, 1),
+  ('微博热搜', 'https://weibo.com/ajax/side/hotSearch', 'chinese-hotspot', '["ai_products","career","side_hustles"]', 76, 0),
+  ('B站热门', 'https://api.bilibili.com/x/web-interface/popular', 'chinese-hotspot', '["ai_products","side_hustles"]', 75, 0);
 
 CREATE TABLE IF NOT EXISTS article_research_cards (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

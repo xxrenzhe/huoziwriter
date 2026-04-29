@@ -26,6 +26,7 @@
     "plan22:real-automation-run": "tsx scripts/plan22-real-automation-run.ts",
     "plan23:real-visual-assets": "tsx scripts/plan23-real-visual-assets.ts",
     "wechat:real-draft-sync": "tsx scripts/wechat-real-draft-sync.ts",
+    "wechat:real-publish-smoke": "tsx scripts/wechat-real-publish-smoke.ts",
     "verify": "pnpm type-check && NEXT_OUTPUT_MODE=standalone pnpm build && python3 -m py_compile apps/worker-py/main.py apps/worker-py/scheduler.py apps/worker-py/queue_runtime.py && node scripts/check-standalone-runtime-init.mjs && pnpm --filter @huoziwriter/web exec node ../../scripts/check-postgres-runtime-init.mjs && pnpm verify:title-eval:local",
     "verify:title-eval:local": "tsx scripts/verify-title-eval-local.ts",
     "verify:ui": "pnpm test-storybook && pnpm build-storybook && pnpm test:ui:a11y",

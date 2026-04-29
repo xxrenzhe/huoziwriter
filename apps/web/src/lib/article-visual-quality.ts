@@ -243,14 +243,62 @@ export async function evaluateArticleVisualQuality(input: {
     listArticleVisualBriefs(input.userId, input.articleId),
     listArticleVisualAssets(input.userId, input.articleId),
   ]);
+  const activeBriefs = briefs.filter((brief) => brief.status !== "failed");
+  const readyAssets = assets.filter((asset) => asset.status === "ready");
   const assetByBriefId = new Map<number, ArticleVisualAsset>();
-  for (const asset of assets) {
+  for (const asset of readyAssets) {
     if (asset.visualBriefId && (!assetByBriefId.has(asset.visualBriefId) || asset.status === "ready")) {
       assetByBriefId.set(asset.visualBriefId, asset);
     }
   }
   const issues: ArticleVisualQualityIssue[] = [];
-  for (const brief of briefs) {
+  if (input.requireCover === true) {
+    const hasReadyCover = readyAssets.some((asset) => {
+      const brief = activeBriefs.find((item) => item.id === asset.visualBriefId);
+      return asset.assetType === "cover_image" || brief?.visualScope === "cover";
+    });
+    if (!hasReadyCover) {
+      pushIssue(issues, {
+        key: "visual_cover_required",
+        status: "blocked",
+        detail: "准备同步公众号草稿前必须至少有 1 张 ready 状态的 baoyu-cover-image 封面图。",
+      });
+    }
+  }
+  if (input.requireInline === true) {
+    const activeDiagramBriefs = activeBriefs.filter((brief) => brief.visualScope === "diagram" || brief.baoyuSkill === "baoyu-diagram");
+    const readyDiagramAssets = readyAssets.filter((asset) => asset.assetType === "diagram_png" || asset.assetType === "diagram_svg");
+    if (activeDiagramBriefs.length > 0 || readyDiagramAssets.length > 0) {
+      pushIssue(issues, {
+        key: "visual_diagram_disallowed",
+        status: "blocked",
+        detail: "文中配图不再允许使用 SVG/diagram 图解，必须改用 baoyu-infographic 或 baoyu-comic 生成的图片资产。",
+      });
+    }
+    const hasReadyInfographic = readyAssets.some((asset) => {
+      const brief = activeBriefs.find((item) => item.id === asset.visualBriefId);
+      return asset.assetType === "infographic" || brief?.visualScope === "infographic" || brief?.baoyuSkill === "baoyu-infographic";
+    });
+    const hasReadyComic = readyAssets.some((asset) => {
+      const brief = activeBriefs.find((item) => item.id === asset.visualBriefId);
+      return asset.assetType === "comic" || brief?.visualScope === "comic" || brief?.baoyuSkill === "baoyu-comic";
+    });
+    if (!hasReadyInfographic) {
+      pushIssue(issues, {
+        key: "visual_infographic_required",
+        status: "blocked",
+        detail: "准备同步公众号草稿前必须至少有 1 张 ready 状态的 baoyu-infographic 文中信息图。",
+      });
+    }
+    if (!hasReadyComic) {
+      pushIssue(issues, {
+        key: "visual_comic_required",
+        status: "blocked",
+        detail: "准备同步公众号草稿前必须至少有 1 张 ready 状态的 baoyu-comic 知识漫画。",
+      });
+    }
+  }
+  for (const brief of activeBriefs) {
     if (!brief.id) continue;
     const requiresBriefPublishReady =
       (brief.visualScope === "cover" && input.requireCover === true)
@@ -264,7 +312,7 @@ export async function evaluateArticleVisualQuality(input: {
   }
   return {
     ...summarizeIssues(issues),
-    checkedBriefCount: briefs.length,
-    checkedAssetCount: assets.length,
+    checkedBriefCount: activeBriefs.length,
+    checkedAssetCount: readyAssets.length,
   };
 }

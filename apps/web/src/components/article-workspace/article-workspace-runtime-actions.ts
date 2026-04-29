@@ -51,7 +51,8 @@ type SubmitOutlineMaterialAction =
   | "attachExisting"
   | "createManual"
   | "createUrl"
-  | "createScreenshot";
+  | "createScreenshot"
+  | "updateReferenceFusion";
 
 type ArticleWorkspaceRuntimeActionsDeps = {
   articleId: number;
@@ -61,6 +62,7 @@ type ArticleWorkspaceRuntimeActionsDeps = {
   outlineMaterialNodeId: string;
   outlineMaterialFragmentId: string;
   outlineMaterialUsageMode: "rewrite" | "image";
+  outlineMaterialReferenceFusionMode: string;
   outlineMaterialTitle: string;
   outlineMaterialContent: string;
   outlineMaterialUrl: string;
@@ -103,6 +105,7 @@ export function createArticleWorkspaceRuntimeActions({
   outlineMaterialNodeId,
   outlineMaterialFragmentId,
   outlineMaterialUsageMode,
+  outlineMaterialReferenceFusionMode,
   outlineMaterialTitle,
   outlineMaterialContent,
   outlineMaterialUrl,
@@ -255,12 +258,12 @@ export function createArticleWorkspaceRuntimeActions({
 
   async function submitOutlineMaterial(action: SubmitOutlineMaterialAction) {
     const nodeId = Number(outlineMaterialNodeId);
-    if (!Number.isInteger(nodeId) || nodeId <= 0) {
+    if (action !== "updateReferenceFusion" && (!Number.isInteger(nodeId) || nodeId <= 0)) {
       setMessage("先选择一个大纲节点。");
       return;
     }
-    if (action === "attachExisting" && !outlineMaterialFragmentId) {
-      setMessage("先选择要挂载的素材。");
+    if ((action === "attachExisting" || action === "updateReferenceFusion") && !outlineMaterialFragmentId) {
+      setMessage(action === "updateReferenceFusion" ? "先选择要更新参考方式的素材。" : "先选择要挂载的素材。");
       return;
     }
     if (action === "createManual" && !outlineMaterialContent.trim()) {
@@ -289,7 +292,14 @@ export function createArticleWorkspaceRuntimeActions({
                 nodeId,
                 fragmentId: Number(outlineMaterialFragmentId),
                 usageMode: outlineMaterialUsageMode,
+                referenceFusionMode: outlineMaterialReferenceFusionMode,
               }
+            : action === "updateReferenceFusion"
+              ? {
+                  action,
+                  fragmentId: Number(outlineMaterialFragmentId),
+                  referenceFusionMode: outlineMaterialReferenceFusionMode,
+                }
             : action === "createManual"
               ? {
                   action,
@@ -297,6 +307,7 @@ export function createArticleWorkspaceRuntimeActions({
                   title: outlineMaterialTitle.trim() || null,
                   content: outlineMaterialContent.trim(),
                   usageMode: "rewrite",
+                  referenceFusionMode: outlineMaterialReferenceFusionMode,
                 }
               : {
                   action,
@@ -306,10 +317,12 @@ export function createArticleWorkspaceRuntimeActions({
                     ? {
                         url: outlineMaterialUrl.trim(),
                         usageMode: "rewrite",
+                        referenceFusionMode: outlineMaterialReferenceFusionMode,
                       }
                     : {
                         imageDataUrl: outlineMaterialImageDataUrl,
                         note: outlineMaterialContent.trim(),
+                        referenceFusionMode: outlineMaterialReferenceFusionMode,
                       }),
                 },
         ),
@@ -335,7 +348,13 @@ export function createArticleWorkspaceRuntimeActions({
       if (outlineMaterialScreenshotInputRef.current) {
         outlineMaterialScreenshotInputRef.current.value = "";
       }
-      setMessage(action === "attachExisting" ? "素材已挂到大纲节点。" : "素材已创建并挂到大纲节点。");
+      setMessage(
+        action === "updateReferenceFusion"
+          ? "素材参考融合方式已更新。"
+          : action === "attachExisting"
+            ? "素材已挂到大纲节点。"
+            : "素材已创建并挂到大纲节点。",
+      );
       await reloadArticleMeta();
       refreshRouter();
     } catch (error) {

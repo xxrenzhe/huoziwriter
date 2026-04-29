@@ -1,3 +1,5 @@
+import { detectArticleViralMode, type ArticleViralMode } from "./article-viral-modes";
+
 export const TITLE_OPTION_LIMIT = 6;
 const TITLE_SCORE_MAX = 50;
 const RECOMMENDED_MIN_OPEN_RATE_SCORE = 35;
@@ -137,6 +139,7 @@ export function buildTitleGenerationBrief(input: {
   workingTitle?: string | null;
   centralThesis?: string | null;
   titleStrategyNotes?: string[] | null;
+  mode?: ArticleViralMode | null;
 }) {
   const rawTitles = [input.workingTitle, input.articleTitle]
     .map((item) => String(item || "").replace(/\s+/g, " ").trim())
@@ -152,11 +155,21 @@ export function buildTitleGenerationBrief(input: {
   const strategyNotes = Array.isArray(input.titleStrategyNotes)
     ? input.titleStrategyNotes.map((item) => String(item || "").trim()).filter(Boolean).slice(0, 4)
     : [];
+  const mode = input.mode === "power_shift_breaking" || input.mode === "default"
+    ? input.mode
+    : detectArticleViralMode({
+        title: input.articleTitle || input.workingTitle || "",
+        markdownContent: [input.centralThesis || "", ...(strategyNotes || [])].join("\n"),
+      });
   return {
     titleAxis: titleAxis || normalizeTitleSeed(rawTitles[0] || "") || "这件事",
     forbiddenPrefixes,
-    strategyNotes,
-    rewriteRule: "标题必须围绕主轴重新成句，不得复制工作标题后再接冒号、后半句或万能模板。",
+    strategyNotes: mode === "power_shift_breaking"
+      ? Array.from(new Set([...strategyNotes, "标题优先抛赢家/输家、硬数字和今天变了什么，不写成泛行业评论标题。"])).slice(0, 4)
+      : strategyNotes,
+    rewriteRule: mode === "power_shift_breaking"
+      ? "标题必须围绕主轴重新成句，优先写胜负变化、硬数字和后果；不得复制工作标题后再接冒号、后半句或万能模板。"
+      : "标题必须围绕主轴重新成句，不得复制工作标题后再接冒号、后半句或万能模板。",
   };
 }
 
@@ -323,8 +336,76 @@ export function normalizeTitleOptions(
   return ensureSingleRecommendedTitleOption((merged.length > 0 ? merged : fallbackNormalized).slice(0, limit));
 }
 
-export function buildFallbackTitleOptions(baseTitle: string) {
+export function buildFallbackTitleOptions(
+  baseTitle: string,
+  options?: {
+    mode?: ArticleViralMode | null;
+    markdownContent?: string | null;
+  },
+) {
   const seed = normalizeTitleSeed(baseTitle) || "这件事";
+  const mode = options?.mode === "power_shift_breaking" || options?.mode === "default"
+    ? options.mode
+    : detectArticleViralMode({
+        title: baseTitle,
+        markdownContent: [baseTitle, String(options?.markdownContent || "").trim()].filter(Boolean).join("\n"),
+      });
+  if (mode === "power_shift_breaking") {
+    return normalizeTitleOptions(
+      [
+        {
+          title: `${seed}：真正改写的，不只是排名，而是权力开始倾斜`,
+          styleLabel: "王座更替型",
+          angle: "先抛胜负，再逼正文补数字和时间差",
+          reason: "这类题先给出位置变化，比空谈趋势更容易拉高点击意愿。",
+          riskHint: "正文前两段必须快速给出赢家、输家和硬数字，否则会像夸张判断。",
+          openRateScore: 47,
+          elementsHit: { specific: true, curiosityGap: true, readerView: false },
+        },
+        {
+          title: `为什么说${seed}，真正危险的不是热度，而是账单和时间差`,
+          styleLabel: "成本反杀型",
+          angle: "把讨论从热闹拉回资本压力和成本结构",
+          reason: "能把普通新闻读者筛成真正关心商业化和格局的人。",
+          riskHint: "正文必须展开成本、现金流或时间差，不然会显得虚晃一枪。",
+          openRateScore: 45,
+        },
+        {
+          title: `${seed}之后，谁在拿走现金流，谁先开始承压`,
+          styleLabel: "胜负分化型",
+          angle: "直接把赢家/输家摆上桌",
+          reason: "胜负分化天然带对比张力，适合承接企业、资本和路线之争。",
+          riskHint: "正文要真的展开两端处境，不然会显得标题先行。",
+          openRateScore: 44,
+        },
+        {
+          title: `一个数字看懂${seed}：下半场为什么开始变天`,
+          styleLabel: "数字锚点型",
+          angle: "用一组数字把格局改写压成一个入口",
+          reason: "数字比抽象判断更像新闻入口，也更适合公众号点击场景。",
+          riskHint: "正文必须快速给出那组数字，否则点击后会掉速。",
+          openRateScore: 42,
+        },
+        {
+          title: `${seed}这场仗，真正被改写的是谁的下半场`,
+          styleLabel: "下半场推演型",
+          angle: "从此刻胜负推进到后续格局",
+          reason: "兼顾新闻性和行业判断，适合结尾能落到后续推演的稿子。",
+          riskHint: "后文需要真的写下半场风险或机会，不能只停在当下结果。",
+          openRateScore: 39,
+        },
+        {
+          title: `别只看${seed}谁赢了，真正该看的是谁先扛不住`,
+          styleLabel: "读者筛选型",
+          angle: "拦住表面结论，把读者带去更深的后果判断",
+          reason: "适合把“热搜新闻”翻成“行业判断”的文章。",
+          riskHint: "前两段必须说明为什么“扛不住”才是重点，否则会显得故作高深。",
+          openRateScore: 37,
+        },
+      ],
+      [],
+    );
+  }
   return normalizeTitleOptions(
     [
       {

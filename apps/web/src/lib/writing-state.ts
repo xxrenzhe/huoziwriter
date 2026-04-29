@@ -1,5 +1,6 @@
 import { buildArchetypeRhythmHintText, type ArchetypeRhythmHints } from "./archetype-rhythm";
 import { buildArticleViralBlueprint } from "./article-viral-blueprint";
+import type { AuthorOutcomeFeedbackLedger } from "./author-outcome-feedback-ledger";
 import { resolveCreativeLens, type CreativeLensCode, type CreativeLensOption } from "./creative-lenses";
 
 type HumanSignalsLike = {
@@ -580,6 +581,7 @@ export function buildWritingStateKernel(input: {
   preferredPrototypeCode?: ArticlePrototypeCode | null;
   preferredVariantCode?: WritingStateVariantCode | null;
   preferredCreativeLensCode?: CreativeLensCode | null;
+  authorOutcomeFeedbackLedger?: AuthorOutcomeFeedbackLedger | null;
 }): WritingStateKernel {
   const strategyMappedPrototype = mapStrategyArchetypeToPrototype(input.strategyCard?.archetype);
   const prototypeOptions = buildPrototypeScoredOptions({
@@ -663,6 +665,8 @@ export function buildWritingStateKernel(input: {
     strategyCard: input.strategyCard,
     articlePrototype: prototype,
     preferredLensCode: input.preferredCreativeLensCode,
+    outcomeSignals: input.authorOutcomeFeedbackLedger?.creativeLensSignals ?? [],
+    outcomeRecommendation: input.authorOutcomeFeedbackLedger?.recommendations.creativeLens ?? null,
   });
   const creativeLens = creativeLensResult.selected;
   const creativeLensInstruction = [

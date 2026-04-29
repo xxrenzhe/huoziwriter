@@ -45,6 +45,8 @@ type DeepWritingExecutionCardInput = {
   articlePrototypeLabel: string | null;
   stateVariantCode: string | null;
   stateVariantLabel: string | null;
+  creativeLensCode: string | null;
+  creativeLensLabel: string | null;
 };
 
 type DeepWritingPrototypeBatchInput = {
@@ -76,6 +78,8 @@ type DeepWritingArtifactStagePanelProps = {
   onSelectPrototype: (value: string | null) => void;
   stateVariantOverride: string | null;
   onSelectStateVariant: (value: string | null) => void;
+  creativeLensOverride: string | null;
+  onSelectCreativeLens: (value: string | null) => void;
   openingPreviews: Record<string, string>;
   openingPreviewLoadingKey: string | null;
   openingCheckLoading: boolean;
@@ -123,6 +127,8 @@ export function DeepWritingArtifactStagePanel({
   onSelectPrototype,
   stateVariantOverride,
   onSelectStateVariant,
+  creativeLensOverride,
+  onSelectCreativeLens,
   openingPreviews,
   openingPreviewLoadingKey,
   openingCheckLoading,
@@ -161,6 +167,7 @@ export function DeepWritingArtifactStagePanel({
   const deepWritingPrototypeComparisons = getPayloadRecordArray(payload, "prototypeComparisons");
   const deepWritingStateOptions = getPayloadRecordArray(payload, "stateOptions");
   const deepWritingStateComparisons = getPayloadRecordArray(payload, "stateComparisons");
+  const deepWritingCreativeLensOptions = getPayloadRecordArray(payload, "creativeLensOptions");
   const deepWritingStateChecklist = getPayloadStringArray(payload, "stateChecklist");
   const deepWritingProgressiveRevealSteps = getPayloadRecordArray(payload, "progressiveRevealSteps");
   const deepWritingDiversitySummary = String(payload?.diversitySummary || "").trim();
@@ -185,22 +192,28 @@ export function DeepWritingArtifactStagePanel({
   const deepWritingCurrentPrototypeLabel = String(payload?.articlePrototypeLabel || "").trim();
   const deepWritingCurrentVariantCode = String(payload?.stateVariantCode || "").trim();
   const deepWritingCurrentVariantLabel = String(payload?.stateVariantLabel || "").trim();
+  const deepWritingCurrentCreativeLensCode = String(payload?.creativeLensCode || "").trim();
+  const deepWritingCurrentCreativeLensLabel = String(payload?.creativeLensLabel || "").trim();
   const deepWritingSelectedPrototypeOption = deepWritingPrototypeOptions.find(
     (item) => String(item.code || "").trim() === prototypeOverride,
   );
   const deepWritingSelectedVariantOption = deepWritingStateOptions.find(
     (item) => String(item.code || "").trim() === stateVariantOverride,
   );
+  const deepWritingSelectedCreativeLensOption = deepWritingCreativeLensOptions.find(
+    (item) => String(item.code || "").trim() === creativeLensOverride,
+  );
   const previewActionsDisabled = Boolean(openingPreviewLoadingKey) || Boolean(generatingStageArtifactCode) || Boolean(updatingWorkflowCode);
   const regenerateDisabled = Boolean(generatingStageArtifactCode) || Boolean(updatingWorkflowCode) || Boolean(applyingStageArtifactCode);
   const openingCheckDisabled = openingCheckLoading || regenerateDisabled || !deepWritingOpeningStrategy;
   const selectedPrototypeLabel = String(deepWritingSelectedPrototypeOption?.label || prototypeOverride || "").trim();
   const selectedStateLabel = String(deepWritingSelectedVariantOption?.label || stateVariantOverride || "").trim();
+  const selectedCreativeLensLabel = String(deepWritingSelectedCreativeLensOption?.label || creativeLensOverride || "").trim();
   const executionCardRefreshLabel =
     generatingStageArtifactCode === "deepWriting"
       ? "生成中…"
-      : prototypeOverride || stateVariantOverride
-        ? `按「${[selectedPrototypeLabel, selectedStateLabel].filter(Boolean).join(" / ")}」重生写作执行卡`
+      : prototypeOverride || stateVariantOverride || creativeLensOverride
+        ? `按「${[selectedPrototypeLabel, selectedStateLabel, selectedCreativeLensLabel].filter(Boolean).join(" / ")}」重生写作执行卡`
         : artifact
           ? "刷新写作执行卡"
           : "生成写作执行卡";
@@ -473,6 +486,8 @@ export function DeepWritingArtifactStagePanel({
             articlePrototypeLabel: label,
             stateVariantCode: null,
             stateVariantLabel: null,
+            creativeLensCode: creativeLensOverride,
+            creativeLensLabel: String(deepWritingSelectedCreativeLensOption?.label || "").trim() || null,
           });
         },
         onLoadPrototypePreview: (previewKey, code) => {
@@ -536,6 +551,8 @@ export function DeepWritingArtifactStagePanel({
             articlePrototypeLabel: String(deepWritingSelectedPrototypeOption?.label || "").trim() || null,
             stateVariantCode: code,
             stateVariantLabel: label,
+            creativeLensCode: creativeLensOverride,
+            creativeLensLabel: String(deepWritingSelectedCreativeLensOption?.label || "").trim() || null,
           });
         },
         onLoadStatePreview: (previewKey, code) => {
@@ -546,6 +563,48 @@ export function DeepWritingArtifactStagePanel({
           });
         },
       }}
+      creativeLensPanel={deepWritingCreativeLensOptions.length > 0
+        ? {
+            lensOptions: deepWritingCreativeLensOptions.map((item, index) => {
+              const optionCode = String(item.code || "").trim();
+              return {
+                code: optionCode,
+                label: String(item.label || optionCode || `镜头 ${index + 1}`).trim(),
+                suitableWhen: String(item.suitableWhen || "").trim(),
+                narrativePosture: String(item.narrativePosture || "").trim(),
+                openingMove: String(item.openingMove || "").trim(),
+                sectionRhythm: String(item.sectionRhythm || "").trim(),
+                evidenceMode: String(item.evidenceMode || "").trim(),
+                triggerReason: String(item.triggerReason || "").trim(),
+                historySignal: item.historySignal && typeof item.historySignal === "object" && !Array.isArray(item.historySignal)
+                  ? item.historySignal as {
+                      sampleCount?: number;
+                      positiveSampleCount?: number;
+                      rankingAdjustment?: number;
+                      reason?: string;
+                    }
+                  : null,
+                isRecommended: Boolean(item.isRecommended),
+              };
+            }),
+            selectedLensCode: creativeLensOverride,
+            currentLensCode: deepWritingCurrentCreativeLensCode,
+            currentLensLabel: deepWritingCurrentCreativeLensLabel,
+            selectedLensLabel: selectedCreativeLensLabel,
+            onSelectLens: onSelectCreativeLens,
+            regenerateDisabled,
+            onRegenerateByLens: (code, label) => {
+              onGenerateExecutionCard({
+                articlePrototypeCode: prototypeOverride,
+                articlePrototypeLabel: String(deepWritingSelectedPrototypeOption?.label || "").trim() || null,
+                stateVariantCode: stateVariantOverride,
+                stateVariantLabel: String(deepWritingSelectedVariantOption?.label || "").trim() || null,
+                creativeLensCode: code,
+                creativeLensLabel: label,
+              });
+            },
+          }
+        : null}
       longTermDiversityPanel={{
         longTermReport: {
           status: editorDiversityReport.status === "needs_attention" ? "needs_attention" : "ready",
@@ -567,6 +626,8 @@ export function DeepWritingArtifactStagePanel({
           articlePrototypeLabel: String(deepWritingSelectedPrototypeOption?.label || "").trim() || null,
           stateVariantCode: stateVariantOverride,
           stateVariantLabel: String(deepWritingSelectedVariantOption?.label || "").trim() || null,
+          creativeLensCode: creativeLensOverride,
+          creativeLensLabel: String(deepWritingSelectedCreativeLensOption?.label || "").trim() || null,
         });
       }}
       executionCardPanel={executionCardPanel}

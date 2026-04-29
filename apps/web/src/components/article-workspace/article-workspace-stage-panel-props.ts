@@ -29,6 +29,27 @@ type FactCheckStagePanelProps = ArtifactViewProps["factCheckStagePanelProps"];
 type ProsePolishStagePanelProps = ArtifactViewProps["prosePolishStagePanelProps"];
 type OutlinePlanningMaterialsPanelProps = ArtifactViewProps["outlinePlanningMaterialsPanel"];
 
+const referenceFusionLabels: Record<string, string> = {
+  inspiration: "只借灵感",
+  structure: "借结构",
+  evidence: "抽证据",
+  close_read: "精读拆解",
+};
+
+function getFragmentReferenceFusionMode(fragment: ArticleFragmentItem) {
+  const sourceMeta = fragment.sourceMeta && typeof fragment.sourceMeta === "object" && !Array.isArray(fragment.sourceMeta)
+    ? fragment.sourceMeta
+    : null;
+  const referenceFusion = getPayloadRecord(sourceMeta, "referenceFusion");
+  const mode = String(sourceMeta?.referenceFusionMode || referenceFusion?.mode || "").trim();
+  return mode || "";
+}
+
+function formatFragmentReferenceFusionLabel(fragment: ArticleFragmentItem) {
+  const mode = getFragmentReferenceFusionMode(fragment);
+  return referenceFusionLabels[mode] || "";
+}
+
 type StagePanelPropsBundle = Pick<
   ArtifactViewProps,
   | "factCheckStagePanelProps"
@@ -83,12 +104,15 @@ type ArticleWorkspaceStagePanelPropsDeps = {
   setOutlineMaterialNodeId: (value: string) => void;
   outlineMaterialUsageMode: "rewrite" | "image";
   setOutlineMaterialUsageMode: (value: "rewrite" | "image") => void;
+  outlineMaterialReferenceFusionMode: string;
+  setOutlineMaterialReferenceFusionMode: (value: string) => void;
   outlineMaterialFragmentId: string;
   setOutlineMaterialFragmentId: (value: string) => void;
   outlineMaterialsNodes: OutlineMaterialNodeItem[] | null | undefined;
   nodes: OutlineMaterialNodeItem[];
   fragmentPool: ArticleFragmentItem[];
   handleOutlinePlanningAttachExistingMaterial: () => void;
+  handleOutlinePlanningUpdateMaterialReferenceFusion: () => void;
   outlineMaterialCreateMode: "manual" | "url" | "screenshot";
   setOutlineMaterialCreateMode: (value: "manual" | "url" | "screenshot") => void;
   outlineMaterialTitle: string;
@@ -149,12 +173,15 @@ export function buildArticleWorkspaceStagePanelProps({
   setOutlineMaterialNodeId,
   outlineMaterialUsageMode,
   setOutlineMaterialUsageMode,
+  outlineMaterialReferenceFusionMode,
+  setOutlineMaterialReferenceFusionMode,
   outlineMaterialFragmentId,
   setOutlineMaterialFragmentId,
   outlineMaterialsNodes,
   nodes,
   fragmentPool,
   handleOutlinePlanningAttachExistingMaterial,
+  handleOutlinePlanningUpdateMaterialReferenceFusion,
   outlineMaterialCreateMode,
   setOutlineMaterialCreateMode,
   outlineMaterialTitle,
@@ -270,6 +297,8 @@ export function buildArticleWorkspaceStagePanelProps({
       onChangeSelectedNodeId: setOutlineMaterialNodeId,
       selectedUsageMode: outlineMaterialUsageMode,
       onChangeSelectedUsageMode: setOutlineMaterialUsageMode,
+      selectedReferenceFusionMode: outlineMaterialReferenceFusionMode,
+      onChangeSelectedReferenceFusionMode: setOutlineMaterialReferenceFusionMode,
       selectedFragmentId: outlineMaterialFragmentId,
       onChangeSelectedFragmentId: setOutlineMaterialFragmentId,
       nodeOptions: (outlineMaterialsNodes ?? nodes).map((node) => ({
@@ -284,8 +313,10 @@ export function buildArticleWorkspaceStagePanelProps({
         .map((fragment) => ({
           id: String(fragment.id),
           label: `${fragment.title ? `${fragment.title} · ` : ""}${formatFragmentSourceType(fragment.sourceType)} · ${fragment.distilledContent.slice(0, 28)}`,
+          referenceFusionLabel: formatFragmentReferenceFusionLabel(fragment),
         })),
       onAttachExisting: handleOutlinePlanningAttachExistingMaterial,
+      onUpdateSelectedReferenceFusion: handleOutlinePlanningUpdateMaterialReferenceFusion,
       createMode: outlineMaterialCreateMode,
       onChangeCreateMode: setOutlineMaterialCreateMode,
       materialTitle: outlineMaterialTitle,
@@ -304,6 +335,7 @@ export function buildArticleWorkspaceStagePanelProps({
         fragments: node.fragments.map((fragment) => ({
           id: fragment.id,
           label: `${fragment.title || `素材 #${fragment.id}`} · ${formatFragmentSourceType(fragment.sourceType)} · ${formatFragmentUsageMode(fragment.usageMode)}`,
+          referenceFusionLabel: formatFragmentReferenceFusionLabel(fragment),
         })),
       })),
     },

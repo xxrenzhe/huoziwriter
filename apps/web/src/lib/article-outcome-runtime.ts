@@ -42,10 +42,17 @@ export function buildWritingStateFeedback(stageArtifacts: ArticleStageArtifact[]
     stateComparisons.find((item) => Boolean(item.isRecommended)) ??
     stateComparisons[0] ??
     null;
+  const creativeLensOptions = getRecordArray(payload.creativeLensOptions);
+  const recommendedCreativeLens =
+    creativeLensOptions.find((item) => Boolean(item.isRecommended)) ??
+    creativeLensOptions[0] ??
+    null;
   const adoptedPrototypeCode = getString(payload.articlePrototype) || null;
   const recommendedPrototypeCode = getString(recommendedPrototypeComparison?.code) || null;
   const adoptedVariantCode = getString(payload.stateVariantCode) || null;
   const recommendedVariantCode = getString(recommendedComparison?.code) || null;
+  const adoptedCreativeLensCode = getString(payload.creativeLensCode) || null;
+  const recommendedCreativeLensCode = getString(recommendedCreativeLens?.code) || null;
   const adoptedOpeningPatternLabel = getString(payload.openingPatternLabel) || null;
   const adoptedSyntaxPatternLabel = getString(payload.syntaxPatternLabel) || null;
   const adoptedEndingPatternLabel = getString(payload.endingPatternLabel) || null;
@@ -83,6 +90,14 @@ export function buildWritingStateFeedback(stageArtifacts: ArticleStageArtifact[]
     followedRecommendation:
       adoptedVariantCode && recommendedVariantCode
         ? adoptedVariantCode === recommendedVariantCode
+        : null,
+    recommendedCreativeLensCode,
+    recommendedCreativeLensLabel: getString(recommendedCreativeLens?.label) || null,
+    adoptedCreativeLensCode,
+    adoptedCreativeLensLabel: getString(payload.creativeLensLabel) || null,
+    followedCreativeLensRecommendation:
+      adoptedCreativeLensCode && recommendedCreativeLensCode
+        ? adoptedCreativeLensCode === recommendedCreativeLensCode
         : null,
     recommendedOpeningPatternLabel: recommendedOpeningPatternLabel || null,
     recommendedSyntaxPatternLabel: recommendedSyntaxPatternLabel || null,

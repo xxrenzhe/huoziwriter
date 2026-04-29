@@ -66,6 +66,25 @@ export function buildArticleVersionHash(input: {
 
 export function classifyPublishFailure(error: unknown) {
   const message = error instanceof Error ? error.message : "推送失败";
+  const errcodeMatch = message.match(/(?:errcode|错误码|微信错误)\D*(\d{5})/i);
+  const errcode = errcodeMatch ? Number(errcodeMatch[1]) : null;
+  if (errcode != null) {
+    if ([40164, 89503].includes(errcode)) {
+      return { code: "ip_whitelist_blocked", message };
+    }
+    if ([40001, 40002, 40013, 40125, 41001, 42001, 42007].includes(errcode)) {
+      return { code: "auth_failed", message };
+    }
+    if ([45009, 45011, 45028, 45029].includes(errcode)) {
+      return { code: "rate_limited", message };
+    }
+    if ([40007, 40009, 40030, 41005, 41006, 47001].includes(errcode)) {
+      return { code: "media_failed", message };
+    }
+    if ([40003, 40014, 40059, 44003, 44004, 48001].includes(errcode)) {
+      return { code: "content_invalid", message };
+    }
+  }
   if (/(not in whitelist|invalid ip|接口白名单|出口 IP)/i.test(message)) {
     return { code: "ip_whitelist_blocked", message };
   }
@@ -242,17 +261,18 @@ export async function publishArticleToWechat(input: {
       throw error;
     }
     const failure = classifyPublishFailure(error);
+    const articleVersionHash = buildArticleVersionHash({
+      articleId: article.id,
+      title: effectiveTitle,
+      markdownContent: article.markdown_content,
+      templateId: templateId ?? null,
+      wechatConnectionId: connection.id,
+    });
     const latestVersionLog = await getLatestWechatSyncLogForArticle({
       userId: input.userId,
       articleId: article.id,
       wechatConnectionId: connection.id,
-    });
-    const articleVersionHash = buildArticleVersionHash({
-      articleId: article.id,
-      title: article.title,
-      markdownContent: article.markdown_content,
-      templateId: templateId ?? null,
-      wechatConnectionId: connection.id,
+      articleVersionHash,
     });
     await withWechatPersistenceRetry(() => createWechatSyncLog({
       userId: input.userId,

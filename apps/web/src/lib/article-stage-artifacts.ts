@@ -7,8 +7,11 @@ import { inferEvidenceResearchTag, normalizeEvidenceResearchTag } from "./articl
 import { findUserById } from "./auth";
 import { getDatabase } from "./db";
 import { getArticleAuthoringStyleContext } from "./article-authoring-style-context";
+import { buildHumanPracticalVoiceChecklist } from "./article-human-voice";
+import { WECHAT_VIRAL_SCORE_THRESHOLD } from "./article-viral-score";
 import { getSavedArticleHistoryReferences } from "./article-history-references";
 import { getResearchSupplementIntensity, supplementArticleResearchSources } from "./article-research-supplement";
+import type { CreativeLensCode } from "./creative-lenses";
 import {
   ARTICLE_ARTIFACT_STAGE_TITLES,
   isArticleArtifactStageCode,
@@ -29,6 +32,7 @@ import { collectLanguageGuardHits, getLanguageGuardRules, getLanguageGuardTokenB
 import { getUserPlanContext } from "./plan-access";
 import { loadPromptWithMeta } from "./prompt-loader";
 import { formatPromptTemplate } from "./prompt-template";
+import { buildReferenceFusionProfile, buildReferenceFusionPromptLines, normalizeReferenceFusionMode, normalizeReferenceFusionPayload, type ReferenceFusionMode } from "./reference-fusion";
 import { getArticleById, getArticleOutcomeBundlesByUser, getArticlesByUser, replaceArticleResearchCards } from "./repositories";
 import { ensureExtendedProductSchema } from "./schema-bootstrap";
 import { scoreSemanticMatch } from "./semantic-search";
@@ -42,6 +46,7 @@ import { WRITING_EVAL_APPLY_COMMAND_TEMPLATES } from "./writing-eval-assets";
 import { getActiveWritingEvalScoringProfile } from "./writing-eval";
 import { buildWritingDiversityReport } from "./writing-diversity";
 import { ARTICLE_PROTOTYPE_CODES, WRITING_STATE_VARIANT_CODES, buildWritingStateKernel, type ArticlePrototypeCode, type WritingStateVariantCode } from "./writing-state";
+import type { XEvidenceBoard } from "./x-evidence-board";
 
 function withStageGenerationTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string) {
   let timeout: NodeJS.Timeout | null = null;
@@ -168,6 +173,7 @@ type GenerationContext = {
     sourceMeta: Record<string, unknown> | null;
     usageMode: string;
   }>;
+  xEvidenceBoards: XEvidenceBoard[];
   imageFragments: Array<{
     id: number;
     title: string | null;
@@ -829,6 +835,119 @@ function getSourceFacts(context: GenerationContext, limit = 6) {
       context.article.title,
     ].map((item) => truncateText(String(item || "").trim(), 120)).filter(Boolean)),
   ).slice(0, limit);
+}
+
+function getPrimaryXEvidenceSpark(context: GenerationContext) {
+  const board = context.xEvidenceBoards[0];
+  if (!board) {
+    return null;
+  }
+  return [
+    board.topic,
+    board.whyNow,
+    board.conflictBoard[0]?.sentence || null,
+    board.coreClaims[0]?.claim || null,
+    board.numberBoard[0] ? `${board.numberBoard[0].label} ${board.numberBoard[0].value}` : null,
+  ].filter(Boolean).join("；");
+}
+
+function resolveContextualViralMode(
+  context: GenerationContext,
+  options?: {
+    title?: string | null;
+    centralThesis?: string | null;
+    titleStrategyNotes?: string[] | null;
+  },
+) {
+  return buildArticleViralGenomePack({
+    title: String(options?.title || context.article.title || "").trim(),
+    centralThesis: String(options?.centralThesis || context.strategyCard?.coreAssertion || "").trim(),
+    targetReader: context.audienceSelection?.selectedReaderLabel || context.strategyCard?.targetReader || null,
+    authorLens: context.persona?.summary || context.humanSignals?.nonDelegableTruth || context.humanSignals?.whyThisHitMe || null,
+    materialSpark: [
+      getPrimaryXEvidenceSpark(context),
+      ...(options?.titleStrategyNotes ?? []).map((item) => String(item || "").trim()).filter(Boolean),
+      context.humanSignals?.realSceneOrDialogue || null,
+      context.humanSignals?.firstHandObservation || null,
+    ].filter(Boolean).join("；"),
+    materialRealityMode: getMaterialRealityModeForContext(context),
+  }).mode;
+}
+
+function formatXEvidenceBoardTitle(board: XEvidenceBoard, index: number) {
+  return String(board.topic || "").trim() || `X 证据板 ${index + 1}`;
+}
+
+function formatXEvidenceOrigin(board: XEvidenceBoard) {
+  const pieces = [
+    board.originSignal.firstBreakHandle ? `首发账号 @${board.originSignal.firstBreakHandle}` : null,
+    board.originSignal.firstBreakAt ? `时间 ${board.originSignal.firstBreakAt}` : null,
+    board.originSignal.firstBreakUrl ? `链接 ${board.originSignal.firstBreakUrl}` : null,
+  ].filter(Boolean);
+  return pieces.join("；");
+}
+
+function formatXNumberBoard(board: XEvidenceBoard, limit = 3) {
+  return board.numberBoard
+    .slice(0, limit)
+    .map((item) => [String(item.label || "").trim(), String(item.value || "").trim()].filter(Boolean).join("："))
+    .filter(Boolean)
+    .join("；");
+}
+
+export function buildXEvidencePromptLines(
+  stage: "titleOptimization" | "openingOptimization" | "outlinePlanning" | "deepWriting",
+  boards: XEvidenceBoard[],
+  limit = 2,
+) {
+  const selectedBoards = boards.slice(0, limit);
+  if (selectedBoards.length === 0) {
+    return [];
+  }
+
+  const stageLead =
+    stage === "titleOptimization"
+      ? "X 热点信号已经出现明确变化、胜负或代价时，标题必须把变化对象、冲突双方或结果写出来，不要退回泛主题。"
+      : stage === "openingOptimization"
+        ? "开头优先吃掉 X 现场已经炸开的数字、冲突和人话，不要先补大背景。"
+        : stage === "outlinePlanning"
+          ? "大纲和开头要把 X 上最先炸开的冲突、数字和谁受影响放到前排，不要把现场感藏到后面。"
+          : "正文先把 X 现场当引爆点，再用已验证信息控事实边界；把社交热度写成现场冲突，不要写成空泛趋势。";
+
+  const boardBlocks = selectedBoards.map((board, index) => {
+    const lines = [
+      promptLine("为什么现在：", board.whyNow),
+      formatXEvidenceOrigin(board) ? promptLine("起爆来源：", formatXEvidenceOrigin(board)) : null,
+      board.conflictBoard[0]?.sentence ? promptLine("核心冲突：", board.conflictBoard[0].sentence) : null,
+      formatXNumberBoard(board) ? promptLine("关键数字：", formatXNumberBoard(board)) : null,
+      board.coreClaims.length
+        ? promptLine(
+            stage === "deepWriting" ? "核心主张：" : "可直接取材的判断：",
+            board.coreClaims
+              .slice(0, stage === "deepWriting" ? 4 : 2)
+              .map((item) => String(item.claim || "").trim())
+              .filter(Boolean)
+              .join("；"),
+          )
+        : null,
+      board.quoteBoard[0]?.content
+        ? promptLine("现场原话：", `${board.quoteBoard[0].speaker}：${board.quoteBoard[0].content}`)
+        : null,
+      board.audienceImpact.length
+        ? promptLine(
+            "谁最受影响：",
+            board.audienceImpact
+              .slice(0, 3)
+              .map((item) => `${item.audience}：${item.impact}`)
+              .join("；"),
+          )
+        : null,
+      board.riskNotes.length ? promptLine("事实边界：", board.riskNotes.slice(0, 2).join("；")) : null,
+    ].filter(Boolean).join("\n");
+    return promptBlock(`X 证据板 ${index + 1}：${formatXEvidenceBoardTitle(board, index)}`, lines);
+  });
+
+  return [stageLead, ...boardBlocks];
 }
 
 function getEvidenceFragmentLocalization(fragment: GenerationContext["evidenceFragments"][number]) {
@@ -1699,9 +1818,44 @@ function buildResearchIntersectionInsights(
   ] satisfies Record<string, unknown>[];
 }
 
+function resolveReferenceFusionProfile(context: GenerationContext) {
+  const existingFusion = normalizeRecord(context.researchBrief?.referenceFusion);
+  const sourceMetaItems = context.evidenceFragments
+    .map((fragment) => normalizeRecord(fragment.sourceMeta))
+    .filter(Boolean);
+  const sourceMetaModes = sourceMetaItems
+    .map((meta) => meta?.referenceFusionMode ?? normalizeRecord(meta?.referenceFusion)?.mode)
+    .map((mode) => String(mode || "").trim())
+    .filter(Boolean)
+    .map((mode) => normalizeReferenceFusionMode(mode, "evidence"));
+  const sourceMetaMode = sourceMetaModes.sort((left, right) => {
+    const riskWeight: Record<ReferenceFusionMode, number> = {
+      close_read: 4,
+      structure: 3,
+      evidence: 2,
+      inspiration: 1,
+    };
+    return riskWeight[right] - riskWeight[left];
+  })[0];
+  const hasAutomationUrlGrounding = sourceMetaItems.some((meta) => String(meta?.source || "").trim() === "article_automation_url_grounding");
+  const sourceUrls = context.evidenceFragments
+    .map((fragment) => fragment.sourceUrl)
+    .filter(Boolean) as string[];
+  return buildReferenceFusionProfile({
+    mode: existingFusion?.mode || sourceMetaMode || (hasAutomationUrlGrounding || sourceUrls.length ? "evidence" : "inspiration"),
+    sourceUrls: getStringArray(existingFusion?.sourceUrls, 8).length ? existingFusion?.sourceUrls : sourceUrls,
+    borrowableStructure: existingFusion?.borrowableStructure,
+    avoidanceList: existingFusion?.avoidanceList,
+    differentiationStrategy: existingFusion?.differentiationStrategy,
+  });
+}
+
 function fallbackResearchBrief(
   context: GenerationContext,
   externalResearch?: Parameters<typeof enrichResearchCoverageWithExternalSearch>[1],
+  options?: {
+    referenceFusionMode?: ReferenceFusionMode | null;
+  },
 ) {
   const materialRealityMode = getMaterialRealityModeForContext(context);
   const viralGenomePack = buildArticleViralGenomePack({
@@ -1719,6 +1873,10 @@ function fallbackResearchBrief(
   const timelineCards = buildResearchTimelineCards(context, sourceCoverage);
   const comparisonCards = buildResearchComparisonCards(context, sourceCoverage);
   const intersectionInsights = buildResearchIntersectionInsights(context, timelineCards, comparisonCards);
+  const referenceFusion = buildReferenceFusionProfile({
+    ...resolveReferenceFusionProfile(context),
+    mode: options?.referenceFusionMode || resolveReferenceFusionProfile(context).mode,
+  });
   const fictionalMaterialSeeds = materialRealityMode === "fiction"
     ? buildFallbackFictionalMaterialItems(context)
     : buildFallbackAuthorPerspectiveMaterialItems(context).slice(0, 2);
@@ -1758,6 +1916,7 @@ function fallbackResearchBrief(
   return {
     summary: "先围绕「" + context.article.title + "」把研究问题、信源覆盖、时间脉络和横向比较补齐，再进入策略判断。",
     materialRealityMode,
+    referenceFusion,
     researchObject: context.article.title,
     coreQuestion: "围绕「" + context.article.title + "」，真正需要研究清楚的不是发生了什么，而是它为什么在今天以这种方式发生。",
     authorHypothesis: context.seriesInsight?.reason || coreAssertion || "先提出一个待验证判断，但不要把它当成已证实结论。",
@@ -1861,12 +2020,25 @@ function fallbackOutlinePlanning(context: GenerationContext) {
   const seedFacts = getSourceFacts(context, 4);
   const materialBundle = getMaterialBundle(context, 8);
   const baseTitle = truncateText(String(context.article.title || "").trim(), 28) || "这件事";
-  const titleOptions = buildFallbackTitleOptions(baseTitle);
   const now = new Date().toISOString();
   const preferredResearchSignals = getPreferredResearchSignals(context);
+  const titleViralMode = resolveContextualViralMode(context, {
+    title: baseTitle,
+    centralThesis: preferredResearchSignals.coreAssertion || preferredResearchSignals.researchHypothesis || "",
+  });
+  const titleOptions = buildFallbackTitleOptions(baseTitle, {
+    mode: titleViralMode,
+    markdownContent: [
+      preferredResearchSignals.coreAssertion,
+      preferredResearchSignals.whyNow,
+      preferredResearchSignals.marketPositionInsight,
+      getPrimaryXEvidenceSpark(context),
+    ].filter(Boolean).join("\n"),
+  });
   const researchInsights = getRecordArray(context.researchBrief?.intersectionInsights).map((item) => String(item.insight || "").trim()).filter(Boolean);
   const timelineCards = getRecordArray(context.researchBrief?.timelineCards);
   const comparisonCards = getRecordArray(context.researchBrief?.comparisonCards);
+  const referenceFusion = normalizeReferenceFusionPayload(context.researchBrief?.referenceFusion, resolveReferenceFusionProfile(context));
   const researchBackbone = {
     openingTimelineAnchor:
       preferredResearchSignals.historicalTurningPoint
@@ -2013,6 +2185,7 @@ function fallbackOutlinePlanning(context: GenerationContext) {
       "先制造疑问感，再逐步拆解，最后落到冷静判断。",
       "先写冲突和压力，再把情绪导向可执行的行动感。",
     ],
+    referenceFusion,
     researchBackbone,
     supplementalViewpoints: dedupeLimited([...context.supplementalViewpoints, ...researchInsights], 3),
     viewpointIntegration,
@@ -2557,6 +2730,7 @@ async function resolveDeepWritingState(
   context: GenerationContext,
   preferredStateVariantCode?: WritingStateVariantCode | null,
   preferredPrototypeCode?: ArticlePrototypeCode | null,
+  preferredCreativeLensCode?: CreativeLensCode | null,
 ) {
   const baseStrategies = getDeepWritingBaseStrategies(context);
   const archetypeRhythmHints = await getMergedActiveArchetypeRhythmHints({
@@ -2577,6 +2751,8 @@ async function resolveDeepWritingState(
       archetypeRhythmHints,
       preferredPrototypeCode: prototypeCode,
       preferredVariantCode: variantCode,
+      preferredCreativeLensCode,
+      authorOutcomeFeedbackLedger: context.authorOutcomeFeedbackLedger,
     });
     const diversityReport = buildWritingDiversityReport({
       currentArticle: {
@@ -2836,9 +3012,10 @@ async function fallbackDeepWriting(
   context: GenerationContext,
   preferredStateVariantCode?: WritingStateVariantCode | null,
   preferredPrototypeCode?: ArticlePrototypeCode | null,
+  preferredCreativeLensCode?: CreativeLensCode | null,
 ) {
   const materialRealityMode = getMaterialRealityModeForContext(context);
-  const resolvedState = await resolveDeepWritingState(context, preferredStateVariantCode, preferredPrototypeCode);
+  const resolvedState = await resolveDeepWritingState(context, preferredStateVariantCode, preferredPrototypeCode, preferredCreativeLensCode);
   const writingState = resolvedState.writingState;
   const preferredResearchSignals = getPreferredResearchSignals(context);
   const researchInsights = getRecordArray(context.researchBrief?.intersectionInsights).map((item) => String(item.insight || "").trim()).filter(Boolean);
@@ -2856,6 +3033,7 @@ async function fallbackDeepWriting(
   const targetEmotion = resolvedState.targetEmotion;
   const endingStrategy = resolvedState.endingStrategy;
   const diversityReport = resolvedState.diversityReport;
+  const referenceFusion = normalizeReferenceFusionPayload(context.outlinePlan?.referenceFusion, context.researchBrief?.referenceFusion || resolveReferenceFusionProfile(context));
   const openingDiversityGuard =
     diversityReport.openingRepeatCount >= 3
       ? "最近几篇已经反复用「" + diversityReport.currentOpeningPatternLabel + "」开头，这次必须主动换切口。"
@@ -3015,6 +3193,12 @@ async function fallbackDeepWriting(
     preferredResearchSignals,
     viralGenome,
   });
+  const humanPracticalVoiceChecklist = buildHumanPracticalVoiceChecklist({
+    title: selectedTitle,
+    targetReader: context.audienceSelection?.selectedReaderLabel || preferredResearchSignals.targetReader,
+    personaSummary: context.persona?.summary || null,
+    humanSignals: context.humanSignals,
+  });
 
   return {
     summary: "正文建议按“" + selectedTitle + "”直接进入完整写作，当前采用「" + writingState.articlePrototypeLabel + " / " + writingState.stateVariantLabel + "」，先沿用已确认大纲和素材，不要离题扩写。" + (diversityReport.status === "needs_attention" ? " 同时启用去重护栏，避免最近几篇又写成同一个原型、开头、句法、收尾或状态。" : ""),
@@ -3030,6 +3214,7 @@ async function fallbackDeepWriting(
     openingPatternLabel: diversityReport.currentOpeningPatternLabel,
     syntaxPatternLabel: diversityReport.currentSyntaxPatternLabel,
     endingPatternLabel: diversityReport.currentEndingPatternLabel,
+    referenceFusion,
     articlePrototype: writingState.articlePrototype,
     articlePrototypeLabel: writingState.articlePrototypeLabel,
     articlePrototypeReason: writingState.articlePrototypeReason,
@@ -3081,6 +3266,8 @@ async function fallbackDeepWriting(
       label: item.label,
       suitableWhen: item.suitableWhen,
       triggerReason: item.triggerReason,
+      historySignal: item.historySignal ?? null,
+      isRecommended: Boolean(item.isRecommended),
       openingMove: item.openingMove,
       sectionRhythm: item.sectionRhythm,
       evidenceMode: item.evidenceMode,
@@ -3094,6 +3281,7 @@ async function fallbackDeepWriting(
         researchInsights[0] ? "优先围绕这条研究洞察推进：" + researchInsights[0] : null,
         viralGenome.firstScreenPromise ? "第一屏必须兑付：" + viralGenome.firstScreenPromise : null,
         ...viralGenome.antiDidacticContracts,
+        ...humanPracticalVoiceChecklist.slice(0, 3),
         "短句优先，避免解释腔和机器腔。",
         "每一段只推进一个判断，并挂一个事实锚点。",
         context.persona?.summary ? "贴近人设表达：" + context.persona.summary : null,
@@ -3123,7 +3311,17 @@ async function fallbackDeepWriting(
       "标题、开头、结尾与已确认大纲保持一致，不要临时换题。",
       ...diversityReport.suggestions.slice(0, 2),
       ...viralGenome.openingDirections.slice(0, 1),
+      ...humanPracticalVoiceChecklist.slice(0, 2),
       viralGenome.firstScreenPromise ? "第一屏兑付：" + viralGenome.firstScreenPromise : null,
+      "终稿必须有一个 mini case，写清谁说了什么、看哪张表、结果卡在哪里。",
+      viralGenome.authorPostureMode === "operator_test"
+        ? "正文必须保留实测/操盘者姿态：写清亲手动作、工具对象和结果反馈。"
+        : viralGenome.authorPostureMode === "analysis_interpreter"
+          ? "正文可以解释，但必须贴着对象、变化和证据讲，不能滑回泛分析。"
+          : "正文必须把角色冲突写实：谁在亏、谁在急、谁在解释不动。",
+      viralGenome.businessQuestions?.length
+        ? "商业问题要真正写进正文：至少落一条钱/成本、why now、适用边界或可信证据。"
+        : null,
       viralGenome.shareTrigger ? "转发触发：" + viralGenome.shareTrigger : null,
       "先写判断，再写事实，不要把背景介绍铺满前两段。",
       context.researchBrief ? "至少吃透一条时间脉络卡和一条横向比较卡，再把判断写硬。" : "没有研究卡时，正文判断要更克制，避免把猜测写成定论。",
@@ -3215,7 +3413,7 @@ function fallbackProsePolish(context: GenerationContext) {
       {
         type: "开头抓力不足",
         example: truncateText(firstSentence, 60),
-        suggestion: "开头先抛现象或反常识判断，再补背景。",
+        suggestion: "开头先抛现象或反常识判断，再补背景；如果原开头已经有复盘现场，不要改弱。",
       },
     ].filter(Boolean),
     languageGuardHits,
@@ -3225,6 +3423,7 @@ function fallbackProsePolish(context: GenerationContext) {
       "先让读者看见变化，再让他接受判断。",
     ],
     rhythmAdvice: [
+      "不要把自然段拆成单句换行；每段保留 2-4 句，只有强调句才单独成段。",
       "连续两段解释之后，插入一句短结论换气。",
       "每个二级标题下优先保留 2-3 个事实锚点，不要把判断埋进长段落。",
     ],
@@ -3474,6 +3673,7 @@ function normalizeResearchBriefPayload(value: unknown, fallback: Record<string, 
   return {
     summary: String(payload?.summary || fallback.summary || "").trim(),
     materialRealityMode,
+    referenceFusion: normalizeReferenceFusionPayload(payload?.referenceFusion, fallback.referenceFusion),
     researchObject: String(payload?.researchObject || fallback.researchObject || "").trim(),
     coreQuestion: String(payload?.coreQuestion || fallback.coreQuestion || "").trim(),
     authorHypothesis: String(payload?.authorHypothesis || fallback.authorHypothesis || "").trim(),
@@ -3692,7 +3892,16 @@ function normalizeOutlinePayload(value: unknown, fallback: Record<string, unknow
     .map((item) => normalizeOutlineSection(item))
     .filter((item) => item.heading)
     .slice(0, 8);
-  const fallbackTitleOptions = normalizeTitleOptions(getRecordArray(fallback.titleOptions), buildFallbackTitleOptions(String(fallback.workingTitle || "").trim()));
+  const fallbackTitleOptions = normalizeTitleOptions(
+    getRecordArray(fallback.titleOptions),
+    buildFallbackTitleOptions(String(fallback.workingTitle || "").trim(), {
+      markdownContent: [
+        String(fallback.summary || "").trim(),
+        String(fallback.centralThesis || "").trim(),
+        uniqueStrings(fallback.titleStrategyNotes, 4).join("；"),
+      ].filter(Boolean).join("\n"),
+    }),
+  );
   const sections = Array.isArray(payload?.outlineSections)
     ? payload.outlineSections
         .map((item) => normalizeRecord(item))
@@ -3735,6 +3944,10 @@ function normalizeOutlinePayload(value: unknown, fallback: Record<string, unknow
   );
   const recommendedOpeningText = openingOptions.find((item) => item.isRecommended)?.opening || openingOptions[0]?.opening || "";
   const materialRealityMode = normalizeMaterialRealityMode(payload?.materialRealityMode, normalizeMaterialRealityMode(fallback.materialRealityMode));
+  const coverIntent = buildOutlineCoverIntent({
+    payload: normalizeRecord(payload),
+    fallback,
+  });
 
   return {
     summary: String(payload?.summary || fallback.summary || "").trim(),
@@ -3768,6 +3981,10 @@ function normalizeOutlinePayload(value: unknown, fallback: Record<string, unknow
     openingHook: recommendedOpeningText || openingHookSeed,
     openingHookOptions: normalizedOpeningHookOptions,
     openingOptions,
+    coverPromise: String(payload?.coverPromise || fallback.coverPromise || coverIntent.coverPromise || "").trim(),
+    coverSceneSeed: String(payload?.coverSceneSeed || fallback.coverSceneSeed || coverIntent.coverSceneSeed || "").trim(),
+    coverVisualAngle: String(payload?.coverVisualAngle || fallback.coverVisualAngle || coverIntent.coverVisualAngle || "").trim(),
+    coverTargetEmotion: String(payload?.coverTargetEmotion || fallback.coverTargetEmotion || coverIntent.coverTargetEmotion || "").trim(),
     targetEmotion: String(payload?.targetEmotion || fallback.targetEmotion || "").trim(),
     targetEmotionOptions:
       uniqueStrings(payload?.targetEmotionOptions, 4).length
@@ -3788,6 +4005,7 @@ function normalizeOutlinePayload(value: unknown, fallback: Record<string, unknow
       ? getRecordArray(payload?.materialBundle)
       : getRecordArray(fallback.materialBundle),
     fictionalScenePlan: normalizeFictionalMaterialItems(payload?.fictionalScenePlan, fallback.fictionalScenePlan, materialRealityMode === "fiction" ? 6 : 3),
+    referenceFusion: normalizeReferenceFusionPayload(payload?.referenceFusion, fallback.referenceFusion),
     researchBackbone,
     outlineSections: sections.length ? sections : fallbackSections,
     materialGapHints:
@@ -3841,6 +4059,9 @@ function normalizeDeepWritingPayload(value: unknown, fallback: Record<string, un
   const fallbackStateOptions = getRecordArray(fallback.stateOptions);
   const fallbackPrototypeOptions = getRecordArray(fallback.prototypeOptions);
   const fallbackCreativeLensOptions = getRecordArray(fallback.creativeLensOptions);
+  const fallbackCreativeLensOptionMap = new Map(
+    fallbackCreativeLensOptions.map((item) => [String(item.code || "").trim(), item] as const),
+  );
   const fallbackPrototypeComparisonMap = new Map(
     getRecordArray(fallback.prototypeComparisons).map((item) => [String(item.code || "").trim(), item] as const),
   );
@@ -3880,15 +4101,21 @@ function normalizeDeepWritingPayload(value: unknown, fallback: Record<string, un
     ? payload.creativeLensOptions
         .map((item) => normalizeRecord(item))
         .filter(Boolean)
-        .map((item) => ({
-          code: String(item?.code || "").trim(),
-          label: String(item?.label || "").trim(),
-          suitableWhen: String(item?.suitableWhen || "").trim(),
-          triggerReason: String(item?.triggerReason || "").trim(),
-          openingMove: String(item?.openingMove || "").trim(),
-          sectionRhythm: String(item?.sectionRhythm || "").trim(),
-          evidenceMode: String(item?.evidenceMode || "").trim(),
-        }))
+        .map((item) => {
+          const code = String(item?.code || "").trim();
+          const fallbackItem = fallbackCreativeLensOptionMap.get(code);
+          return {
+            code,
+            label: String(item?.label || fallbackItem?.label || "").trim(),
+            suitableWhen: String(item?.suitableWhen || fallbackItem?.suitableWhen || "").trim(),
+            triggerReason: String(item?.triggerReason || fallbackItem?.triggerReason || "").trim(),
+            historySignal: normalizeRecord(item?.historySignal) || normalizeRecord(fallbackItem?.historySignal) || null,
+            isRecommended: typeof item?.isRecommended === "boolean" ? Boolean(item.isRecommended) : Boolean(fallbackItem?.isRecommended),
+            openingMove: String(item?.openingMove || fallbackItem?.openingMove || "").trim(),
+            sectionRhythm: String(item?.sectionRhythm || fallbackItem?.sectionRhythm || "").trim(),
+            evidenceMode: String(item?.evidenceMode || fallbackItem?.evidenceMode || "").trim(),
+          };
+        })
         .filter((item) => item.code && item.label)
         .slice(0, 4)
     : [];
@@ -4050,6 +4277,7 @@ function normalizeDeepWritingPayload(value: unknown, fallback: Record<string, un
       String(fallback.creativeLensReason || "").trim(),
     ].filter(Boolean).join(" "),
     creativeLensInstruction: String(payload?.creativeLensInstruction || fallback.creativeLensInstruction || "").trim(),
+    referenceFusion: normalizeReferenceFusionPayload(payload?.referenceFusion, fallback.referenceFusion),
     stateVariantCode: String(payload?.stateVariantCode || fallback.stateVariantCode || "").trim(),
     stateVariantLabel: String(payload?.stateVariantLabel || fallback.stateVariantLabel || "").trim(),
     stateVariantReason: [
@@ -4364,6 +4592,72 @@ function getOutlineSelection(payload: Record<string, unknown> | null | undefined
   };
 }
 
+function normalizeCoverCueText(value: unknown, limit = 72) {
+  const normalized = String(value || "").replace(/\s+/g, " ").trim();
+  if (!normalized) return "";
+  return normalized.length > limit ? `${normalized.slice(0, limit).trim()}…` : normalized;
+}
+
+function pickRecommendedTitleOption(payload: Record<string, unknown> | null | undefined) {
+  const options = normalizeTitleOptions(getRecordArray(payload?.titleOptions), []);
+  return options.find((item) => item.isRecommended) ?? options[0] ?? null;
+}
+
+function pickRecommendedOpeningOption(payload: Record<string, unknown> | null | undefined) {
+  const options = normalizeOpeningOptions(getRecordArray(payload?.openingOptions), []);
+  return options.find((item) => item.isRecommended) ?? options[0] ?? null;
+}
+
+function buildOutlineCoverIntent(input: {
+  payload?: Record<string, unknown> | null;
+  fallback?: Record<string, unknown> | null;
+}) {
+  const payload = input.payload ?? null;
+  const fallback = input.fallback ?? null;
+  const titleOption = pickRecommendedTitleOption(payload) ?? pickRecommendedTitleOption(fallback);
+  const openingOption = pickRecommendedOpeningOption(payload) ?? pickRecommendedOpeningOption(fallback);
+  const title = normalizeCoverCueText(payload?.workingTitle || fallback?.workingTitle || "");
+  const centralThesis = normalizeCoverCueText(payload?.centralThesis || fallback?.centralThesis || "", 96);
+  const targetEmotion = normalizeCoverCueText(payload?.targetEmotion || fallback?.targetEmotion || "", 24);
+  const openingHook = normalizeCoverCueText(
+    openingOption?.opening
+      || payload?.openingHook
+      || fallback?.openingHook
+      || "",
+    88,
+  );
+  const titleAngle = normalizeCoverCueText(titleOption?.angle || "", 64);
+  const openingPatternLabel = normalizeCoverCueText(openingOption?.patternLabel || "", 24);
+
+  const coverPromise =
+    openingHook
+    || titleAngle
+    || centralThesis
+    || title
+    || "";
+
+  const coverSceneSeed = [
+    openingPatternLabel ? `开场方式：${openingPatternLabel}` : "",
+    openingHook || titleAngle || centralThesis,
+  ]
+    .filter(Boolean)
+    .join("；");
+
+  const coverVisualAngle =
+    titleAngle
+    || centralThesis
+    || openingHook
+    || title
+    || "";
+
+  return {
+    coverPromise: coverPromise || null,
+    coverSceneSeed: coverSceneSeed || null,
+    coverVisualAngle: coverVisualAngle || null,
+    coverTargetEmotion: targetEmotion || null,
+  };
+}
+
 function toArtifact(row: ArtifactRow) {
   return {
     stageCode: row.stage_code,
@@ -4552,6 +4846,7 @@ async function buildGenerationContext(articleId: number, userId: number): Promis
       : null,
     fragments: writingContext.fragments,
     evidenceFragments: writingContext.evidenceFragments,
+    xEvidenceBoards: writingContext.xEvidenceBoards ?? [],
     imageFragments: writingContext.imageFragments
       .filter((item): item is typeof item & { screenshotPath: string } => Boolean(item.screenshotPath))
       .map((item) => ({
@@ -4814,8 +5109,11 @@ async function generateResearchBrief(
     searches?: Array<{ category?: string; label?: string; topUrls?: string[] }>;
     supplementIntensity?: Record<string, unknown>;
   } | null,
+  options?: {
+    referenceFusionMode?: ReferenceFusionMode | null;
+  },
 ) {
-  const fallback = fallbackResearchBrief(context, externalResearch);
+  const fallback = fallbackResearchBrief(context, externalResearch, options);
   const qualityBrief = buildArticlePromptQualityBrief("researchBrief", {
     articleTitle: context.article.title,
     strategyCard: context.strategyCard,
@@ -4825,7 +5123,7 @@ async function generateResearchBrief(
   });
   const userPrompt = [
     "请输出 JSON，不要解释，不要 markdown。",
-    '字段：{"summary":"字符串","researchObject":"字符串","coreQuestion":"字符串","authorHypothesis":"字符串","targetReader":"字符串","mustCoverAngles":[""],"businessQuestions":[""],"businessQuestionAnswers":[{"question":"字符串","answer":"字符串","evidenceNeed":"字符串","status":"answered|needs_source"}],"sparseTrackResearchPlan":{"sparseTrack":false,"sourceIntensity":"standard|elevated","requiredAngles":[""],"note":"字符串"},"hypothesesToVerify":[""],"forbiddenConclusions":[""],"sourceCoverage":{"official":[""],"industry":[""],"comparison":[""],"userVoice":[""],"timeline":[""],"sufficiency":"ready|limited|blocked","missingCategories":[""],"note":"字符串"},"timelineCards":[{"phase":"字符串","title":"字符串","summary":"字符串","signals":[""],"sources":[{"label":"字符串","sourceType":"official|industry|comparison|userVoice|timeline|knowledge|history|url|manual|screenshot","detail":"字符串","sourceUrl":"字符串或空"}]}],"comparisonCards":[{"subject":"字符串","position":"字符串","differences":[""],"userVoices":[""],"opportunities":[""],"risks":[""],"sources":[{"label":"字符串","sourceType":"official|industry|comparison|userVoice|timeline|knowledge|history|url|manual|screenshot","detail":"字符串","sourceUrl":"字符串或空"}]}],"intersectionInsights":[{"insight":"字符串","whyNow":"字符串","support":[""],"caution":"字符串","sources":[{"label":"字符串","sourceType":"official|industry|comparison|userVoice|timeline|knowledge|history|url|manual|screenshot","detail":"字符串","sourceUrl":"字符串或空"}]}],"fictionalMaterialSeeds":[{"type":"composite_scene|scenario_reconstruction|author_inference","label":"字符串","function":"字符串","scene":"字符串","character":"字符串","dialogue":"字符串","dataRange":"字符串","plausibilityAnchor":"字符串","useInSection":"字符串","boundaryNote":"字符串"}],"strategyWriteback":{"targetReader":"字符串","coreAssertion":"字符串","whyNow":"字符串","researchHypothesis":"字符串","marketPositionInsight":"字符串","historicalTurningPoint":"字符串"}}',
+    '字段：{"summary":"字符串","referenceFusion":{"mode":"inspiration|structure|evidence|close_read","modeLabel":"字符串","riskLevel":"low|medium|high","sourceUrls":[""],"extractionFocus":[""],"borrowableStructure":[""],"avoidanceList":[""],"differentiationStrategy":"字符串"},"researchObject":"字符串","coreQuestion":"字符串","authorHypothesis":"字符串","targetReader":"字符串","mustCoverAngles":[""],"businessQuestions":[""],"businessQuestionAnswers":[{"question":"字符串","answer":"字符串","evidenceNeed":"字符串","status":"answered|needs_source"}],"sparseTrackResearchPlan":{"sparseTrack":false,"sourceIntensity":"standard|elevated","requiredAngles":[""],"note":"字符串"},"hypothesesToVerify":[""],"forbiddenConclusions":[""],"sourceCoverage":{"official":[""],"industry":[""],"comparison":[""],"userVoice":[""],"timeline":[""],"sufficiency":"ready|limited|blocked","missingCategories":[""],"note":"字符串"},"timelineCards":[{"phase":"字符串","title":"字符串","summary":"字符串","signals":[""],"sources":[{"label":"字符串","sourceType":"official|industry|comparison|userVoice|timeline|knowledge|history|url|manual|screenshot","detail":"字符串","sourceUrl":"字符串或空"}]}],"comparisonCards":[{"subject":"字符串","position":"字符串","differences":[""],"userVoices":[""],"opportunities":[""],"risks":[""],"sources":[{"label":"字符串","sourceType":"official|industry|comparison|userVoice|timeline|knowledge|history|url|manual|screenshot","detail":"字符串","sourceUrl":"字符串或空"}]}],"intersectionInsights":[{"insight":"字符串","whyNow":"字符串","support":[""],"caution":"字符串","sources":[{"label":"字符串","sourceType":"official|industry|comparison|userVoice|timeline|knowledge|history|url|manual|screenshot","detail":"字符串","sourceUrl":"字符串或空"}]}],"fictionalMaterialSeeds":[{"type":"composite_scene|scenario_reconstruction|author_inference","label":"字符串","function":"字符串","scene":"字符串","character":"字符串","dialogue":"字符串","dataRange":"字符串","plausibilityAnchor":"字符串","useInSection":"字符串","boundaryNote":"字符串"}],"strategyWriteback":{"targetReader":"字符串","coreAssertion":"字符串","whyNow":"字符串","researchHypothesis":"字符串","marketPositionInsight":"字符串","historicalTurningPoint":"字符串"}}',
     "你是在做研究层，而不是直接写公众号正文。",
     "先把研究对象、核心问题和待验证假设写清楚，再判断信源是否充分。",
     "商业 profile 下必须先回答 businessQuestions；businessQuestionAnswers 必须逐条覆盖“钱从哪里来、为什么现在、谁不适合、最可信证据、读者会转给谁”。",
@@ -4842,6 +5140,8 @@ async function generateResearchBrief(
     "素材现实模式为 nonfiction 时，fictionalMaterialSeeds 可以返回 0-3 条作者视角推演素材，只能是 author_inference、匿名复合观察或假设场景；不得补素材里不存在的命名平台、品牌、页面、人物或客户案例，也不得冒充真实经历。",
     "素材现实模式为 fiction 时，fictionalMaterialSeeds 才返回 3-6 条拟真素材种子，并且 boundaryNote 必须说明虚构边界。",
     "strategyWriteback 只给策略卡可直接吸收的字段，不要空话。",
+    "referenceFusion 必须保留本轮参考融合模式；close_read / structure 必须输出 avoidanceList 和 differentiationStrategy。",
+    promptBlock("参考文章融合策略：", buildReferenceFusionPromptLines(normalizeReferenceFusionPayload(fallback.referenceFusion), "researchBrief").join("\n")),
     promptBlock("前置质量约束：", qualityBrief.join("\n")),
     promptLine("稿件标题：", context.article.title),
     promptLine("作者人设：", listPersonaSummary(context)),
@@ -4993,15 +5293,28 @@ async function generateAudienceAnalysis(context: GenerationContext) {
 }
 
 async function runTitleOptimizer(context: GenerationContext, outlinePayload: Record<string, unknown>) {
+  const titleViralMode = resolveContextualViralMode(context, {
+    title: String(outlinePayload.workingTitle || context.article.title).trim(),
+    centralThesis: String(outlinePayload.centralThesis || "").trim(),
+    titleStrategyNotes: getStringArray(outlinePayload.titleStrategyNotes, 4),
+  });
   const titleBrief = buildTitleGenerationBrief({
     articleTitle: context.article.title,
     workingTitle: String(outlinePayload.workingTitle || context.article.title).trim(),
     centralThesis: String(outlinePayload.centralThesis || "").trim(),
     titleStrategyNotes: getStringArray(outlinePayload.titleStrategyNotes, 4),
+    mode: titleViralMode,
   });
   const fallbackTitleOptions = normalizeTitleOptions(
     outlinePayload.titleOptions,
-    buildFallbackTitleOptions(titleBrief.titleAxis),
+    buildFallbackTitleOptions(titleBrief.titleAxis, {
+      mode: titleViralMode,
+      markdownContent: [
+        String(outlinePayload.centralThesis || "").trim(),
+        titleBrief.strategyNotes.join("；"),
+        getPrimaryXEvidenceSpark(context),
+      ].filter(Boolean).join("\n"),
+    }),
   );
   const outlineSections = getRecordArray(outlinePayload.outlineSections)
     .slice(0, 6)
@@ -5030,6 +5343,7 @@ async function runTitleOptimizer(context: GenerationContext, outlinePayload: Rec
     context.audienceSelection?.selectedReaderLabel ? promptLine("目标读者：", context.audienceSelection.selectedReaderLabel) : null,
     outlineSections.length ? promptBlock("大纲骨架：", outlineSections.join("\n\n")) : null,
     promptLine("关键事实：", getSourceFacts(context, 6).join("；") || "暂无关键事实，请围绕现有判断生成标题。"),
+    context.xEvidenceBoards.length ? promptBlock("X 即时证据：", buildXEvidencePromptLines("titleOptimization", context.xEvidenceBoards).join("\n\n")) : null,
     promptLine("当前正文摘要：", truncateText(stripMarkdown(context.article.markdownContent), 600) || "暂无正文，请根据标题、判断和大纲生成候选。"),
   ].filter(Boolean).join("\n");
 
@@ -5154,6 +5468,7 @@ async function runOpeningOptimizer(context: GenerationContext, outlinePayload: R
     ),
     outlineSections.length ? promptBlock("大纲骨架：", outlineSections.join("\n\n")) : null,
     promptLine("关键事实：", getSourceFacts(context, 6).join("；") || "暂无关键事实，请围绕现有判断提升开头前三秒留存。"),
+    context.xEvidenceBoards.length ? promptBlock("X 开头证据：", buildXEvidencePromptLines("openingOptimization", context.xEvidenceBoards).join("\n\n")) : null,
     openingCandidates.length ? promptBlock("当前 3 个开头候选：", openingCandidates.join("\n\n")) : null,
   ].filter(Boolean).join("\n");
 
@@ -5236,6 +5551,13 @@ async function refreshOutlineTitleOptions(input: {
 }) {
   const normalized = normalizeOutlinePayload(input.artifact.payload, input.fallback);
   const optimized = await runTitleOptimizer(input.context, normalized);
+  const coverIntent = buildOutlineCoverIntent({
+    payload: {
+      ...normalized,
+      titleOptions: optimized.titleOptions,
+    },
+    fallback: input.fallback,
+  });
   return updateArticleStageArtifactPayload({
     articleId: input.context.article.id,
     userId: input.context.userId,
@@ -5243,6 +5565,10 @@ async function refreshOutlineTitleOptions(input: {
     payloadPatch: {
       titleOptions: optimized.titleOptions,
       titleAuditedAt: optimized.titleAuditedAt,
+      coverPromise: coverIntent.coverPromise,
+      coverSceneSeed: coverIntent.coverSceneSeed,
+      coverVisualAngle: coverIntent.coverVisualAngle,
+      coverTargetEmotion: coverIntent.coverTargetEmotion,
       outlineUpdatedAt:
         input.preserveOutlineUpdatedAt
           ? normalized.outlineUpdatedAt || null
@@ -5260,6 +5586,14 @@ async function refreshOutlineOpeningOptions(input: {
 }) {
   const normalized = normalizeOutlinePayload(input.artifact.payload, input.fallback);
   const optimized = await runOpeningOptimizer(input.context, normalized);
+  const coverIntent = buildOutlineCoverIntent({
+    payload: {
+      ...normalized,
+      openingOptions: optimized.openingOptions,
+      openingHook: optimized.openingOptions.find((item) => item.isRecommended)?.opening || normalized.openingHook,
+    },
+    fallback: input.fallback,
+  });
   return updateArticleStageArtifactPayload({
     articleId: input.context.article.id,
     userId: input.context.userId,
@@ -5268,6 +5602,10 @@ async function refreshOutlineOpeningOptions(input: {
       openingOptions: optimized.openingOptions,
       openingAuditedAt: optimized.openingAuditedAt,
       openingPromptVersionRef: optimized.openingPromptVersionRef,
+      coverPromise: coverIntent.coverPromise,
+      coverSceneSeed: coverIntent.coverSceneSeed,
+      coverVisualAngle: coverIntent.coverVisualAngle,
+      coverTargetEmotion: coverIntent.coverTargetEmotion,
       outlineUpdatedAt:
         input.preserveOutlineUpdatedAt
           ? normalized.outlineUpdatedAt || null
@@ -5294,7 +5632,7 @@ async function generateOutlinePlanning(
   });
   const userPrompt = [
     "请输出 JSON，不要解释，不要 markdown。",
-    '字段：{"summary":"字符串","workingTitle":"字符串","titleStrategyNotes":[""],"centralThesis":"字符串","openingHook":"字符串","openingHookOptions":[""],"openingOptions":[{"text":"字符串","patternCode":"ledger_result|misjudgment_cost|entity_action|tool_test_result|role_industry_shift|scene_entry|conflict_entry|judgement_first|question_hook|phenomenon_signal|direct_entry","patternLabel":"字符串","hookScore":80,"forbiddenHits":[""],"qualityCeiling":"A|B+|B|B-|C","recommendReason":"字符串","isRecommended":true,"diagnose":{"abstractLevel":"pass|warn|danger","paddingLevel":"pass|warn|danger","hookDensity":"pass|warn|danger","informationFrontLoading":"pass|warn|danger"}}],"targetEmotion":"字符串","targetEmotionOptions":[""],"researchBackbone":{"openingTimelineAnchor":"字符串","middleComparisonAnchor":"字符串","coreInsightAnchor":"字符串","sequencingNote":"字符串"},"supplementalViewpoints":[""],"viewpointIntegration":[{"viewpoint":"字符串","action":"adopted|softened|deferred|conflicted","note":"字符串"}],"materialBundle":[{"fragmentId":1,"title":"字符串","usageMode":"rewrite|image","sourceType":"manual|url|screenshot","summary":"字符串","screenshotPath":"字符串或空"}],"fictionalScenePlan":[{"type":"composite_scene|scenario_reconstruction|author_inference","label":"字符串","function":"字符串","scene":"字符串","character":"字符串","dialogue":"字符串","dataRange":"字符串","plausibilityAnchor":"字符串","useInSection":"字符串","boundaryNote":"字符串"}],"outlineSections":[{"heading":"字符串","goal":"字符串","keyPoints":[""],"evidenceHints":[""],"materialRefs":[1],"transition":"字符串","researchFocus":"timeline|comparison|intersection|support","researchAnchor":"字符串"}],"materialGapHints":[""],"endingStrategy":"字符串","endingStrategyOptions":[""]}',
+    '字段：{"summary":"字符串","workingTitle":"字符串","titleStrategyNotes":[""],"centralThesis":"字符串","openingHook":"字符串","openingHookOptions":[""],"openingOptions":[{"text":"字符串","patternCode":"ledger_result|misjudgment_cost|entity_action|tool_test_result|role_industry_shift|scene_entry|conflict_entry|judgement_first|question_hook|phenomenon_signal|direct_entry","patternLabel":"字符串","hookScore":80,"forbiddenHits":[""],"qualityCeiling":"A|B+|B|B-|C","recommendReason":"字符串","isRecommended":true,"diagnose":{"abstractLevel":"pass|warn|danger","paddingLevel":"pass|warn|danger","hookDensity":"pass|warn|danger","informationFrontLoading":"pass|warn|danger"}}],"targetEmotion":"字符串","targetEmotionOptions":[""],"referenceFusion":{"mode":"inspiration|structure|evidence|close_read","modeLabel":"字符串","riskLevel":"low|medium|high","sourceUrls":[""],"extractionFocus":[""],"borrowableStructure":[""],"avoidanceList":[""],"differentiationStrategy":"字符串"},"researchBackbone":{"openingTimelineAnchor":"字符串","middleComparisonAnchor":"字符串","coreInsightAnchor":"字符串","sequencingNote":"字符串"},"supplementalViewpoints":[""],"viewpointIntegration":[{"viewpoint":"字符串","action":"adopted|softened|deferred|conflicted","note":"字符串"}],"materialBundle":[{"fragmentId":1,"title":"字符串","usageMode":"rewrite|image","sourceType":"manual|url|screenshot","summary":"字符串","screenshotPath":"字符串或空"}],"fictionalScenePlan":[{"type":"composite_scene|scenario_reconstruction|author_inference","label":"字符串","function":"字符串","scene":"字符串","character":"字符串","dialogue":"字符串","dataRange":"字符串","plausibilityAnchor":"字符串","useInSection":"字符串","boundaryNote":"字符串"}],"outlineSections":[{"heading":"字符串","goal":"字符串","keyPoints":[""],"evidenceHints":[""],"materialRefs":[1],"transition":"字符串","researchFocus":"timeline|comparison|intersection|support","researchAnchor":"字符串"}],"materialGapHints":[""],"endingStrategy":"字符串","endingStrategyOptions":[""]}',
     "outlineSections 返回 3-6 节，每节 2-4 个关键点。",
     "titleStrategyNotes 返回 2-4 条，说明这篇稿子的标题主轴、读者收益点、信息差方向与禁止踩的标题风险。",
     "大纲要体现论证递进，不允许各节只是并列堆料。",
@@ -5316,6 +5654,8 @@ async function generateOutlinePlanning(
     "researchBackbone 必须明确指出：最适合开场的历史节点、中段最该展开的横向比较、最适合落成主判断的交汇洞察，以及为什么按这个顺序排。",
     "outlineSections 至少要有一节承接历史节点、一节承接横向比较、一节承接交汇洞察；researchFocus 和 researchAnchor 不能写空话。",
     "outlineSections 和 researchBackbone 必须保证后续 deepWriting 可以直接输出 3 节以上执行卡和完整母题回收；非虚构不要求拟真素材，虚构才要求 4 条以上拟真素材。",
+    "referenceFusion 必须从研究简报继承；structure 模式要写清可借结构和必须避开的原文路径，close_read 模式必须把 avoidanceList 传给 deepWriting。",
+    promptBlock("参考文章融合策略：", buildReferenceFusionPromptLines(normalizeReferenceFusionPayload(fallback.referenceFusion), "outlinePlanning").join("\n")),
     promptBlock("前置质量约束：", qualityBrief.join("\n")),
     promptLine("稿件标题：", context.article.title),
     promptLine("作者人设：", listPersonaSummary(context)),
@@ -5391,6 +5731,7 @@ async function generateOutlinePlanning(
         )
         .join("；") || "暂无已挂载素材",
     ),
+    context.xEvidenceBoards.length ? promptBlock("X 热点证据板：", buildXEvidencePromptLines("outlinePlanning", context.xEvidenceBoards).join("\n\n")) : null,
   ].filter(Boolean).join("\n");
 
   const artifact = await generateWithPrompt({
@@ -5428,9 +5769,10 @@ async function generateDeepWriting(
   context: GenerationContext,
   preferredStateVariantCode?: WritingStateVariantCode | null,
   preferredPrototypeCode?: ArticlePrototypeCode | null,
+  preferredCreativeLensCode?: CreativeLensCode | null,
 ) {
-  const fallback = await fallbackDeepWriting(context, preferredStateVariantCode, preferredPrototypeCode);
-  const resolvedState = await resolveDeepWritingState(context, preferredStateVariantCode, preferredPrototypeCode);
+  const fallback = await fallbackDeepWriting(context, preferredStateVariantCode, preferredPrototypeCode, preferredCreativeLensCode);
+  const resolvedState = await resolveDeepWritingState(context, preferredStateVariantCode, preferredPrototypeCode, preferredCreativeLensCode);
   const writingState = resolvedState.writingState;
   const applyCommandTemplate = await resolveArticleApplyCommandTemplate({
     userId: context.userId,
@@ -5470,7 +5812,7 @@ async function generateDeepWriting(
   });
   const userPrompt = [
     "请输出 JSON，不要解释，不要 markdown。",
-            '字段：{"summary":"字符串","selectedTitle":"字符串","centralThesis":"字符串","writingAngle":"字符串","openingStrategy":"字符串","targetEmotion":"字符串","endingStrategy":"字符串","openingPatternLabel":"字符串","syntaxPatternLabel":"字符串","endingPatternLabel":"字符串","diversitySummary":"字符串","diversityIssues":[""],"diversitySuggestions":[""],"articlePrototype":"字符串","articlePrototypeLabel":"字符串","articlePrototypeReason":"字符串","prototypeOptions":[{"code":"字符串","label":"字符串","suitableWhen":"字符串","triggerReason":"字符串","openingMove":"字符串","sectionRhythm":"字符串","evidenceMode":"字符串"}],"prototypeComparisons":[{"code":"字符串","label":"字符串","reason":"字符串","suitableWhen":"字符串","triggerReason":"字符串","openingMove":"字符串","sectionRhythm":"字符串","evidenceMode":"字符串","recommendedStateVariantLabel":"字符串","openingPatternLabel":"字符串","syntaxPatternLabel":"字符串","endingPatternLabel":"字符串","diversitySummary":"字符串","diversityIssues":[""],"diversitySuggestions":[""],"progressiveRevealLabel":"字符串","progressiveRevealReason":"字符串","isRecommended":true}],"stateVariantCode":"字符串","stateVariantLabel":"字符串","stateVariantReason":"字符串","researchFocus":"字符串","researchLens":"字符串","openingMove":"字符串","sectionRhythm":"字符串","evidenceMode":"字符串","progressiveRevealEnabled":true,"progressiveRevealLabel":"字符串","progressiveRevealReason":"字符串","climaxPlacement":"字符串","escalationRule":"字符串","progressiveRevealSteps":[{"label":"字符串","instruction":"字符串"}],"stateChecklist":[""],"stateOptions":[{"code":"字符串","label":"字符串","suitableWhen":"字符串","triggerReason":"字符串"}],"stateComparisons":[{"code":"字符串","label":"字符串","reason":"字符串","suitableWhen":"字符串","triggerReason":"字符串","openingMove":"字符串","openingPatternLabel":"字符串","syntaxPatternLabel":"字符串","endingPatternLabel":"字符串","diversitySummary":"字符串","diversityIssues":[""],"diversitySuggestions":[""],"progressiveRevealLabel":"字符串","progressiveRevealReason":"字符串","isRecommended":true}],"voiceChecklist":[""],"organicGrowthKernel":{"startingState":"字符串","readerConflict":"字符串","materialSpark":"字符串","authorLens":"字符串","growthPath":[""],"guardrailRole":"字符串"},"viralGenomePack":{"sampleSummary":"字符串","sampleSourceProfile":{"source":"plan24_business_monetization_100","generatedAt":"字符串","topicSignature":"字符串","vertical":"字符串","categorySampleCount":39,"accountCount":5,"matchedMechanisms":[""],"visualProfile":"字符串","sparseTrack":false,"coverageNote":"字符串","dominantPostures":[""]},"mechanismBias":{"code":"字符串","label":"字符串","reason":"字符串"},"upstreamDirections":[""],"openingDirections":[""],"narrativeMechanics":[""],"antiDidacticContracts":[""],"firstScreenPromise":"字符串","shareTrigger":"字符串","authorPosture":"字符串","authorPostureMode":"字符串","businessQuestions":[""],"titleDirections":[""],"openingEngine":"字符串","narrativeSkeleton":"字符串","sparseTrackAlert":"字符串","evidencePriorities":[""],"emotionVectors":[""],"readerShareReasons":[""],"materialJobs":[""],"negativePatterns":[""],"readerSceneAnchors":[""],"abstractToConcretePairs":[{"abstract":"字符串","concrete":"字符串"}],"openingMicroScenes":[""],"visualRhythmSlots":[{"code":"字符串","label":"字符串","preferredPosition":"字符串","purpose":"字符串"}]},"viralNarrativePlan":{"coreMotif":"字符串","sceneEntry":"字符串","realWorldAnchors":[""],"compositeVoices":[""],"storyDataAlternation":"字符串","emotionalHooks":[""],"motifCallbacks":[{"section":"字符串","callback":"字符串"}],"boundaryRule":"字符串"},"fictionalMaterialPlan":[{"type":"composite_scene|scenario_reconstruction|author_inference","label":"字符串","function":"字符串","scene":"字符串","character":"字符串","dialogue":"字符串","dataRange":"字符串","plausibilityAnchor":"字符串","useInSection":"字符串","boundaryNote":"字符串"}],"mustUseFacts":[""],"bannedWordWatchlist":[""],"sectionBlueprint":[{"heading":"字符串","goal":"字符串","paragraphMission":"字符串","evidenceHints":[""],"materialRefs":[1],"revealRole":"字符串","transition":"字符串"}],"historyReferencePlan":[{"title":"字符串","useWhen":"字符串","bridgeSentence":"字符串"}],"finalChecklist":[""]}',
+            '字段：{"summary":"字符串","selectedTitle":"字符串","centralThesis":"字符串","writingAngle":"字符串","openingStrategy":"字符串","targetEmotion":"字符串","endingStrategy":"字符串","openingPatternLabel":"字符串","syntaxPatternLabel":"字符串","endingPatternLabel":"字符串","diversitySummary":"字符串","diversityIssues":[""],"diversitySuggestions":[""],"articlePrototype":"字符串","articlePrototypeLabel":"字符串","articlePrototypeReason":"字符串","referenceFusion":{"mode":"inspiration|structure|evidence|close_read","modeLabel":"字符串","riskLevel":"low|medium|high","sourceUrls":[""],"extractionFocus":[""],"borrowableStructure":[""],"avoidanceList":[""],"differentiationStrategy":"字符串"},"prototypeOptions":[{"code":"字符串","label":"字符串","suitableWhen":"字符串","triggerReason":"字符串","openingMove":"字符串","sectionRhythm":"字符串","evidenceMode":"字符串"}],"prototypeComparisons":[{"code":"字符串","label":"字符串","reason":"字符串","suitableWhen":"字符串","triggerReason":"字符串","openingMove":"字符串","sectionRhythm":"字符串","evidenceMode":"字符串","recommendedStateVariantLabel":"字符串","openingPatternLabel":"字符串","syntaxPatternLabel":"字符串","endingPatternLabel":"字符串","diversitySummary":"字符串","diversityIssues":[""],"diversitySuggestions":[""],"progressiveRevealLabel":"字符串","progressiveRevealReason":"字符串","isRecommended":true}],"stateVariantCode":"字符串","stateVariantLabel":"字符串","stateVariantReason":"字符串","researchFocus":"字符串","researchLens":"字符串","openingMove":"字符串","sectionRhythm":"字符串","evidenceMode":"字符串","progressiveRevealEnabled":true,"progressiveRevealLabel":"字符串","progressiveRevealReason":"字符串","climaxPlacement":"字符串","escalationRule":"字符串","progressiveRevealSteps":[{"label":"字符串","instruction":"字符串"}],"stateChecklist":[""],"stateOptions":[{"code":"字符串","label":"字符串","suitableWhen":"字符串","triggerReason":"字符串"}],"stateComparisons":[{"code":"字符串","label":"字符串","reason":"字符串","suitableWhen":"字符串","triggerReason":"字符串","openingMove":"字符串","openingPatternLabel":"字符串","syntaxPatternLabel":"字符串","endingPatternLabel":"字符串","diversitySummary":"字符串","diversityIssues":[""],"diversitySuggestions":[""],"progressiveRevealLabel":"字符串","progressiveRevealReason":"字符串","isRecommended":true}],"voiceChecklist":[""],"organicGrowthKernel":{"startingState":"字符串","readerConflict":"字符串","materialSpark":"字符串","authorLens":"字符串","growthPath":[""],"guardrailRole":"字符串"},"viralGenomePack":{"sampleSummary":"字符串","sampleSourceProfile":{"source":"plan24_business_monetization_100","generatedAt":"字符串","topicSignature":"字符串","vertical":"字符串","categorySampleCount":39,"accountCount":5,"matchedMechanisms":[""],"visualProfile":"字符串","sparseTrack":false,"coverageNote":"字符串","dominantPostures":[""]},"mechanismBias":{"code":"字符串","label":"字符串","reason":"字符串"},"upstreamDirections":[""],"openingDirections":[""],"narrativeMechanics":[""],"antiDidacticContracts":[""],"firstScreenPromise":"字符串","shareTrigger":"字符串","authorPosture":"字符串","authorPostureMode":"字符串","businessQuestions":[""],"titleDirections":[""],"openingEngine":"字符串","narrativeSkeleton":"字符串","sparseTrackAlert":"字符串","evidencePriorities":[""],"emotionVectors":[""],"readerShareReasons":[""],"materialJobs":[""],"negativePatterns":[""],"readerSceneAnchors":[""],"abstractToConcretePairs":[{"abstract":"字符串","concrete":"字符串"}],"openingMicroScenes":[""],"visualRhythmSlots":[{"code":"字符串","label":"字符串","preferredPosition":"字符串","purpose":"字符串"}]},"viralNarrativePlan":{"coreMotif":"字符串","sceneEntry":"字符串","realWorldAnchors":[""],"compositeVoices":[""],"storyDataAlternation":"字符串","emotionalHooks":[""],"motifCallbacks":[{"section":"字符串","callback":"字符串"}],"boundaryRule":"字符串"},"fictionalMaterialPlan":[{"type":"composite_scene|scenario_reconstruction|author_inference","label":"字符串","function":"字符串","scene":"字符串","character":"字符串","dialogue":"字符串","dataRange":"字符串","plausibilityAnchor":"字符串","useInSection":"字符串","boundaryNote":"字符串"}],"mustUseFacts":[""],"bannedWordWatchlist":[""],"sectionBlueprint":[{"heading":"字符串","goal":"字符串","paragraphMission":"字符串","evidenceHints":[""],"materialRefs":[1],"revealRole":"字符串","transition":"字符串"}],"historyReferencePlan":[{"title":"字符串","useWhen":"字符串","bridgeSentence":"字符串"}],"finalChecklist":[""]}',
     "你是在给正文生成器准备一张可执行的写作执行卡，不是在复述大纲。",
     "organicGrowthKernel 必须先于 sectionBlueprint 形成，回答这篇文章从哪种作者状态、哪一处读者冲突、哪一粒素材火花、哪一个作者视角自然长出来。",
     "organicGrowthKernel.growthPath 写自然生长路径，不写操作清单；guardrailRole 必须明确规则、禁词、事实边界和反说教要求只做护栏，不做方向盘。",
@@ -5482,6 +5824,7 @@ async function generateDeepWriting(
     "sectionBlueprint 的每一节必须先从读者损失、矛盾、复盘现场或可转发冲突句进入，再承接判断；不得把章节目标写成连续教读者做事的步骤。",
     "articlePrototype / articlePrototypeLabel / articlePrototypeReason / stateVariantCode / stateVariantLabel / stateVariantReason 必须明确告诉后续正文生成器这次在用哪种原型和状态。",
     "creativeLensCode / creativeLensLabel / creativeLensReason / creativeLensInstruction 必须保留上游写作状态核给出的创意镜头；不确定时照抄，不要删掉。",
+    "referenceFusion 必须继承上游参考融合策略；如果是 close_read 或 structure，sectionBlueprint 和 voiceChecklist 必须主动吸收 avoidanceList，避免正文像来源文章的复述或改写。",
     "prototypeOptions 返回 2-3 个候选原型，第一项放当前最推荐的；prototypeComparisons 返回 2-3 个原型预览卡，帮助用户比较这篇到底更适合哪种推进骨架。",
     "diversitySummary / diversityIssues / diversitySuggestions 要明确写清这次为了避免最近几篇撞车，执行卡主动换掉了哪些原型、开头、句法、结尾或状态套路。",
     "stateComparisons 返回 2-3 个候选状态预览卡，帮助用户比较当前推荐状态与备选状态的差异；第一项必须是当前推荐。",
@@ -5497,12 +5840,13 @@ async function generateDeepWriting(
     "素材现实模式为 fiction 时，fictionalMaterialPlan 才返回 4-8 条可直接入稿的完整拟真素材，每条至少具备 4 个具体字段，整体必须覆盖人物、场景、对话、区间数据、可信锚点和虚构边界。",
     "mustUseFacts 只保留真正值得写进正文的真实事实锚点；虚构素材不得混进事实锚点。",
     "historyReferencePlan 最多 2 条，没有可用旧文时返回空数组。",
-    "finalChecklist 必须覆盖标题一致性、事实密度、语言守卫规避、结尾动作或判断收束。",
+    "finalChecklist 必须覆盖标题一致性、第一屏兑现、mini case、事实密度、语言守卫规避，以及结尾动作或判断收束；商业 profile 下还要覆盖钱/成本、why now、边界或可信证据中的至少一项正文兑现。",
     "如果已提供 seriesInsight 或 seriesChecklist，请保留下来并显式提醒系列口径一致性。",
     "如果大纲里已经确认了标题、开头、目标情绪、结尾策略，必须优先沿用。",
     "事实风险前置约束：不要把未验证的具体数字、时间压缩、金额、比例或第一人称效率案例写进标题、开头、sectionBlueprint 或 mustUseFacts；证据不足时只能写成有限观察或趋势信号。",
     promptBlock("前置质量约束：", qualityBrief.join("\n")),
     promptBlock("百篇样本写作基因：", viralGenomePromptLines.join("\n")),
+    promptBlock("参考文章融合策略：", buildReferenceFusionPromptLines(normalizeReferenceFusionPayload(fallback.referenceFusion), "deepWriting").join("\n")),
     diversityIssues.length
       ? "如果最近几篇的原型、开头、句法、结尾或状态已经重复，openingStrategy / endingStrategy / stateChecklist / finalChecklist 必须主动改写并吸收 diversitySuggestions，不能继续沿用同一种推进骨架和句法呼吸。"
       : "如果最近几篇没有明显重复，也要在 diversitySummary 中说明当前多样性状态，并给出 0-2 条保持差异化的动作。",
@@ -5648,6 +5992,7 @@ async function generateDeepWriting(
         )
         .join("；") || "暂无",
     ),
+    context.xEvidenceBoards.length ? promptBlock("X 热点证据板：", buildXEvidencePromptLines("deepWriting", context.xEvidenceBoards).join("\n\n")) : null,
     context.historyReferences.length
       ? promptLine(
           "已保存历史文章自然引用：",
@@ -5822,6 +6167,12 @@ async function generateFactCheck(context: GenerationContext) {
 
 async function generateProsePolish(context: GenerationContext) {
   const fallback = fallbackProsePolish(context);
+  const humanPracticalVoiceChecklist = buildHumanPracticalVoiceChecklist({
+    title: context.article.title,
+    targetReader: context.audienceSelection?.selectedReaderLabel || context.strategyCard?.targetReader,
+    personaSummary: context.persona?.summary || null,
+    humanSignals: context.humanSignals,
+  });
   const qualityBrief = buildArticlePromptQualityBrief("prosePolish", {
     articleTitle: context.article.title,
     strategyCard: context.strategyCard,
@@ -5837,11 +6188,15 @@ async function generateProsePolish(context: GenerationContext) {
     "strengths 返回 2-4 条，说明当前稿子已经成立的表达优势。",
     "issues 返回 3-6 条，优先指出机器腔、抽象空话、读者距离感、节奏拖沓、情绪转折不顺、术语过密、起手无力等问题。",
     "必须检查这些研究腔表达：损失感、旧解释、解释权、价值分化、终局解释、角色分化、搜索投放这些年的变化。命中时要建议改成账户现场、预算动作、复盘困惑或具体反差。",
+    "必须检查正式报告腔：因此可以看出、对于…而言、在此过程中、具有重要意义、提供了新的视角。命中时要改成复盘口吻和实操判断。",
+    "如果原开头已经有具体冲突、复盘现场或强判断，不要为了润色把它改成更泛的摘要。",
+    "不得把完整自然段拆成一句一行的报告体；除非是强调句，否则每段保留 2-4 句自然呼吸。",
     "languageGuardHits 必须优先返回语言守卫命中项，句式命中也要列出来。",
     "suggestion 必须具体到改法，不要只写“更自然一点”“更有感染力”。",
     "rewrittenLead 要保留原文事实立场，只重写开头表达，长度控制在 80-160 字。",
     "punchlines 提炼 2-4 条可直接入稿的金句或判断句，但不能编造新事实。",
     "rhythmAdvice 给出段落长短、断句、留白、强调句位置等节奏建议。",
+    promptBlock("人味实操表达要求：", humanPracticalVoiceChecklist.join("\n")),
     promptBlock("前置质量约束：", qualityBrief.join("\n")),
     promptLine("稿件标题：", context.article.title),
     promptLine("作者人设：", listPersonaSummary(context)),
@@ -6005,6 +6360,8 @@ export async function generateArticleStageArtifact(input: {
   skipOutlineOptionRefresh?: boolean;
   deepWritingPrototypeCode?: ArticlePrototypeCode | null;
   deepWritingStateVariantCode?: WritingStateVariantCode | null;
+  preferredCreativeLensCode?: CreativeLensCode | null;
+  referenceFusionMode?: ReferenceFusionMode | null;
   outlineTitleOptionsOnly?: boolean;
   outlineOpeningOptionsOnly?: boolean;
   researchSearchHints?: {
@@ -6071,7 +6428,9 @@ export async function generateArticleStageArtifact(input: {
     const context = externalResearch.attached.length > 0
       ? await buildGenerationContext(input.articleId, input.userId)
       : initialContext;
-    return generateResearchBrief(context, externalResearch);
+    return generateResearchBrief(context, externalResearch, {
+      referenceFusionMode: input.referenceFusionMode,
+    });
   }
   const context = await buildGenerationContext(input.articleId, input.userId);
   if (input.stageCode === "audienceAnalysis") {
@@ -6131,7 +6490,7 @@ export async function generateArticleStageArtifact(input: {
     });
   }
   if (input.stageCode === "deepWriting") {
-    return generateDeepWriting(context, input.deepWritingStateVariantCode, input.deepWritingPrototypeCode);
+    return generateDeepWriting(context, input.deepWritingStateVariantCode, input.deepWritingPrototypeCode, input.preferredCreativeLensCode);
   }
   if (input.stageCode === "factCheck") {
     if (input.forceLocal) {
@@ -6442,6 +6801,9 @@ export function buildStageArtifactApplyCommand(
       "反说教写作姿态：正文不是教程、培训稿或方法清单；不要连续使用命令句、清单化训导和框架灌输。把建议改写成读者已经遭遇的代价、误判路径、复盘冲突或可转发判断句。",
       "读者亲近感约束：不要把“损失感、旧解释、解释权、价值分化、终局解释、角色分化、搜索投放这些年的变化”这类研究腔直接写给读者；把它们翻译成账户、预算、后台指标、复盘会和“词看着准但单没来”的现场话。",
       "情绪触发方式：情绪来自读者发现自己已经花了钱、改了词、查了质量分却还是解释不通，而不是来自抽象概念升级。",
+      `爆款评分底线：正文默认要冲 ${WECHAT_VIRAL_SCORE_THRESHOLD}/100 分以上；必须让读者滑屏能抓住 3-5 个 ## 小标题、一个贯穿复盘冲突、一个可收藏检查表或三列判断法，以及插在相关段落附近的图片。缺任何一项都先补结构，不要只润色句子。`,
+      "情绪与共情底线：至少写出一次角色压力或会场尴尬，让读者意识到这不是知识点，而是自己正在亏钱、挨问和解释不动的处境。",
+      "案例具体度底线：至少保留一个 mini case，写清谁说了什么、在看哪张表、最后卡在什么结果上；不要只写“很多团队”“一次复盘”。",
       viralGenomePack
         ? promptBlock(
             "百篇样本基因：",
@@ -6713,5 +7075,8 @@ export function buildStageArtifactApplyCommand(
     punchlines.length ? promptLine("金句候选：", punchlines.join("；")) : null,
     rhythmAdvice.length ? promptLine("节奏建议：", rhythmAdvice.join("；")) : null,
     "要求：主要优化语言节奏、句子力度和开头抓力，不改变文章主旨与事实边界。",
+      "不要把已有强开头改弱；不要把自然段拆成单句换行；语言要像有经验的人在复盘后提醒同业。",
+      `如果稿件没有小标题、贯穿案例、复盘检查表或图片都堆在文末，润色时必须把这些结构问题一并修好，目标是爆款评分 ${WECHAT_VIRAL_SCORE_THRESHOLD}/100 分以上。`,
+      "如果稿件太平、太像说理课，润色时必须补情绪、共情和角色冲突，不能只把句子磨顺。",
   ].filter(Boolean).join("\n");
 }

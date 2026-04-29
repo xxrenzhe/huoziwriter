@@ -194,7 +194,7 @@ function clampScore(value: number, max = 100) {
 
 function normalizeTopicSourceType(value: string | null | undefined) {
   const normalized = String(value || "news").trim().toLowerCase();
-  if (["youtube", "reddit", "community", "podcast", "spotify", "chinese-hotspot", "hotspot", "news", "blog", "rss"].includes(normalized)) {
+  if (["youtube", "reddit", "community", "podcast", "spotify", "chinese-hotspot", "x-hotspot", "hotspot", "news", "blog", "rss"].includes(normalized)) {
     return normalized;
   }
   return "news";
@@ -1340,6 +1340,90 @@ export async function runAdminTopicSourceSync(input: { sourceId: number; limitPe
     completedSourceCount: result.completedSourceCount,
     failedSourceCount: result.failedSourceCount,
     status: result.failedSourceCount > 0 ? "failed" : "completed",
+  };
+}
+
+export async function runAdminChineseHotspotSync(options?: { limitPerSource?: number }) {
+  await ensureExtendedProductSchema();
+  const db = getDatabase();
+  const sources = await db.query<TopicSourceRow>(
+    `SELECT id, owner_user_id, name, homepage_url, source_type, priority, is_active, last_fetched_at
+     FROM topic_sources
+     WHERE owner_user_id IS NULL
+       AND is_active = ?
+       AND source_type IN (?, ?)
+     ORDER BY priority DESC, id ASC`,
+    [true, "chinese-hotspot", "hotspot"],
+  );
+  const run = await createManualTopicSyncRun("手动刷新中文热点源", sources.length);
+  const result = await syncTopicSourcesBatch({
+    sources,
+    limitPerSource: options?.limitPerSource ?? 6,
+    ownerUserId: null,
+    runId: run.id,
+    syncWindowStart: run.sync_window_start,
+    syncWindowLabel: run.sync_window_label,
+    triggerKind: "admin_chinese_hotspot",
+  });
+  await finalizeTopicSyncRun({
+    runId: run.id,
+    scheduledSourceCount: sources.length,
+    completedSourceCount: result.completedSourceCount,
+    failedSourceCount: result.failedSourceCount,
+    insertedItemCount: result.inserted,
+    lastError: summarizeTopicSyncFailure(result.failedSources),
+  });
+  return {
+    runId: run.id,
+    inserted: result.inserted,
+    scheduledSourceCount: sources.length,
+    sourceNames: sources.map((source) => source.name),
+    completedSourceCount: result.completedSourceCount,
+    failedSourceCount: result.failedSourceCount,
+    failedSources: result.failedSources,
+    status: result.failedSourceCount > 0 ? (result.completedSourceCount > 0 ? "partial_failed" : "failed") : "completed",
+  };
+}
+
+export async function runAdminXHotspotSync(options?: { limitPerSource?: number }) {
+  await ensureExtendedProductSchema();
+  const db = getDatabase();
+  const sources = await db.query<TopicSourceRow>(
+    `SELECT id, owner_user_id, name, homepage_url, source_type, priority, is_active, last_fetched_at
+     FROM topic_sources
+     WHERE owner_user_id IS NULL
+       AND is_active = ?
+       AND source_type = ?
+     ORDER BY priority DESC, id ASC`,
+    [true, "x-hotspot"],
+  );
+  const run = await createManualTopicSyncRun("手动刷新 X 热点源", sources.length);
+  const result = await syncTopicSourcesBatch({
+    sources,
+    limitPerSource: options?.limitPerSource ?? 6,
+    ownerUserId: null,
+    runId: run.id,
+    syncWindowStart: run.sync_window_start,
+    syncWindowLabel: run.sync_window_label,
+    triggerKind: "admin_x_hotspot",
+  });
+  await finalizeTopicSyncRun({
+    runId: run.id,
+    scheduledSourceCount: sources.length,
+    completedSourceCount: result.completedSourceCount,
+    failedSourceCount: result.failedSourceCount,
+    insertedItemCount: result.inserted,
+    lastError: summarizeTopicSyncFailure(result.failedSources),
+  });
+  return {
+    runId: run.id,
+    inserted: result.inserted,
+    scheduledSourceCount: sources.length,
+    sourceNames: sources.map((source) => source.name),
+    completedSourceCount: result.completedSourceCount,
+    failedSourceCount: result.failedSourceCount,
+    failedSources: result.failedSources,
+    status: result.failedSourceCount > 0 ? (result.completedSourceCount > 0 ? "partial_failed" : "failed") : "completed",
   };
 }
 

@@ -33,6 +33,8 @@ export function DeepWritingStageContent({
   onSelectPrototype,
   stateVariantOverride,
   onSelectStateVariant,
+  creativeLensOverride,
+  onSelectCreativeLens,
   openingPreviews,
   openingPreviewLoadingKey,
   openingCheckLoading,
@@ -71,6 +73,8 @@ export function DeepWritingStageContent({
       onSelectPrototype={onSelectPrototype}
       stateVariantOverride={stateVariantOverride}
       onSelectStateVariant={onSelectStateVariant}
+      creativeLensOverride={creativeLensOverride}
+      onSelectCreativeLens={onSelectCreativeLens}
       openingPreviews={openingPreviews}
       openingPreviewLoadingKey={openingPreviewLoadingKey}
       openingCheckLoading={openingCheckLoading}

@@ -32,6 +32,21 @@ const missingArticleStateClassName = cn(
   "text-sm leading-7 text-inkSoft",
 );
 
+function parseFragmentSourceMeta(value: unknown): Record<string, unknown> | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+  try {
+    const payload = JSON.parse(value) as Record<string, unknown>;
+    const sourceMeta = payload?.sourceMeta;
+    return sourceMeta && typeof sourceMeta === "object" && !Array.isArray(sourceMeta)
+      ? sourceMeta as Record<string, unknown>
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function ArticleDetailPage({
   articleId: rawArticleId,
 }: {
@@ -154,6 +169,9 @@ export async function ArticleDetailPage({
           sourceType: fragment.sourceType,
           sourceUrl: fragment.sourceUrl,
           screenshotPath: fragment.screenshotPath,
+          sourceMeta: fragment.sourceMeta && typeof fragment.sourceMeta === "object" && !Array.isArray(fragment.sourceMeta)
+            ? fragment.sourceMeta as Record<string, unknown>
+            : null,
           usageMode: fragment.usageMode,
           shared: fragment.userId !== session.userId,
         })),
@@ -165,6 +183,7 @@ export async function ArticleDetailPage({
         sourceType: fragment.source_type,
         sourceUrl: fragment.source_url,
         screenshotPath: fragment.screenshot_path,
+        sourceMeta: parseFragmentSourceMeta(fragment.raw_payload_json),
         shared: fragment.user_id !== session.userId,
       }))}
       languageGuardRules={languageGuardRules.map((rule) => ({

@@ -296,6 +296,15 @@ export async function generateCoverImageAction(input: {
       source: candidate.imageUrl,
       aspectRatio: "16:9",
     });
+    const assetManifest = {
+      ...storedAsset.assetManifest,
+      prompt: candidate.prompt,
+      provider: candidate.providerName,
+      model: candidate.model,
+      endpoint: candidate.endpoint,
+      size: candidate.size,
+      variantLabel: candidate.variantLabel,
+    };
     const result = await db.exec(
       `INSERT INTO cover_image_candidates (
         user_id, article_id, batch_token, variant_label, prompt, image_url,
@@ -314,7 +323,7 @@ export async function generateCoverImageAction(input: {
         storedAsset.originalObjectKey,
         storedAsset.compressedObjectKey,
         storedAsset.thumbnailObjectKey,
-        JSON.stringify(storedAsset.assetManifest),
+        JSON.stringify(assetManifest),
         false,
         createdAt,
       ],
@@ -331,7 +340,7 @@ export async function generateCoverImageAction(input: {
       originalObjectKey: storedAsset.originalObjectKey,
       compressedObjectKey: storedAsset.compressedObjectKey,
       thumbnailObjectKey: storedAsset.thumbnailObjectKey,
-      assetManifestJson: storedAsset.assetManifest,
+      assetManifestJson: assetManifest,
       createdAt,
     });
   }

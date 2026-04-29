@@ -1,7 +1,7 @@
 import { getDatabase } from "./db";
 import { DEFAULT_MODEL_ROUTES } from "./domain";
 import { applyDbModelRouteEnvOverride, getConfiguredDefaultModelRoutes, hasModelRouteEnvOverride } from "./ai-model-route-env";
-import { renderMarkdownToHtml } from "./rendering";
+import { renderMarkdownToWechatHtml } from "./rendering";
 import { getActiveTemplateById } from "./layout-templates";
 import { resolveTemplateRenderConfig } from "./template-rendering";
 import { ensureDefaultTopics } from "./topic-signals";
@@ -18,6 +18,8 @@ import { normalizeArticleStatus, toStoredArticleStatus } from "./article-status-
 import { getSeriesById, resolveArticleSeriesId } from "./series";
 import { resolvePlanFeatureSnapshot, type PlanFeatureSourceRecord } from "./plan-entitlements";
 import { ensureWechatEnvConnectionForUser } from "./wechat-env-connection";
+import { buildReferenceFusionProfile, normalizeReferenceFusionMode, type ReferenceFusionMode } from "./reference-fusion";
+import { extractReusableImagePrompt } from "./image-prompt-assets";
 
 let articleSnapshotsArticleColumnPromise: Promise<"article_id" | "document_id"> | null = null;
 
@@ -1276,10 +1278,7 @@ export async function createArticle(userId: number, title: string, seriesId?: nu
   const boundSeries = await getSeriesById(userId, resolvedSeriesId);
   const initialWechatTemplateId = boundSeries?.defaultLayoutTemplateId ?? null;
   const template = initialWechatTemplateId ? await getActiveTemplateById(initialWechatTemplateId, userId) : null;
-  const html = await renderMarkdownToHtml("", {
-    title,
-    template: resolveTemplateRenderConfig(template),
-  });
+  const html = await renderMarkdownToWechatHtml("", title, resolveTemplateRenderConfig(template));
   const result = await db.exec(
     `INSERT INTO articles (user_id, title, markdown_content, html_content, status, series_id, wechat_template_id, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -1330,10 +1329,7 @@ export async function saveArticle(input: {
   const seriesId = input.seriesId === undefined ? current.series_id : await resolveArticleSeriesId(input.userId, input.seriesId);
   const wechatTemplateId = input.wechatTemplateId === undefined ? current.wechat_template_id : input.wechatTemplateId;
   const template = wechatTemplateId ? await getActiveTemplateById(wechatTemplateId, input.userId) : null;
-  const htmlContent = await renderMarkdownToHtml(markdownContent, {
-    title,
-    template: resolveTemplateRenderConfig(template),
-  });
+  const htmlContent = await renderMarkdownToWechatHtml(markdownContent, title, resolveTemplateRenderConfig(template));
   const now = new Date().toISOString();
   const db = getDatabase();
   await db.exec(
@@ -1496,6 +1492,13 @@ export async function getAssetFilesByUser(userId: number) {
     mime_type: string | null;
     byte_length: number | null;
     status: string;
+    manifest_json: string | Record<string, unknown> | null;
+    cover_prompt: string | null;
+    candidate_prompt: string | null;
+    visual_prompt: string | null;
+    visual_negative_prompt: string | null;
+    visual_prompt_hash: string | null;
+    visual_aspect_ratio: string | null;
     created_at: string;
     updated_at: string;
   }>(
@@ -1516,34 +1519,55 @@ export async function getAssetFilesByUser(userId: number) {
        af.mime_type,
        af.byte_length,
        af.status,
+       af.manifest_json,
+       ci.prompt AS cover_prompt,
+       cic.prompt AS candidate_prompt,
+       avb.prompt_text AS visual_prompt,
+       avb.negative_prompt AS visual_negative_prompt,
+       avb.prompt_hash AS visual_prompt_hash,
+       avb.aspect_ratio AS visual_aspect_ratio,
        af.created_at,
        af.updated_at
      FROM asset_files af
      LEFT JOIN articles d ON d.id = af.article_id
+     LEFT JOIN cover_images ci ON af.asset_scope = 'cover' AND ci.id = af.source_record_id
+     LEFT JOIN cover_image_candidates cic ON af.asset_scope = 'candidate' AND cic.id = af.source_record_id
+     LEFT JOIN article_visual_briefs avb ON avb.id = af.visual_brief_id
      WHERE af.user_id = ?
      ORDER BY af.updated_at DESC, af.id DESC`,
     [userId],
   );
-  return rows.map((row) => ({
-    id: row.id,
-    articleId: row.article_id,
-    articleTitle: row.article_title,
-    assetScope: row.asset_scope,
-    assetType: row.asset_type,
-    sourceRecordId: row.source_record_id,
-    batchToken: row.batch_token,
-    variantLabel: row.variant_label,
-    storageProvider: row.storage_provider,
-    publicUrl: row.public_url,
-    originalObjectKey: row.original_object_key,
-    compressedObjectKey: row.compressed_object_key,
-    thumbnailObjectKey: row.thumbnail_object_key,
-    mimeType: row.mime_type,
-    byteLength: row.byte_length,
-    status: row.status,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  }));
+  return rows.map((row) => {
+    const manifest = parseAssetManifest(row.manifest_json);
+    const reusablePrompt = extractReusableImagePrompt({
+      prompt: row.visual_prompt || row.cover_prompt || row.candidate_prompt,
+      negativePrompt: row.visual_negative_prompt,
+      promptHash: row.visual_prompt_hash,
+      aspectRatio: row.visual_aspect_ratio,
+      manifest,
+    });
+    return {
+      id: row.id,
+      articleId: row.article_id,
+      articleTitle: row.article_title,
+      assetScope: row.asset_scope,
+      assetType: row.asset_type,
+      sourceRecordId: row.source_record_id,
+      batchToken: row.batch_token,
+      variantLabel: row.variant_label,
+      storageProvider: row.storage_provider,
+      publicUrl: row.public_url,
+      originalObjectKey: row.original_object_key,
+      compressedObjectKey: row.compressed_object_key,
+      thumbnailObjectKey: row.thumbnail_object_key,
+      mimeType: row.mime_type,
+      byteLength: row.byte_length,
+      status: row.status,
+      reusablePrompt,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
+  });
 }
 
 function parseAssetManifest(
@@ -1754,6 +1778,11 @@ export type ArticleOutcomeSnapshot = {
     adoptedVariantCode: string | null;
     adoptedVariantLabel: string | null;
     followedRecommendation: boolean | null;
+    recommendedCreativeLensCode: string | null;
+    recommendedCreativeLensLabel: string | null;
+    adoptedCreativeLensCode: string | null;
+    adoptedCreativeLensLabel: string | null;
+    followedCreativeLensRecommendation: boolean | null;
     recommendedOpeningPatternLabel: string | null;
     recommendedSyntaxPatternLabel: string | null;
     recommendedEndingPatternLabel: string | null;
@@ -2041,6 +2070,14 @@ function mapArticleOutcomeSnapshot(row: {
             typeof writingStateFeedback.followedRecommendation === "boolean"
               ? writingStateFeedback.followedRecommendation
               : null,
+          recommendedCreativeLensCode: String(writingStateFeedback.recommendedCreativeLensCode || "").trim() || null,
+          recommendedCreativeLensLabel: String(writingStateFeedback.recommendedCreativeLensLabel || "").trim() || null,
+          adoptedCreativeLensCode: String(writingStateFeedback.adoptedCreativeLensCode || "").trim() || null,
+          adoptedCreativeLensLabel: String(writingStateFeedback.adoptedCreativeLensLabel || "").trim() || null,
+          followedCreativeLensRecommendation:
+            typeof writingStateFeedback.followedCreativeLensRecommendation === "boolean"
+              ? writingStateFeedback.followedCreativeLensRecommendation
+              : null,
           recommendedOpeningPatternLabel: String(writingStateFeedback.recommendedOpeningPatternLabel || "").trim() || null,
           recommendedSyntaxPatternLabel: String(writingStateFeedback.recommendedSyntaxPatternLabel || "").trim() || null,
           recommendedEndingPatternLabel: String(writingStateFeedback.recommendedEndingPatternLabel || "").trim() || null,
@@ -2215,6 +2252,85 @@ export async function createFragment(input: {
     payload: { sourceType: input.sourceType, title: input.title },
   });
   return db.queryOne("SELECT * FROM fragments WHERE id = ?", [result.lastInsertRowid!]);
+}
+
+export async function updateFragmentReferenceFusion(input: {
+  userId: number;
+  fragmentId: number;
+  mode: unknown;
+}) {
+  const db = getDatabase();
+  const row = await db.queryOne<{
+    id: number;
+    user_id: number;
+    source_type: string;
+    title: string | null;
+    raw_content: string | null;
+    source_url: string | null;
+    screenshot_path: string | null;
+    source_id: number | null;
+    raw_payload_json: string | null;
+  }>(
+    `SELECT f.id, f.user_id, f.source_type, f.title, f.raw_content, f.source_url, f.screenshot_path,
+            fs.id AS source_id, fs.raw_payload_json
+     FROM fragments f
+     LEFT JOIN fragment_sources fs
+       ON fs.id = (
+         SELECT MAX(id)
+         FROM fragment_sources
+         WHERE fragment_id = f.id
+       )
+     WHERE f.id = ? AND f.user_id = ?`,
+    [input.fragmentId, input.userId],
+  );
+  if (!row) {
+    throw new Error("素材不存在或无权修改");
+  }
+
+  const mode = normalizeReferenceFusionMode(
+    input.mode,
+    row.source_url ? "evidence" : "inspiration",
+  ) as ReferenceFusionMode;
+  const referenceFusion = buildReferenceFusionProfile({
+    mode,
+    sourceUrls: row.source_url ? [row.source_url] : [],
+  });
+  const payload = parseJsonRecord(row.raw_payload_json);
+  const sourceMeta = parseJsonRecord(payload.sourceMeta);
+  const nextPayload = {
+    ...payload,
+    title: payload.title ?? row.title,
+    rawContent: payload.rawContent ?? row.raw_content,
+    sourceMeta: {
+      ...sourceMeta,
+      referenceFusionMode: mode,
+      referenceFusion,
+    },
+  };
+  const now = new Date().toISOString();
+
+  if (row.source_id) {
+    await db.exec(
+      "UPDATE fragment_sources SET raw_payload_json = ? WHERE id = ?",
+      [nextPayload, row.source_id],
+    );
+  } else {
+    await db.exec(
+      `INSERT INTO fragment_sources (fragment_id, source_type, source_url, screenshot_path, raw_payload_json, created_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [row.id, row.source_type, row.source_url, row.screenshot_path, nextPayload, now],
+    );
+  }
+  await db.exec("UPDATE fragments SET updated_at = ? WHERE id = ?", [now, row.id]);
+  await appendAuditLog({
+    userId: input.userId,
+    action: "fragment.reference_fusion.update",
+    targetType: "fragment",
+    targetId: row.id,
+    payload: { mode },
+  });
+
+  return db.queryOne("SELECT * FROM fragments WHERE id = ?", [row.id]);
 }
 
 export async function searchFragments(userId: number, query: string) {

@@ -40,7 +40,8 @@ import { collectLanguageGuardHits, getLanguageGuardRules } from "./language-guar
 import { loadPromptWithMeta, type PromptLoadContext } from "./prompt-loader";
 import { PLAN22_STAGE_PROMPT_DEFINITIONS } from "./plan22-prompt-catalog";
 import { evaluatePublishGuard } from "./publish-guard";
-import { createArticle, createFragment, getLatestArticleCoverImage, getArticleById } from "./repositories";
+import { buildReferenceFusionProfile, buildReferenceFusionPromptLines, normalizeReferenceFusionPayload } from "./reference-fusion";
+import { createArticle, createFragment, getLatestArticleCoverImage, getArticleById, saveArticle } from "./repositories";
 import { saveArticleDraft } from "./article-draft";
 import { buildFallbackTitleOptions, detectTitleForbiddenHits } from "./title-patterns";
 import { buildFallbackOpeningOptions } from "./opening-patterns";
@@ -224,11 +225,19 @@ function sourceGroundingAudit(grounding: AutomationSourceGrounding | null, sourc
     : null;
 }
 
+function getAutomationReferenceFusionProfile(detail: AutomationRunDetail, grounding?: AutomationSourceGrounding | null) {
+  return buildReferenceFusionProfile({
+    mode: detail.run.generationSettings.referenceFusionMode || (detail.run.inputMode === "url" ? "evidence" : "inspiration"),
+    sourceUrls: detail.run.sourceUrl ? [detail.run.sourceUrl] : grounding?.url ? [grounding.url] : [],
+  });
+}
+
 async function ensureAutomationSourceFragment(detail: AutomationRunDetail, grounding: AutomationSourceGrounding | null) {
   if (!detail.run.articleId || !grounding?.loaded || !grounding.sourceExcerpt) {
     return null;
   }
   const db = getDatabase();
+  const referenceFusion = getAutomationReferenceFusionProfile(detail, grounding);
   const existing = await db.queryOne<{ id: number }>(
     `SELECT id
      FROM fragments
@@ -251,6 +260,8 @@ async function ensureAutomationSourceFragment(detail: AutomationRunDetail, groun
       automationRunId: detail.run.id,
       source: "article_automation_url_grounding",
       rawTextLength: grounding.rawTextLength,
+      referenceFusionMode: referenceFusion.mode,
+      referenceFusion,
     },
   });
   const fragmentId = Number(created?.id || 0);
@@ -365,13 +376,19 @@ function getStageProviderMeta(
   return { provider, model };
 }
 
-function normalizeTopicAnalysisOutput(value: unknown, inputText: string) {
+function normalizeTopicAnalysisOutput(value: unknown, inputText: string, fallbackReferenceFusion?: unknown) {
   const record = getRecord(value) ?? {};
   const theme = getString(record.theme) || inputText.slice(0, 48) || "待明确主题";
   const risk = getString(record.risk) || "素材充分度与时间敏感性仍需继续核查。";
   const repairActions = getStringArray(record.repairActions, 5);
+  const referenceFusion = normalizeReferenceFusionPayload(record.referenceFusion, {
+    ...(getRecord(fallbackReferenceFusion) || {}),
+    mode: record.referenceFusionMode || getRecord(fallbackReferenceFusion)?.mode || "evidence",
+  });
   return {
     theme,
+    referenceFusionMode: referenceFusion.mode,
+    referenceFusion,
     coreAssertion: getString(record.coreAssertion) || `围绕「${theme}」形成一个更可执行、可验证的公众号判断。`,
     whyNow: getString(record.whyNow) || "需要通过研究阶段确认当下窗口、变化变量和读者关心点。",
     readerBenefit: getString(record.readerBenefit) || `帮助读者更快判断「${theme}」是否值得关注、如何理解以及下一步该做什么。`,
@@ -383,9 +400,12 @@ function normalizeTopicAnalysisOutput(value: unknown, inputText: string) {
 
 function buildTopicAnalysisFallback(detail: AutomationRunDetail, grounding: AutomationSourceGrounding | null = null) {
   const trimmed = buildGroundedTopicSeed(detail, grounding).trim();
+  const referenceFusion = getAutomationReferenceFusionProfile(detail, grounding);
   if (detail.run.inputMode === "url" && grounding && !grounding.loaded) {
     return {
       theme: trimmed.slice(0, 48) || "来源链接待核验",
+      referenceFusionMode: referenceFusion.mode,
+      referenceFusion,
       coreAssertion: "链接起稿必须先读取来源正文；当前抓取失败，不能把执行流程描述当成文章主题。",
       whyNow: "需要先恢复来源正文抓取，再基于原文观点、数据和案例判断写作窗口。",
       readerBenefit: "避免生成偏离原文的公众号文章，确保后续标题、大纲和正文都锚定真实来源。",
@@ -397,6 +417,8 @@ function buildTopicAnalysisFallback(detail: AutomationRunDetail, grounding: Auto
   const short = trimmed.length < 8;
   return {
     theme: trimmed.slice(0, 48) || "待明确主题",
+    referenceFusionMode: referenceFusion.mode,
+    referenceFusion,
     coreAssertion: short ? "输入主题过短，先补充更具体的判断对象和切口。" : `这篇文章要把「${trimmed.slice(0, 32)}」压成一个能被读者立即理解的核心判断。`,
     whyNow: short ? "当前 why now 不足，先补充时间窗口、事件触发点或趋势变化。" : "需要在研究阶段验证这件事为什么现在值得写、与过去相比什么变了。",
     readerBenefit: short ? "先明确读者到底能获得什么判断或行动建议。" : "让读者在更短时间内看懂这件事的判断框架、风险边界和可执行动作。",
@@ -464,6 +486,7 @@ function mapResearchBriefOutput(payload: Record<string, unknown>) {
       ...getStringArray(getRecord(payload.sourceCoverage)?.missingCategories, 6),
       ...getStringArray(payload.materialGapHints, 6),
     ].slice(0, 8),
+    referenceFusion: normalizeReferenceFusionPayload(payload.referenceFusion),
     researchObject: getString(payload.researchObject),
     coreQuestion: getString(payload.coreQuestion),
     mustCoverAngles: getStringArray(payload.mustCoverAngles, 6),
@@ -778,12 +801,14 @@ async function executeTopicAnalysis(detail: AutomationRunDetail, promptContext: 
     { text: ARTICLE_ARTIFACT_QUALITY_SYSTEM_CONTRACT, cacheable: true },
   ]);
   const fallback = buildTopicAnalysisFallback(detail, sourceGrounding);
+  const referenceFusion = normalizeReferenceFusionPayload(fallback.referenceFusion);
   const articleTitle = detail.article?.title || detail.run.inputText;
   const userPrompt = [
     "请输出 JSON，不要解释，不要 markdown。",
-    '字段：{"theme":"字符串","coreAssertion":"字符串","whyNow":"字符串","readerBenefit":"字符串","risk":"字符串","decision":"go|revise|hold","repairActions":[""]}',
+    '字段：{"theme":"字符串","referenceFusionMode":"inspiration|structure|evidence|close_read","referenceFusion":{"mode":"inspiration|structure|evidence|close_read","modeLabel":"字符串","riskLevel":"low|medium|high","sourceUrls":[""],"extractionFocus":[""],"borrowableStructure":[""],"avoidanceList":[""],"differentiationStrategy":"字符串"},"coreAssertion":"字符串","whyNow":"字符串","readerBenefit":"字符串","risk":"字符串","decision":"go|revise|hold","repairActions":[""]}',
     `起稿方式：${detail.run.inputMode}`,
     `自动化级别：${detail.run.automationLevel}`,
+    buildReferenceFusionPromptLines(referenceFusion, "topicAnalysis").join("\n"),
     `当前标题：${articleTitle}`,
     `用户输入：${detail.run.inputText}`,
     detail.run.sourceUrl ? `来源链接：${detail.run.sourceUrl}` : null,
@@ -810,7 +835,7 @@ async function executeTopicAnalysis(detail: AutomationRunDetail, promptContext: 
       maxAttempts: 1,
       requestTimeoutMs: AUTOMATION_SCENE_REQUEST_TIMEOUT_MS,
     });
-    const output = normalizeTopicAnalysisOutput(extractJsonObject(result.text), buildGroundedTopicSeed(detail, sourceGrounding));
+    const output = normalizeTopicAnalysisOutput(extractJsonObject(result.text), buildGroundedTopicSeed(detail, sourceGrounding), referenceFusion);
     return {
       outputJson: output,
       qualityJson: {
@@ -842,6 +867,7 @@ async function executeResearchBrief(detail: AutomationRunDetail): Promise<StageE
   }
   const topicAnalysis = getRecord(getStage(detail, "topicAnalysis").outputJson) ?? {};
   const sourceGrounding = await loadAutomationSourceGrounding(detail);
+  const referenceFusion = getAutomationReferenceFusionProfile(detail, sourceGrounding);
   const sourceFragmentId = await ensureAutomationSourceFragment(detail, sourceGrounding);
   const groundedResearchObject = sourceGrounding?.loaded
     ? sourceGrounding.sourceTitle || truncateGroundingText(sourceGrounding.sourceExcerpt, 80)
@@ -854,6 +880,7 @@ async function executeResearchBrief(detail: AutomationRunDetail): Promise<StageE
     articleId: detail.run.articleId,
     userId: detail.run.userId,
     stageCode: "researchBrief",
+    referenceFusionMode: referenceFusion.mode,
     researchSearchHints: {
       topicTheme: sourceGrounding?.loaded ? groundedResearchObject : getString(topicAnalysis.theme) || groundedResearchObject,
       coreAssertion: getString(topicAnalysis.coreAssertion),
@@ -870,6 +897,7 @@ async function executeResearchBrief(detail: AutomationRunDetail): Promise<StageE
       articleId: detail.run.articleId,
       userId: detail.run.userId,
       stageCode: "researchBrief",
+      referenceFusionMode: referenceFusion.mode,
       researchSearchHints: {
         topicTheme: sourceGrounding?.loaded ? groundedResearchObject : getString(topicAnalysis.theme) || groundedResearchObject,
         coreAssertion: getString(topicAnalysis.coreAssertion),
@@ -1216,6 +1244,7 @@ async function executeDeepWrite(detail: AutomationRunDetail, promptContext: Auto
   const audience = getRecord(getStage(detail, "audienceAnalysis").outputJson) ?? {};
   const outline = getRecord(getStage(detail, "outlinePlanning").outputJson) ?? {};
   const fallback = buildDeepWriteFallback(detail);
+  const referenceFusion = normalizeReferenceFusionPayload(research.referenceFusion, getAutomationReferenceFusionProfile(detail));
   const userPrompt = [
     "请输出 JSON，不要解释，不要 markdown。",
     '字段：{"writingPlan":"字符串","sectionTasks":[{"heading":"字符串","goal":"字符串","evidenceHints":[""]}],"factAnchors":[""]}',
@@ -1225,6 +1254,7 @@ async function executeDeepWrite(detail: AutomationRunDetail, promptContext: Auto
     `why now：${getString(topicAnalysis.whyNow)}`,
     `读者收益：${getString(topicAnalysis.readerBenefit)}`,
     `研究摘要：${getString(research.researchSummary)}`,
+    `参考融合：${buildReferenceFusionPromptLines(referenceFusion, "deepWriting").join("；")}`,
     `目标读者：${getString(audience.targetReader)}`,
     `表达建议：${getStringArray(audience.toneAdvice, 4).join("；") || "暂无"}`,
     `当前大纲：${JSON.stringify(outline)}`,
@@ -1273,6 +1303,8 @@ async function executeArticleWrite(detail: AutomationRunDetail, promptContext: A
     articleId: detail.run.articleId,
     userId: detail.run.userId,
     stageCode: "deepWriting",
+    preferredCreativeLensCode: detail.run.generationSettings.preferredCreativeLensCode,
+    referenceFusionMode: detail.run.generationSettings.referenceFusionMode,
   });
   const payload = getRecord(artifact.payload) ?? {};
   const readinessIssues = getArticleViralReadinessGateIssues({
@@ -1560,18 +1592,31 @@ async function executeLayoutApply(detail: AutomationRunDetail): Promise<StageExe
   if (!article) {
     throw new AutomationStageBlockedError("稿件不存在，无法生成排版预览。");
   }
+  const saved = await saveArticle({
+    articleId: article.id,
+    userId: detail.run.userId,
+    title: article.title,
+    markdownContent: article.markdown_content,
+    status: article.status,
+    seriesId: article.series_id,
+    wechatTemplateId: article.wechat_template_id,
+  });
+  const html = saved?.html_content || article.html_content || "";
   return {
     outputJson: {
       templateId: article.wechat_template_id || "default-auto",
-      html: article.html_content || "",
-      previewWarnings: article.html_content ? [] : ["当前 HTML 预览为空，请先确认正文是否已成功保存。"],
+      html,
+      baoyuSkill: "baoyu-markdown-to-html",
+      conversionMode: "wechat-compatible",
+      previewWarnings: html ? [] : ["当前 HTML 预览为空，请先确认正文是否已成功保存。"],
     },
     qualityJson: {
-      htmlLength: String(article.html_content || "").length,
+      htmlLength: String(html || "").length,
       hasTemplate: Boolean(article.wechat_template_id),
+      baoyuSkill: "baoyu-markdown-to-html",
     },
     provider: "local",
-    model: "rendered-html",
+    model: "baoyu-markdown-to-html",
   };
 }
 
@@ -1634,7 +1679,10 @@ async function executeInlineImageGenerate(detail: AutomationRunDetail): Promise<
   if (!article) {
     throw new AutomationStageBlockedError("稿件不存在，无法生成文中配图。");
   }
-  let briefs = (await listArticleVisualBriefs(detail.run.userId, article.id)).filter((brief) => brief.visualScope !== "cover");
+  let briefs = (await listArticleVisualBriefs(detail.run.userId, article.id))
+    .filter((brief) => brief.visualScope !== "cover")
+    .filter((brief) => brief.status !== "failed")
+    .filter((brief) => brief.visualScope !== "diagram" && brief.baoyuSkill !== "baoyu-diagram");
   if (briefs.length === 0) {
     const planned = await planArticleVisualBriefs({
       userId: detail.run.userId,
@@ -1648,7 +1696,10 @@ async function executeInlineImageGenerate(detail: AutomationRunDetail): Promise<
       userId: detail.run.userId,
       articleId: article.id,
       briefs: planned,
-    })).filter((brief) => brief.visualScope !== "cover");
+    }))
+      .filter((brief) => brief.visualScope !== "cover")
+      .filter((brief) => brief.status !== "failed")
+      .filter((brief) => brief.visualScope !== "diagram" && brief.baoyuSkill !== "baoyu-diagram");
   }
 
   const generated: Array<Record<string, unknown>> = [];
@@ -1732,6 +1783,10 @@ async function executePublishGuard(
   });
   if (!result.canPublish && options?.allowRepair !== false && promptContext) {
     const languageGuardStage = detail.stages.find((stage) => stage.stageCode === "languageGuardAudit") ?? null;
+    const proseRepairBlocked = result.checks.some((check) =>
+      (check.status === "blocked" || check.severity === "blocking")
+      && (check.targetStageCode === "prosePolish" || ["wechatProseFloor", "ai_noise", "language_guard", "writingQualityFocus"].includes(check.key)),
+    );
     const repair = await runPublishAutoRepair({
       runId: detail.run.id,
       articleId: article.id,
@@ -1741,6 +1796,7 @@ async function executePublishGuard(
       skipLanguageGuardRepair:
         isFastWechatDraft(detail)
         && languageGuardStage?.status === "completed"
+        && !proseRepairBlocked
         && !readBooleanEnv("ARTICLE_AUTOMATION_PUBLISH_GUARD_REPEAT_LANGUAGE_REPAIR", false),
     });
     repairApplied = repair.appliedFixes;
@@ -1759,12 +1815,14 @@ async function executePublishGuard(
       warnings: result.warnings,
       repairActions: result.suggestions,
       methodologyGates: result.methodologyGates,
+      viralScore: result.viralScore,
     },
     qualityJson: {
       checkCount: result.checks.length,
       stageReadiness: result.stageReadiness,
       connectionHealth: result.connectionHealth,
       methodologyGates: result.methodologyGates,
+      viralScore: result.viralScore,
       autoPreparedAtStages: repairApplied,
       autoPrepareErrors: repairErrors,
       coverPreparation,

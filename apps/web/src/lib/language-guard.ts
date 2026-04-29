@@ -26,8 +26,14 @@ const SYSTEM_LANGUAGE_GUARD_RULES: LanguageGuardRule[] = [
   { id: "system-token-10", scope: "system", source: "system", ruleKind: "token", matchMode: "contains", patternText: "解释权", rewriteHint: "改成“这件事到底该怪词、怪出价，还是怪来的人没到下单阶段”。", isEnabled: true, createdAt: null },
   { id: "system-token-11", scope: "system", source: "system", ruleKind: "token", matchMode: "contains", patternText: "价值分化", rewriteHint: "改成“同样花钱买来的点击，有的能出单，有的只是消耗预算”。", isEnabled: true, createdAt: null },
   { id: "system-token-12", scope: "system", source: "system", ruleKind: "token", matchMode: "contains", patternText: "搜索投放这些年的变化", rewriteHint: "改成具体平台或账户变化，不要用宏观背景腔。", isEnabled: true, createdAt: null },
+  { id: "system-token-13", scope: "system", source: "system", ruleKind: "token", matchMode: "contains", patternText: "因此可以看出", rewriteHint: "改成作者的直接判断，例如“我会先看这一步有没有骗自己”。", isEnabled: true, createdAt: null },
+  { id: "system-token-14", scope: "system", source: "system", ruleKind: "token", matchMode: "contains", patternText: "对于", rewriteHint: "少用正式报告起手，改成具体人、具体场景或具体动作。", isEnabled: true, createdAt: null },
+  { id: "system-token-15", scope: "system", source: "system", ruleKind: "token", matchMode: "contains", patternText: "在此过程中", rewriteHint: "删掉流程套话，直接写谁做了什么、哪一步出问题。", isEnabled: true, createdAt: null },
+  { id: "system-token-16", scope: "system", source: "system", ruleKind: "token", matchMode: "contains", patternText: "具有重要意义", rewriteHint: "改成具体收益、损失或下一步检查动作。", isEnabled: true, createdAt: null },
+  { id: "system-token-17", scope: "system", source: "system", ruleKind: "token", matchMode: "contains", patternText: "提供了新的视角", rewriteHint: "改成“这会逼你先查哪件事、少犯哪个错”。", isEnabled: true, createdAt: null },
   { id: "system-pattern-1", scope: "system", source: "system", ruleKind: "pattern", matchMode: "template", patternText: "不是...而是…", rewriteHint: "只有在前后两部分都足够具体时才保留，否则改成直接判断。", isEnabled: true, createdAt: null },
   { id: "system-pattern-2", scope: "system", source: "system", ruleKind: "pattern", matchMode: "template", patternText: "首先...其次...最后…", rewriteHint: "优先改成自然递进，不要用讲稿式编号。", isEnabled: true, createdAt: null },
+  { id: "system-pattern-3", scope: "system", source: "system", ruleKind: "pattern", matchMode: "template", patternText: "从...角度来看…", rewriteHint: "改成作者现场判断，不要用论文式视角切换。", isEnabled: true, createdAt: null },
 ];
 
 type LanguageGuardRuleRow = {

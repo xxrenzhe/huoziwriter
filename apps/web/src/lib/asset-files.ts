@@ -138,7 +138,7 @@ export async function syncArticleCoverAssetToAssetFiles(input: AssetFileSyncInpu
 export async function syncArticleVisualAssetToAssetFiles(input: AssetFileSyncInput & {
   visualBriefId: number;
   articleNodeId?: number | null;
-  assetType: "cover_image" | "inline_image" | "infographic" | "diagram_svg" | "diagram_png";
+  assetType: "cover_image" | "inline_image" | "infographic" | "diagram_svg" | "diagram_png" | "comic";
   insertAnchor?: string | null;
   altText?: string | null;
   caption?: string | null;

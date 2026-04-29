@@ -5,6 +5,7 @@ import { getRelevantKnowledgeCardsForArticle } from "./knowledge";
 import { buildRetrievalQueryContext, scoreUnifiedRetrievalCandidate } from "./retrieval-ranking";
 import { getArticleById, getArticleStrategyCard, getFragmentsByUser } from "./repositories";
 import { getSeriesById } from "./series";
+import { buildXEvidenceBoard, type XEvidenceBoard } from "./x-evidence-board";
 
 type OutlineNodeContext = {
   title: string;
@@ -63,6 +64,47 @@ type HumanSignalContext = {
   nonDelegableTruth: string | null;
   score: number;
 };
+
+function isXEvidenceFragment(fragment: EvidenceFragmentContext) {
+  if (String(fragment.sourceType || "").trim().toLowerCase() === "x-hotspot") {
+    return true;
+  }
+  const sourceMeta = parseJsonRecord(fragment.sourceMeta);
+  const sourceKind = String(sourceMeta?.sourceKind || "").trim().toLowerCase();
+  return sourceKind === "x_hotspot";
+}
+
+async function buildContextXEvidenceBoards(fragments: EvidenceFragmentContext[]) {
+  const candidates = fragments
+    .filter((fragment) => fragment.usageMode !== "image")
+    .filter((fragment) => isXEvidenceFragment(fragment))
+    .slice(0, 3);
+  if (candidates.length === 0) {
+    return [] as XEvidenceBoard[];
+  }
+  const settled = await Promise.allSettled(
+    candidates.map((fragment) =>
+      buildXEvidenceBoard({
+        title: String(fragment.title || "").trim() || truncateForXEvidenceTopic(fragment.distilledContent),
+        summary: fragment.rawContent || fragment.distilledContent,
+        sourceUrl: fragment.sourceUrl,
+        sourceMeta: fragment.sourceMeta,
+      }),
+    ),
+  );
+  const boards: XEvidenceBoard[] = [];
+  for (const item of settled) {
+    if (item.status === "fulfilled") {
+      boards.push(item.value as XEvidenceBoard);
+    }
+  }
+  return boards;
+}
+
+function truncateForXEvidenceTopic(value: string) {
+  const text = String(value || "").trim();
+  return text.length <= 80 ? text : `${text.slice(0, 80).trim()}…`;
+}
 
 function tokenize(value: string) {
   return Array.from(new Set((value.toLowerCase().match(/[\u4e00-\u9fa5]{2,}|[a-z0-9]{3,}/g) ?? []).filter(Boolean)));
@@ -305,6 +347,17 @@ export async function getArticleWritingContext(input: {
     confidenceScore: card.confidenceScore,
     matchedFragmentCount: card.matchedFragmentCount,
   }));
+  const xEvidenceBoards = await buildContextXEvidenceBoards(evidenceFragments.map<EvidenceFragmentContext>((fragment) => ({
+    id: fragment.id,
+    title: fragment.title,
+    rawContent: fragment.rawContent,
+    distilledContent: fragment.distilledContent,
+    sourceType: fragment.sourceType,
+    sourceUrl: fragment.sourceUrl,
+    screenshotPath: fragment.screenshotPath,
+    sourceMeta: fragment.sourceMeta,
+    usageMode: fragment.usageMode,
+  })));
 
   return {
     fragments,
@@ -331,6 +384,7 @@ export async function getArticleWritingContext(input: {
       description: node.description,
     })),
     knowledgeCards: normalizedKnowledgeCards,
+    xEvidenceBoards,
     authorOutcomeFeedbackLedger,
     seriesInsight: buildSeriesInsight({
       articleTitle: input.title,

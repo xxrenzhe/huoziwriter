@@ -51,6 +51,7 @@ export async function insertArticleVisualAssetsIntoMarkdown(input: {
   );
   const assets = (await listArticleVisualAssets(input.userId, input.articleId))
     .filter((asset) => asset.assetType !== "cover_image")
+    .filter((asset) => asset.assetType !== "diagram_png" && asset.assetType !== "diagram_svg")
     .filter((asset) => asset.publicUrl && asset.status === "ready")
     .filter((asset) => !asset.visualBriefId || insertableBriefIds.has(asset.visualBriefId))
     .filter((asset) => !/已移除|不可用|登录页|抓取失败|来源类型|来源链接/i.test([asset.altText, asset.caption, asset.insertAnchor].filter(Boolean).join(" ")));

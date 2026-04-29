@@ -1,6 +1,8 @@
 import { getDatabase } from "./db";
 import { createArticle, getArticleById } from "./repositories";
 import { PLAN22_STAGE_PROMPT_DEFINITIONS } from "./plan22-prompt-catalog";
+import { CREATIVE_LENS_CODES, type CreativeLensCode } from "./creative-lenses";
+import { normalizeReferenceFusionMode, type ReferenceFusionMode } from "./reference-fusion";
 
 export type ArticleAutomationInputMode = "brief" | "url" | "recommendedTopic";
 export type ArticleAutomationLevel = "draftPreview" | "wechatDraft" | "strategyOnly";
@@ -21,8 +23,14 @@ export type ArticleAutomationRun = {
   currentStageCode: string;
   finalWechatMediaId: string | null;
   blockedReason: string | null;
+  generationSettings: ArticleAutomationGenerationSettings;
   createdAt: string;
   updatedAt: string;
+};
+
+export type ArticleAutomationGenerationSettings = {
+  preferredCreativeLensCode: CreativeLensCode | null;
+  referenceFusionMode: ReferenceFusionMode | null;
 };
 
 export type ArticleAutomationStageRun = {
@@ -60,6 +68,7 @@ type AutomationRunRow = {
   current_stage_code: string;
   final_wechat_media_id: string | null;
   blocked_reason: string | null;
+  generation_settings_json: string | Record<string, unknown> | null;
   created_at: string;
   updated_at: string;
 };
@@ -120,6 +129,25 @@ function stringifyJson(value: unknown) {
   return JSON.stringify(value ?? {});
 }
 
+function normalizeCreativeLensCode(value: unknown) {
+  const normalized = String(value || "").trim();
+  return CREATIVE_LENS_CODES.includes(normalized as CreativeLensCode) ? normalized as CreativeLensCode : null;
+}
+
+function normalizeOptionalReferenceFusionMode(value: unknown) {
+  const normalized = String(value || "").trim();
+  if (!normalized || normalized === "auto") return null;
+  return normalizeReferenceFusionMode(normalized, "evidence");
+}
+
+function normalizeGenerationSettings(value: unknown): ArticleAutomationGenerationSettings {
+  const record = value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+  return {
+    preferredCreativeLensCode: normalizeCreativeLensCode(record.preferredCreativeLensCode ?? record.creativeLensCode),
+    referenceFusionMode: normalizeOptionalReferenceFusionMode(record.referenceFusionMode),
+  };
+}
+
 function mapRun(row: AutomationRunRow): ArticleAutomationRun {
   return {
     id: Number(row.id),
@@ -135,6 +163,7 @@ function mapRun(row: AutomationRunRow): ArticleAutomationRun {
     currentStageCode: row.current_stage_code,
     finalWechatMediaId: row.final_wechat_media_id,
     blockedReason: row.blocked_reason,
+    generationSettings: normalizeGenerationSettings(parseJsonValue(row.generation_settings_json)),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -190,6 +219,9 @@ export async function createArticleAutomationRun(input: {
   targetWechatConnectionId?: unknown;
   targetSeriesId?: unknown;
   automationLevel?: unknown;
+  generationSettings?: unknown;
+  preferredCreativeLensCode?: unknown;
+  referenceFusionMode?: unknown;
 }) {
   const db = getDatabase();
   const inputMode = normalizeInputMode(input.inputMode);
@@ -198,6 +230,17 @@ export async function createArticleAutomationRun(input: {
   const automationLevel = normalizeAutomationLevel(input.automationLevel);
   const targetSeriesId = normalizeNullableId(input.targetSeriesId);
   const targetWechatConnectionId = normalizeNullableId(input.targetWechatConnectionId);
+  const rawGenerationSettings =
+    input.generationSettings && typeof input.generationSettings === "object" && !Array.isArray(input.generationSettings)
+      ? { ...(input.generationSettings as Record<string, unknown>) }
+      : {};
+  if (input.preferredCreativeLensCode !== undefined) {
+    rawGenerationSettings.preferredCreativeLensCode = input.preferredCreativeLensCode;
+  }
+  if (input.referenceFusionMode !== undefined) {
+    rawGenerationSettings.referenceFusionMode = input.referenceFusionMode;
+  }
+  const generationSettings = normalizeGenerationSettings(rawGenerationSettings);
 
   if (!inputText) {
     throw new Error("自动化生产线需要一句话主题、链接或推荐选题文本");
@@ -216,8 +259,8 @@ export async function createArticleAutomationRun(input: {
       `INSERT INTO article_automation_runs (
         user_id, article_id, input_mode, input_text, source_url, target_wechat_connection_id,
         target_series_id, automation_level, status, current_stage_code, final_wechat_media_id,
-        blocked_reason, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        blocked_reason, generation_settings_json, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         input.userId,
         article?.id ?? null,
@@ -231,6 +274,7 @@ export async function createArticleAutomationRun(input: {
         PLAN22_STAGE_PROMPT_DEFINITIONS[0]?.stageCode ?? "topicAnalysis",
         null,
         null,
+        stringifyJson(generationSettings),
         now,
         now,
       ],
@@ -254,7 +298,7 @@ export async function createArticleAutomationRun(input: {
           null,
           null,
           "queued",
-          stringifyJson({ requiredOutputFields: definition.requiredOutputFields }),
+          stringifyJson({ requiredOutputFields: definition.requiredOutputFields, generationSettings }),
           stringifyJson({}),
           stringifyJson({}),
           stringifyJson({}),

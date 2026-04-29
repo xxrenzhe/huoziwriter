@@ -29,6 +29,7 @@ type OutlineMaterialNodeOption = {
 type OutlineMaterialFragmentOption = {
   id: string;
   label: string;
+  referenceFusionLabel: string;
 };
 
 type OutlineNodeFragmentSummary = {
@@ -37,6 +38,7 @@ type OutlineNodeFragmentSummary = {
   fragments: Array<{
     id: number;
     label: string;
+    referenceFusionLabel: string;
   }>;
 };
 
@@ -53,11 +55,14 @@ type OutlineMaterialsArtifactPanelProps = {
   onChangeSelectedNodeId: (value: string) => void;
   selectedUsageMode: "rewrite" | "image";
   onChangeSelectedUsageMode: (value: "rewrite" | "image") => void;
+  selectedReferenceFusionMode: string;
+  onChangeSelectedReferenceFusionMode: (value: string) => void;
   selectedFragmentId: string;
   onChangeSelectedFragmentId: (value: string) => void;
   nodeOptions: OutlineMaterialNodeOption[];
   fragmentOptions: OutlineMaterialFragmentOption[];
   onAttachExisting: () => void;
+  onUpdateSelectedReferenceFusion: () => void;
   createMode: "manual" | "url" | "screenshot";
   onChangeCreateMode: (value: "manual" | "url" | "screenshot") => void;
   materialTitle: string;
@@ -86,11 +91,14 @@ export function OutlineMaterialsArtifactPanel({
   onChangeSelectedNodeId,
   selectedUsageMode,
   onChangeSelectedUsageMode,
+  selectedReferenceFusionMode,
+  onChangeSelectedReferenceFusionMode,
   selectedFragmentId,
   onChangeSelectedFragmentId,
   nodeOptions,
   fragmentOptions,
   onAttachExisting,
+  onUpdateSelectedReferenceFusion,
   createMode,
   onChangeCreateMode,
   materialTitle,
@@ -105,6 +113,15 @@ export function OutlineMaterialsArtifactPanel({
   onSubmitCreate,
   nodeFragmentSummaries,
 }: OutlineMaterialsArtifactPanelProps) {
+  const selectedFragmentReferenceFusionLabel = fragmentOptions.find((fragment) => fragment.id === selectedFragmentId)?.referenceFusionLabel || "";
+  const referenceFusionOptions = [
+    { value: "inspiration", label: "只借灵感", helper: "只保留触发点，不借结构和表达。" },
+    { value: "structure", label: "借结构", helper: "允许参考推进骨架，但必须换判断、案例和表达。" },
+    { value: "evidence", label: "抽证据", helper: "优先抽事实、数据、原话、反证和边界。" },
+    { value: "close_read", label: "精读拆解", helper: "深拆来源，但必须生成差异化策略和规避清单。" },
+  ];
+  const selectedReferenceFusionHelper = referenceFusionOptions.find((item) => item.value === selectedReferenceFusionMode)?.helper || "";
+
   return (
     <div className="space-y-4 border border-lineStrong/60 bg-paperStrong px-4 py-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -215,6 +232,29 @@ export function OutlineMaterialsArtifactPanel({
         {savingMaterials ? "保存中…" : "保存补充观点"}
       </Button>
 
+      <div className="border border-lineStrong bg-surface px-4 py-4">
+        <div className="text-xs uppercase tracking-[0.18em] text-inkMuted">素材参考方式</div>
+        <div className="mt-2 text-sm leading-7 text-inkSoft">
+          这里决定单条素材进入研究、大纲和正文时是当灵感、结构、证据，还是精读对象。高风险模式会把规避清单继续传给后续阶段。
+        </div>
+        <Select
+          aria-label="素材参考融合方式"
+          value={selectedReferenceFusionMode}
+          onChange={(event) => onChangeSelectedReferenceFusionMode(event.target.value)}
+          className="mt-3 bg-paperStrong px-3 py-2"
+        >
+          {referenceFusionOptions.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </Select>
+        <div className="mt-2 text-xs leading-6 text-inkMuted">
+          {selectedReferenceFusionHelper}
+          {selectedFragmentReferenceFusionLabel ? ` 当前选中素材已标记为「${selectedFragmentReferenceFusionLabel}」。` : ""}
+        </div>
+      </div>
+
       <div className="grid gap-4 lg:grid-cols-2">
         <div className="border border-lineStrong bg-surface px-4 py-4">
           <div className="text-xs uppercase tracking-[0.18em] text-inkMuted">挂载已有素材</div>
@@ -254,15 +294,24 @@ export function OutlineMaterialsArtifactPanel({
             ))}
           </Select>
           <div className="mt-2 text-xs leading-6 text-inkMuted">如果截图已经在素材库里，可直接在这里选择“原样截图插入”；也可以在右侧直接上传新截图。</div>
-          <Button
-            type="button"
-            onClick={onAttachExisting}
-            disabled={savingMaterials}
-            variant="primary"
-            className="mt-3"
-          >
-            {savingMaterials ? "处理中…" : "挂到当前节点"}
-          </Button>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button
+              type="button"
+              onClick={onAttachExisting}
+              disabled={savingMaterials}
+              variant="primary"
+            >
+              {savingMaterials ? "处理中…" : "挂到当前节点"}
+            </Button>
+            <Button
+              type="button"
+              onClick={onUpdateSelectedReferenceFusion}
+              disabled={savingMaterials || !selectedFragmentId}
+              variant="secondary"
+            >
+              更新参考方式
+            </Button>
+          </div>
         </div>
 
         <div className="border border-lineStrong bg-surface px-4 py-4">
@@ -366,6 +415,7 @@ export function OutlineMaterialsArtifactPanel({
                 {node.fragments.map((fragment) => (
                   <span key={`${node.nodeId}-${fragment.id}`} className="border border-lineStrong bg-paperStrong px-3 py-2 text-xs leading-6 text-inkSoft">
                     {fragment.label}
+                    {fragment.referenceFusionLabel ? ` · ${fragment.referenceFusionLabel}` : ""}
                   </span>
                 ))}
               </div>

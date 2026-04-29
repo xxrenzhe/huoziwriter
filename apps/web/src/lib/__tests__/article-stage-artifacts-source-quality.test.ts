@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   buildEvidenceFragmentPromptSummary,
+  buildXEvidencePromptLines,
   collectEvidenceFragmentFacts,
   normalizeFictionalMaterialItems,
   pickStricterResearchSufficiency,
@@ -100,4 +101,123 @@ test("normalizeFictionalMaterialItems merges fallback when model output is too t
   assert.equal(items[0]?.label, "单条弱素材");
   assert.equal(items[0]?.character, "增长负责人");
   assert.equal(items[1]?.label, "兜底素材");
+});
+
+test("buildXEvidencePromptLines gives title stage immediate conflict and numbers", () => {
+  const lines = buildXEvidencePromptLines("titleOptimization", [
+    {
+      topic: "Anthropic ARR 反超 OpenAI",
+      whyNow: "X 上的讨论已经从情绪转向收入与成本结构的正面比较。",
+      originSignal: {
+        firstBreakHandle: "NoLimitGains",
+        firstBreakAt: "2026-04-29T08:00:00.000Z",
+        firstBreakUrl: "https://x.com/example/1",
+      },
+      coreClaims: [
+        {
+          claim: "Anthropic 年化营收达到 300 亿美元。",
+          sourceTier: "social",
+          sourceLabel: "@NoLimitGains",
+          sourceUrl: "https://x.com/example/1",
+          confidence: "medium",
+        },
+      ],
+      numberBoard: [
+        {
+          label: "帖子核心数字",
+          value: "300 亿美元",
+          sourceTier: "social",
+          sourceLabel: "@NoLimitGains",
+          sourceUrl: "https://x.com/example/1",
+        },
+      ],
+      conflictBoard: [
+        {
+          sideA: "@NoLimitGains",
+          sideB: "WSJ",
+          sentence: "这不是普通增长新闻，而是 AI 龙头位置正在被公开重排。",
+          evidenceRefs: ["https://x.com/example/1"],
+        },
+      ],
+      quoteBoard: [
+        {
+          speaker: "@NoLimitGains",
+          quoteStyle: "direct-short",
+          content: "Anthropic just passed OpenAI in ARR.",
+          sourceTier: "social",
+          sourceUrl: "https://x.com/example/1",
+        },
+      ],
+      audienceImpact: [
+        {
+          audience: "AI 产品从业者",
+          impact: "需要重新判断企业端收入模式的护城河。",
+          urgency: "high",
+        },
+      ],
+      riskNotes: ["当前主要还是 X 信号，标题不能把未验证数字写成铁事实。"],
+      verificationHits: [],
+    },
+  ]);
+
+  const text = lines.join("\n");
+  assert.match(text, /标题必须把变化对象、冲突双方或结果写出来/);
+  assert.match(text, /关键数字：帖子核心数字：300 亿美元/);
+  assert.match(text, /核心冲突：这不是普通增长新闻/);
+});
+
+test("buildXEvidencePromptLines gives deep writing stage quote, impact and risk boundary", () => {
+  const lines = buildXEvidencePromptLines("deepWriting", [
+    {
+      topic: "副业赚钱话题",
+      whyNow: "这条副业案例开始从晒结果转向讨论复制门槛。",
+      originSignal: {
+        firstBreakHandle: "CreatorThread",
+        firstBreakAt: null,
+        firstBreakUrl: "https://x.com/example/2",
+      },
+      coreClaims: [
+        {
+          claim: "案例收入主要来自联盟营销，而不是课程分销。",
+          sourceTier: "social",
+          sourceLabel: "@CreatorThread",
+          sourceUrl: "https://x.com/example/2",
+          confidence: "medium",
+        },
+      ],
+      numberBoard: [],
+      conflictBoard: [
+        {
+          sideA: "@CreatorThread",
+          sideB: null,
+          sentence: "争议点不在赚没赚钱，而在这是不是一个普通人也能复制的副业路径。",
+          evidenceRefs: [],
+        },
+      ],
+      quoteBoard: [
+        {
+          speaker: "@CreatorThread",
+          quoteStyle: "direct-short",
+          content: "Most people are copying the wrong part of the funnel.",
+          sourceTier: "social",
+          sourceUrl: "https://x.com/example/2",
+        },
+      ],
+      audienceImpact: [
+        {
+          audience: "副业尝试者",
+          impact: "要先分清结果截图和可复制路径是不是一回事。",
+          urgency: "high",
+        },
+      ],
+      riskNotes: ["目前缺少完整后台数据，正文要保留有限观察口径。"],
+      verificationHits: [],
+    },
+  ]);
+
+  const text = lines.join("\n");
+  assert.match(text, /正文先把 X 现场当引爆点/);
+  assert.match(text, /现场原话：@CreatorThread：Most people are copying the wrong part of the funnel\./);
+  assert.match(text, /谁最受影响：副业尝试者：要先分清结果截图和可复制路径是不是一回事。/);
+  assert.match(text, /事实边界：目前缺少完整后台数据/);
 });

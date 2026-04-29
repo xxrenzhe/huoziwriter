@@ -142,7 +142,51 @@ test("sanitizeGeneratedSvg removes scripts, event handlers and remote links", ()
 
 test("buildArticleDiagramSvg emits safe svg text from brief labels", () => {
   const svg = buildArticleDiagramSvg(brief({ labels: ["素材<script>", "核查&发布"] }));
-  assert.match(svg, /素材&lt;script&gt;/);
+  assert.match(svg, /素材/);
   assert.match(svg, /核查&amp;发布/);
   assert.doesNotMatch(svg, /<script>/i);
+});
+
+test("buildArticleDiagramSvg wraps diagram labels and filters broken text fragments", () => {
+  const svg = buildArticleDiagramSvg(brief({
+    title: "质量得分（Quality Score）是 Google Ads 搜索广告的关键词级诊断工具",
+    purpose: "解释质量得分能看什么，以及为什么它不是优化目标本身",
+    labels: ["质量得分（Quality", "Score）是", "Google", "Ads", "分值范围为", "10"],
+    sourceFacts: [
+      "质量得分（Quality Score）是 Google Ads 用于搜索广告系列的关键词级诊断工具，分值范围为 1 至 10",
+      "它不是关键绩效指标，也不作为广告竞价的输入，不应与其他数据汇总后用于优化",
+      "该分数由预期点击率、广告相关性和落地页体验 3 个组成部分的综合表现计算而来",
+    ],
+  }));
+
+  assert.match(svg, /<tspan\b/);
+  assert.match(svg, /质量得分/);
+  assert.match(svg, /预期点击率|广告相关性|落地页体验/);
+  assert.doesNotMatch(svg, /Quality<\/tspan>|Score）是|Google<\/tspan>|Ads<\/tspan>|分值范围为|>10</);
+});
+
+test("buildArticleDiagramSvg keeps long framework text inside bounded lines", () => {
+  const svg = buildArticleDiagramSvg(brief({
+    visualType: "framework",
+    layoutCode: "framework",
+    title: "搜索广告投放中，关键词表现存在差异：一些看起来精准的关键词长期不赚钱",
+    purpose: "用结构图说明为什么应先判断搜索意图，而不只是做关键词字面匹配",
+    labels: [
+      "一些普通关键词能稳定出单",
+      "而不只是关键词",
+      "出价",
+      "质量分",
+      "文案或竞争强度",
+      "而不只是做关键词字面匹配",
+    ],
+    sourceFacts: [
+      "影响流量价值的核心变量是搜索意图，而不只是关键词、出价、质量分、文案或竞争强度",
+      "搜索引擎会根据用户当下想做的事进行意图匹配，而不只是做关键词字面匹配；当搜索意图变化时，搜索结果会随之变化",
+    ],
+  }));
+  const textLines = [...svg.matchAll(/<tspan[^>]*>(.*?)<\/tspan>/g)].map((match) => match[1].replace(/&[^;]+;/g, ""));
+
+  assert.ok(textLines.length >= 8);
+  assert.ok(textLines.every((line) => line.length <= 25), textLines.join(" | "));
+  assert.doesNotMatch(svg, /而不只是关键词|而不只是做关键词字面匹配/);
 });

@@ -11,7 +11,8 @@ type SubmitOutlineMaterialAction =
   | "attachExisting"
   | "createManual"
   | "createUrl"
-  | "createScreenshot";
+  | "createScreenshot"
+  | "updateReferenceFusion";
 
 type ArticleWorkspaceStageHandlersDeps = {
   setAudienceSelectionDraft: Dispatch<SetStateAction<AudienceSelectionDraft>>;
@@ -95,6 +96,10 @@ export function createArticleWorkspaceStageHandlers({
 
   function handleOutlinePlanningAttachExistingMaterial() {
     void submitOutlineMaterial("attachExisting");
+  }
+
+  function handleOutlinePlanningUpdateMaterialReferenceFusion() {
+    void submitOutlineMaterial("updateReferenceFusion");
   }
 
   function handleOutlinePlanningSubmitCreateMaterial() {
@@ -186,6 +191,7 @@ export function createArticleWorkspaceStageHandlers({
     handleOutlinePlanningSupplementalViewpointChange,
     handleOutlinePlanningSaveSupplementalViewpoints,
     handleOutlinePlanningAttachExistingMaterial,
+    handleOutlinePlanningUpdateMaterialReferenceFusion,
     handleOutlinePlanningSubmitCreateMaterial,
     handleOutlinePlanningSelectTitle,
     handleOutlinePlanningSelectOpeningHook,

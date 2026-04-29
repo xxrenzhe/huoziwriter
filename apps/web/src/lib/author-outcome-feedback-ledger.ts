@@ -74,11 +74,13 @@ export type AuthorOutcomeFeedbackLedger = {
   positiveSampleCount: number;
   prototypeSignals: AuthorOutcomeFeedbackSignal[];
   stateVariantSignals: AuthorOutcomeFeedbackSignal[];
+  creativeLensSignals: AuthorOutcomeFeedbackSignal[];
   openingPatternSignals: AuthorOutcomeFeedbackSignal[];
   sectionRhythmSignals: AuthorOutcomeFeedbackSignal[];
   recommendations: {
     prototype: AuthorOutcomeFeedbackRecommendation;
     stateVariant: AuthorOutcomeFeedbackRecommendation;
+    creativeLens: AuthorOutcomeFeedbackRecommendation;
     openingPattern: AuthorOutcomeFeedbackRecommendation;
     sectionRhythm: AuthorOutcomeFeedbackRecommendation;
   };
@@ -714,6 +716,7 @@ function mapLedgerRow(row: {
   const recommendations = {
     prototype: mapRecommendation(getRecord(payload.recommendations)?.prototype),
     stateVariant: mapRecommendation(getRecord(payload.recommendations)?.stateVariant),
+    creativeLens: mapRecommendation(getRecord(payload.recommendations)?.creativeLens),
     openingPattern: mapRecommendation(getRecord(payload.recommendations)?.openingPattern),
     sectionRhythm: mapRecommendation(getRecord(payload.recommendations)?.sectionRhythm),
   };
@@ -725,6 +728,7 @@ function mapLedgerRow(row: {
     positiveSampleCount,
     prototypeSignals: getRecordArray(payload.prototypeSignals).map(mapSignal).filter(Boolean) as AuthorOutcomeFeedbackSignal[],
     stateVariantSignals: getRecordArray(payload.stateVariantSignals).map(mapSignal).filter(Boolean) as AuthorOutcomeFeedbackSignal[],
+    creativeLensSignals: getRecordArray(payload.creativeLensSignals).map(mapSignal).filter(Boolean) as AuthorOutcomeFeedbackSignal[],
     openingPatternSignals: getRecordArray(payload.openingPatternSignals).map(mapSignal).filter(Boolean) as AuthorOutcomeFeedbackSignal[],
     sectionRhythmSignals: getRecordArray(payload.sectionRhythmSignals).map(mapSignal).filter(Boolean) as AuthorOutcomeFeedbackSignal[],
     recommendations,
@@ -799,6 +803,7 @@ export async function computeAuthorOutcomeFeedbackLedger(input: {
   });
   const prototypeBuckets = new Map<string, SignalBucket>();
   const stateVariantBuckets = new Map<string, SignalBucket>();
+  const creativeLensBuckets = new Map<string, SignalBucket>();
   const openingPatternBuckets = new Map<string, SignalBucket>();
   const sectionRhythmBuckets = new Map<string, SignalBucket>();
   const expressionFeedbackSummary = createExpressionFeedbackSummary();
@@ -828,6 +833,13 @@ export async function computeAuthorOutcomeFeedbackLedger(input: {
     const prototypeLabel = getString(payload.articlePrototypeLabel) || prototypeCode;
     const stateVariantCode = getString(payload.stateVariantCode);
     const stateVariantLabel = getString(payload.stateVariantLabel) || stateVariantCode;
+    const adoptedCreativeLensCode =
+      getString(snapshot?.writingStateFeedback?.adoptedCreativeLensCode)
+      || getString(payload.creativeLensCode);
+    const adoptedCreativeLensLabel =
+      getString(snapshot?.writingStateFeedback?.adoptedCreativeLensLabel)
+      || getString(payload.creativeLensLabel)
+      || adoptedCreativeLensCode;
     const adoptedOpeningPatternLabel =
       getString(snapshot?.writingStateFeedback?.adoptedOpeningPatternLabel)
       || getString(payload.openingPatternLabel);
@@ -867,6 +879,16 @@ export async function computeAuthorOutcomeFeedbackLedger(input: {
         followedRecommendation: snapshot?.writingStateFeedback?.followedRecommendation ?? null,
       });
     }
+    if (adoptedCreativeLensCode) {
+      registerSignal({
+        map: creativeLensBuckets,
+        key: adoptedCreativeLensCode,
+        label: adoptedCreativeLensLabel || adoptedCreativeLensCode,
+        hitStatus,
+        performanceScore,
+        followedRecommendation: snapshot?.writingStateFeedback?.followedCreativeLensRecommendation ?? null,
+      });
+    }
     if (adoptedOpeningPatternLabel) {
       registerSignal({
         map: openingPatternBuckets,
@@ -897,12 +919,14 @@ export async function computeAuthorOutcomeFeedbackLedger(input: {
 
   const prototypeSignals = Array.from(prototypeBuckets.values()).map((item) => finalizeSignal(item, "原型")).sort(compareSignals);
   const stateVariantSignals = Array.from(stateVariantBuckets.values()).map((item) => finalizeSignal(item, "状态")).sort(compareSignals);
+  const creativeLensSignals = Array.from(creativeLensBuckets.values()).map((item) => finalizeSignal(item, "创意镜头")).sort(compareSignals);
   const openingPatternSignals = Array.from(openingPatternBuckets.values()).map((item) => finalizeSignal(item, "开头方式")).sort(compareSignals);
   const sectionRhythmSignals = Array.from(sectionRhythmBuckets.values()).map((item) => finalizeSignal(item, "段落节奏")).sort(compareSignals);
   const updatedAt = new Date().toISOString();
   const recommendations = {
     prototype: selectRecommendation(prototypeSignals),
     stateVariant: selectRecommendation(stateVariantSignals),
+    creativeLens: selectRecommendation(creativeLensSignals),
     openingPattern: selectRecommendation(openingPatternSignals),
     sectionRhythm: selectRecommendation(sectionRhythmSignals),
   };
@@ -912,6 +936,7 @@ export async function computeAuthorOutcomeFeedbackLedger(input: {
     positiveSampleCount,
     prototypeSignals,
     stateVariantSignals,
+    creativeLensSignals,
     openingPatternSignals,
     sectionRhythmSignals,
     recommendations,

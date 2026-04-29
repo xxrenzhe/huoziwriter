@@ -31,6 +31,8 @@ type CurrentStageArtifactViewProps = Pick<
     | "onSelectPrototype"
     | "stateVariantOverride"
     | "onSelectStateVariant"
+    | "creativeLensOverride"
+    | "onSelectCreativeLens"
     | "openingPreviews"
     | "openingPreviewLoadingKey"
     | "openingCheckLoading"
@@ -99,6 +101,8 @@ export function CurrentStageArtifactView({
   onSelectPrototype,
   stateVariantOverride,
   onSelectStateVariant,
+  creativeLensOverride,
+  onSelectCreativeLens,
   openingPreviews,
   openingPreviewLoadingKey,
   openingCheckLoading,
@@ -179,6 +183,8 @@ export function CurrentStageArtifactView({
           onSelectPrototype={onSelectPrototype}
           stateVariantOverride={stateVariantOverride}
           onSelectStateVariant={onSelectStateVariant}
+          creativeLensOverride={creativeLensOverride}
+          onSelectCreativeLens={onSelectCreativeLens}
           openingPreviews={openingPreviews}
           openingPreviewLoadingKey={openingPreviewLoadingKey}
           openingCheckLoading={openingCheckLoading}

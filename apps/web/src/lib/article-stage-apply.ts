@@ -9,7 +9,12 @@ import { getArticleAuthoringStyleContext } from "./article-authoring-style-conte
 import { resolveArticleApplyCommandTemplate, resolveArticleLayoutStrategy } from "./article-rollout";
 import { getArticleWritingContext } from "./article-writing-context";
 import type { ArticleArtifactStageCode } from "./article-workflow-registry";
-import { buildCommandRewrite, buildFactCheckTargetedRewrite, buildProsePolishTargetedRewrite } from "./generation";
+import {
+  buildCommandRewrite,
+  buildFactCheckTargetedRewrite,
+  buildProsePolishTargetedRewrite,
+  finalizeProsePolishMarkdownForReader,
+} from "./generation";
 import { getLanguageGuardRules, getLanguageGuardTokenBlacklist } from "./language-guard";
 import { consumeDailyGenerationQuota, getUserPlanContext } from "./plan-access";
 import { createArticleSnapshot, getArticleById } from "./repositories";
@@ -476,7 +481,13 @@ function buildLocalProsePolishMarkdown(input: {
   if (rewrittenLead) {
     next = replaceLocalFirstReaderFacingBlock(next, rewrittenLead);
   }
-  return polishMarkdownLocallyForReadability(sanitizeBannedWordsLocal(next, input.bannedWords));
+  return finalizeProsePolishMarkdownForReader({
+    originalMarkdown: input.markdownContent,
+    candidateMarkdown: sanitizeBannedWordsLocal(next, input.bannedWords),
+    bannedWords: input.bannedWords,
+    deepWritingPayload: input.deepWritingPayload,
+    rewrittenLead,
+  });
 }
 
 function getLocalOpeningLead(payload?: Record<string, unknown> | null) {

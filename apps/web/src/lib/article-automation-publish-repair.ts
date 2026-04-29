@@ -1,5 +1,8 @@
 import { generateSceneText } from "./ai-gateway";
 import { analyzeAiNoise } from "./ai-noise-scan";
+import { evaluateFinalBodyViralContract } from "./article-viral-contract";
+import { detectArticleViralMode, type ArticleViralMode } from "./article-viral-modes";
+import { evaluateArticleViralScore, WECHAT_VIRAL_SCORE_THRESHOLD } from "./article-viral-score";
 import { syncArticleCoverAssetToAssetFiles, syncArticleVisualAssetToAssetFiles } from "./asset-files";
 import {
   buildSuggestedEvidenceItems,
@@ -103,6 +106,77 @@ function detectStrategySeedTopic(title: string) {
   return "generic";
 }
 
+function resolveRepairViralMode(input: {
+  title: string;
+  markdownContent?: string | null;
+  deepWritingPayload?: Record<string, unknown> | null;
+  researchPayload?: Record<string, unknown> | null;
+}) {
+  const viralGenomePack = getRecord(input.deepWritingPayload?.viralGenomePack);
+  const explicitMode = getString(viralGenomePack?.mode);
+  if (explicitMode === "power_shift_breaking" || explicitMode === "default") {
+    return explicitMode as ArticleViralMode;
+  }
+  return detectArticleViralMode({
+    title: input.title,
+    markdownContent: [
+      input.title,
+      getString(input.markdownContent),
+      getString(input.deepWritingPayload?.centralThesis),
+      getString(input.deepWritingPayload?.openingStrategy),
+      getString(viralGenomePack?.firstScreenPromise),
+      getString(viralGenomePack?.shareTrigger),
+    ].filter(Boolean).join("\n"),
+    businessQuestions: getStringArray(viralGenomePack?.businessQuestions, 7).length
+      ? getStringArray(viralGenomePack?.businessQuestions, 7)
+      : getStringArray(input.researchPayload?.businessQuestions, 7),
+  });
+}
+
+export function buildViralScoreRepairPromptLines(input: {
+  title: string;
+  markdownContent?: string | null;
+  deepWritingPayload?: Record<string, unknown> | null;
+  researchPayload?: Record<string, unknown> | null;
+}) {
+  const viralGenomePack = getRecord(input.deepWritingPayload?.viralGenomePack);
+  const mode = resolveRepairViralMode(input);
+  const firstScreenPromise = getString(viralGenomePack?.firstScreenPromise);
+
+  if (mode === "power_shift_breaking") {
+    return [
+      "硬性改法：",
+      "1. 保留原核心判断：这篇是王座更替/资本战/路线之争，不要改成普通新闻综述、百科解释或行业报告。",
+      `2. 第一屏前 120-200 字必须同时兑现${firstScreenPromise ? `：${firstScreenPromise}` : "赢家名字、输家名字、硬数字和今天到底变了什么"}。`,
+      "3. 必须加入 3-5 个 ## 小标题，让读者滑屏时直接抓住胜负看板、赢者为什么赢、输家哪里失血、成本差和下半场风险。",
+      "4. 必须把外部胜负和内部裂痕连起来：不仅写谁赢了，还要写输家为什么开始慌、谁在担忧、哪条路线开始被怀疑。",
+      "5. 必须至少保留一段胜负看板证据，写清赢家、输家、硬数字、时间差和来源锚点；不要只剩抽象判断。",
+      "6. 必须让读者看到真实压力：哪张账单在压人、谁在质疑、谁在失血、市场怎样投票；不要只有结论，没有压迫感。",
+      "7. 减少泛行业背景和说教句，把部分段落改成战报句、账本句、裂痕句和判断句，别把正文修回端着的评论稿。",
+      "8. 如果正文已有图片 Markdown 或 <!-- huozi-visual:id --> 标记，必须保留，并把图片放在相关段落后面；信息图优先贴着胜负看板或成本对比，知识漫画优先贴着路线分歧或内部裂痕。",
+      "9. 如果研究卡里有商业问题，正文至少写出钱从哪里来/成本卡在哪、为什么是现在、影响谁、最可信证据是什么。",
+      "10. 段落保持 2-4 句自然呼吸；不要连续几段都在解释概念。",
+      "11. 结尾不要落成“今天就去后台做什么”，而要落成一句适合转发的行业判断、格局改写或下半场推演。",
+    ];
+  }
+
+  return [
+    "硬性改法：",
+    "1. 保留原核心判断，不要把文章改成另一个题，也不要把有冲突的稿子修成中性说明文。",
+    `2. 第一屏前 200 字必须同时兑现${firstScreenPromise ? `：${firstScreenPromise}` : "具体对象、正在发生的变化和读者代价"}，不要先铺背景或先上方法。`,
+    "3. 必须加入 3-5 个 ## 小标题，让读者滑屏时能直接抓住冲突、误判、关键变量和结尾判断。",
+    "4. 如果开头已经出现角色、场景或组织冲突，必须把这条主线延续到中段，不要只在开头闪一下。",
+    "5. 必须让读者看见一次真实压力：谁在亏、谁在急、谁在解释不动；不要只有判断，没有情绪。",
+    "6. 如果文章本身是案例/实操型，至少保留一个 mini case，写清谁说了什么、盯着哪张表、结果卡在了哪里；不要只写“很多团队”“很多人”。",
+    "7. 如果文章本身是方法/复盘型，可以保留 1 组可收藏的判断表、检查表或动作清单，但不要把全文修成教程。",
+    "8. 必须减少重复的“不是...而是...”句式，把部分判断改成动作句、现场句、边界句和会场对话。",
+    "9. 如果正文已有图片 Markdown 或 <!-- huozi-visual:id --> 标记，必须保留，并把图片移动到相关段落后面；不要把所有图片堆在文末。",
+    "10. 如果研究卡里有商业问题，正文必须至少把钱/成本卡在哪、为什么是现在、哪些人不适合照搬、最可信证据是什么写进正文。",
+    "11. 段落保持 2-4 句自然呼吸；不要写成行业报告、培训课、百科解释或站在上面教读者。",
+    "12. 结尾必须留下一个可转发判断、一个可执行动作，或一个边界清晰的提醒，但不要收成空口号。",
+  ];
+}
+
 export function buildHumanSignalSeed(title: string) {
   const topic = title.replace(/\s+/g, " ").trim() || "这篇文章";
   if (detectStrategySeedTopic(topic) === "search_marketing") {
@@ -168,6 +242,140 @@ function splitMarkdownTitle(markdown: string) {
   return { title: "", body: String(markdown || "").trimStart() };
 }
 
+function stripMarkdownInlineTokens(text: string) {
+  return String(text || "")
+    .replace(/!\[[^\]]*]\([^)]+\)/g, "")
+    .replace(/\[[^\]]+]\([^)]+\)/g, "$1")
+    .replace(/[`*_>#~-]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function isReaderFacingParagraphBlock(block: string) {
+  const text = String(block || "").trim();
+  return Boolean(text)
+    && !/^#/.test(text)
+    && !/^<!--/.test(text)
+    && !/^!\[/.test(text)
+    && !/^```/.test(text)
+    && !/^\s*([-*]|\d+\.)\s+/.test(text);
+}
+
+function buildBigramSet(text: string) {
+  const normalized = stripMarkdownInlineTokens(text).replace(/[^\p{L}\p{N}]+/gu, "");
+  const grams = new Set<string>();
+  if (normalized.length < 2) {
+    return grams;
+  }
+  for (let index = 0; index < normalized.length - 1; index += 1) {
+    grams.add(normalized.slice(index, index + 2));
+  }
+  return grams;
+}
+
+function computeBigramJaccard(left: string, right: string) {
+  const leftSet = buildBigramSet(left);
+  const rightSet = buildBigramSet(right);
+  if (!leftSet.size || !rightSet.size) {
+    return 0;
+  }
+  let intersection = 0;
+  for (const gram of leftSet) {
+    if (rightSet.has(gram)) {
+      intersection += 1;
+    }
+  }
+  return intersection / (leftSet.size + rightSet.size - intersection);
+}
+
+const INTRO_SCENE_MARKERS = [
+  "老板",
+  "销售",
+  "投放",
+  "用户",
+  "客户",
+  "团队",
+  "复盘",
+  "预算",
+  "线索",
+  "账户",
+  "搜索词",
+  "关键词",
+  "报告",
+  "会议",
+  "后台",
+  "数据",
+  "转化",
+  "成交",
+  "产品",
+  "运营",
+] as const;
+
+function countSharedSceneMarkers(left: string, right: string) {
+  return INTRO_SCENE_MARKERS.filter((marker) => left.includes(marker) && right.includes(marker)).length;
+}
+
+function scoreOpeningBlock(block: string) {
+  const text = stripMarkdownInlineTokens(block);
+  let score = 0;
+  if (text.length >= 70 && text.length <= 220) score += 2;
+  else if (text.length >= 45 && text.length <= 280) score += 1;
+  if (/(不是|而是|却|反而|看起来|实际上|问题必须先问清楚|真正该先问)/.test(text)) score += 2;
+  if (/[？?]|到底|为什么|怎么/.test(text)) score += 2;
+  if (countSharedSceneMarkers(text, text) >= 3) score += 2;
+  if (/(查|看|问|复盘|拆|标|停|加价|拉出来|判断)/.test(text)) score += 1;
+  if (/(花费|预算|线索|成交|转化|点击|回收|质量得分)/.test(text)) score += 1;
+  if (/(因此可以看出|具有重要意义|本文将|综上所述)/.test(text)) score -= 2;
+  return score;
+}
+
+function areNearDuplicateIntroBlocks(left: string, right: string) {
+  const similarity = computeBigramJaccard(left, right);
+  const sharedSceneMarkers = countSharedSceneMarkers(left, right);
+  return similarity >= 0.28
+    || (similarity >= 0.16 && sharedSceneMarkers >= 3)
+    || (similarity >= 0.1 && sharedSceneMarkers >= 4)
+    || sharedSceneMarkers >= 5;
+}
+
+export function collapseNearDuplicateIntroParagraphs(markdown: string) {
+  const { title, body } = splitMarkdownTitle(markdown);
+  const blocks = body.split(/\n{2,}/).map((block) => block.trim()).filter(Boolean);
+  if (blocks.length < 2) {
+    return String(markdown || "").trim();
+  }
+  const firstSectionIndex = blocks.findIndex((block) => /^##\s+/.test(block));
+  const introLimit = firstSectionIndex >= 0 ? firstSectionIndex : Math.min(blocks.length, 4);
+  const introIndexes = blocks
+    .slice(0, introLimit)
+    .map((block, index) => (isReaderFacingParagraphBlock(block) ? index : -1))
+    .filter((index) => index >= 0);
+  if (introIndexes.length < 2) {
+    return String(markdown || "").trim();
+  }
+
+  const removeIndexes = new Set<number>();
+  for (let cursor = 0; cursor < introIndexes.length - 1; cursor += 1) {
+    const currentIndex = introIndexes[cursor];
+    const nextIndex = introIndexes[cursor + 1];
+    const currentBlock = blocks[currentIndex] || "";
+    const nextBlock = blocks[nextIndex] || "";
+    if (!areNearDuplicateIntroBlocks(currentBlock, nextBlock)) {
+      continue;
+    }
+    const currentScore = scoreOpeningBlock(currentBlock);
+    const nextScore = scoreOpeningBlock(nextBlock);
+    removeIndexes.add(nextScore > currentScore ? currentIndex : nextIndex);
+  }
+
+  if (!removeIndexes.size) {
+    return String(markdown || "").trim();
+  }
+
+  const nextBody = blocks.filter((_, index) => !removeIndexes.has(index)).join("\n\n").trim();
+  return [title, nextBody].filter(Boolean).join("\n\n").trim();
+}
+
 export function formatOpeningForPublish(opening: string) {
   const normalized = String(opening || "").replace(/\s+/g, " ").trim();
   if (!normalized) return "";
@@ -204,7 +412,56 @@ function syncMarkdownOpening(markdown: string, opening: string) {
     ? `${normalizedOpening}\n\n${rest}`
     : `${normalizedOpening}\n\n${body}`;
   const finalBody = firstSectionIndex >= 0 ? nextBody : `${normalizedOpening}\n\n${rest}`.trim();
-  return [title, finalBody].filter(Boolean).join("\n\n").trim();
+  return collapseNearDuplicateIntroParagraphs([title, finalBody].filter(Boolean).join("\n\n").trim());
+}
+
+function replaceFirstReaderFacingBlock(markdown: string, replacement: string) {
+  const nextReplacement = getString(replacement);
+  if (!nextReplacement) return markdown;
+  const { title, body } = splitMarkdownTitle(markdown);
+  const blocks = body.split(/\n{2,}/).map((block) => block.trim()).filter(Boolean);
+  const firstIndex = blocks.findIndex((block) => !/^#/.test(block) && !/^<!--/.test(block) && !/^!\[/.test(block));
+  if (firstIndex >= 0) {
+    blocks[firstIndex] = nextReplacement;
+  } else {
+    blocks.unshift(nextReplacement);
+  }
+  return collapseNearDuplicateIntroParagraphs([title, blocks.join("\n\n")].filter(Boolean).join("\n\n").trim());
+}
+
+function buildOpeningHookRepair(title: string) {
+  if (detectStrategySeedTopic(title) === "search_marketing") {
+    return "一个账户最难受的时刻，不是买错了词，而是那个看起来最准的词一边吃预算、一边把线索表拖难看。复盘会里，老板盯回收，销售说这批人不像买家，投放还在解释相关性。问题必须先问清楚：搜这个词的人，到底是在了解、比较，还是已经准备行动？";
+  }
+  const topic = title.replace(/\s+/g, " ").trim() || "这件事";
+  return `最容易误判的，通常不是一眼就错的东西，而是那个看起来很合理、却一直让结果对不上的变量。复盘「${topic}」时，真正该先摆上桌的不是更多背景，而是读者已经付出的代价、旧判断为什么失灵，以及今天能立刻检查的那一步。`;
+}
+
+async function runOpeningHookRepair(input: {
+  articleId: number;
+  userId: number;
+}) {
+  const article = await getArticleById(input.articleId, input.userId);
+  if (!article) {
+    return { changed: false, error: "article_missing" };
+  }
+  const opening = buildOpeningHookRepair(article.title);
+  const nextMarkdown = replaceFirstReaderFacingBlock(article.markdown_content || "", opening);
+  if (!nextMarkdown || nextMarkdown === (article.markdown_content || "")) {
+    return { changed: false, error: null as string | null };
+  }
+  await saveArticleDraft({
+    articleId: article.id,
+    userId: input.userId,
+    body: {
+      title: article.title,
+      markdownContent: nextMarkdown,
+      status: article.status,
+      seriesId: article.series_id,
+      wechatTemplateId: article.wechat_template_id,
+    },
+  });
+  return { changed: true, error: null as string | null };
 }
 
 export async function syncArticleOpeningFromDeepWritingArtifact(input: {
@@ -791,7 +1048,7 @@ export async function runFactRiskRepairWithRetries(input: {
       });
       provider = result.provider;
       model = result.model;
-      const nextMarkdown = result.text.trim();
+      const nextMarkdown = collapseNearDuplicateIntroParagraphs(result.text.trim());
       if (!nextMarkdown || nextMarkdown === article.markdown_content) {
         break;
       }
@@ -944,6 +1201,10 @@ export async function ensureCoverImagePreparedForPublish(input: {
   const assetManifest = {
     ...storedAsset.assetManifest,
     baoyu: coverBrief?.promptManifest || null,
+    prompt: generated.prompt,
+    provider: generated.providerName,
+    model: generated.model,
+    size: coverBrief?.aspectRatio || "16:9",
     promptHash: coverBrief?.promptHash || null,
     visualBriefId: coverBrief?.id || null,
   };
@@ -1138,6 +1399,8 @@ export async function runLanguageGuardAuditWithRetries(input: {
           "审校要求：优先修复命中规则，同时打散施工图式推进，删除抽象空话和总结腔；允许短句、断句和一句话成段；不新增事实，不改核心判断。",
           "段落要求：不要把每句话都拆成独立段落；相邻的现场、解释和判断可以合并成 2-4 句自然段。正文要像作者复盘，不像施工图或逐条讲义。",
           "反说教要求：减少“先/再/最后/应该/必须/要/不要/真正该/这里要看清”这类指挥读者的句式；把它们改成复盘现场、读者代价、判断句或边界句。",
+          "情绪与共情要求：至少让读者看到一次会场压力、角色尴尬或解释不动的时刻，不要只保留正确判断。",
+          "案例要求：把“很多团队/某次复盘”改成更具体的 mini case，写清谁说了什么、在看哪张表、最后卡在哪里。",
           "开头要求：保留已选高钩子开头的冲突密度，不要把开头改成连续铺垫句。",
           "当前正文：",
           article.markdown_content || "",
@@ -1147,7 +1410,7 @@ export async function runLanguageGuardAuditWithRetries(input: {
         maxAttempts: 1,
         requestTimeoutMs: PUBLISH_REPAIR_AI_TIMEOUT_MS,
       });
-      const nextMarkdown = result.text.trim();
+      const nextMarkdown = collapseNearDuplicateIntroParagraphs(result.text.trim());
       provider = result.provider;
       model = result.model;
       if (nextMarkdown && nextMarkdown !== article.markdown_content) {
@@ -1246,6 +1509,156 @@ export async function runLanguageGuardAuditWithRetries(input: {
   };
 }
 
+async function runViralScoreRepair(input: {
+  articleId: number;
+  userId: number;
+  promptContext: PromptLoadContext;
+}) {
+  let article = await getArticleById(input.articleId, input.userId);
+  if (!article) {
+    return {
+      changed: false,
+      error: "article_missing",
+      viralScore: null as ReturnType<typeof evaluateArticleViralScore> | null,
+      finalBodyContract: null as ReturnType<typeof evaluateFinalBodyViralContract> | null,
+      provider: null as string | null,
+      model: null as string | null,
+    };
+  }
+
+  const [deepWritingArtifact, researchArtifact] = await Promise.all([
+    getArticleStageArtifact(input.articleId, input.userId, "deepWriting"),
+    getArticleStageArtifact(input.articleId, input.userId, "researchBrief"),
+  ]);
+  const deepWritingPayload = getRecord(deepWritingArtifact?.payload);
+  const deepWritingViralGenomePack = getRecord(deepWritingPayload?.viralGenomePack);
+  const researchPayload = getRecord(researchArtifact?.payload);
+  const repairPromptLines = buildViralScoreRepairPromptLines({
+    title: article.title,
+    markdownContent: article.markdown_content,
+    deepWritingPayload,
+    researchPayload,
+  });
+  const buildFinalBodyContract = (markdownContent: string) => evaluateFinalBodyViralContract({
+    title: article?.title || "",
+    markdownContent,
+    authorPostureMode: getString(deepWritingViralGenomePack?.authorPostureMode),
+    businessQuestions: getStringArray(researchPayload?.businessQuestions, 7),
+    businessQuestionAnswers: getRecordArray(researchPayload?.businessQuestionAnswers).slice(0, 7).map((item) => ({
+      question: getString(item.question),
+      answer: getString(item.answer),
+    })),
+    firstScreenPromise: getString(deepWritingViralGenomePack?.firstScreenPromise),
+    shareTrigger: getString(deepWritingViralGenomePack?.shareTrigger),
+  });
+
+  let viralScore = evaluateArticleViralScore({
+    title: article.title,
+    markdownContent: article.markdown_content || "",
+    threshold: WECHAT_VIRAL_SCORE_THRESHOLD,
+  });
+  let finalBodyContract = buildFinalBodyContract(article.markdown_content || "");
+  if (viralScore.passed && finalBodyContract.passed) {
+    await updateArticleStageArtifactPayload({
+      articleId: article.id,
+      userId: input.userId,
+      stageCode: "prosePolish",
+      payloadPatch: { viralScore, finalBodyContract },
+    }).catch(() => undefined);
+    return {
+      changed: false,
+      error: null as string | null,
+      viralScore,
+      finalBodyContract,
+      provider: null as string | null,
+      model: null as string | null,
+    };
+  }
+
+  let changed = false;
+  let provider: string | null = null;
+  let model: string | null = null;
+  let errorMessage: string | null = null;
+
+  for (let attempt = 0; attempt < 2 && (!viralScore.passed || !finalBodyContract.passed); attempt += 1) {
+    const promptMeta = await loadPromptWithMeta("article_write", input.promptContext);
+    try {
+      const result = await generateSceneText({
+        sceneCode: "articleWrite",
+        systemPrompt: promptMeta.content,
+        userPrompt: [
+          "请直接输出优化后的完整 Markdown 正文，不要解释，不要 JSON。",
+          `标题：${article.title}`,
+          `当前爆款评分：${viralScore.score}/100，发布线 ${WECHAT_VIRAL_SCORE_THRESHOLD}/100。`,
+          `主要短板：${viralScore.blockers.join("；") || viralScore.summary}`,
+          `终稿兑现契约：${finalBodyContract.passed ? "已通过" : `未通过；${finalBodyContract.blockers.join("；")}`}`,
+          `目标：把这篇公众号文章优化到 ${WECHAT_VIRAL_SCORE_THRESHOLD} 分以上，但不得新增无法支撑的命名案例、真实客户、精确金额或精确转化数据。`,
+          ...repairPromptLines,
+          "当前正文：",
+          article.markdown_content || "",
+        ].join("\n"),
+        temperature: 0.35,
+        rolloutUserId: input.userId,
+        maxAttempts: 1,
+        requestTimeoutMs: PUBLISH_REPAIR_AI_TIMEOUT_MS,
+      });
+      provider = result.provider;
+      model = result.model;
+      const nextMarkdown = collapseNearDuplicateIntroParagraphs(stripReaderInvisibleAutomationBlocks(result.text.trim()));
+      const nextScore = evaluateArticleViralScore({
+        title: article.title,
+        markdownContent: nextMarkdown,
+        threshold: WECHAT_VIRAL_SCORE_THRESHOLD,
+      });
+      const nextContract = buildFinalBodyContract(nextMarkdown);
+      const scoreImproved = nextScore.score > viralScore.score;
+      const contractImproved = nextContract.passed || nextContract.blockers.length < finalBodyContract.blockers.length;
+      if (nextMarkdown && nextMarkdown !== article.markdown_content && (scoreImproved || contractImproved)) {
+        await saveArticleDraft({
+          articleId: article.id,
+          userId: input.userId,
+          body: {
+            title: article.title,
+            markdownContent: nextMarkdown,
+            status: article.status,
+            seriesId: article.series_id,
+            wechatTemplateId: article.wechat_template_id,
+          },
+        });
+        changed = true;
+        article = await getArticleById(input.articleId, input.userId);
+        if (!article) break;
+        viralScore = evaluateArticleViralScore({
+          title: article.title,
+          markdownContent: article.markdown_content || nextMarkdown,
+          threshold: WECHAT_VIRAL_SCORE_THRESHOLD,
+        });
+        finalBodyContract = buildFinalBodyContract(article.markdown_content || nextMarkdown);
+        await updateArticleStageArtifactPayload({
+          articleId: input.articleId,
+          userId: input.userId,
+          stageCode: "prosePolish",
+          payloadPatch: { viralScore, finalBodyContract },
+        }).catch(() => undefined);
+      } else {
+        break;
+      }
+    } catch (error) {
+      errorMessage = error instanceof Error ? error.message : "viral_score_repair_failed";
+      break;
+    }
+  }
+
+  return {
+    changed,
+    error: errorMessage,
+    viralScore,
+    finalBodyContract,
+    provider,
+    model,
+  };
+}
+
 export async function runPublishAutoRepair(input: {
   runId: number;
   articleId: number;
@@ -1312,6 +1725,41 @@ export async function runPublishAutoRepair(input: {
       }
     } catch (error) {
       errors.push(`languageGuard:${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  if (hasGuardIssue(input.publishGuard, ["viralScore90", "finalBodyContract"], ["deepWriting", "prosePolish"])) {
+    try {
+      const viralRepair = await runViralScoreRepair({
+        articleId: input.articleId,
+        userId: input.userId,
+        promptContext: input.promptContext,
+      });
+      if (viralRepair.changed) {
+        appliedFixes.push("viralScore90");
+      }
+      if (viralRepair.error) {
+        errors.push(`viralScore90:${viralRepair.error}`);
+      }
+    } catch (error) {
+      errors.push(`viralScore90:${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  if (hasGuardIssue(input.publishGuard, ["wechatOpeningFloor", "opening_strength"], ["outlinePlanning"])) {
+    try {
+      const openingRepair = await runOpeningHookRepair({
+        articleId: input.articleId,
+        userId: input.userId,
+      });
+      if (openingRepair.changed) {
+        appliedFixes.push("openingHook");
+      }
+      if (openingRepair.error) {
+        errors.push(`openingHook:${openingRepair.error}`);
+      }
+    } catch (error) {
+      errors.push(`openingHook:${error instanceof Error ? error.message : String(error)}`);
     }
   }
 

@@ -5,6 +5,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type FormEvent, startTransition, useEffect, useState } from "react";
 import { ArrowUpRight, Bot, ChevronDown, Loader2, Play, RotateCcw, Square } from "lucide-react";
+import { CREATIVE_LENS_DEFINITIONS } from "@/lib/creative-lenses";
+import { REFERENCE_FUSION_MODES, type ReferenceFusionMode } from "@/lib/reference-fusion";
 import {
   buildStageDetailSections,
   buildStageSummary,
@@ -29,6 +31,12 @@ const shellCardClassName = cn(surfaceCardStyles({ padding: "lg" }), "border-line
 const subtleCardClassName = cn(surfaceCardStyles({ tone: "subtle", padding: "md" }), "border-lineStrong shadow-none");
 const warmCardClassName = cn(surfaceCardStyles({ tone: "warm", padding: "md" }), "border-lineStrong shadow-none");
 const interactiveCardClassName = cn(surfaceCardStyles({ interactive: true, padding: "md" }), "border-lineStrong shadow-none");
+const referenceFusionLabels: Record<ReferenceFusionMode, string> = {
+  inspiration: "只借灵感",
+  structure: "借结构",
+  evidence: "抽证据",
+  close_read: "精读拆解",
+};
 
 export function ArticleAutomationCockpit({
   initialRuns,
@@ -48,6 +56,8 @@ export function ArticleAutomationCockpit({
   const [inputText, setInputText] = useState("");
   const [sourceUrl, setSourceUrl] = useState("");
   const [automationLevel, setAutomationLevel] = useState<AutomationLevel>("draftPreview");
+  const [preferredCreativeLensCode, setPreferredCreativeLensCode] = useState("");
+  const [referenceFusionMode, setReferenceFusionMode] = useState("");
   const [seriesId, setSeriesId] = useState(defaultSeriesId);
   const [wechatConnectionId, setWechatConnectionId] = useState(defaultWechatConnectionId ? String(defaultWechatConnectionId) : "");
   const [message, setMessage] = useState("");
@@ -129,6 +139,10 @@ export function ArticleAutomationCockpit({
             targetSeriesId: seriesId ? Number(seriesId) : null,
             targetWechatConnectionId: automationLevel === "wechatDraft" && wechatConnectionId ? Number(wechatConnectionId) : null,
             automationLevel,
+            generationSettings: {
+              preferredCreativeLensCode: preferredCreativeLensCode || null,
+              referenceFusionMode: referenceFusionMode || null,
+            },
             autoStart: true,
           }),
         }),
@@ -249,6 +263,24 @@ export function ArticleAutomationCockpit({
                   ))}
                 </Select>
               </div>
+              <div className="grid gap-3 md:grid-cols-2">
+                <Select value={preferredCreativeLensCode} onChange={(event) => setPreferredCreativeLensCode(event.target.value)}>
+                  <option value="">创意镜头：自动推荐</option>
+                  {CREATIVE_LENS_DEFINITIONS.map((item) => (
+                    <option key={item.code} value={item.code}>
+                      {item.label}
+                    </option>
+                  ))}
+                </Select>
+                <Select value={referenceFusionMode} onChange={(event) => setReferenceFusionMode(event.target.value)}>
+                  <option value="">参考融合：自动判断</option>
+                  {REFERENCE_FUSION_MODES.map((mode) => (
+                    <option key={mode} value={mode}>
+                      {referenceFusionLabels[mode]}
+                    </option>
+                  ))}
+                </Select>
+              </div>
               <div className="flex flex-wrap items-center gap-3">
                 <Button type="submit" variant="primary" loading={submitting} iconLeft={<Play size={16} />}>
                   开始自动生成高质量草稿
@@ -270,6 +302,16 @@ export function ArticleAutomationCockpit({
                 <div className="flex flex-wrap gap-2 text-xs">
                   <span className={cn("rounded-full border px-2.5 py-1", getRunStatusClassName(currentRun.status))}>{currentRun.status}</span>
                   <span className="rounded-full border border-lineStrong bg-surface px-2.5 py-1 text-inkSoft">{getAutomationLevelLabel(currentRun.automationLevel)}</span>
+                  {currentRun.generationSettings?.preferredCreativeLensCode ? (
+                    <span className="rounded-full border border-lineStrong bg-surface px-2.5 py-1 text-inkSoft">
+                      {CREATIVE_LENS_DEFINITIONS.find((item) => item.code === currentRun.generationSettings.preferredCreativeLensCode)?.label || currentRun.generationSettings.preferredCreativeLensCode}
+                    </span>
+                  ) : null}
+                  {currentRun.generationSettings?.referenceFusionMode ? (
+                    <span className="rounded-full border border-lineStrong bg-surface px-2.5 py-1 text-inkSoft">
+                      {referenceFusionLabels[currentRun.generationSettings.referenceFusionMode as ReferenceFusionMode] || currentRun.generationSettings.referenceFusionMode}
+                    </span>
+                  ) : null}
                   <span className="rounded-full border border-lineStrong bg-surface px-2.5 py-1 text-inkSoft">{formatRelativeTime(currentRun.updatedAt)}</span>
                 </div>
                 <div className="flex flex-wrap gap-3">

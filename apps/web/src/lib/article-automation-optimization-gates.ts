@@ -1,6 +1,7 @@
 import { analyzeAiNoise } from "./ai-noise-scan";
 import { evaluateOpeningGuardChecks } from "./opening-patterns";
 import { DEFAULT_ARTICLE_NODE_TITLES } from "./article-structure-labels";
+import { evaluateFinalBodyViralContract } from "./article-viral-contract";
 import { evaluateTitleGuardChecks } from "./title-patterns";
 
 export const TITLE_OPTIMIZATION_MIN_OPTION_COUNT = 6;
@@ -677,6 +678,9 @@ export function getGeneratedArticleViralQualityGateIssues(input: GeneratedArticl
     ...collectInternalLabelHits(markdownContent),
     ...collectInternalLabelHits(htmlContent),
   ]));
+  const finalBodyContract = evaluateFinalBodyViralContract({
+    markdownContent,
+  });
 
   if (!plainText) {
     return [{
@@ -724,6 +728,12 @@ export function getGeneratedArticleViralQualityGateIssues(input: GeneratedArticl
     issues.push({
       code: "generated_article_internal_label_exposure",
       detail: `终稿或 HTML 暴露内部结构标签：${internalLabelHits.join("、")}。执行卡标签只能服务生成流程，不能作为用户可见内容。`,
+    });
+  }
+  if (!finalBodyContract.passed) {
+    issues.push({
+      code: "generated_article_final_body_contract",
+      detail: `终稿正文契约未兑现：${finalBodyContract.blockers.slice(0, 3).join("；")}。`,
     });
   }
 

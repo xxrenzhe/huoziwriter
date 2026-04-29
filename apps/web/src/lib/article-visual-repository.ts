@@ -1,5 +1,6 @@
 import { getDatabase } from "./db";
 import type { ArticleVisualAsset, ArticleVisualBrief, ArticleVisualBriefStatus } from "./article-visual-types";
+import type { ArticleViralMode } from "./article-viral-modes";
 
 function parseJsonRecord(value: unknown) {
   if (!value) return null;
@@ -27,6 +28,10 @@ function parseJsonArray(value: unknown) {
 
 function serializeJson(value: unknown) {
   return value == null ? null : JSON.stringify(value);
+}
+
+function normalizeVisualBriefViralMode(value: unknown) {
+  return value === "power_shift_breaking" || value === "default" ? value as ArticleViralMode : null;
 }
 
 function mapBrief(row: {
@@ -83,6 +88,7 @@ function mapBrief(row: {
     outputResolution: row.output_resolution,
     title: row.title,
     purpose: row.purpose,
+    viralMode: normalizeVisualBriefViralMode(parseJsonRecord(row.prompt_manifest_json)?.viralMode),
     altText: row.alt_text,
     caption: row.caption,
     labels: parseJsonArray(row.labels_json),
@@ -188,7 +194,7 @@ export async function listArticleVisualBriefs(userId: number, articleId: number)
     `SELECT *
      FROM article_visual_briefs
      WHERE user_id = ? AND article_id = ?
-     ORDER BY CASE visual_scope WHEN 'cover' THEN 0 WHEN 'diagram' THEN 1 WHEN 'infographic' THEN 2 ELSE 3 END, id ASC`,
+     ORDER BY CASE visual_scope WHEN 'cover' THEN 0 WHEN 'diagram' THEN 1 WHEN 'infographic' THEN 2 WHEN 'comic' THEN 3 ELSE 4 END, id ASC`,
     [userId, articleId],
   );
   return rows.map(mapBrief);

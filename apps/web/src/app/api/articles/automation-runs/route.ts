@@ -30,6 +30,9 @@ export async function POST(request: Request) {
       targetWechatConnectionId: body.targetWechatConnectionId,
       targetSeriesId: body.targetSeriesId,
       automationLevel: body.automationLevel,
+      generationSettings: body.generationSettings,
+      preferredCreativeLensCode: body.preferredCreativeLensCode,
+      referenceFusionMode: body.referenceFusionMode,
     });
     const autoStart = body.autoStart !== false;
     if (!autoStart) {

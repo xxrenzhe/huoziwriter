@@ -95,6 +95,7 @@ const SOURCE_TYPE_PRIORITY_BOOST: Record<string, number> = {
   reddit: 22,
   community: 21,
   x: 20,
+  "x-hotspot": 25,
   podcast: 18,
   spotify: 16,
   "chinese-hotspot": 26,

@@ -15,6 +15,10 @@ export type AutomationRun = {
   currentStageCode: string;
   finalWechatMediaId: string | null;
   blockedReason: string | null;
+  generationSettings: {
+    preferredCreativeLensCode: string | null;
+    referenceFusionMode: string | null;
+  };
   createdAt: string;
   updatedAt: string;
 };

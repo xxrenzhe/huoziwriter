@@ -59,7 +59,9 @@ export async function POST(request: Request, { params }: { params: { id: string 
       templateId,
       wechatConnectionId,
     });
-    const finalHtml = await renderMarkdownToWechatHtml(markdownContent, title, resolveTemplateRenderConfig(template));
+    const finalHtml = await renderMarkdownToWechatHtml(markdownContent, title, resolveTemplateRenderConfig(template), {
+      includeTitle: false,
+    });
     const savedHtml = article.html_content || "";
     const finalHtmlHash = buildHash(finalHtml);
     const savedHtmlHash = buildHash(savedHtml);

@@ -25,22 +25,33 @@ function extractWechatWhitelistIp(message: string) {
   return matched?.[1] || null;
 }
 
-function normalizeWechatUpstreamMessage(message: string, fallback: string) {
+function normalizeWechatUpstreamMessage(input: {
+  message: string;
+  fallback: string;
+  errcode?: number | null;
+  operation?: string | null;
+}) {
+  const message = input.message;
   const normalized = String(message || "").trim();
+  const prefix = input.errcode ? `微信错误 ${input.errcode}` : null;
+  const operation = input.operation ? `（${input.operation}）` : "";
   if (!normalized) {
-    return fallback;
+    return prefix ? `${prefix}${operation}: ${input.fallback}` : input.fallback;
   }
   if (/not in whitelist|invalid ip/i.test(normalized)) {
     const ip = extractWechatWhitelistIp(normalized);
-    return `当前服务器出口 IP${ip ? ` ${ip}` : ""} 未加入微信公众平台接口白名单，暂时无法获取 access_token 或推送草稿箱。请先到公众号后台把这个出口 IP 加入白名单后再重试。`;
+    const detail = `当前服务器出口 IP${ip ? ` ${ip}` : ""} 未加入微信公众平台接口白名单，暂时无法获取 access_token 或推送草稿箱。请先到公众号后台把这个出口 IP 加入白名单后再重试。`;
+    return prefix ? `${prefix}${operation}: ${detail}` : detail;
   }
   if (/invalid appsecret/i.test(normalized)) {
-    return "当前 WECHAT_APP_SECRET 无效，或与 WECHAT_APP_ID 不匹配。请到微信公众平台确认 AppSecret 是否最新且与该公众号的 AppID 对应。";
+    const detail = "当前 WECHAT_APP_SECRET 无效，或与 WECHAT_APP_ID 不匹配。请到微信公众平台确认 AppSecret 是否最新且与该公众号的 AppID 对应。";
+    return prefix ? `${prefix}${operation}: ${detail}` : detail;
   }
   if (/invalid appid/i.test(normalized)) {
-    return "当前 WECHAT_APP_ID 无效。请到微信公众平台确认 AppID 是否填写正确。";
+    const detail = "当前 WECHAT_APP_ID 无效。请到微信公众平台确认 AppID 是否填写正确。";
+    return prefix ? `${prefix}${operation}: ${detail}` : detail;
   }
-  return normalized;
+  return prefix ? `${prefix}${operation}: ${normalized}` : normalized;
 }
 
 function isMockWechatCredential(appId: string, appSecret: string) {
@@ -165,7 +176,12 @@ async function fetchWechatToken(appId: string, appSecret: string) {
   );
   const json = await response.json();
   if (!response.ok || json.errcode) {
-    throw new Error(normalizeWechatUpstreamMessage(String(json.errmsg || ""), "获取微信 access_token 失败"));
+    throw new Error(normalizeWechatUpstreamMessage({
+      message: String(json.errmsg || ""),
+      fallback: "获取微信 access_token 失败",
+      errcode: Number(json.errcode || 0) || null,
+      operation: "获取 access_token",
+    }));
   }
   return json as { access_token: string; expires_in: number };
 }
@@ -193,7 +209,12 @@ async function uploadThumb(accessToken: string, coverImageUrl?: string | null) {
   });
   const json = await response.json();
   if (!response.ok || json.errcode) {
-    throw new Error(normalizeWechatUpstreamMessage(String(json.errmsg || ""), "上传微信封面图失败"));
+    throw new Error(normalizeWechatUpstreamMessage({
+      message: String(json.errmsg || ""),
+      fallback: "上传微信封面图失败",
+      errcode: Number(json.errcode || 0) || null,
+      operation: "上传封面图",
+    }));
   }
   return json.media_id as string;
 }
@@ -233,7 +254,12 @@ async function uploadWechatContentImage(input: {
   });
   const json = await response.json();
   if (!response.ok || json.errcode || !json.url) {
-    throw new Error(normalizeWechatUpstreamMessage(String(json.errmsg || ""), "上传微信正文图片失败"));
+    throw new Error(normalizeWechatUpstreamMessage({
+      message: String(json.errmsg || ""),
+      fallback: "上传微信正文图片失败",
+      errcode: Number(json.errcode || 0) || null,
+      operation: "上传正文图片",
+    }));
   }
   return json.url as string;
 }
@@ -370,7 +396,9 @@ export async function publishWechatDraft(input: {
 }) {
   const tokenResult = await resolveWechatAccessToken(input.connection);
   const thumbMediaId = await uploadThumb(tokenResult.access_token, input.coverImageUrl);
-  const renderedContent = await renderMarkdownToWechatHtml(input.markdownContent, input.title, input.templateConfig ?? null);
+  const renderedContent = await renderMarkdownToWechatHtml(input.markdownContent, input.title, input.templateConfig ?? null, {
+    includeTitle: false,
+  });
   const imageRewrite = await rewriteWechatHtmlImages({
     accessToken: tokenResult.access_token,
     html: renderedContent,
@@ -421,7 +449,12 @@ export async function publishWechatDraft(input: {
   });
   const json = await response.json();
   if (!response.ok || json.errcode) {
-    throw new Error(normalizeWechatUpstreamMessage(String(json.errmsg || ""), "推送微信草稿箱失败"));
+    throw new Error(normalizeWechatUpstreamMessage({
+      message: String(json.errmsg || ""),
+      fallback: "推送微信草稿箱失败",
+      errcode: Number(json.errcode || 0) || null,
+      operation: "新增草稿",
+    }));
   }
 
   return {

@@ -7,6 +7,7 @@ import {
   type Plan24MechanismLabel,
   type Plan24VerticalProfile,
 } from "./article-viral-genome-corpus";
+import { detectArticleViralMode, type ArticleViralMode } from "./article-viral-modes";
 
 export type ArticleViralGenomeStage =
   | "researchBrief"
@@ -42,6 +43,7 @@ export type ViralVisualRhythmSlot = {
 };
 
 export type ArticleViralGenomePack = {
+  mode: ArticleViralMode;
   sampleSummary: string;
   sampleSourceProfile: {
     source: "plan24_business_monetization_100";
@@ -258,7 +260,9 @@ function selectAuthorPostureMode(
 function buildOpeningEngine(input: {
   mechanismBias: ArticleViralGenomePack["mechanismBias"];
   verticalProfile: Plan24VerticalProfile;
+  mode: ArticleViralMode;
 }) {
+  if (input.mode === "power_shift_breaking") return "权力更替先抛";
   if (input.mechanismBias.code === "number_anchor") return "账本/结果先抛";
   if (input.mechanismBias.code === "risk_alert") return "误判代价先抛";
   if (input.mechanismBias.code === "scene_test") return "工具实测结论先抛";
@@ -270,7 +274,11 @@ function buildOpeningEngine(input: {
 function buildNarrativeSkeleton(input: {
   verticalProfile: Plan24VerticalProfile;
   authorPostureMode: AuthorPostureMode;
+  mode: ArticleViralMode;
 }) {
+  if (input.mode === "power_shift_breaking") {
+    return "胜负已分 -> 数字看板 -> 赢者为什么赢 -> 输家哪里失血 -> 成本/时间差 -> 行业权力改写 -> 下半场谁更危险";
+  }
   if (input.authorPostureMode === "operator_test") {
     return input.verticalProfile.narrativeSkeletons.find((item) => /实测结论/.test(item))
       || input.verticalProfile.narrativeSkeletons[0]
@@ -296,12 +304,21 @@ function buildTitleDirections(input: {
   subject: string;
   reader: string;
   verticalProfile: Plan24VerticalProfile;
+  mode: ArticleViralMode;
 }) {
   const shared = [
     "标题先压具体对象，再压变化或后果，避免只写抽象判断和口号。",
     "优先把对象、变化、代价/机会放进同一条承诺里，不要把信息拆散到副标题思路。",
     `标题必须让 ${input.reader} 一眼知道这件事和谁有关、现在变了什么。`,
   ];
+  if (input.mode === "power_shift_breaking") {
+    return compact([
+      "标题优先写成“王座更替/胜负已分/今天变天了”这类权力切换句，不要温吞地写成普通行业分析。",
+      "同一条标题里最好同时出现赢家、输家和硬数字，至少让读者一眼知道谁反超了谁。",
+      "允许使用“刚刚/正式/易主/反超/碾压”这类时间与胜负词，但必须跟可核验数字或事实锚点绑定。",
+      ...shared,
+    ], 5);
+  }
   if (input.mechanismBias.code === "number_anchor") {
     return compact([
       "优先使用数字结果、比例、时间或成本差，但数字后面必须跟真实后果，不准悬浮。",
@@ -350,9 +367,13 @@ function buildFirstScreenPromise(input: {
   subject: string;
   verticalProfile: Plan24VerticalProfile;
   openingEngine: string;
+  mode: ArticleViralMode;
 }) {
   const materialJobs = input.verticalProfile.materialJobs.slice(0, 3).join("、");
   const base = `前 120 字必须出现：一个具体对象、一处正在发生的变化、一个 ${input.reader} 能感到的后果；前 200 字必须补上半步答案。开头发动机=${input.openingEngine}；素材优先覆盖 ${materialJobs}。`;
+  if (input.mode === "power_shift_breaking") {
+    return `前 120 字必须同时出现：赢家名字、输家名字、至少 2 个硬数字或时间锚点，以及“今天到底变了什么”。前 200 字必须交代这不是普通融资新闻，而是一场权力更替；开头发动机=${input.openingEngine}；素材优先覆盖营收/估值、成本结构、组织裂痕、时间差。`;
+  }
   if (input.mechanismBias.code === "number_anchor") {
     return `${base} 数字不能悬浮，必须翻译成预算、时间、转化、留存或机会窗口。`;
   }
@@ -376,11 +397,15 @@ function buildShareTrigger(input: {
   reader: string;
   verticalProfile: Plan24VerticalProfile;
   sparseTrackAlert: string;
+  mode: ArticleViralMode;
 }) {
   const reason = input.verticalProfile.readerShareReasons[0] || "文章替读者讲清一个具体变化";
   const suffix = input.verticalProfile.sparseTrack
     ? "稀疏题材更需要把证据写硬，读者才敢转。"
     : "读者能拿这篇文章替自己在会上、群里或朋友圈说话。";
+  if (input.mode === "power_shift_breaking") {
+    return `${input.reader} 愿意转发，是因为这篇文章把“谁上位、谁失血、为什么是今天”压成了一句能在群里复述的判断，而且数字、时间线和权力裂痕都摆在台面上。${suffix}`;
+  }
   if (input.mechanismBias.code === "number_anchor") {
     return `${input.reader} 愿意转发，是因为${reason}，并把悬浮数字翻译成真实代价或机会窗口。${suffix}`;
   }
@@ -430,9 +455,19 @@ function buildBusinessQuestions(input: {
 function buildEvidencePriorities(
   mechanismBias: ArticleViralGenomePack["mechanismBias"],
   verticalProfile: Plan24VerticalProfile,
+  mode: ArticleViralMode,
 ) {
   const profilePriorities = verticalProfile.evidencePriorities.slice(0, 3);
   const evidenceRecipe = verticalProfile.evidenceRecipes[0] || "";
+  if (mode === "power_shift_breaking") {
+    return compact([
+      ...profilePriorities,
+      "赢家/输家的营收、估值、融资或成本数字",
+      "时间锚点与增速对比",
+      "内部裂痕或路线分歧证据",
+      "外部媒体或财务文件来源",
+    ], 6);
+  }
   if (mechanismBias.code === "number_anchor") {
     return compact([...profilePriorities, "数字或比例锚点", "对应代价或收益", "一组对照事实", evidenceRecipe], 6);
   }
@@ -454,8 +489,10 @@ function buildEvidencePriorities(
 function buildEmotionVectors(
   mechanismBias: ArticleViralGenomePack["mechanismBias"],
   verticalProfile: Plan24VerticalProfile,
+  mode: ArticleViralMode,
 ) {
   const profileVectors = verticalProfile.emotionVectors.slice(0, 3);
+  if (mode === "power_shift_breaking") return compact([...profileVectors, "震惊", "胜负逆转", "下一轮更危险"], 5);
   if (mechanismBias.code === "number_anchor") return compact([...profileVectors, "意外", "算清代价", "看懂窗口"], 5);
   if (mechanismBias.code === "question_gap") return compact([...profileVectors, "好奇", "被回答", "终于讲明白"], 5);
   if (mechanismBias.code === "counter_intuition") return compact([...profileVectors, "错愕", "识别感", "判断翻转"], 5);
@@ -488,14 +525,19 @@ export function buildArticleViralGenomePack(input: ArticleViralGenomeInput = {})
     viralBlueprintLabel: input.viralBlueprintLabel,
   });
   const verticalProfile = inferPlan24Vertical(topicSignature || subject);
+  const mode = detectArticleViralMode({
+    title: input.title,
+    markdownContent: [input.title, input.centralThesis, input.authorLens, input.materialSpark].filter(Boolean).join("\n"),
+    businessQuestions: verticalProfile.businessQuestions,
+  });
   const mechanismBias = inferMechanismBias(input, verticalProfile);
   const blueprintLabel = getString(input.viralBlueprintLabel) || "当前爆文蓝图";
   const authorLens = getString(input.authorLens) || "作者从自己真正盯住的问题进入";
   const materialSpark = getString(input.materialSpark) || "选出一粒能让判断站住的事实、场景、账本或作者推演";
   const authorPostureMode = selectAuthorPostureMode(input, verticalProfile);
-  const titleDirections = buildTitleDirections({ mechanismBias, subject, reader, verticalProfile });
-  const openingEngine = buildOpeningEngine({ mechanismBias, verticalProfile });
-  const narrativeSkeleton = buildNarrativeSkeleton({ verticalProfile, authorPostureMode });
+  const titleDirections = buildTitleDirections({ mechanismBias, subject, reader, verticalProfile, mode });
+  const openingEngine = buildOpeningEngine({ mechanismBias, verticalProfile, mode });
+  const narrativeSkeleton = buildNarrativeSkeleton({ verticalProfile, authorPostureMode, mode });
   const sparseTrackAlert = buildSparseTrackAlert(verticalProfile);
   const firstScreenPromise = buildFirstScreenPromise({
     mechanismBias,
@@ -503,15 +545,17 @@ export function buildArticleViralGenomePack(input: ArticleViralGenomeInput = {})
     subject,
     verticalProfile,
     openingEngine,
+    mode,
   });
-  const shareTrigger = buildShareTrigger({ mechanismBias, reader, verticalProfile, sparseTrackAlert });
+  const shareTrigger = buildShareTrigger({ mechanismBias, reader, verticalProfile, sparseTrackAlert, mode });
   const authorPosture = buildAuthorPosture({ authorPostureMode, authorLens });
   const businessQuestions = buildBusinessQuestions({ reader, subject, verticalProfile });
-  const evidencePriorities = buildEvidencePriorities(mechanismBias, verticalProfile);
-  const emotionVectors = buildEmotionVectors(mechanismBias, verticalProfile);
+  const evidencePriorities = buildEvidencePriorities(mechanismBias, verticalProfile, mode);
+  const emotionVectors = buildEmotionVectors(mechanismBias, verticalProfile, mode);
   const visualProfile = `样本垂类「${verticalProfile.category}」平均配图 ${verticalProfile.visualProfile.averageImageCount} 张；首图高频位置=${verticalProfile.visualProfile.dominantFirstImageTiming}；作用=${verticalProfile.visualProfile.firstScreenImageRole}`;
 
   return {
+    mode,
     sampleSummary: `${SAMPLE_SUMMARY} ${MECHANISM_SUMMARY} ${POSTURE_SUMMARY} ${SPARSE_TRACK_SUMMARY}`,
     sampleSourceProfile: {
       source: "plan24_business_monetization_100",
@@ -529,6 +573,7 @@ export function buildArticleViralGenomePack(input: ArticleViralGenomeInput = {})
     mechanismBias,
     upstreamDirections: compact([
       `这篇文章先服务「${blueprintLabel}」，并按商业聚焦样本垂类「${verticalProfile.category}」生长；正文方向由处境、冲突、素材、钱流和作者视角共同长出来。`,
+      mode === "power_shift_breaking" ? "如果题目本身是王座更替或资本战，先把胜负、数字和时间差抛出来，再进入解释。" : null,
       `先写 ${reader} 已经付出的代价、误判或复盘现场，再让「${subject}」的判断浮出来；素材优先覆盖 ${verticalProfile.materialJobs.slice(0, 4).join("、")}。`,
       `把 ${materialSpark} 放到上游，不等正文阶段再临时补“人味”或补“案例感”。`,
       `${authorPosture}`,
@@ -537,6 +582,7 @@ export function buildArticleViralGenomePack(input: ArticleViralGenomeInput = {})
     ], 6),
     openingDirections: compact([
       ...verticalProfile.openingJobs,
+      mode === "power_shift_breaking" ? "第一屏先写谁赢了、谁掉队了、数字差在哪，不要先讲产业背景。" : null,
       `开头发动机优先使用「${openingEngine}」。`,
       "首句必须有具体对象，前 120 字必须出现后果、代价或机会，前 200 字必须给半步答案。",
       "不要先写趋势背景、方法导语、概念解释，也不要一上来教读者怎么做。",
@@ -545,6 +591,7 @@ export function buildArticleViralGenomePack(input: ArticleViralGenomeInput = {})
     narrativeMechanics: compact([
       `同题材样本高频转发理由：${verticalProfile.readerShareReasons.join("；")}。`,
       `商业型叙事骨架：${narrativeSkeleton}。`,
+      mode === "power_shift_breaking" ? "正文推进优先按胜负看板、赢者路径、输家裂痕、成本差和下半场推演展开。" : null,
       `高频证据配方：${verticalProfile.evidenceRecipes.join("；")}。`,
       "高概率爆点不是观点更响，而是读者能看见对象、变化和后果正在发生。",
       "结构按承诺兑现顺序推进：可见信号、误判代价、关键变量、角色分化、反例边界、可转发判断。",

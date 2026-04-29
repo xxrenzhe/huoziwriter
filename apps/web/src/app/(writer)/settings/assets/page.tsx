@@ -1,6 +1,7 @@
 import { buttonStyles, cn, surfaceCardStyles } from "@huoziwriter/ui";
 import Link from "next/link";
 import { WriterAssetCenterClient } from "@/components/asset-center-client";
+import { TemplateHtmlImportPanel } from "@/components/template-html-import-panel";
 import { formatPlanDisplayName } from "@/lib/plan-labels";
 import { summarizeTemplateRenderConfig } from "@/lib/template-rendering";
 import {
@@ -168,6 +169,7 @@ export default async function SettingsAssetsPage() {
             mimeType: asset.mimeType,
             byteLength: asset.byteLength,
             status: asset.status,
+            reusablePrompt: asset.reusablePrompt,
             updatedAt: asset.updatedAt,
           }))}
         />
@@ -207,6 +209,12 @@ export default async function SettingsAssetsPage() {
             </article>
           ))}
         </div>
+
+        <TemplateHtmlImportPanel
+          canImport={planSnapshot.canExtractPrivateTemplate}
+          currentCount={ownedTemplates.length}
+          limit={planSnapshot.customTemplateLimit}
+        />
 
         {ownedTemplates.length > 0 ? (
           <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">

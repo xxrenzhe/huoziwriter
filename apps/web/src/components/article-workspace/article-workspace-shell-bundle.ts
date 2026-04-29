@@ -34,6 +34,8 @@ export function buildArticleWorkspaceShellBundle(input: BuildArticleWorkspaceShe
       onSelectPrototype: input.setDeepWritingPrototypeOverride,
       stateVariantOverride: input.deepWritingStateVariantOverride,
       onSelectStateVariant: input.setDeepWritingStateVariantOverride,
+      creativeLensOverride: input.deepWritingCreativeLensOverride,
+      onSelectCreativeLens: input.setDeepWritingCreativeLensOverride,
       openingPreviews: input.deepWritingOpeningPreviews,
       openingPreviewLoadingKey: input.deepWritingOpeningPreviewLoadingKey,
       openingCheckLoading: input.deepWritingOpeningCheckLoading,

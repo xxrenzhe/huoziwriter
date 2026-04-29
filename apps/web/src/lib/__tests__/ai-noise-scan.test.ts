@@ -46,6 +46,27 @@ test("analyzeAiNoise does not punish reader-centered conflict writing", () => {
   assert.equal(result.findings.some((item) => item.includes("说教姿态偏重")), false);
 });
 
+test("analyzeAiNoise allows practical checklist when anchored in account scene", () => {
+  const result = analyzeAiNoise([
+    "# 搜索广告里最贵的不是错词",
+    "",
+    "复盘会里，老板盯预算，销售说这批人不像买家，投放还在解释搜索词报告。账户真正难受的地方，不是没人做动作，而是每个动作都绕开了需求阶段。",
+    "",
+    "## 今天回后台，先做这个动作",
+    "",
+    "- 把花费前 20 个搜索词拉出来，对照搜索词报告和销售反馈。",
+    "- 更像查概念、查问题、查区别，先标“了解”。",
+    "- 更像比方案、比价格、比品牌，先标“比较”。",
+    "- 更像找报价、找联系、找服务入口，先标“行动”。",
+    "- 标完阶段，再看落地页、表单和跟进方式有没有接住。",
+    "",
+    "这不是培训清单，而是为了让账户少把预算继续花在看起来准、当下却不该高价买的词上。",
+  ].join("\n"));
+
+  assert.notEqual(result.didacticToneRisk, "high");
+  assert(result.readerClosenessCueCount >= 8);
+});
+
 test("analyzeAiNoise flags distant research-style expressions", () => {
   const result = analyzeAiNoise([
     "# 别再只盯关键词了：真正值钱的是搜索意图",

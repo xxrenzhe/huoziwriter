@@ -121,3 +121,34 @@ test("normalizeTitleOptions keeps safe fallback candidates when generated titles
   assert.equal(recommended.title, "Google Ads 精准词不赚钱：真正拖住结果的，不是表面这一步");
   assert(normalized.some((item) => item.forbiddenHits.includes("断裂助词拼接")));
 });
+
+test("buildFallbackTitleOptions switches to power-shift title templates for throne-change topics", () => {
+  const fallback = buildFallbackTitleOptions("刚刚，美国AI霸主换了！Anthropic年收300亿，碾压OpenAI");
+
+  assert.match(fallback[0]?.title ?? "", /权力开始倾斜|王座|变天/);
+  assert.match(fallback[1]?.title ?? "", /账单|时间差/);
+  assert.match(fallback[2]?.title ?? "", /现金流|承压/);
+  assert.doesNotMatch(fallback[0]?.title ?? "", /真正拖住结果的，不是表面这一步/);
+});
+
+test("buildTitleGenerationBrief adds power-shift rewrite rule", () => {
+  const brief = buildTitleGenerationBrief({
+    articleTitle: "刚刚，美国AI霸主换了！Anthropic年收300亿，碾压OpenAI",
+    workingTitle: "美国AI霸主换了",
+    centralThesis: "这次真正改写的，不只是排名，而是企业收入、成本结构和行业话语权。",
+    titleStrategyNotes: ["先抛胜负和数字"],
+  });
+
+  assert.match(brief.rewriteRule, /胜负变化、硬数字和后果/);
+  assert.ok(brief.strategyNotes.some((item) => /赢家\/输家|硬数字/.test(item)));
+});
+
+test("buildFallbackTitleOptions honors explicit power-shift mode even when title copy is softened", () => {
+  const fallback = buildFallbackTitleOptions("AI 公司下半场怎么走", {
+    mode: "power_shift_breaking",
+    markdownContent: "真正要写的是营收、成本结构、王座更替和谁先承压。",
+  });
+
+  assert.match(fallback[0]?.title ?? "", /权力开始倾斜|王座|变天/);
+  assert.match(fallback[1]?.title ?? "", /账单|时间差/);
+});

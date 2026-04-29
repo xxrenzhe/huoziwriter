@@ -3,12 +3,14 @@ import {
   normalizeVerticalTopicCategories,
   type VerticalTopicCategory,
 } from "./business-verticals";
+import { getXSystemSourceSeeds } from "./x-source-registry";
 
 export type RegisteredTopicSource = {
   name: string;
   homepageUrl: string;
-  sourceType: "news" | "rss" | "blog" | "podcast" | "spotify" | "youtube" | "reddit" | "community";
+  sourceType: "news" | "rss" | "blog" | "podcast" | "spotify" | "youtube" | "reddit" | "community" | "chinese-hotspot" | "x-hotspot";
   priority: number;
+  isActive?: boolean;
   verticals: VerticalTopicCategory[];
 };
 
@@ -125,6 +127,44 @@ export const VERIFIED_SYSTEM_TOPIC_SOURCES: RegisteredTopicSource[] = [
     priority: 80,
     verticals: ["ai_products"],
   },
+  {
+    name: "百度热点",
+    homepageUrl: "https://top.baidu.com/board?tab=realtime",
+    sourceType: "chinese-hotspot",
+    priority: 98,
+    verticals: ["ai_products", "affiliate_marketing", "side_hustles", "overseas_income", "career"],
+  },
+  {
+    name: "知乎热榜",
+    homepageUrl: "https://www.zhihu.com/hot",
+    sourceType: "chinese-hotspot",
+    priority: 97,
+    verticals: ["ai_products", "career", "side_hustles"],
+  },
+  {
+    name: "微博热搜",
+    homepageUrl: "https://weibo.com/ajax/side/hotSearch",
+    sourceType: "chinese-hotspot",
+    priority: 76,
+    isActive: false,
+    verticals: ["ai_products", "career", "side_hustles"],
+  },
+  {
+    name: "B站热门",
+    homepageUrl: "https://api.bilibili.com/x/web-interface/popular",
+    sourceType: "chinese-hotspot",
+    priority: 75,
+    isActive: false,
+    verticals: ["ai_products", "side_hustles"],
+  },
+  ...getXSystemSourceSeeds().map((item) => ({
+    name: item.sourceName,
+    homepageUrl: item.homepageUrl,
+    sourceType: "x-hotspot" as const,
+    priority: item.priority,
+    isActive: item.isActive ?? true,
+    verticals: item.verticals,
+  })),
 ];
 
 export const LEGACY_SYSTEM_TOPIC_SOURCE_NAMES_TO_DEACTIVATE = [

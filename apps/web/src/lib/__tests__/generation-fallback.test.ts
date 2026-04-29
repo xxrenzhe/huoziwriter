@@ -265,3 +265,38 @@ test("buildGeneratedArticleDraft ignores execution-note openingStrategy", async 
     assert.doesNotMatch(result.markdown.split(/\n{2,}/)[1] || "", /沿用已确认开头策略|用匿名复盘现场起手/);
   });
 });
+
+test("buildGeneratedArticleDraft fallback keeps power-shift articles in scoreboard mode", async () => {
+  await withTempDatabase("fallback-power-shift-mode", async () => {
+    const result = await buildGeneratedArticleDraft({
+      title: "刚刚，美国AI霸主换了！Anthropic年收300亿，碾压OpenAI",
+      fragments: [
+        "Anthropic 年化营收来到 300 亿美元，OpenAI 当前年收入约 240 亿美元。",
+        "企业客户、训练成本和算力账单一起决定这场胜负。",
+      ],
+      bannedWords: [],
+      deepWritingPayload: {
+        selectedTitle: "刚刚，美国AI霸主换了！Anthropic年收300亿，碾压OpenAI",
+        openingStrategy: "刚刚，Anthropic 年化营收冲到 300 亿美元，正式压过 OpenAI 的 240 亿。这不是普通财报更新，而是 AI 王座第一次在公开账本上换了人。",
+        centralThesis: "这场反超真正改写的，不只是热度，而是企业收入、成本结构和行业话语权。",
+        viralGenomePack: {
+          mode: "power_shift_breaking",
+          firstScreenPromise: "前 120 字必须同时出现赢家名字、输家名字、硬数字和今天到底变了什么。",
+          shareTrigger: "这篇最适合转给关注 AI 商业化、企业市场和资本开支的人。",
+        },
+        sectionBlueprint: [
+          { heading: "胜负先看数字", paragraphMission: "先把赢家、输家和硬数字摆上桌。" },
+          { heading: "赢者为什么赢", paragraphMission: "写清收入结构、企业客户和成本效率。" },
+          { heading: "输家哪里失血", paragraphMission: "把路线分歧、账单压力和内部裂痕写出来。" },
+        ],
+      },
+    });
+
+    assert.match(result.markdown, /^# 刚刚，美国AI霸主换了/);
+    assert.equal(result.markdown.split(/\n{2,}/)[1], "刚刚，Anthropic 年化营收冲到 300 亿美元，正式压过 OpenAI 的 240 亿。这不是普通财报更新，而是 AI 王座第一次在公开账本上换了人。");
+    assert.match(result.markdown, /## 胜负先看数字/);
+    assert.match(result.markdown, /## 赢者为什么赢/);
+    assert.match(result.markdown, /## 输家哪里失血/);
+    assert.doesNotMatch(result.markdown, /今天能不能验证一个小假设|回后台执行|操作手册/);
+  });
+});

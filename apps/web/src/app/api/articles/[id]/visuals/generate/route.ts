@@ -8,7 +8,7 @@ import { getArticleById } from "@/lib/repositories";
 import type { ArticleVisualScope } from "@/lib/article-visual-types";
 
 function normalizeScope(value: unknown): ArticleVisualScope | "all" {
-  if (value === "cover" || value === "inline" || value === "infographic" || value === "diagram") return value;
+  if (value === "cover" || value === "inline" || value === "infographic" || value === "diagram" || value === "comic") return value;
   return "all";
 }
 
@@ -40,7 +40,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
   }
 
   const selected = briefs
-    .filter((brief) => scope === "all" || brief.visualScope === scope || (scope === "inline" && (brief.visualScope === "infographic" || brief.visualScope === "diagram")))
+    .filter((brief) => scope === "all" || brief.visualScope === scope || (scope === "inline" && (brief.visualScope === "infographic" || brief.visualScope === "diagram" || brief.visualScope === "comic")))
     .filter((brief) => body.force === true || brief.status !== "generated" && brief.status !== "inserted");
   const results = [];
   const warnings: string[] = [];

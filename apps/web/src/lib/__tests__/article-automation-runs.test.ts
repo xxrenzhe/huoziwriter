@@ -108,6 +108,10 @@ test("createArticleAutomationRun creates article and queued plan22 stage runs", 
     assert.equal(result.run.userId, userId);
     assert.equal(result.run.inputMode, "brief");
     assert.equal(result.run.status, "queued");
+    assert.deepEqual(result.run.generationSettings, {
+      preferredCreativeLensCode: null,
+      referenceFusionMode: null,
+    });
     assert.equal(result.run.currentStageCode, "topicAnalysis");
     assert.ok(result.run.articleId);
     assert.equal(result.stages.length, PLAN22_STAGE_PROMPT_DEFINITIONS.length);
@@ -119,6 +123,10 @@ test("createArticleAutomationRun creates article and queued plan22 stage runs", 
     assert.equal(result.stages[0]?.sceneCode, "topicAnalysis");
     assert.deepEqual(result.stages[0]?.inputJson, {
       requiredOutputFields: ["theme", "coreAssertion", "whyNow", "readerBenefit", "risk"],
+      generationSettings: {
+        preferredCreativeLensCode: null,
+        referenceFusionMode: null,
+      },
     });
 
     const fetched = await getArticleAutomationRunById(result.run.id, userId);
@@ -127,6 +135,36 @@ test("createArticleAutomationRun creates article and queued plan22 stage runs", 
 
     const runs = await getArticleAutomationRunsByUser(userId);
     assert.equal(runs[0]?.id, result.run.id);
+  });
+});
+
+test("createArticleAutomationRun persists generation settings", async () => {
+  await withTempDatabase("generation-settings", async () => {
+    const userId = await createTestUser();
+    const series = await createDefaultSeries(userId);
+    const result = await createArticleAutomationRun({
+      userId,
+      inputMode: "url",
+      inputText: "https://example.com/report",
+      sourceUrl: "https://example.com/report",
+      targetSeriesId: series.id,
+      automationLevel: "draftPreview",
+      generationSettings: {
+        preferredCreativeLensCode: "field_observation",
+        referenceFusionMode: "structure",
+      },
+    });
+
+    assert.equal(result.run.generationSettings.preferredCreativeLensCode, "field_observation");
+    assert.equal(result.run.generationSettings.referenceFusionMode, "structure");
+    assert.deepEqual((result.stages[0]?.inputJson as Record<string, unknown>).generationSettings, {
+      preferredCreativeLensCode: "field_observation",
+      referenceFusionMode: "structure",
+    });
+
+    const fetched = await getArticleAutomationRunById(result.run.id, userId);
+    assert.equal(fetched?.run.generationSettings.preferredCreativeLensCode, "field_observation");
+    assert.equal(fetched?.run.generationSettings.referenceFusionMode, "structure");
   });
 });
 

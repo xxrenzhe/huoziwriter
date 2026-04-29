@@ -1,21 +1,30 @@
 import { syncArticleVisualAssetToAssetFiles } from "./asset-files";
-import { buildArticleDiagramSvg, svgToDataUrl } from "./article-svg-diagram";
 import { updateArticleVisualBriefStatus } from "./article-visual-repository";
 import { evaluateVisualAssetQuality } from "./article-visual-quality";
 import type { ArticleVisualBrief } from "./article-visual-types";
 import { generateCoverImage } from "./image-generation";
 import { persistArticleVisualImageAssetSet } from "./image-assets";
 
-function resolveAssetType(brief: ArticleVisualBrief): "cover_image" | "inline_image" | "infographic" | "diagram_svg" | "diagram_png" {
+function resolveAssetType(brief: ArticleVisualBrief): "cover_image" | "inline_image" | "infographic" | "diagram_svg" | "diagram_png" | "comic" {
   if (brief.visualScope === "cover") return "cover_image";
   if (brief.visualScope === "infographic") return "infographic";
   if (brief.visualScope === "diagram") return "diagram_png";
+  if (brief.visualScope === "comic") return "comic";
   return "inline_image";
 }
 
 export async function generateArticleVisualAsset(brief: ArticleVisualBrief) {
   if (!brief.id) {
     throw new Error("视觉 brief 尚未落库，无法生成图片");
+  }
+  if (brief.visualScope === "diagram" || brief.baoyuSkill === "baoyu-diagram") {
+    await updateArticleVisualBriefStatus({
+      briefId: brief.id,
+      userId: brief.userId,
+      status: "failed",
+      errorMessage: "当前文章生成流程不再使用 SVG/diagram 图解，请改用 baoyu-infographic 或 baoyu-comic。",
+    });
+    throw new Error("当前文章生成流程不再使用 SVG/diagram 图解，请改用 baoyu-infographic 或 baoyu-comic。");
   }
   await updateArticleVisualBriefStatus({
     briefId: brief.id,
@@ -24,23 +33,13 @@ export async function generateArticleVisualAsset(brief: ArticleVisualBrief) {
   });
 
   try {
-    const generated =
-      brief.visualScope === "diagram"
-        ? {
-            imageUrl: svgToDataUrl(buildArticleDiagramSvg(brief)),
-            prompt: brief.promptText || "",
-            size: brief.aspectRatio,
-            model: "local-svg-diagram",
-            providerName: "local",
-            endpoint: "local-svg-diagram",
-          }
-        : await generateCoverImage({
-            title: brief.title,
-            promptOverride: brief.promptText || undefined,
-            negativePrompt: brief.negativePrompt || undefined,
-            outputResolution: brief.outputResolution,
-            aspectRatio: brief.aspectRatio,
-          });
+    const generated = await generateCoverImage({
+      title: brief.title,
+      promptOverride: brief.promptText || undefined,
+      negativePrompt: brief.negativePrompt || undefined,
+      outputResolution: brief.outputResolution,
+      aspectRatio: brief.aspectRatio,
+    });
 
     const assetType = resolveAssetType(brief);
     const persisted = await persistArticleVisualImageAssetSet({

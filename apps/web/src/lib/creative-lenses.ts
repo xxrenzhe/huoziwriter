@@ -1,4 +1,5 @@
 import type { ArticlePrototypeCode } from "./writing-state";
+import type { AuthorOutcomeFeedbackRecommendation, AuthorOutcomeFeedbackSignal } from "./author-outcome-feedback-ledger";
 
 export const CREATIVE_LENS_CODES = [
   "case_dissection",
@@ -32,6 +33,13 @@ export type CreativeLensDefinition = {
 
 export type CreativeLensOption = CreativeLensDefinition & {
   triggerReason: string;
+  historySignal?: {
+    sampleCount: number;
+    positiveSampleCount: number;
+    rankingAdjustment: number;
+    reason: string;
+  } | null;
+  isRecommended?: boolean;
 };
 
 export const CREATIVE_LENS_DEFINITIONS: CreativeLensDefinition[] = [
@@ -173,11 +181,15 @@ function normalizeCreativeLensCode(value: unknown): CreativeLensCode | null {
 function scoreLens(definition: CreativeLensDefinition, input: {
   seed: string;
   articlePrototype?: ArticlePrototypeCode | null;
+  outcomeSignal?: Pick<AuthorOutcomeFeedbackSignal, "rankingAdjustment"> | null;
 }) {
   const triggerScore = definition.triggerPatterns.reduce((sum, pattern) => sum + (pattern.test(input.seed) ? 8 : 0), 0);
   const prototypeScore = input.articlePrototype && definition.prototypeBias?.includes(input.articlePrototype) ? 6 : 0;
   const fallbackScore = definition.code === "field_observation" ? 1 : 0;
-  return triggerScore + prototypeScore + fallbackScore;
+  const historyScore = input.outcomeSignal
+    ? Math.max(-12, Math.min(12, -input.outcomeSignal.rankingAdjustment))
+    : 0;
+  return triggerScore + prototypeScore + fallbackScore + historyScore;
 }
 
 export function getCreativeLensDefinition(code: CreativeLensCode) {
@@ -210,6 +222,8 @@ export function resolveCreativeLens(input: {
   } | null;
   articlePrototype?: ArticlePrototypeCode | null;
   preferredLensCode?: CreativeLensCode | null;
+  outcomeSignals?: AuthorOutcomeFeedbackSignal[];
+  outcomeRecommendation?: AuthorOutcomeFeedbackRecommendation;
 }) {
   const seed = [
     input.title,
@@ -228,19 +242,58 @@ export function resolveCreativeLens(input: {
     input.strategyCard?.researchHypothesis,
     input.strategyCard?.whyNow,
   ].map((item) => String(item || "").trim()).filter(Boolean).join(" ");
+  const outcomeSignalByCode = new Map(
+    (input.outcomeSignals ?? [])
+      .map((signal) => [normalizeCreativeLensCode(signal.key), signal] as const)
+      .filter((entry): entry is readonly [CreativeLensCode, AuthorOutcomeFeedbackSignal] => Boolean(entry[0])),
+  );
+  const recommendedSignalCode = normalizeCreativeLensCode(input.outcomeRecommendation?.key);
   const options = CREATIVE_LENS_DEFINITIONS
     .map((definition) => {
+      const outcomeSignal =
+        outcomeSignalByCode.get(definition.code)
+        ?? (recommendedSignalCode === definition.code && input.outcomeRecommendation
+          ? {
+              key: input.outcomeRecommendation.key,
+              label: input.outcomeRecommendation.label,
+              sampleCount: input.outcomeRecommendation.sampleCount,
+              hitCount: 0,
+              nearMissCount: 0,
+              missCount: 0,
+              positiveSampleCount: input.outcomeRecommendation.positiveSampleCount,
+              followedRecommendationSampleCount: 0,
+              followedRecommendationPositiveCount: 0,
+              performanceScore: 0,
+              rankingAdjustment: input.outcomeRecommendation.rankingAdjustment,
+              reason: input.outcomeRecommendation.reason,
+            } satisfies AuthorOutcomeFeedbackSignal
+          : null);
       const score = scoreLens(definition, {
         seed,
         articlePrototype: input.articlePrototype,
+        outcomeSignal,
       });
+      const historyReason = outcomeSignal?.reason
+        ? `历史结果：${outcomeSignal.reason}`
+        : "";
       const triggerReason =
-        score > 0
-          ? `命中「${definition.label}」：${definition.suitableWhen}`
-          : `可作为备选：${definition.suitableWhen}`;
+        [
+          score > 0
+            ? `命中「${definition.label}」：${definition.suitableWhen}`
+            : `可作为备选：${definition.suitableWhen}`,
+          historyReason,
+        ].filter(Boolean).join(" ");
       return {
         ...definition,
         triggerReason,
+        historySignal: outcomeSignal
+          ? {
+              sampleCount: outcomeSignal.sampleCount,
+              positiveSampleCount: outcomeSignal.positiveSampleCount,
+              rankingAdjustment: outcomeSignal.rankingAdjustment,
+              reason: outcomeSignal.reason,
+            }
+          : null,
         score,
       };
     })
@@ -258,6 +311,9 @@ export function resolveCreativeLens(input: {
       ...selected,
       triggerReason: selectedReason,
     } satisfies CreativeLensOption,
-    options: options.map(({ score: _score, ...option }) => option satisfies CreativeLensOption),
+    options: options.map(({ score: _score, ...option }, index) => ({
+      ...option,
+      isRecommended: index === 0,
+    }) satisfies CreativeLensOption),
   };
 }

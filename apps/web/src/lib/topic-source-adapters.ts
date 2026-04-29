@@ -4,6 +4,8 @@ import {
   mapChineseHotspotItemsToCandidates,
   parseChineseHotspotPayload,
 } from "./chinese-hotspot-sources";
+import { searchRecentXPosts, type XApiMedia, type XApiPost, type XApiUser } from "./x-api";
+import { resolveXSourceSeed } from "./x-source-registry";
 
 export type FetchedTopicCandidate = {
   title: string;
@@ -316,6 +318,110 @@ async function fetchChineseHotspotTopics(input: TopicSourceAdapterInput) {
   return mapChineseHotspotItemsToCandidates(items);
 }
 
+function buildXPostTitle(text: string) {
+  const normalized = String(text || "")
+    .replace(/https?:\/\/\S+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!normalized) return "";
+  if (normalized.length <= 88) return normalized;
+  return `${normalized.slice(0, 87).trimEnd()}…`;
+}
+
+function buildXPostSummary(input: {
+  authorHandle: string | null;
+  metrics?: XApiPost["public_metrics"];
+  mediaCount: number;
+  text: string;
+}) {
+  const fragments = [
+    input.authorHandle ? `作者：@${input.authorHandle}` : null,
+    Number.isFinite(Number(input.metrics?.like_count)) ? `赞：${Number(input.metrics?.like_count || 0)}` : null,
+    Number.isFinite(Number(input.metrics?.retweet_count)) ? `转推：${Number(input.metrics?.retweet_count || 0)}` : null,
+    Number.isFinite(Number(input.metrics?.reply_count)) ? `回复：${Number(input.metrics?.reply_count || 0)}` : null,
+    input.mediaCount > 0 ? `配图：${input.mediaCount}` : null,
+  ].filter(Boolean);
+  const excerpt = buildXPostTitle(input.text);
+  return [fragments.join(" · "), excerpt && excerpt !== input.text ? excerpt : null].filter(Boolean).join(" · ") || "X.com 热点讨论";
+}
+
+async function fetchXHotspotTopics(input: TopicSourceAdapterInput) {
+  const source = resolveXSourceSeed(input);
+  if (!source || String(input.sourceType || "").trim().toLowerCase() !== "x-hotspot") {
+    return null;
+  }
+  const response = await searchRecentXPosts({
+    query: source.query,
+    maxResults: Math.max(10, Math.min(100, input.limit * 4)),
+  });
+  const usersById = new Map((response.includes?.users || []).map((item: XApiUser) => [item.id, item]));
+  const mediaByKey = new Map((response.includes?.media || []).map((item: XApiMedia) => [item.media_key, item]));
+  const referencedPostsById = new Map((response.includes?.tweets || []).map((item: XApiPost) => [item.id, item]));
+  const posts = Array.isArray(response.data) ? response.data : [];
+  return uniqueCandidates(
+    posts.map((post) => {
+      const title = buildXPostTitle(String(post.text || ""));
+      if (!title || title.length < 12) return null;
+      const author = post.author_id ? usersById.get(post.author_id) : null;
+      const media = (post.attachments?.media_keys || [])
+        .map((key) => mediaByKey.get(key))
+        .filter((item): item is XApiMedia => Boolean(item));
+      const externalLinks = (post.entities?.urls || [])
+        .map((item) => String(item.expanded_url || item.url || "").trim())
+        .filter(Boolean);
+      const referencedPosts = (post.referenced_tweets || [])
+        .map((item) => referencedPostsById.get(item.id))
+        .filter((item): item is XApiPost => Boolean(item))
+        .map((item) => {
+          const referencedAuthor = item.author_id ? usersById.get(item.author_id) : null;
+          return {
+            postId: item.id,
+            textRaw: String(item.text || ""),
+            authorHandle: referencedAuthor?.username || null,
+            authorName: referencedAuthor?.name || null,
+            createdAt: item.created_at || null,
+          };
+        });
+      return {
+        title,
+        sourceUrl: author?.username ? `https://x.com/${author.username}/status/${post.id}` : `https://x.com/i/status/${post.id}`,
+        summary: buildXPostSummary({
+          authorHandle: author?.username || null,
+          metrics: post.public_metrics,
+          mediaCount: media.length,
+          text: String(post.text || ""),
+        }),
+        publishedAt: asIsoDate(post.created_at),
+        sourceMeta: {
+          sourceKind: "x_hotspot",
+          query: source.query,
+          seedCode: source.code,
+          trustTier: source.trustTier,
+          postId: post.id,
+          textRaw: String(post.text || ""),
+          postedAt: post.created_at || null,
+          conversationId: post.conversation_id || null,
+          authorId: post.author_id || null,
+          authorHandle: author?.username || null,
+          authorName: author?.name || null,
+          metrics: post.public_metrics || null,
+          media: media.map((item) => ({
+            mediaKey: item.media_key,
+            type: item.type || null,
+            url: item.url || null,
+            previewImageUrl: item.preview_image_url || null,
+            width: item.width ?? null,
+            height: item.height ?? null,
+            altText: item.alt_text || null,
+          })),
+          externalLinks: externalLinks.slice(0, 8),
+          referencedPosts: referencedPosts.slice(0, 6),
+        },
+      } satisfies FetchedTopicCandidate;
+    }).filter(isPresent),
+  ).slice(0, input.limit);
+}
+
 function shouldUseRssAdapter(input: TopicSourceAdapterInput) {
   const sourceType = String(input.sourceType || "").trim().toLowerCase();
   return sourceType === "rss" || /\/feed\/?$|\.xml(?:\?|$)|feeds\./i.test(input.homepageUrl);
@@ -337,6 +443,10 @@ export async function fetchTopicsFromSourceAdapter(input: TopicSourceAdapterInpu
   const hotspotTopics = await fetchChineseHotspotTopics(input);
   if (hotspotTopics) {
     return uniqueCandidates(hotspotTopics).slice(0, input.limit);
+  }
+  const xHotspotTopics = await fetchXHotspotTopics(input);
+  if (xHotspotTopics) {
+    return uniqueCandidates(xHotspotTopics).slice(0, input.limit);
   }
   if (shouldUseHackerNewsAdapter(input)) {
     return fetchHackerNewsTopics(input);
